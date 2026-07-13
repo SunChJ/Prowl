@@ -1676,6 +1676,30 @@ struct CommandPaletteFeatureTests {
     }
     await store.receive(.delegate(.ghosttyCommand("goto_split:right")))
   }
+
+  @Test func activateOutgoingChangesDispatchesDelegate() async {
+    let now = Date(timeIntervalSince1970: 7_654_322)
+    let item = makeItem(
+      id: CommandPaletteItemID.globalOutgoingChanges,
+      title: "Outgoing Changes",
+      subtitle: nil,
+      kind: .outgoingChanges
+    )
+    var state = CommandPaletteFeature.State()
+    state.isPresented = true
+    let store = TestStore(initialState: state) {
+      CommandPaletteFeature()
+    }
+    store.dependencies.date = .constant(now)
+
+    await store.send(.activateItem(item)) {
+      $0.isPresented = false
+      $0.query = ""
+      $0.selectedIndex = nil
+      $0.recencyByItemID[item.id] = now.timeIntervalSince1970
+    }
+    await store.receive(.delegate(.showOutgoingChanges))
+  }
 }
 
 private func makeWorktree(
@@ -1750,7 +1774,7 @@ private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteIt
     return .terminal
   case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
     .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
-    .toggleShelf, .showDiff:
+    .toggleShelf, .showDiff, .outgoingChanges:
     return .view
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:
@@ -1767,7 +1791,7 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
     .copyFailingJobURL, .copyCiFailureLogs, .rerunFailedJobs, .openFailingCheckDetails,
     .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
     .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
-    .toggleShelf, .showDiff,
+    .toggleShelf, .showDiff, .outgoingChanges,
     .revealInFinder, .copyPath, .revealInSidebar,
     .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
     .openRepositorySettings:

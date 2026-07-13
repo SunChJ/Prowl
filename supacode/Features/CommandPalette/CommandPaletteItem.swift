@@ -72,6 +72,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case selectAllCanvasCards
     case toggleShelf
     case showDiff
+    case outgoingChanges
     case revealInFinder
     case copyPath
     case revealInSidebar
@@ -164,6 +165,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .revealInFinder,
       .copyPath,
       .togglePinWorktree,
+      .outgoingChanges,
       .deleteWorktree,
       .openRepositorySettings,
       .runCustomCommand:

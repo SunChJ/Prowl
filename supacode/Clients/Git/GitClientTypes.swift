@@ -18,6 +18,8 @@ enum GitOperation: String {
   case branchDelete = "branch_delete"
   case lineChanges = "line_changes"
   case diffNameStatus = "diff_name_status"
+  case outgoingChangesComparison = "outgoing_changes_comparison"
+  case outgoingDiffNameStatus = "outgoing_diff_name_status"
   case untrackedFilePaths = "untracked_file_paths"
   case showFile = "show_file"
   case remoteInfo = "remote_info"
@@ -125,6 +127,12 @@ nonisolated struct GitBranchRefOption: Codable, Equatable, Hashable, Sendable, I
     self.ref = ref
     self.kind = kind
   }
+}
+
+nonisolated struct GitOutgoingChangesComparison: Equatable, Sendable {
+  let baseRef: String
+  let mergeBase: String
+  let head: String
 }
 
 nonisolated struct GitRemoteBranchRefs: Equatable, Sendable {

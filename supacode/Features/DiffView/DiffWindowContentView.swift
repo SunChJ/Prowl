@@ -14,6 +14,15 @@ struct DiffWindowContentView: View {
     DiffStyle(rawValue: diffStyleRaw) ?? .split
   }
 
+  private var emptyState: (title: String, description: String) {
+    switch state.comparison {
+    case .workingTree:
+      ("No Changes", "Working directory is clean")
+    case .outgoing:
+      ("No Outgoing Changes", "This branch has no committed changes relative to its pull request base")
+    }
+  }
+
   private var resolvedDiffAppearance: DiffAppearance {
     switch settingsFile.global.appearanceMode {
     case .system: colorScheme == .dark ? .dark : .light
@@ -97,11 +106,17 @@ struct DiffWindowContentView: View {
     .overlay {
       if state.isLoadingFiles && state.changedFiles.isEmpty {
         ProgressView()
+      } else if let loadError = state.loadError {
+        ContentUnavailableView(
+          "Unable to Load Changes",
+          systemImage: "exclamationmark.triangle",
+          description: Text(loadError),
+        )
       } else if !state.isLoadingFiles && state.changedFiles.isEmpty {
         ContentUnavailableView(
-          "No Changes",
+          emptyState.title,
           systemImage: "checkmark.circle",
-          description: Text("Working directory is clean"),
+          description: Text(emptyState.description),
         )
       }
     }
@@ -159,6 +174,12 @@ struct DiffWindowContentView: View {
           }
         }
         .animation(.easeInOut(duration: 0.15), value: state.renderState)
+      } else if let loadError = state.loadError {
+        ContentUnavailableView(
+          "Unable to Load Changes",
+          systemImage: "exclamationmark.triangle",
+          description: Text(loadError),
+        )
       } else if state.isLoadingFiles {
         ProgressView()
           .frame(maxWidth: .infinity, maxHeight: .infinity)

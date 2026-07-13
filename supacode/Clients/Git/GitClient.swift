@@ -563,6 +563,82 @@ struct GitClient {
     }
   }
 
+  /// Resolves the local remote-tracking ref that represents an identified pull
+  /// request's base. A nil result is intentionally ambiguous to callers: Prowl
+  /// must ask the user to fix the remote/base state rather than guessing origin.
+  nonisolated func outgoingChangesBaseRef(
+    pullRequestURL: String,
+    baseRefName: String,
+    in worktreeURL: URL
+  ) async -> String? {
+    let normalizedBaseRefName = baseRefName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedBaseRefName.isEmpty,
+      let pullRequestRepository = Self.pullRequestRepositoryWebInfo(pullRequestURL)
+    else {
+      return nil
+    }
+    let matchingRemotes = await remoteWebCandidates(for: worktreeURL)
+      .filter { Self.matches($0.info, pullRequestRepository) }
+      .map(\.name)
+    guard matchingRemotes.count == 1, let remote = matchingRemotes.first else {
+      return nil
+    }
+    let baseRef = "\(remote)/\(normalizedBaseRefName)"
+    guard await refExists(baseRef, repoRoot: worktreeURL) else {
+      return nil
+    }
+    return baseRef
+  }
+
+  /// Captures the immutable Git revisions used by a three-dot pull request
+  /// comparison. The merge base is the left side; the current HEAD is the
+  /// right side. Capturing both keeps the file list and all file documents
+  /// internally consistent even if refs move while the window is loading.
+  nonisolated func outgoingChangesComparison(
+    from baseRef: String,
+    at worktreeURL: URL
+  ) async throws -> GitOutgoingChangesComparison {
+    let path = worktreeURL.path(percentEncoded: false)
+    let head = try await runGit(
+      operation: .outgoingChangesComparison,
+      arguments: ["-C", path, "rev-parse", "--verify", "HEAD"]
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !head.isEmpty else {
+      throw GitClientError.commandFailed(command: "git rev-parse --verify HEAD", message: "Empty output")
+    }
+    let mergeBase = try await runGit(
+      operation: .outgoingChangesComparison,
+      arguments: ["-C", path, "merge-base", baseRef, head]
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !mergeBase.isEmpty else {
+      throw GitClientError.commandFailed(command: "git merge-base \(baseRef) \(head)", message: "Empty output")
+    }
+    return GitOutgoingChangesComparison(baseRef: baseRef, mergeBase: mergeBase, head: head)
+  }
+
+  /// Lists committed files in a captured pull-request comparison. Unlike
+  /// `diffNameStatus(at:)`, errors deliberately propagate so callers never
+  /// mistake a missing base for an empty outgoing diff.
+  nonisolated func outgoingDiffNameStatus(
+    for comparison: GitOutgoingChangesComparison,
+    at worktreeURL: URL
+  ) async throws -> String {
+    let path = worktreeURL.path(percentEncoded: false)
+    return try await runGit(
+      operation: .outgoingDiffNameStatus,
+      arguments: [
+        "-C",
+        path,
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--name-status",
+        comparison.mergeBase,
+        comparison.head,
+      ]
+    )
+  }
+
   nonisolated func untrackedFilePaths(at worktreeURL: URL) async -> [String] {
     let path = worktreeURL.path(percentEncoded: false)
     do {
@@ -581,11 +657,15 @@ struct GitClient {
   }
 
   nonisolated func showFileAtHEAD(_ relativePath: String, in worktreeURL: URL) async -> String? {
+    await showFile(relativePath, at: "HEAD", in: worktreeURL)
+  }
+
+  nonisolated func showFile(_ relativePath: String, at revision: String, in worktreeURL: URL) async -> String? {
     let path = worktreeURL.path(percentEncoded: false)
     do {
       return try await runGit(
         operation: .showFile,
-        arguments: ["-C", path, "show", "HEAD:\(relativePath)"]
+        arguments: ["-C", path, "show", "\(revision):\(relativePath)"]
       )
     } catch {
       return nil
@@ -663,6 +743,30 @@ struct GitClient {
       return candidates
     }
     return candidates.filter { $0.name == "origin" } + candidates.filter { $0.name != "origin" }
+  }
+
+  nonisolated private static func pullRequestRepositoryWebInfo(_ pullRequestURL: String) -> GitRemoteWebInfo? {
+    guard let pullRequestInfo = parseRepositoryWebInfo(pullRequestURL) else {
+      return nil
+    }
+    let components = pullRequestInfo.repositoryPath.split(separator: "/", omittingEmptySubsequences: true)
+    guard components.count >= 4,
+      components[2].caseInsensitiveCompare("pull") == .orderedSame
+    else {
+      return nil
+    }
+    return GitRemoteWebInfo(
+      host: pullRequestInfo.host,
+      repositoryPath: "\(components[0])/\(components[1])",
+      port: pullRequestInfo.port
+    )
+  }
+
+  nonisolated private static func matches(_ lhs: GitRemoteWebInfo, _ rhs: GitRemoteWebInfo) -> Bool {
+    // Pull request URLs use the web transport while remotes commonly use SSH;
+    // their ports do not identify different repositories.
+    lhs.host.caseInsensitiveCompare(rhs.host) == .orderedSame
+      && lhs.repositoryPath.caseInsensitiveCompare(rhs.repositoryPath) == .orderedSame
   }
 
   nonisolated static func prioritizedGithubRemoteInfos(

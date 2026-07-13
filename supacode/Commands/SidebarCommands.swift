@@ -77,6 +77,11 @@ struct SidebarCommands: Commands {
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.showDiff)))
       .help(helpText(title: "Show Diff", commandID: AppShortcuts.CommandID.showDiff))
       .disabled(store.repositories.selectedWorktreeID == nil)
+      Button("Outgoing Changes", systemImage: "arrow.up.right") {
+        store.send(.showSelectedWorktreeOutgoingChanges)
+      }
+      .help("Show committed changes relative to this worktree's pull request base")
+      .disabled(store.repositories.selectedWorktreeID == nil)
     }
   }
 

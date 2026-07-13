@@ -52,7 +52,7 @@ its keyboard shortcuts, detailed behavior, settings, and gotchas.
 | [`components/active-agents.md`](components/active-agents.md) | The Active Agents panel: a live list of every running agent and its status, with one-click jump-to-agent. |
 | [`components/agent-detection.md`](components/agent-detection.md) | How Prowl knows an agent is Working / Blocked / Idle / Done, which agents it recognizes, and how the status indicator works. |
 | [`components/notifications.md`](components/notifications.md) | Agent-finished reminders, command-finished notifications, the bell/unread indicators, and Dock badge/bounce. |
-| [`components/diff-view.md`](components/diff-view.md) | The Diff window (`⌘⇧Y`): working-tree changes vs HEAD, split/unified modes, line-change badges. |
+| [`components/diff-view.md`](components/diff-view.md) | Show Diff (`⌘⇧Y`) for working-tree changes vs HEAD, plus Outgoing Changes for pull-request branch diffs. |
 | [`components/github-pull-requests.md`](components/github-pull-requests.md) | GitHub PR integration via `gh`: PR status, CI checks, merge/close/re-run actions from the command palette. |
 | [`components/custom-actions.md`](components/custom-actions.md) | Run Script (`⌘R`/`⌘.`), Setup & Archive scripts, and per-repo Custom Commands with their own buttons & hotkeys. Injected env vars. |
 | [`components/settings.md`](components/settings.md) | The Settings window (`⌘,`): every tab and what it controls. |

@@ -95,3 +95,5 @@ cut the embedded asset from 9.3 MB to 2.7 MB (−7 MB on the .app) (#45).
   (#529/#536/#537) — see [003-render-pipeline-hardening.md](003-render-pipeline-hardening.md)
 - Updated 2026-07-08: diff window follows app appearance instead of system
   (#540) — see [004-appearance-follows-app.md](004-appearance-follows-app.md)
+- Updated 2026-07-14: built-in outgoing changes for an identified pull request,
+  using its target remote and merge-base semantics — see [005-outgoing-changes.md](005-outgoing-changes.md)

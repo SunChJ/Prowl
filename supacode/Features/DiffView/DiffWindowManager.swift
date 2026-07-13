@@ -15,10 +15,11 @@ final class DiffWindowManager {
   func show(
     worktreeURL: URL,
     branchName: String,
+    comparison: DiffComparison = .workingTree,
     resolvedKeybindings: ResolvedKeybindingMap = .appDefaults,
     colorScheme: ColorScheme? = nil
   ) {
-    state.load(worktreeURL: worktreeURL, branchName: branchName)
+    state.load(worktreeURL: worktreeURL, branchName: branchName, comparison: comparison)
     skipNextFocusRefresh = true
     let rootView = AnyView(
       DiffWindowContentView(state: state)
@@ -31,7 +32,7 @@ final class DiffWindowManager {
       if let hostingController = existingWindow.contentViewController as? NSHostingController<AnyView> {
         hostingController.rootView = rootView
       }
-      existingWindow.title = windowTitle(branchName: branchName)
+      existingWindow.title = windowTitle(branchName: branchName, comparison: comparison)
       existingWindow.appearance = appearance
       if existingWindow.isMiniaturized {
         existingWindow.deminiaturize(nil)
@@ -43,7 +44,7 @@ final class DiffWindowManager {
     let hostingController = NSHostingController(rootView: rootView)
 
     let newWindow = NSWindow(contentViewController: hostingController)
-    newWindow.title = windowTitle(branchName: branchName)
+    newWindow.title = windowTitle(branchName: branchName, comparison: comparison)
     newWindow.identifier = NSUserInterfaceItemIdentifier("diff")
     newWindow.styleMask = [.titled, .closable, .miniaturizable, .resizable]
     newWindow.tabbingMode = .disallowed
@@ -86,8 +87,13 @@ final class DiffWindowManager {
     !state.changedFiles.isEmpty || state.isLoadingFiles
   }
 
-  private func windowTitle(branchName: String) -> String {
-    "Changes — \(branchName)"
+  private func windowTitle(branchName: String, comparison: DiffComparison) -> String {
+    switch comparison {
+    case .workingTree:
+      "Changes — \(branchName)"
+    case .outgoing:
+      "Outgoing Changes — \(branchName)"
+    }
   }
 
   @objc private func windowDidBecomeKey(_ notification: Notification) {

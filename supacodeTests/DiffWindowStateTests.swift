@@ -81,6 +81,103 @@ struct DiffWindowStateTests {
     #expect(!state.isLoadingFiles)
   }
 
+  @Test func outgoingComparisonFlowsToFileAndDocumentLoaders() async {
+    let file = DiffChangedFile(status: .modified, oldPath: "tracked.swift", newPath: "tracked.swift")
+    let document = DiffDocument(files: [], title: "tracked")
+    let comparison = DiffComparison.outgoing(
+      GitOutgoingChangesComparison(baseRef: "upstream/main", mergeBase: "base", head: "head")
+    )
+    let state = DiffWindowState(
+      fetchChangedFiles: { _, receivedComparison in
+        #expect(receivedComparison == comparison)
+        return [file]
+      },
+      loadDiffDocument: { receivedFile, _, receivedComparison in
+        #expect(receivedFile == file)
+        #expect(receivedComparison == comparison)
+        return document
+      }
+    )
+
+    await state.loadAllFiles(worktreeURL: URL(fileURLWithPath: "/tmp"), comparison: comparison)
+
+    #expect(state.changedFiles == [file])
+    #expect(state.diffDocument == document)
+    #expect(state.loadError == nil)
+  }
+
+  @Test func refreshRecapturesOutgoingComparisonBeforeLoading() async {
+    let file = DiffChangedFile(status: .modified, oldPath: "tracked.swift", newPath: "tracked.swift")
+    let initial = GitOutgoingChangesComparison(baseRef: "upstream/main", mergeBase: "old-base", head: "old-head")
+    let refreshed = GitOutgoingChangesComparison(baseRef: "upstream/main", mergeBase: "new-base", head: "new-head")
+    let state = DiffWindowState(
+      fetchChangedFiles: { _, comparison in
+        #expect(comparison == .outgoing(refreshed))
+        return [file]
+      },
+      loadDiffDocument: { _, _, comparison in
+        #expect(comparison == .outgoing(refreshed))
+        return DiffDocument(files: [], title: "tracked")
+      },
+      refreshComparison: { _, comparison in
+        #expect(comparison == .outgoing(initial))
+        return .outgoing(refreshed)
+      }
+    )
+    state.worktreeURL = URL(fileURLWithPath: "/tmp")
+    state.comparison = .outgoing(initial)
+
+    state.refresh()
+    await waitForDiffWindowState { !state.isLoadingFiles }
+
+    #expect(state.comparison == .outgoing(refreshed))
+    #expect(state.changedFiles == [file])
+    #expect(state.loadError == nil)
+  }
+
+  @Test func outgoingCopyLoadsTheSourcePathFromTheMergeBase() async throws {
+    let repositoryURL = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-outgoing-copy-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: repositoryURL) }
+
+    try runDiffWindowStateGit(["init", repositoryURL.path(percentEncoded: false)])
+    try runDiffWindowStateGit([
+      "-C", repositoryURL.path(percentEncoded: false), "config", "user.email", "test@example.com",
+    ])
+    try runDiffWindowStateGit([
+      "-C", repositoryURL.path(percentEncoded: false), "config", "user.name", "Test User",
+    ])
+    try "source\n".write(
+      to: repositoryURL.appending(path: "source.txt"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "add", "source.txt"])
+    try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "commit", "-m", "base"])
+    try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "branch", "-M", "main"])
+    try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "checkout", "-b", "feature"])
+    try "source\n".write(
+      to: repositoryURL.appending(path: "copy.txt"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "add", "copy.txt"])
+    try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "commit", "-m", "copy"])
+
+    let comparison = try await GitClient().outgoingChangesComparison(from: "main", at: repositoryURL)
+    let copiedFile = DiffChangedFile(status: .copied, oldPath: "source.txt", newPath: "copy.txt")
+    let state = DiffWindowState(fetchChangedFiles: { _, _ in [copiedFile] })
+
+    await state.loadAllFiles(worktreeURL: repositoryURL, comparison: .outgoing(comparison))
+
+    let document = try #require(state.diffDocument)
+    let diffFile = try #require(document.files?.first)
+    #expect(diffFile.oldContents == "source")
+    #expect(diffFile.newContents == "source")
+  }
+
   @Test func loadAllFilesPreservesSelectionWhenStillPresent() async {
     let fileA = DiffChangedFile(status: .modified, oldPath: "a.swift", newPath: "a.swift")
     let fileB = DiffChangedFile(status: .modified, oldPath: "b.swift", newPath: "b.swift")
@@ -407,4 +504,40 @@ private func advanceSelectDebounce(_ clock: TestClock<Duration>, by duration: Du
   await Task.yield()
   await clock.advance(by: duration)
   await Task.yield()
+}
+
+private struct DiffWindowStateGitCommandError: Error {
+  let output: String
+}
+
+private func runDiffWindowStateGit(_ arguments: [String]) throws {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+  process.arguments = arguments
+  var environment = ProcessInfo.processInfo.environment
+  environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
+  environment["GIT_CONFIG_NOSYSTEM"] = "1"
+  process.environment = environment
+  let pipe = Pipe()
+  process.standardOutput = pipe
+  process.standardError = pipe
+  try process.run()
+  process.waitUntilExit()
+  let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+  guard process.terminationStatus == 0 else {
+    throw DiffWindowStateGitCommandError(output: output)
+  }
+}
+
+@MainActor
+private func waitForDiffWindowState(
+  _ condition: @MainActor @escaping () -> Bool,
+  maxIterations: Int = 500
+) async {
+  for _ in 0..<maxIterations {
+    if condition() {
+      return
+    }
+    await Task.yield()
+  }
 }

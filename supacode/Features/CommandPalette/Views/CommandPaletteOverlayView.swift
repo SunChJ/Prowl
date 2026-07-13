@@ -523,7 +523,7 @@ private struct CommandPaletteRowView: View {
       .rerunFailedJobs, .openFailingCheckDetails, .worktreeSelect, .changeFocusedTabIcon,
       .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
       .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
-      .toggleShelf, .showDiff,
+      .toggleShelf, .showDiff, .outgoingChanges,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
       .openRepositorySettings, .runCustomCommand:
@@ -599,6 +599,8 @@ private struct CommandPaletteRowView: View {
       return "books.vertical"
     case .showDiff:
       return "plusminus.circle"
+    case .outgoingChanges:
+      return "arrow.up.right"
     case .revealInFinder:
       return "folder"
     case .copyPath:
@@ -640,7 +642,7 @@ private struct CommandPaletteRowView: View {
       .rerunFailedJobs, .openFailingCheckDetails, .changeFocusedTabIcon,
       .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
       .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
-      .toggleShelf, .showDiff,
+      .toggleShelf, .showDiff, .outgoingChanges,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
       .openRepositorySettings,
@@ -786,6 +788,8 @@ private struct CommandPaletteRowView: View {
       base = "Toggle Shelf"
     case .showDiff:
       base = "Show Diff"
+    case .outgoingChanges:
+      base = "Show committed changes relative to the pull request base"
     case .revealInFinder:
       base = "Reveal in Finder"
     case .copyPath:

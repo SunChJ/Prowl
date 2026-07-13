@@ -30,8 +30,8 @@ The available actions depend on context (e.g. PR actions appear only when the
 selected worktree has a pull request).
 
 - **View / layout:** Toggle Sidebar, Toggle Active Agents Panel, Toggle Canvas,
-  Toggle Shelf, Show Diff, and Canvas actions (Expand/Arrange/Organize/Select-All
-  cards).
+  Toggle Shelf, Show Diff, Outgoing Changes, and Canvas actions
+  (Expand/Arrange/Organize/Select-All cards).
 - **Navigation:** Reveal in Finder, Copy Path, Reveal in Sidebar, Jump to Latest
   Unread, and select-a-specific-worktree entries.
 - **Worktree:** New Worktree, Refresh Worktrees, View Archived Worktrees, Run
@@ -52,6 +52,9 @@ selected worktree has a pull request).
   suggestions.
 - PR and Canvas entries appear/disappear as state changes (PR present, Canvas
   active, etc.).
+- Outgoing Changes compares committed work against the selected worktree's pull
+  request base; it reports an error rather than guessing when Prowl cannot
+  resolve that base.
 - In Canvas, worktree-scoped actions use the focused card as their context.
 - There are no user settings for the palette; ranking is automatic.
 
