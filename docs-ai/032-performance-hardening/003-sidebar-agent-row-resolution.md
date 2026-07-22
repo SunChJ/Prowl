@@ -76,8 +76,21 @@ index, `..` normalization, and both cache paths.
 `make build-app` reported 0 errors and 0 warnings, `make test` reported 1943 passing tests
 and 0 failures, and `make check` (swift-format strict lint plus SwiftLint) was clean.
 
-The measured CPU reduction on a live instance is unverified: confirming it requires restarting
-Prowl, which was deferred to avoid interrupting running agent sessions.
+The reduction was measured on a live instance after swapping in the fixed build. Two 10-second
+`sample(1)` runs, before and after, on comparable workloads:
+
+| Main-thread measure           |     Before |      After |
+| ----------------------------- | ---------: | ---------: |
+| `resolveWorktreeID` samples   | 2253 (48%) | 0 (absent) |
+| `SidebarListView.body`        | 2382 (51%) | 183 (2.4%) |
+| `GraphHost.flushTransactions` | 3774 (80%) | 1530 (20%) |
+| Idle in `mach_msg2_trap`      |       ~11% |        53% |
+
+Process CPU fell from 94–134% to 29–70%. The workloads were not identical — 34 surfaces and 6
+sessions before versus 23 surfaces and 8 sessions after — so the percentages are indicative
+rather than a controlled comparison; the disappearance of `resolveWorktreeID` from the profile
+is not. The only residual frames are 24 samples (0.3%) in `WorktreeDirectoryIndex.worktreeID`,
+which is the by-design single normalization of the queried directory per lookup.
 
 ## Recurrence note
 
