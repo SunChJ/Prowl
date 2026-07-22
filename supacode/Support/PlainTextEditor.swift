@@ -47,7 +47,11 @@ struct PlainTextEditor: NSViewRepresentable {
   func updateNSView(_ nsView: NSScrollView, context: Context) {
     guard let textView = nsView.documentView as? PlaceholderTextView else { return }
     if textView.string != text {
+      let selectedRange = textView.selectedRange()
       textView.string = text
+      let selectedLocation = min(selectedRange.location, text.utf16.count)
+      let selectedLength = min(selectedRange.length, text.utf16.count - selectedLocation)
+      textView.setSelectedRange(NSRange(location: selectedLocation, length: selectedLength))
       textView.needsDisplay = true
     }
     let updatedFont = editorFont
