@@ -97,3 +97,6 @@ cut the embedded asset from 9.3 MB to 2.7 MB (−7 MB on the .app) (#45).
   (#540) — see [004-appearance-follows-app.md](004-appearance-follows-app.md)
 - Updated 2026-07-14: built-in outgoing changes for an identified pull request,
   using its target remote and merge-base semantics — see [005-outgoing-changes.md](005-outgoing-changes.md)
+- Updated 2026-07-24: hardening plan for outgoing changes — fully-qualified
+  base refs, labeled no-PR fallback ladder, distinct resolution errors,
+  focus-refresh fix — see [006-outgoing-changes-hardening.md](006-outgoing-changes-hardening.md)

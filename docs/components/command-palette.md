@@ -59,9 +59,10 @@ selected worktree has a pull request).
   suggestions.
 - PR and Canvas entries appear/disappear as state changes (PR present, Canvas
   active, etc.).
-- Outgoing Changes compares committed work against the selected worktree's pull
-  request base; it reports an error rather than guessing when Prowl cannot
-  resolve that base.
+- Outgoing Changes compares committed work against a labeled base (pull
+  request base → worktree base setting → default branch); a base that exists
+  but cannot be resolved reports a specific error rather than cascading to a
+  guess. See [diff-view](diff-view.md).
 - In Canvas, worktree-scoped actions use the focused card as their context.
 - There are no user settings for the palette; ranking is automatic.
 
