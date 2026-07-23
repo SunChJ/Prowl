@@ -221,28 +221,19 @@ extension AppFeature {
   }
 
   func openSelectedWorktreeOutgoingChangesEffect(state: State) -> Effect<Action> {
-    guard let worktreeID = state.repositories.selectedWorktreeID,
-      let worktree = state.repositories.worktree(for: worktreeID),
-      let pullRequest = state.repositories.worktreeInfo(for: worktreeID)?.pullRequest,
-      let baseRefName = pullRequest.baseRefName?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !baseRefName.isEmpty
-    else {
-      return .send(
-        .openWorktreeFailed(
-          OpenActionError(
-            title: "Outgoing changes unavailable",
-            message: [
-              "Outgoing Changes requires a pull request with a known base branch.",
-              "Create or refresh the pull request and try again.",
-            ].joined(separator: " ")
-          )
-        )
-      )
+    guard let worktreeID = state.repositories.selectedWorktreeID else {
+      return .none
     }
-    let pullRequestURL = pullRequest.url
+    return openOutgoingChangesEffect(worktreeID: worktreeID, state: state)
+  }
+
+  func openOutgoingChangesEffect(worktreeID: Worktree.ID, state: State) -> Effect<Action> {
+    guard let worktree = state.repositories.worktree(for: worktreeID) else {
+      return .none
+    }
     let resolvedKeybindings = state.resolvedKeybindings
     return .run { send in
-      await outgoingChangesClient.open(worktree, pullRequestURL, baseRefName, resolvedKeybindings) { error in
+      await outgoingChangesClient.open(worktree, resolvedKeybindings) { error in
         send(.openWorktreeFailed(error))
       }
     }

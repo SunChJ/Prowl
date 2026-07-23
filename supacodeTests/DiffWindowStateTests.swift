@@ -1,4 +1,5 @@
 import Clocks
+import ConcurrencyExtras
 import Foundation
 import Testing
 import YiTong
@@ -85,7 +86,11 @@ struct DiffWindowStateTests {
     let file = DiffChangedFile(status: .modified, oldPath: "tracked.swift", newPath: "tracked.swift")
     let document = DiffDocument(files: [], title: "tracked")
     let comparison = DiffComparison.outgoing(
-      GitOutgoingChangesComparison(baseRef: "upstream/main", mergeBase: "base", head: "head")
+      GitOutgoingChangesComparison(
+        base: outgoingBase(displayName: "upstream/main"),
+        mergeBase: "base",
+        head: "head"
+      )
     )
     let state = DiffWindowState(
       fetchChangedFiles: { _, receivedComparison in
@@ -106,32 +111,112 @@ struct DiffWindowStateTests {
     #expect(state.loadError == nil)
   }
 
-  @Test func refreshRecapturesOutgoingComparisonBeforeLoading() async {
+  @Test func refreshRerunsTheOutgoingResolverBeforeLoading() async {
     let file = DiffChangedFile(status: .modified, oldPath: "tracked.swift", newPath: "tracked.swift")
-    let initial = GitOutgoingChangesComparison(baseRef: "upstream/main", mergeBase: "old-base", head: "old-head")
-    let refreshed = GitOutgoingChangesComparison(baseRef: "upstream/main", mergeBase: "new-base", head: "new-head")
+    let initial = GitOutgoingChangesComparison(
+      base: outgoingBase(displayName: "upstream/main"),
+      mergeBase: "old-base",
+      head: "old-head"
+    )
+    let refreshed = GitOutgoingChangesComparison(
+      base: outgoingBase(displayName: "upstream/main"),
+      mergeBase: "new-base",
+      head: "new-head"
+    )
+    let fetchedComparisons = LockIsolated<[DiffComparison]>([])
     let state = DiffWindowState(
       fetchChangedFiles: { _, comparison in
-        #expect(comparison == .outgoing(refreshed))
+        fetchedComparisons.withValue { $0.append(comparison) }
         return [file]
       },
-      loadDiffDocument: { _, _, comparison in
-        #expect(comparison == .outgoing(refreshed))
-        return DiffDocument(files: [], title: "tracked")
-      },
-      refreshComparison: { _, comparison in
-        #expect(comparison == .outgoing(initial))
-        return .outgoing(refreshed)
-      }
+      loadDiffDocument: { _, _, _ in DiffDocument(files: [], title: "tracked") }
     )
-    state.worktreeURL = URL(fileURLWithPath: "/tmp")
-    state.comparison = .outgoing(initial)
+    state.load(
+      worktreeURL: URL(fileURLWithPath: "/tmp"),
+      branchName: "feature",
+      comparison: .outgoing(initial),
+      outgoingResolver: { refreshed }
+    )
+    await waitForDiffWindowState { !state.isLoadingFiles && !state.changedFiles.isEmpty }
 
     state.refresh()
-    await waitForDiffWindowState { !state.isLoadingFiles }
+    await waitForDiffWindowState { state.comparison == .outgoing(refreshed) && !state.isLoadingFiles }
 
     #expect(state.comparison == .outgoing(refreshed))
     #expect(state.changedFiles == [file])
+    #expect(state.loadError == nil)
+    #expect(fetchedComparisons.value.last == .outgoing(refreshed))
+  }
+
+  @Test func setModeSwitchesBetweenWorkingTreeAndResolvedOutgoing() async {
+    let uncommittedFile = DiffChangedFile(status: .modified, oldPath: "dirty.swift", newPath: "dirty.swift")
+    let outgoingFile = DiffChangedFile(status: .added, oldPath: nil, newPath: "committed.swift")
+    let resolved = GitOutgoingChangesComparison(
+      base: outgoingBase(displayName: "origin/main"),
+      mergeBase: "base",
+      head: "head"
+    )
+    let state = DiffWindowState(
+      fetchChangedFiles: { _, comparison in
+        switch comparison {
+        case .workingTree: [uncommittedFile]
+        case .outgoing: [outgoingFile]
+        }
+      },
+      loadDiffDocument: { file, _, _ in DiffDocument(files: [], title: file.displayName) }
+    )
+    state.load(
+      worktreeURL: URL(fileURLWithPath: "/tmp"),
+      branchName: "feature",
+      outgoingResolver: { resolved }
+    )
+    // `load()` schedules the actual loading in a task, so wait on content —
+    // `isLoadingFiles` alone can be observed before that task starts.
+    await waitForDiffWindowState { !state.isLoadingFiles && state.changedFiles == [uncommittedFile] }
+    #expect(state.mode == .uncommitted)
+
+    state.setMode(.outgoing)
+    await waitForDiffWindowState { !state.isLoadingFiles && state.changedFiles == [outgoingFile] }
+
+    #expect(state.mode == .outgoing)
+    #expect(state.comparison == .outgoing(resolved))
+    #expect(state.outgoingBase == resolved.base)
+
+    state.setMode(.uncommitted)
+    await waitForDiffWindowState { !state.isLoadingFiles && state.changedFiles == [uncommittedFile] }
+
+    #expect(state.mode == .uncommitted)
+    #expect(state.comparison == .workingTree)
+  }
+
+  @Test func outgoingResolutionFailureShowsErrorAndStaysInOutgoingMode() async {
+    struct ResolutionFailure: LocalizedError {
+      var errorDescription: String? { "no base" }
+    }
+    let uncommittedFile = DiffChangedFile(status: .modified, oldPath: "dirty.swift", newPath: "dirty.swift")
+    let state = DiffWindowState(
+      fetchChangedFiles: { _, _ in [uncommittedFile] },
+      loadDiffDocument: { file, _, _ in DiffDocument(files: [], title: file.displayName) }
+    )
+    state.load(
+      worktreeURL: URL(fileURLWithPath: "/tmp"),
+      branchName: "feature",
+      outgoingResolver: { throw ResolutionFailure() }
+    )
+    await waitForDiffWindowState { !state.isLoadingFiles }
+
+    state.setMode(.outgoing)
+    await waitForDiffWindowState { !state.isLoadingFiles }
+
+    #expect(state.mode == .outgoing)
+    #expect(state.loadError == "no base")
+    #expect(state.changedFiles.isEmpty)
+
+    // The switcher must remain usable after a failure.
+    state.setMode(.uncommitted)
+    await waitForDiffWindowState { !state.isLoadingFiles && state.changedFiles == [uncommittedFile] }
+
+    #expect(state.mode == .uncommitted)
     #expect(state.loadError == nil)
   }
 
@@ -166,7 +251,13 @@ struct DiffWindowStateTests {
     try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "add", "copy.txt"])
     try runDiffWindowStateGit(["-C", repositoryURL.path(percentEncoded: false), "commit", "-m", "copy"])
 
-    let comparison = try await GitClient().outgoingChangesComparison(from: "main", at: repositoryURL)
+    let gitClient = GitClient()
+    let resolution = try await gitClient.outgoingBaseResolution(
+      pullRequest: nil,
+      configuredBaseRef: "main",
+      in: repositoryURL
+    )
+    let comparison = try await gitClient.outgoingChangesComparison(base: resolution, at: repositoryURL)
     let copiedFile = DiffChangedFile(status: .copied, oldPath: "source.txt", newPath: "copy.txt")
     let state = DiffWindowState(fetchChangedFiles: { _, _ in [copiedFile] })
 
@@ -530,6 +621,14 @@ private func runDiffWindowStateGit(_ arguments: [String]) throws {
 }
 
 @MainActor
+private func outgoingBase(displayName: String) -> OutgoingBaseResolution {
+  OutgoingBaseResolution(
+    ref: "refs/remotes/\(displayName)",
+    displayName: displayName,
+    source: .pullRequest
+  )
+}
+
 private func waitForDiffWindowState(
   _ condition: @MainActor @escaping () -> Bool,
   maxIterations: Int = 500

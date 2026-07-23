@@ -6,6 +6,15 @@ nonisolated enum DiffComparison: Equatable, Sendable {
   case outgoing(GitOutgoingChangesComparison)
 }
 
+/// The user-facing mode of the diff window. `comparison` tracks what is
+/// actually loaded; `mode` tracks intent, so an outgoing resolution failure
+/// can keep the window in Outgoing mode showing the error while the switcher
+/// remains usable.
+nonisolated enum DiffMode: Equatable, Sendable {
+  case uncommitted
+  case outgoing
+}
+
 @Observable
 @MainActor
 final class DiffWindowState {
@@ -26,40 +35,61 @@ final class DiffWindowState {
 
   var worktreeURL: URL?
   var branchName: String = ""
-  var comparison: DiffComparison = .workingTree
+  private(set) var mode: DiffMode = .uncommitted
+  var comparison: DiffComparison = .workingTree {
+    didSet {
+      if oldValue != comparison {
+        onPresentationChange?()
+      }
+    }
+  }
   var changedFiles: [DiffChangedFile] = []
   var selectedFile: DiffChangedFile?
   var diffDocument: DiffDocument?
   var isLoadingFiles = false
   var loadError: String?
   var renderState: RenderState = .idle
+  /// Lets the window manager keep the window title in sync when the mode or
+  /// the resolved outgoing base changes while the window stays open.
+  var onPresentationChange: (@MainActor () -> Void)?
   /// Identity for the hosted `DiffView` (used as `.id()` by the view). YiTong
   /// skips re-rendering a value-equal document, so after a render failure the
   /// only way to retry the same content is to recreate the view; bumping this
   /// on retry (refresh or re-selecting the failed file) does exactly that.
   private(set) var renderGeneration = 0
 
+  /// The current outgoing base, when an outgoing comparison is loaded. Drives
+  /// the provenance UI (window title, file-list header, empty state).
+  var outgoingBase: OutgoingBaseResolution? {
+    if case .outgoing(let comparison) = comparison {
+      return comparison.base
+    }
+    return nil
+  }
+
+  private var outgoingResolver: OutgoingComparisonResolver?
   private var documentCache: [String: DiffDocument] = [:]
   private var loadTask: Task<Void, Never>?
   private let selectDebouncer: Debouncer
 
+  /// Upper bound for concurrent per-file document loads. Each load spawns two
+  /// `git show` processes; outgoing diffs of long-lived branches can span
+  /// hundreds of files, so the fan-out must not be unbounded.
+  private static let maxConcurrentDocumentLoads = 6
+
   private let fetchChangedFiles: @Sendable (URL, DiffComparison) async throws -> [DiffChangedFile]
   private let loadDiffDocument: @Sendable (DiffChangedFile, URL, DiffComparison) async -> DiffDocument
-  private let refreshComparison: @Sendable (URL, DiffComparison) async throws -> DiffComparison
 
   init(
     fetchChangedFiles: @escaping @Sendable (URL, DiffComparison) async throws -> [DiffChangedFile] =
       DiffWindowState.liveFetchChangedFiles,
     loadDiffDocument: @escaping @Sendable (DiffChangedFile, URL, DiffComparison) async -> DiffDocument = DiffWindowState
       .liveLoadDocument,
-    refreshComparison: @escaping @Sendable (URL, DiffComparison) async throws -> DiffComparison =
-      DiffWindowState.liveRefreshComparison,
     selectDebounceInterval: Duration = .milliseconds(150),
     clock: any Clock<Duration> = ContinuousClock()
   ) {
     self.fetchChangedFiles = fetchChangedFiles
     self.loadDiffDocument = loadDiffDocument
-    self.refreshComparison = refreshComparison
     self.selectDebouncer = Debouncer(interval: selectDebounceInterval, clock: clock)
   }
 
@@ -72,16 +102,26 @@ final class DiffWindowState {
     self.init(
       fetchChangedFiles: { worktreeURL, _ in await fetchChangedFiles(worktreeURL) },
       loadDiffDocument: { file, worktreeURL, _ in await loadDiffDocument(file, worktreeURL) },
-      refreshComparison: { _, comparison in comparison },
       selectDebounceInterval: selectDebounceInterval,
       clock: clock
     )
   }
 
-  func load(worktreeURL: URL, branchName: String, comparison: DiffComparison = .workingTree) {
+  func load(
+    worktreeURL: URL,
+    branchName: String,
+    comparison: DiffComparison = .workingTree,
+    outgoingResolver: OutgoingComparisonResolver? = nil
+  ) {
     self.worktreeURL = worktreeURL
     self.branchName = branchName
     self.comparison = comparison
+    self.outgoingResolver = outgoingResolver
+    mode =
+      switch comparison {
+      case .workingTree: .uncommitted
+      case .outgoing: .outgoing
+      }
     changedFiles = []
     selectedFile = nil
     diffDocument = nil
@@ -92,30 +132,78 @@ final class DiffWindowState {
     loadTask = Task { await loadAllFiles(worktreeURL: worktreeURL, comparison: comparison) }
   }
 
+  /// Whether the mode switcher should be offered; windows shown without an
+  /// outgoing resolver (defensive default) stay single-mode.
+  var canSwitchModes: Bool {
+    outgoingResolver != nil
+  }
+
+  func setMode(_ newMode: DiffMode) {
+    guard newMode != mode, let worktreeURL else { return }
+    mode = newMode
+    onPresentationChange?()
+    selectDebouncer.cancel()
+    loadTask?.cancel()
+    changedFiles = []
+    selectedFile = nil
+    diffDocument = nil
+    documentCache = [:]
+    loadError = nil
+    renderState = .idle
+    isLoadingFiles = true
+    switch newMode {
+    case .uncommitted:
+      comparison = .workingTree
+      loadTask = Task { [weak self] in
+        await self?.loadAllFiles(worktreeURL: worktreeURL, comparison: .workingTree)
+      }
+    case .outgoing:
+      loadTask = Task { [weak self] in
+        await self?.resolveAndLoadOutgoing(worktreeURL: worktreeURL)
+      }
+    }
+  }
+
   func refresh() {
     guard let worktreeURL else { return }
     // Keep cache intact so file switching remains responsive during refresh
     loadTask?.cancel()
-    let currentComparison = comparison
-    let resolveRefreshedComparison = refreshComparison
     isLoadingFiles = true
     loadError = nil
-    loadTask = Task { [weak self] in
-      do {
-        let refreshedComparison = try await resolveRefreshedComparison(worktreeURL, currentComparison)
-        guard !Task.isCancelled, let self else { return }
-        self.comparison = refreshedComparison
-        await self.loadAllFiles(worktreeURL: worktreeURL, comparison: refreshedComparison)
-      } catch {
-        guard !Task.isCancelled, let self else { return }
-        self.changedFiles = []
-        self.selectedFile = nil
-        self.diffDocument = nil
-        self.documentCache = [:]
-        self.renderState = .idle
-        self.isLoadingFiles = false
-        self.loadError = error.localizedDescription
+    switch mode {
+    case .uncommitted:
+      loadTask = Task { [weak self] in
+        await self?.loadAllFiles(worktreeURL: worktreeURL, comparison: .workingTree)
       }
+    case .outgoing:
+      loadTask = Task { [weak self] in
+        await self?.resolveAndLoadOutgoing(worktreeURL: worktreeURL)
+      }
+    }
+  }
+
+  /// Re-resolves the outgoing base from scratch (full ladder) and reloads.
+  /// See `OutgoingComparisonResolver` for why resolution is never pinned.
+  private func resolveAndLoadOutgoing(worktreeURL: URL) async {
+    guard let outgoingResolver else {
+      isLoadingFiles = false
+      loadError = "Outgoing changes are unavailable for this window."
+      return
+    }
+    do {
+      let resolved = try await outgoingResolver()
+      guard !Task.isCancelled else { return }
+      comparison = .outgoing(resolved)
+      await loadAllFiles(worktreeURL: worktreeURL, comparison: .outgoing(resolved))
+    } catch {
+      guard !Task.isCancelled else { return }
+      changedFiles = []
+      selectedFile = nil
+      diffDocument = nil
+      documentCache = [:]
+      renderState = .idle
+      isLoadingFiles = false
+      loadError = error.localizedDescription
     }
   }
 
@@ -226,14 +314,20 @@ final class DiffWindowState {
     let fileIDs = Set(files.map(\.id))
     documentCache = Self.evictedCache(documentCache, keeping: fileIDs)
 
-    // Load documents concurrently, updating the cache as each one completes
-    // so that file switching is responsive without waiting for all files
+    // Load documents concurrently — bounded, and updating the cache as each
+    // one completes so that file switching is responsive without waiting for
+    // the whole set.
     await withTaskGroup(of: (String, DiffDocument).self) { [loadDiffDocument] group in
-      for file in files {
+      var iterator = files.makeIterator()
+      func addNextLoad() {
+        guard let file = iterator.next() else { return }
         group.addTask {
           let doc = await loadDiffDocument(file, worktreeURL, comparison)
           return (file.id, doc)
         }
+      }
+      for _ in 0..<Self.maxConcurrentDocumentLoads {
+        addNextLoad()
       }
       for await (id, doc) in group {
         guard !Task.isCancelled else { break }
@@ -241,6 +335,7 @@ final class DiffWindowState {
         if selectedFile?.id == id {
           updateDiffDocument(doc)
         }
+        addNextLoad()
       }
     }
 
@@ -272,18 +367,6 @@ final class DiffWindowState {
     case .outgoing(let revisions):
       let output = try await gitClient.outgoingDiffNameStatus(for: revisions, at: worktreeURL)
       return DiffChangedFile.parseNameStatus(output)
-    }
-  }
-
-  private nonisolated static func liveRefreshComparison(
-    worktreeURL: URL,
-    comparison: DiffComparison
-  ) async throws -> DiffComparison {
-    switch comparison {
-    case .workingTree:
-      .workingTree
-    case .outgoing(let revisions):
-      .outgoing(try await GitClient().outgoingChangesComparison(from: revisions.baseRef, at: worktreeURL))
     }
   }
 

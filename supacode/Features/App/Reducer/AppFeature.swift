@@ -373,6 +373,9 @@ struct AppFeature {
         }
         return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
 
+      case .repositories(.delegate(.showOutgoingChanges(let worktreeID))):
+        return openOutgoingChangesEffect(worktreeID: worktreeID, state: state)
+
       case .settings(.setSelection(let selection)):
         let resolvedSelection = selection ?? .general
         switch resolvedSelection {

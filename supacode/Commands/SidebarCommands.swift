@@ -80,7 +80,8 @@ struct SidebarCommands: Commands {
       Button("Outgoing Changes", systemImage: "arrow.up.right") {
         store.send(.showSelectedWorktreeOutgoingChanges)
       }
-      .help("Show committed changes relative to this worktree's pull request base")
+      .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.outgoingChanges)))
+      .help(helpText(title: "Outgoing Changes", commandID: AppShortcuts.CommandID.outgoingChanges))
       .disabled(store.repositories.selectedWorktreeID == nil)
     }
   }

@@ -598,14 +598,12 @@ private func selectedWorktreeViewCommandItems() -> [CommandPaletteItem] {
       kind: .showDiff,
       keywords: ["diff", "changes", "git"]
     ),
-    CommandPaletteItem(
+    .appShortcut(
       id: CommandPaletteItemID.globalOutgoingChanges,
       title: "Outgoing Changes",
-      subtitle: nil,
-      kind: .outgoingChanges,
       category: .view,
-      defaultSuggestion: true,
-      keywords: ["diff", "changes", "pull request", "git"]
+      kind: .outgoingChanges,
+      keywords: ["diff", "changes", "outgoing", "pull request", "git"]
     ),
   ]
 }

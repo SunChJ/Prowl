@@ -144,6 +144,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       return AppShortcuts.CommandID.toggleShelf
     case .showDiff:
       return AppShortcuts.CommandID.showDiff
+    case .outgoingChanges:
+      return AppShortcuts.CommandID.outgoingChanges
     case .revealInSidebar:
       return AppShortcuts.CommandID.revealInSidebar
     case .runScript:
@@ -166,7 +168,6 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .revealInFinder,
       .copyPath,
       .togglePinWorktree,
-      .outgoingChanges,
       .deleteWorktree,
       .openRepositorySettings,
       .runCustomCommand,

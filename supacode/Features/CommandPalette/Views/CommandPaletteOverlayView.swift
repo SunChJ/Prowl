@@ -791,7 +791,7 @@ private struct CommandPaletteRowView: View {
     case .showDiff:
       base = "Show Diff"
     case .outgoingChanges:
-      base = "Show committed changes relative to the pull request base"
+      base = "Show committed changes relative to the branch's base"
     case .revealInFinder:
       base = "Reveal in Finder"
     case .copyPath:

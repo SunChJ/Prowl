@@ -16,6 +16,7 @@ extension ExternalDiffToolClient: DependencyKey {
     @Dependency(TerminalClient.self) var terminalClient
     @Dependency(ShellClient.self) var shellClient
     @Dependency(ExternalDiffSnapshotClient.self) var snapshotClient
+    @Dependency(OutgoingChangesClient.self) var outgoingChangesClient
 
     switch settings.tool {
     case .builtIn:
@@ -23,6 +24,7 @@ extension ExternalDiffToolClient: DependencyKey {
       DiffWindowManager.shared.show(
         worktreeURL: worktree.workingDirectory,
         branchName: worktree.name,
+        outgoingResolver: outgoingChangesClient.makeResolver(worktree),
         resolvedKeybindings: resolvedKeybindings,
         colorScheme: settingsFile.global.appearanceMode.colorScheme
       )

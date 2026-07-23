@@ -962,7 +962,7 @@ struct AppFeatureCommandPaletteTests {
     #expect(
       CommandPaletteFeature.commandPaletteItems(from: repositoriesState).contains { $0.kind == .outgoingChanges }
     )
-    let outgoingRequests = LockIsolated<[OutgoingChangesRequest]>([])
+    let outgoingRequests = LockIsolated<[Worktree]>([])
     let externalRequests = LockIsolated(0)
     let store = TestStore(
       initialState: AppFeature.State(
@@ -972,16 +972,8 @@ struct AppFeatureCommandPaletteTests {
     ) {
       AppFeature()
     } withDependencies: {
-      $0.outgoingChangesClient.open = { worktree, pullRequestURL, baseRefName, _, _ in
-        outgoingRequests.withValue {
-          $0.append(
-            OutgoingChangesRequest(
-              worktree: worktree,
-              pullRequestURL: pullRequestURL,
-              baseRefName: baseRefName
-            )
-          )
-        }
+      $0.outgoingChangesClient.open = { worktree, _, _ in
+        outgoingRequests.withValue { $0.append(worktree) }
       }
       $0.externalDiffToolClient.open = { _, _, _, _ in
         externalRequests.withValue { $0 += 1 }
@@ -993,22 +985,48 @@ struct AppFeatureCommandPaletteTests {
     await store.finish()
 
     let requests = outgoingRequests.value
-    #expect(requests.count == 2)
-    for request in requests {
-      #expect(request.worktree == worktree)
-      #expect(request.pullRequestURL == "https://github.com/upstream/project/pull/42")
-      #expect(request.baseRefName == "main")
-    }
+    #expect(requests == [worktree, worktree])
     #expect(externalRequests.value == 0)
   }
 
-  @Test(.dependencies) func outgoingChangesWithoutPullRequestShowsAnAlert() async {
+  @Test(.dependencies) func outgoingChangesWithoutPullRequestStillOpensViaClient() async {
     let worktree = makeWorktree(
       id: "/tmp/repo-outgoing-no-pr/wt-1",
       name: "wt-1",
       repoRoot: "/tmp/repo-outgoing-no-pr"
     )
     let repository = makeRepository(id: "/tmp/repo-outgoing-no-pr", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    let outgoingRequests = LockIsolated<[Worktree]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.outgoingChangesClient.open = { worktree, _, _ in
+        outgoingRequests.withValue { $0.append(worktree) }
+      }
+    }
+
+    await store.send(.showSelectedWorktreeOutgoingChanges)
+    await store.finish()
+
+    #expect(outgoingRequests.value == [worktree])
+    #expect(store.state.alert == nil)
+  }
+
+  @Test(.dependencies) func outgoingChangesResolutionFailureShowsAnAlert() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-outgoing-fail/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-outgoing-fail"
+    )
+    let repository = makeRepository(id: "/tmp/repo-outgoing-fail", worktrees: [worktree])
     var repositoriesState = RepositoriesFeature.State()
     repositoriesState.repositories = [repository]
     repositoriesState.selection = .worktree(worktree.id)
@@ -1019,6 +1037,15 @@ struct AppFeatureCommandPaletteTests {
       )
     ) {
       AppFeature()
+    } withDependencies: {
+      $0.outgoingChangesClient.open = { _, _, onError in
+        onError(
+          OpenActionError(
+            title: "Unable to show outgoing changes",
+            message: OutgoingBaseResolutionError.noResolvableBase.localizedDescription
+          )
+        )
+      }
     }
     store.exhaustivity = .off
 
@@ -1026,6 +1053,42 @@ struct AppFeatureCommandPaletteTests {
     await store.receive(\.openWorktreeFailed)
 
     #expect(store.state.alert != nil)
+  }
+
+  @Test(.dependencies) func sidebarOutgoingChangesDelegateTargetsTheRequestedWorktree() async {
+    let selected = makeWorktree(
+      id: "/tmp/repo-outgoing-target/wt-selected",
+      name: "wt-selected",
+      repoRoot: "/tmp/repo-outgoing-target"
+    )
+    let targeted = makeWorktree(
+      id: "/tmp/repo-outgoing-target/wt-targeted",
+      name: "wt-targeted",
+      repoRoot: "/tmp/repo-outgoing-target"
+    )
+    let repository = makeRepository(id: "/tmp/repo-outgoing-target", worktrees: [selected, targeted])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(selected.id)
+    let outgoingRequests = LockIsolated<[Worktree]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.outgoingChangesClient.open = { worktree, _, _ in
+        outgoingRequests.withValue { $0.append(worktree) }
+      }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.repositories(.delegate(.showOutgoingChanges(targeted.id))))
+    await store.finish()
+
+    #expect(outgoingRequests.value == [targeted])
   }
 
   @Test(.dependencies) func closePullRequestDispatchesAction() async {
@@ -1069,12 +1132,6 @@ struct AppFeatureCommandPaletteTests {
     }
   }
 
-}
-
-private struct OutgoingChangesRequest: Equatable {
-  let worktree: Worktree
-  let pullRequestURL: String
-  let baseRefName: String
 }
 
 private func makeWorktree(id: String, name: String, repoRoot: String = "/tmp/repo") -> Worktree {

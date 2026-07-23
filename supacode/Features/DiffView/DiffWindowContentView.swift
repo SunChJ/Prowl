@@ -15,12 +15,26 @@ struct DiffWindowContentView: View {
   }
 
   private var emptyState: (title: String, description: String) {
-    switch state.comparison {
-    case .workingTree:
+    switch state.mode {
+    case .uncommitted:
       ("No Changes", "Working directory is clean")
     case .outgoing:
-      ("No Outgoing Changes", "This branch has no committed changes relative to its pull request base")
+      ("No Outgoing Changes", outgoingEmptyDescription)
     }
+  }
+
+  private var outgoingEmptyDescription: String {
+    guard let base = state.outgoingBase else {
+      return "This branch has no committed changes relative to its base"
+    }
+    return "This branch has no committed changes relative to \(base.displayName) (\(base.source.label))"
+  }
+
+  private var modeSelection: Binding<DiffMode> {
+    Binding(
+      get: { state.mode },
+      set: { state.setMode($0) },
+    )
   }
 
   private var resolvedDiffAppearance: DiffAppearance {
@@ -67,6 +81,29 @@ struct DiffWindowContentView: View {
             in: resolvedKeybindings
           ))
       }
+      ToolbarItem(id: "diffMode", placement: .principal) {
+        Picker("Diff Mode", selection: modeSelection) {
+          Text("Uncommitted")
+            .tag(DiffMode.uncommitted)
+            .help(
+              AppShortcuts.helpText(
+                title: "Show uncommitted changes",
+                commandID: AppShortcuts.CommandID.showDiff,
+                in: resolvedKeybindings
+              ))
+          Text("Outgoing")
+            .tag(DiffMode.outgoing)
+            .help(
+              AppShortcuts.helpText(
+                title: "Show outgoing changes",
+                commandID: AppShortcuts.CommandID.outgoingChanges,
+                in: resolvedKeybindings
+              ))
+        }
+        .pickerStyle(.segmented)
+        .disabled(!state.canSwitchModes)
+        .help("Switch between uncommitted and outgoing changes")
+      }
       ToolbarItem(id: "diffStyle", placement: .primaryAction) {
         Picker("Diff Style", selection: $diffStyleRaw) {
           Image(systemName: "square.split.2x1")
@@ -97,9 +134,17 @@ struct DiffWindowContentView: View {
 
   private var fileListSidebar: some View {
     List(selection: selectedFileID) {
-      ForEach(state.changedFiles) { file in
-        FileRowView(file: file)
-          .tag(file.id)
+      if let base = state.outgoingBase {
+        Section {
+          fileRows
+        } header: {
+          Text("vs \(base.displayName) · \(base.source.label)")
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help("Comparing committed changes against \(base.displayName) (\(base.source.label))")
+        }
+      } else {
+        fileRows
       }
     }
     .listStyle(.sidebar)
@@ -119,6 +164,13 @@ struct DiffWindowContentView: View {
           description: Text(emptyState.description),
         )
       }
+    }
+  }
+
+  private var fileRows: some View {
+    ForEach(state.changedFiles) { file in
+      FileRowView(file: file)
+        .tag(file.id)
     }
   }
 

@@ -101,6 +101,7 @@ enum AppShortcuts {
     static let stopScript = "stop_script"
     static let checkForUpdates = "check_for_updates"
     static let showDiff = "show_diff"
+    static let outgoingChanges = "outgoing_changes"
     static let toggleCanvas = "toggle_canvas"
     static let toggleShelf = "toggle_shelf"
     static let selectNextShelfBook = "select_next_shelf_book"
@@ -204,6 +205,7 @@ enum AppShortcuts {
   static let stopRunScript = AppShortcut(key: ".", modifiers: .command)
   static let checkForUpdates = AppShortcut(key: "u", modifiers: [.command, .shift])
   static let showDiff = AppShortcut(key: "y", modifiers: [.command, .shift])
+  static let outgoingChanges = AppShortcut(key: "y", modifiers: [.command, .option, .shift])
   static let startSearch = AppShortcut(key: "f", modifiers: .command)
   static let findNext = AppShortcut(key: "g", modifiers: .command)
   static let findPrevious = AppShortcut(key: "g", modifiers: [.command, .shift])
@@ -363,6 +365,7 @@ enum AppShortcuts {
     .init(actionTitle: "Stop Script", shortcut: stopRunScript),
     .init(actionTitle: "Check for Updates", shortcut: checkForUpdates),
     .init(actionTitle: "Show Diff", shortcut: showDiff),
+    .init(actionTitle: "Outgoing Changes", shortcut: outgoingChanges),
     .init(actionTitle: "Open Worktree", shortcut: openFinder),
     .init(actionTitle: "Open Repository", shortcut: openRepository),
     .init(actionTitle: "Select Terminal Tab 1", shortcut: selectTerminalTab1),
@@ -475,6 +478,12 @@ enum AppShortcuts {
       title: "Show Diff",
       scope: .configurableAppAction,
       shortcut: showDiff
+    ),
+    .init(
+      id: CommandID.outgoingChanges,
+      title: "Outgoing Changes",
+      scope: .configurableAppAction,
+      shortcut: outgoingChanges
     ),
     .init(
       id: CommandID.toggleCanvas,
@@ -988,6 +997,7 @@ enum AppShortcuts {
     stopRunScript,
     checkForUpdates,
     showDiff,
+    outgoingChanges,
     toggleCanvas,
     toggleShelf,
     selectNextShelfBook,
