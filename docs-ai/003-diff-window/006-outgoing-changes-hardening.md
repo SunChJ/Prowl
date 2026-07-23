@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-07-24 |
-| **Primary PRs** | #586 (base work, superseded), hardening PR TBD |
+| **Primary PRs** | #586 (base work, superseded), #610 (hardening) |
 | **Related** | [005-outgoing-changes.md](005-outgoing-changes.md), `docs/components/diff-view.md` |
 
 ## Background
