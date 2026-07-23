@@ -11,25 +11,25 @@ import Testing
 /// changes so that churn never floods the terminal event stream.
 @MainActor
 struct AgentEntryEmissionDedupTests {
-  @Test func identicalEntryIsEmittedOnce() {
+  @Test func rawStateAndBookkeepingChangesDoNotReEmit() {
     let fixture = makeFixture()
     var received: [ActiveAgentEntry] = []
     fixture.state.onAgentEntryChanged = { received.append($0) }
 
-    // Same visible entry, differing only in internal bookkeeping.
+    // Same visible entry; only rawState (fallbackState) and internal bookkeeping
+    // differ across the three emits.
     var paneState = PaneAgentState(detectedAgent: .claude, fallbackState: .working, state: .working)
     fixture.state.emitAgentEntry(surfaceID: fixture.pane.id, tabId: fixture.tabId, state: paneState)
     paneState.sessionMissStreak = 1
     paneState.fallbackState = .idle
     fixture.state.emitAgentEntry(surfaceID: fixture.pane.id, tabId: fixture.tabId, state: paneState)
-
-    // fallbackState is part of the visible entry (CLI raw_state); the streak
-    // alone must not re-emit.
     paneState.sessionMissStreak = 2
     fixture.state.emitAgentEntry(surfaceID: fixture.pane.id, tabId: fixture.tabId, state: paneState)
 
-    #expect(received.count == 2)
-    #expect(received.map(\.rawState) == [.working, .idle])
+    // rawState never renders in the sidebar, so a raw-only flicker must not
+    // re-emit; only the first (visible) entry is forwarded.
+    #expect(received.count == 1)
+    #expect(received.map(\.rawState) == [.working])
   }
 
   @Test func visibleChangeStillEmits() {

@@ -281,7 +281,10 @@ extension WorktreeTerminalState {
       onAgentEntryRemoved?(surfaceID)
       return
     }
-    guard entry != lastEmittedAgentEntriesBySurface[surfaceID] else { return }
+    // Dedup ignoring `rawState`: it flickers every poll while an agent animates
+    // and drives no UI, so emitting on it alone would re-render the sidebar
+    // continuously. Visible changes (displayState, title, session, …) still emit.
+    guard lastEmittedAgentEntriesBySurface[surfaceID]?.equalsIgnoringRawState(entry) != true else { return }
     lastEmittedAgentEntriesBySurface[surfaceID] = entry
     onAgentEntryChanged?(entry)
   }
