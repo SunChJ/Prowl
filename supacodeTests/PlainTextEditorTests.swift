@@ -31,6 +31,92 @@ struct PlainTextEditorTests {
     #expect(textView.string == "abdef")
     #expect(textView.selectedRange() == NSRange(location: 2, length: 0))
   }
+
+  @Test func staleRefreshDuringMiddleTypingKeepsTextAndCaret() throws {
+    let fixture = PlainTextEditorFixture(text: "abcdef")
+    let textView = try #require(fixture.textView)
+    textView.setSelectedRange(NSRange(location: 3, length: 0))
+    textView.insertText("X", replacementRange: NSRange(location: NSNotFound, length: 0))
+    #expect(fixture.text == "abcXdef")
+    #expect(textView.selectedRange() == NSRange(location: 4, length: 0))
+
+    fixture.text = "abcdef"
+    fixture.update()
+
+    #expect(textView.string == "abcXdef")
+    #expect(textView.selectedRange() == NSRange(location: 4, length: 0))
+
+    fixture.text = "abcXdef"
+    fixture.update()
+
+    #expect(textView.string == "abcXdef")
+    #expect(textView.selectedRange() == NSRange(location: 4, length: 0))
+  }
+
+  @Test func staleRefreshDuringEndTypingKeepsTextAndCaret() throws {
+    let fixture = PlainTextEditorFixture(text: "abcdef")
+    let textView = try #require(fixture.textView)
+    textView.setSelectedRange(NSRange(location: 6, length: 0))
+    textView.insertText("X", replacementRange: NSRange(location: NSNotFound, length: 0))
+    #expect(fixture.text == "abcdefX")
+
+    fixture.text = "abcdef"
+    fixture.update()
+
+    #expect(textView.string == "abcdefX")
+
+    fixture.text = "abcdefX"
+    fixture.update()
+
+    #expect(textView.string == "abcdefX")
+    #expect(textView.selectedRange() == NSRange(location: 7, length: 0))
+  }
+
+  @Test func staleRefreshDuringMiddleDeletionKeepsTextAndCaret() throws {
+    let fixture = PlainTextEditorFixture(text: "abcdef")
+    let textView = try #require(fixture.textView)
+    textView.setSelectedRange(NSRange(location: 3, length: 0))
+    textView.deleteBackward(nil)
+    #expect(fixture.text == "abdef")
+    #expect(textView.selectedRange() == NSRange(location: 2, length: 0))
+
+    fixture.text = "abcdef"
+    fixture.update()
+
+    #expect(textView.string == "abdef")
+
+    fixture.text = "abdef"
+    fixture.update()
+
+    #expect(textView.string == "abdef")
+    #expect(textView.selectedRange() == NSRange(location: 2, length: 0))
+  }
+
+  @Test func externalChangeAfterEditRoundTripStillApplies() throws {
+    let fixture = PlainTextEditorFixture(text: "abcdef")
+    let textView = try #require(fixture.textView)
+    textView.setSelectedRange(NSRange(location: 6, length: 0))
+    textView.insertText("X", replacementRange: NSRange(location: NSNotFound, length: 0))
+    fixture.update()
+
+    fixture.text = "xyz"
+    fixture.update()
+
+    #expect(textView.string == "xyz")
+    #expect(textView.selectedRange() == NSRange(location: 3, length: 0))
+  }
+
+  @Test func externalChangeClampsSelectionToNewLength() throws {
+    let fixture = PlainTextEditorFixture(text: "abcdef")
+    let textView = try #require(fixture.textView)
+    textView.setSelectedRange(NSRange(location: 4, length: 2))
+
+    fixture.text = "abc"
+    fixture.update()
+
+    #expect(textView.string == "abc")
+    #expect(textView.selectedRange() == NSRange(location: 3, length: 0))
+  }
 }
 
 @MainActor
