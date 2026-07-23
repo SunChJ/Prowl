@@ -1,7 +1,7 @@
 # Custom Actions, Scripts & Run Commands
 
 > Turn repeated commands into buttons and hotkeys: the Run Script, the automatic
-> Setup/Archive scripts, and per-repo Custom Commands.
+> Setup/Archive scripts, and global or per-repo Custom Commands.
 
 **Keywords:** custom command, custom action, run script, setup script, archive script, button, hotkey, PROWL_WORKTREE_PATH, PROWL_ROOT_PATH, close on success, split, terminal input, swift build, npm test, claude -p
 
@@ -16,7 +16,7 @@ Prowl has four distinct mechanisms for "run my command":
 | **Run Script** | one per repo | on demand (`⌘R`) | Repo Settings → Run Script |
 | **Setup Script** | one per repo | automatically after a worktree is created | Repo Settings → Setup Script |
 | **Archive Script** | one per repo | automatically before a worktree is archived | Repo Settings → Archive Script |
-| **Custom Commands** | many per repo | on demand (button / hotkey / palette) | Repo Settings → Custom Commands |
+| **Custom Commands** | many, global or per repo | on demand (button / hotkey / palette) | Settings → Commands or Repo Settings → Custom Commands |
 
 All scripts run with these **environment variables** injected:
 - `PROWL_WORKTREE_PATH` — the active worktree's directory.
@@ -47,7 +47,7 @@ worktree stays active, with the error shown.
 
 ## Custom Commands (buttons + hotkeys)
 
-The most flexible option: define **multiple** named actions per repository, each
+The most flexible option: define **multiple** named actions globally or per repository, each
 with its own SF Symbol icon, shell command, execution mode, optional **close on
 success**, and optional **keyboard shortcut**.
 
@@ -62,14 +62,27 @@ success**, and optional **keyboard shortcut**.
 **Close on success** auto-closes the tab/split shortly after the command exits 0
 (a brief delay lets you see the final output).
 
-**Hotkeys:** each Custom Command can carry a `⌘`/`⇧`/`⌥`/`⌃` shortcut. Within the
-focused repository, a Custom Command's hotkey takes **precedence over app
-shortcuts**; conflicts (with reserved app actions or other custom commands) are
-detected when you record the key, and you choose Replace / Cancel.
+**Visibility and order:** local and Global commands both appear, even when their
+titles match. Enabled local commands appear first in their repository order, followed
+by enabled Global commands in their Global order. Turning a command off preserves its
+configuration, position, and hotkey, but removes it from the toolbar, Worktrees menu,
+Command Palette, and hotkey dispatch until re-enabled.
 
-**Where they appear:** as buttons in the UI, in the Worktrees menu, and in the
-[Command Palette](command-palette.md). Custom Commands are also stored per repo,
-in `~/.prowl/repo/<repo-name>/prowl.onevcat.json`.
+**Global gates:** a Global command appears in a repository only when it is enabled
+globally and enabled for that repository. New Global commands are enabled in every
+repository by default; Repo Settings can turn an individual Global command off without
+changing its definition. Global command fields and order are edited only in
+Settings → Commands.
+
+**Shortcut precedence:** a repo command wins a collision with a Global command's
+shortcut. Custom Command hotkeys take **precedence over app shortcuts**; conflicts
+(with reserved app actions or other custom commands) are detected when you record the
+key, and you choose Replace / Cancel.
+
+**Where they appear:** enabled commands appear in the window toolbar, the Worktrees
+menu, and the [Command Palette](command-palette.md). Global commands are stored in
+`~/.prowl/global.onevcat.json`; local commands remain in
+`~/.prowl/repo/<repo-name>/prowl.onevcat.json`.
 
 ## Example uses
 
@@ -81,14 +94,15 @@ in `~/.prowl/repo/<repo-name>/prowl.onevcat.json`.
 
 ## Settings recap
 
-- Per repo (Repo Settings): `runScript`, `setupScript`, `archiveScript`, and the
-  Custom Commands list.
+- Per repo (Repo Settings): `runScript`, `setupScript`, `archiveScript`, local Custom
+  Commands, and per-repository visibility of Global Commands.
+- Global (Settings → Commands): Global Custom Commands and their order.
 - Global: `showRunButtonInToolbar`, `showDefaultEditorInToolbar`.
 
 ## Gotchas for agents
 
 - The three named scripts (`runScript`/`setupScript`/`archiveScript`) are
-  **one each per repo**; Custom Commands are the "many" option.
+  **one each per repo**; Custom Commands are the "many" option at either scope.
 - Scripts always have `PROWL_WORKTREE_PATH` and `PROWL_ROOT_PATH` available — use
   them instead of assuming a working directory.
 - "Terminal input" mode types into whatever pane is focused — be sure of the

@@ -42,6 +42,9 @@ extension AppFeature {
     if let effect = reduceCommandPaletteWorktreeActionDelegate(delegate, state: &state) {
       return effect
     }
+    if let effect = reduceCommandPaletteHandoffDelegate(delegate, state: &state) {
+      return effect
+    }
     if let effect = reduceCommandPalettePullRequestDelegate(delegate) {
       return effect
     }
@@ -271,8 +274,8 @@ extension AppFeature {
       }
       return .send(.repositories(.worktreeOrdering(.pinWorktree(worktreeID))))
 
-    case .runCustomCommand(let index):
-      return .send(.runCustomCommand(index))
+    case .runCustomCommand(let id):
+      return .send(.runCustomCommand(id))
 
     case .ghosttyCommand(let action):
       guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
@@ -304,6 +307,16 @@ extension AppFeature {
     default:
       return nil
     }
+  }
+
+  func reduceCommandPaletteHandoffDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action>? {
+    guard case .handOff = delegate else { return nil }
+    // One execution path: the palette row opens the same staged HUD as the
+    // toolbar capsule (docs-ai 049).
+    return openHandoffHud(state: &state)
   }
 
   func reduceCommandPalettePullRequestDelegate(

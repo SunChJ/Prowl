@@ -14,7 +14,7 @@ struct WorktreeDetailView: View {
     let showExtras: Bool
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
-    let customCommands: [UserCustomCommand]
+    let customCommands: [EffectiveCustomCommand]
     let isUpdateAvailable: Bool
     let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
@@ -30,7 +30,7 @@ struct WorktreeDetailView: View {
     let unseenNotificationWorktreeCount: Int
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
-    let customCommands: [UserCustomCommand]
+    let customCommands: [EffectiveCustomCommand]
     let isUpdateAvailable: Bool
     let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
@@ -44,7 +44,7 @@ struct WorktreeDetailView: View {
     let unseenNotificationWorktreeCount: Int
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
-    let customCommands: [UserCustomCommand]
+    let customCommands: [EffectiveCustomCommand]
   }
 
   @Bindable var store: StoreOf<AppFeature>
@@ -206,7 +206,8 @@ struct WorktreeDetailView: View {
       onRunCustomCommand: { index in
         store.send(.runCustomCommand(index))
       },
-      onActivateUpdateButton: { store.send(.updates(.activateUpdateButton)) }
+      onActivateUpdateButton: { store.send(.updates(.activateUpdateButton)) },
+      onHandOff: { store.send(.openHandoffHud) }
     )
   }
 
@@ -314,31 +315,28 @@ struct WorktreeDetailView: View {
               stopAction: { store.send(.stopRunScript) }
             )
           }
-          ForEach(inlineCommands, id: \.element.id) { index, command in
+          ForEach(inlineCommands, id: \.element.id) { _, command in
             UserCustomCommandToolbarButton(
-              title: command.resolvedTitle,
-              systemImage: command.resolvedSystemImage,
+              title: command.command.resolvedTitle,
+              systemImage: command.command.resolvedSystemImage,
+              source: command.source,
               shortcut: store.resolvedKeybindings.display(
-                for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+                for: command.keybindingID
               ),
-              isEnabled: command.hasRunnableCommand,
+              isEnabled: command.command.hasRunnableCommand,
               action: {
-                store.send(.runCustomCommand(index))
+                store.send(.runCustomCommand(command.id))
               }
             )
           }
           if !overflowCommands.isEmpty {
             CustomCommandOverflowButton(
-              entries: overflowCommands.map {
-                (index: $0.offset, command: $0.element)
-              },
+              entries: overflowCommands.map { $0.element },
               shortcutDisplay: { command in
-                store.resolvedKeybindings.display(
-                  for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
-                )
+                store.resolvedKeybindings.display(for: command.keybindingID)
               },
-              onRunCustomCommand: { index in
-                store.send(.runCustomCommand(index))
+              onRunCustomCommand: { id in
+                store.send(.runCustomCommand(id))
               }
             )
           }
@@ -358,6 +356,7 @@ struct WorktreeDetailView: View {
     }
     return WorktreeToolbarState(
       title: title,
+      agentsCapsule: agentsCapsuleState(repositories: input.repositories),
       statusToast: input.repositories.statusToast,
       pullRequest: matchedPullRequest(
         for: input.selectedWorktree,
@@ -377,6 +376,34 @@ struct WorktreeDetailView: View {
       availableUpdateVersion: input.availableUpdateVersion,
       showRunButtonInToolbar: input.showRunButtonInToolbar,
       showDefaultEditorInToolbar: input.showDefaultEditorInToolbar
+    )
+  }
+
+  /// The selected pane's detected agent, feeding the Agents capsule. nil
+  /// (no detected agent) renders the capsule disabled — reserved for the
+  /// future quick launcher (docs-ai 049).
+  private func agentsCapsuleState(repositories: RepositoriesFeature.State) -> AgentsCapsuleState? {
+    guard let worktree = repositories.selectedTerminalWorktree,
+      let state = terminalManager.stateIfExists(for: worktree.id),
+      let tabID = state.tabManager.selectedTabId,
+      let surfaceID = state.activeSurfaceID(for: tabID),
+      let paneState = state.surfaceAgentStates[surfaceID],
+      let agent = paneState.detectedAgent
+    else { return nil }
+    let iconSource =
+      paneState.iconLookupToken.flatMap(CommandIconMap.iconForFirstToken)
+      ?? CommandIconMap.iconForFirstToken(agent.iconLookupToken)
+    // Same naming rule as the Active Agents rows: launch aliases such as
+    // `omp` show their own name, not the semantic agent's (`pi`).
+    let displayName = ActiveAgentEntry.displayName(
+      iconLookupToken: paneState.iconLookupToken ?? agent.iconLookupToken,
+      agent: agent
+    )
+    return AgentsCapsuleState(
+      displayName: displayName,
+      iconSource: iconSource,
+      infoLine: "Pass this task to another agent in a new tab. "
+        + "\(displayName) writes its own briefing first."
     )
   }
 
@@ -802,6 +829,7 @@ struct WorktreeDetailView: View {
 
   struct WorktreeToolbarState {
     let title: DetailToolbarTitle
+    let agentsCapsule: AgentsCapsuleState?
     let statusToast: RepositoriesFeature.StatusToast?
     let pullRequest: GithubPullRequest?
     let codeHost: CodeHost
@@ -812,7 +840,7 @@ struct WorktreeDetailView: View {
     let showExtras: Bool
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
-    let customCommands: [UserCustomCommand]
+    let customCommands: [EffectiveCustomCommand]
     let isUpdateAvailable: Bool
     let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
@@ -833,11 +861,25 @@ struct WorktreeDetailView: View {
     let onDismissAllNotifications: () -> Void
     let onRunScript: () -> Void
     let onStopRunScript: () -> Void
-    let onRunCustomCommand: (Int) -> Void
+    let onRunCustomCommand: (EffectiveCustomCommand.Identifier) -> Void
     let onActivateUpdateButton: () -> Void
+    let onHandOff: () -> Void
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
+      // `.sharedBackgroundVisibility(.hidden)` keeps the capsule out of the
+      // navigation group's shared glass background — adjacent items in the
+      // same placement would otherwise merge with the branch title into one
+      // capsule-shaped control (a fixed ToolbarSpacer does not split the
+      // navigation group).
+      ToolbarItem(placement: .navigation) {
+        AgentsToolbarButton(
+          capsule: toolbarState.agentsCapsule,
+          onHandOff: onHandOff
+        )
+      }
+      .sharedBackgroundVisibility(.hidden)
+
       ToolbarItem(placement: .navigation) {
         WorktreeDetailTitleView(
           title: toolbarState.title,
@@ -996,8 +1038,8 @@ struct WorktreeDetailView: View {
 
       if !inlineEntries.isEmpty {
         ToolbarItemGroup {
-          ForEach(inlineEntries, id: \.command.id) { entry in
-            customCommandButton(entry.command, index: entry.index)
+          ForEach(inlineEntries) { entry in
+            customCommandButton(entry)
           }
         }
       }
@@ -1013,24 +1055,25 @@ struct WorktreeDetailView: View {
       }
     }
 
-    private var customCommandEntries: [(index: Int, command: UserCustomCommand)] {
-      Array(toolbarState.customCommands.enumerated()).map { (index: $0.offset, command: $0.element) }
+    private var customCommandEntries: [EffectiveCustomCommand] {
+      toolbarState.customCommands
     }
 
-    private func customCommandButton(_ command: UserCustomCommand, index: Int) -> some View {
+    private func customCommandButton(_ command: EffectiveCustomCommand) -> some View {
       UserCustomCommandToolbarButton(
-        title: command.resolvedTitle,
-        systemImage: command.resolvedSystemImage,
+        title: command.command.resolvedTitle,
+        systemImage: command.command.resolvedSystemImage,
+        source: command.source,
         shortcut: customCommandShortcutDisplay(for: command),
-        isEnabled: command.hasRunnableCommand,
+        isEnabled: command.command.hasRunnableCommand,
         action: {
-          onRunCustomCommand(index)
+          onRunCustomCommand(command.id)
         }
       )
     }
 
-    private func customCommandShortcutDisplay(for command: UserCustomCommand) -> String? {
-      shortcutDisplay(for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id))
+    private func customCommandShortcutDisplay(for command: EffectiveCustomCommand) -> String? {
+      shortcutDisplay(for: command.keybindingID)
     }
 
     private func shortcutDisplay(for commandID: String) -> String? {

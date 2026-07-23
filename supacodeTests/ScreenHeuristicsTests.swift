@@ -16,6 +16,25 @@ struct ScreenHeuristicsTests {
     #expect(DetectedAgent.pi.detectState(in: "Done") == .idle)
   }
 
+  @Test func piAskPromptIsBlocked() {
+    #expect(
+      DetectedAgent.pi.detectState(
+        in: """
+          ⠏ Clarifying combined list order ⟨esc⟩
+
+          ╭─ Ask ─────────────────────────────────────────────────────────────────────╮
+          │ Which order should the combined list use?                                  │
+          ├────────────────────────────────────────────────────────────────────────────┤
+          │   Repo first                                                             │
+          │    Global first                                                           │
+          ├────────────────────────────────────────────────────────────────────────────┤
+          │ Enter select · n note · ↑/↓ move · Esc cancel                              │
+          ╰────────────────────────────────────────────────────────────────────────────╯
+          """
+      ) == .blocked
+    )
+  }
+
   @Test func piIgnoresStaleWorkingMentionInCompletedOutput() {
     #expect(
       DetectedAgent.pi.detectState(
@@ -539,5 +558,230 @@ struct ScreenHeuristicsTests {
     #expect(DetectedAgent.qwen.detectState(in: "⠸ Writing file... (3s · ↓ 200 tokens · esc to cancel)") == .working)
     #expect(DetectedAgent.qwen.detectState(in: "done") == .idle)
     #expect(DetectedAgent.qwen.detectState(in: "> Type your message") == .idle)
+  }
+
+  @Test func qoderCLIDetection() {
+    // Exec permission menu captured from a live Qoder CLI 1.0.48 session; the
+    // second row is dynamic ("Always allow \"<cmd>\" for future sessions"),
+    // so detection must not require "Allow for this session".
+    #expect(
+      DetectedAgent.qoder.detectState(
+        in: """
+           Permission Required
+           Tool: Bash
+           Command: echo hello > /tmp/qoder_perm_test.txt
+           Allow this command to run? Redirection detected.
+            ❯ 1. Allow once
+              2. Always allow "echo" for future sessions [local]
+              3. Reject and type something
+              4. No
+          """
+      ) == .blocked
+    )
+    // Edit-style menu keeps the session-scoped row.
+    #expect(
+      DetectedAgent.qoder.detectState(
+        in: """
+           ❯ 1. Allow once
+             2. Allow for this session
+             3. Reject and type something
+             4. No
+          """
+      ) == .blocked
+    )
+    // Ask-user question dialog (live capture): dynamic options plus the fixed
+    // "Type Something" row under an "Asking User" header.
+    #expect(
+      DetectedAgent.qoder.detectState(
+        in: """
+           Asking User
+           Which color do you prefer?
+            ❯ 1. Red
+              2. Blue
+              3. Type Something
+           ↑↓ navigate · Enter select · Esc back
+          """
+      ) == .blocked
+    )
+    // Plan-ready dialog (live capture).
+    #expect(
+      DetectedAgent.qoder.detectState(
+        in: """
+          Qoder has written up a plan and is ready to execute. Would you like to proceed?
+           ❯ 1. Yes, start executing
+             2. Yes, execute as Goal (auto)
+             3. Refuse and say something
+             4. Reject plan
+          Ctrl+X to edit plan
+          """
+      ) == .blocked
+    )
+    // Working footer stays detected with the full input-box chrome below it
+    // (live capture: 6 persistent footer lines under the spinner).
+    #expect(
+      DetectedAgent.qoder.detectState(
+        in: """
+           ⠹ Thinking... (esc to cancel, 2s)
+          ─────────────────────────────
+           Shift+Tab to Accept Edits
+          ─────────────────────────────
+           >   Type your message or @path/to/file
+          ─────────────────────────────
+           Ultimate Model · ctx ░░░░░░░░░░ 0% · ~/Sync/github/Prowl
+          """
+      ) == .working
+    )
+    // Resolved dialogs vanish entirely (ephemeral overlays); the transcript
+    // only keeps the tool row, so a finished screen is idle.
+    #expect(
+      DetectedAgent.qoder.detectState(
+        in: """
+           x Bash(echo hello > /tmp/qoder_perm_test.txt)
+             └ User cancelled.
+          ─────────────────────────────
+           Shift+Tab to Accept Edits
+          ─────────────────────────────
+           >   Type your message or @path/to/file
+          ─────────────────────────────
+           Ultimate Model · ctx ▓▓░░░░░░░░ 17% · ~/Sync/github/Prowl
+          """
+      ) == .idle
+    )
+    // Single labels in prose must not block; a quoted footer without the
+    // braille spinner must not read as working.
+    #expect(DetectedAgent.qoder.detectState(in: "Allow once\nNo") == .idle)
+    #expect(DetectedAgent.qoder.detectState(in: "Thinking... (esc to cancel, 12s)") == .idle)
+  }
+
+  @Test func grokDetection() {
+    // Permission chrome (labels verified against Grok Build 0.2.101 binary).
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          Allow once
+          Always allow this command
+          Always allow on all sessions
+          Reject
+          """
+      ) == .blocked
+    )
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          Yes, and always allow this exact command
+          Yes, allow all edits
+          """
+      ) == .blocked
+    )
+    // Incomplete permission chrome must not trip blocked.
+    #expect(DetectedAgent.grok.detectState(in: "Allow once") == .idle)
+    #expect(DetectedAgent.grok.detectState(in: "please approve the design") == .idle)
+
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          Pending: question
+          Which approach should we take?
+          """
+      ) == .blocked
+    )
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          Awaiting your input
+          Pick an option?
+          ↑↓ select
+          """
+      ) == .blocked
+    )
+
+    #expect(DetectedAgent.grok.detectState(in: "Loading") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "Loading… streaming response") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "deferred: tool calls in flight") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "Working tools") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "These tasks are still running:") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "⠋ Reading AgentClassifier.swift") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "✱ Searching… codebase") == .working)
+
+    #expect(DetectedAgent.grok.detectState(in: "Awaiting input") == .idle)
+    #expect(DetectedAgent.grok.detectState(in: "Awaiting your input") == .idle)
+    #expect(DetectedAgent.grok.detectState(in: "Type a message") == .idle)
+    #expect(DetectedAgent.grok.detectState(in: "done") == .idle)
+  }
+
+  // Fixtures below are verbatim screen captures from Grok Build 0.2.101
+  // running inside a Prowl pane.
+  @Test func grokDetectionMatchesCapturedDialogChrome() {
+    // Bash tool approval — no "Allow once" / "Always allow …" rows here.
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          ◆ Sleep 12s then print DONE_MARKER… 51s                    52s ⇣21.1k [↓][stop]
+          ┃  Sleep 12s then print DONE_MARKER
+          ┃  sleep 12 && echo DONE_MARKER
+          ┃
+          ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)
+          ┃  2 (○) Yes, proceed
+          ┃  3 (○) No, reject (type to add feedback)
+          ┃
+          1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel
+          """
+      ) == .blocked
+    )
+    // File-edit approval.
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          ┃  Allow Edit to /tmp/grok_probe.txt?
+          ┃
+          ┃  1 (○) Yes, and don't ask again for anything (always-approve mode)
+          ┃  2 (○) Yes, allow all edits during this session
+          ┃  3 (○) Yes
+          ┃  4 (●) No, reject (type to add feedback)
+          ┃
+          1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel
+          """
+      ) == .blocked
+    )
+    // Ask-user question dialog.
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          ◆ Waiting on answers for When working in this repo, which response style do you prefer?
+          ┃  When working in this repo, which response style do you prefer?
+          ┃
+          ┃  1 (○) Concise                 Short answers, minimal explanation unless needed
+          ┃  2 (○) Balanced (Recommended)  Brief conclusion plus key reasoning when useful
+          ┃  z (○) Type your answer here
+          ┃
+          ┃  ↑/↓ navigate · y copy                                        Enter:submit
+          Esc:unselect  │  Tab:scrollback  │  Shift+x:dismiss
+          """
+      ) == .blocked
+    )
+    // Streaming / tool-execution status lines use a braille spinner.
+    #expect(DetectedAgent.grok.detectState(in: "⠧ Waiting for response… 0.0s        0.0s ⇣20.9k [stop]") == .working)
+    #expect(DetectedAgent.grok.detectState(in: "⠦ Thinking… 0.2s                    1.0s ⇣21.0k [stop]") == .working)
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: "⠙ Sleep 12s then print DONE_MARKER… 20s                21s ⇣21.3k [↓][stop]"
+      ) == .working
+    )
+    // Idle prompt: input frame, model label, shortcut footer.
+    #expect(
+      DetectedAgent.grok.detectState(
+        in: """
+          ╭──────────────────────────────────────────────╮
+          │ ❯                                            │
+          ╰────────────────────────────── Grok 4.5 (high) ─╯
+          Shift+Tab:mode  │  Ctrl+x:shortcuts
+          """
+      ) == .idle
+    )
+    // Completed-turn summary in scrollback stays idle.
+    #expect(DetectedAgent.grok.detectState(in: "Worked for 3.6s.                stop  [hooks: 1]") == .idle)
+    // A lone yes-row in transcript prose must not read as an approval dialog.
+    #expect(DetectedAgent.grok.detectState(in: "The user said yes, proceed with the plan.") == .idle)
+    #expect(DetectedAgent.grok.detectState(in: "I chose to reject the first approach.") == .idle)
   }
 }

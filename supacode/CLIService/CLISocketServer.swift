@@ -207,8 +207,9 @@ final class CLISocketServer {
       let decoder = JSONDecoder()
       let envelope = try decoder.decode(CommandEnvelope.self, from: requestData)
 
-      // Route to handler
-      let response = await router.route(envelope)
+      // Route to handler with connection-scoped caller identity
+      let context = CLICommandContext(callerProcessID: Self.peerProcessID(clientFD))
+      let response = await router.route(envelope, context: context)
 
       // Encode and send response
       let encoder = JSONEncoder()
@@ -225,6 +226,22 @@ final class CLISocketServer {
 
   static func isAllowedPeerUID(_ peerUID: uid_t, currentUID: uid_t = geteuid()) -> Bool {
     peerUID == currentUID
+  }
+
+  /// PID of the peer process on a connected AF_UNIX socket, or nil when the
+  /// kernel cannot report one.
+  static func peerProcessID(_ clientFD: Int32) -> pid_t? {
+    #if canImport(Darwin)
+      var pid: pid_t = 0
+      var length = socklen_t(MemoryLayout<pid_t>.size)
+      // SOL_LOCAL / LOCAL_PEERPID from <sys/un.h>.
+      guard getsockopt(clientFD, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else {
+        return nil
+      }
+      return pid
+    #else
+      return nil
+    #endif
   }
 
   private static func clientHasCurrentUser(_ clientFD: Int32) -> Bool {

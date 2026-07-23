@@ -16,8 +16,9 @@
 | 2026-06-09 | Visible labels + caption for the Advanced fields (TextField labels are not rendered under `.roundedBorder`) | PR #427 |
 | 2026-06-27 | On-device Foundation Model branch-name suggestion added to the same dialog | PR #518 (owned by [044](../044-foundation-model-branch-names/000-plan.md)) |
 | 2026-06-28 | Add to Prowl popover redesign: drop zone, Browse, Clone-from-URL form with clipboard prefill, Add Workspace; auto-select after add — see [005-add-to-prowl-clone.md](005-add-to-prowl-clone.md) | PR #520 |
+| 2026-07-16 | Manual delete dialog remembers the last confirmed branch choice; automatic-cleanup branch deletion split into `deleteBranchOnAutomaticCleanup` (default off) with legacy-key migration — see the follow-up section in [003-safe-branch-deletion-and-cleanup.md](003-safe-branch-deletion-and-cleanup.md) | PR #592 |
 
-## Outcome & current state (as of 2026-07-12)
+## Outcome & current state (as of 2026-07-16)
 
 - **Git plumbing** — `supacode/Clients/Git/GitClient.swift`: `branchRefs(for:)` returns
   local + upstream refs; `deleteLocalBranch(_:_:force:)` backs both `-d` and confirmed
@@ -48,17 +49,20 @@
   (default `.merge`); `supacode/Features/Settings/Models/MergedWorktreeAction.swift`;
   per-repo optionals in `supacode/Features/Settings/Models/RepositorySettings.swift`.
   UI: `supacode/Features/Settings/Views/WorktreeSettingsView.swift` (merged-action
-  picker, copy-flag toggles, branch-delete toggle),
+  picker, copy-flag toggles, automatic-cleanup branch toggle),
   `GithubSettingsView.swift` (merge strategy), `RepositorySettingsView.swift`
   ("Global (…)" override pickers).
 - **Merged-PR automation** —
   `supacode/Features/Repositories/Reducer/RepositoriesFeature+GithubIntegration.swift`
   switches on `state.mergedWorktreeAction`; `.delete` passes
-  `deleteBranch: deleteBranchOnDeleteWorktree && prowlCreatedWorktreeIDs.contains(id)`.
+  `deleteBranch: deleteBranchOnAutomaticCleanup && prowlCreatedWorktreeIDs.contains(id)`.
 - **Deletion** —
   `supacode/Features/Repositories/Reducer/RepositoriesFeature+WorktreeLifecycle.swift`
-  (delete + `ForceDeleteBranchRequest` flow) and
+  (manual last-choice persistence via `deleteBranchOnManualWorktreeDelete`, delete +
+  `ForceDeleteBranchRequest` flow) and
   `supacode/Features/Repositories/Views/DeleteWorktreeConfirmationView.swift`.
+  Manual confirmation remembers only submitted choices; automatic branch cleanup is
+  separately controlled and restricted to Prowl-created worktrees.
 - **History navigation** — stacks and `navigateWorktreeHistory` in
   `supacode/Features/Repositories/Reducer/RepositoriesFeature.swift` /
   `RepositoriesFeature+Selection.swift` (50-entry cap); menu commands in

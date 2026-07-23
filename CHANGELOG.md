@@ -1,5 +1,65 @@
 # Changelog
 
+## [2026.7.22](https://github.com/onevcat/Prowl/releases/tag/v2026.7.22)
+
+This release introduces cross-agent handoff, letting you pass work from one coding agent to another without losing context.
+
+### New
+- Hand off a task between coding agents: open the command palette and choose "Hand Off…", or use the new Agents capsule in the worktree toolbar. The current agent writes a briefing, then the chosen agent launches in a background tab to continue — your current tab stays focused, and a notification lets you jump over once it's ready. Any detected agent can hand off its work; the receiving side currently supports Claude Code and Codex, with more agents coming in future releases.
+- Handoffs are also available from the CLI: run `prowl handoff save` or `prowl handoff to <agent>` inside an agent's terminal to capture and hand off its current state.
+- Right-click a row in the Active Agents panel for a new context menu: Hand Off…, Mark as Read, Copy Path, and Reveal in Finder.
+
+### Improved
+- The Agents capsule now shows the launch alias you actually used to start an agent (e.g. "omp") instead of always showing the underlying agent name, and got a cleaner look (plain font, sparkles icon for the no-agent state).
+- The Hand Off waiting screen is now non-modal, so you can keep using the terminal — for example to approve a permission prompt — while a briefing is being prepared.
+
+### Fixed
+- Fixed handoff requests occasionally being attributed to the wrong pane or session.
+- Fixed pre-transport handoff CLI errors not rendering as proper JSON output.
+
+## [2026.7.20](https://github.com/onevcat/Prowl/releases/tag/v2026.7.20)
+
+### New
+
+- Global Custom Commands: create custom commands in Settings that apply across all repositories instead of duplicating them per repo. Repository-local commands still take precedence if a name or shortcut conflicts.
+- Prowl now detects Qoder CLI as a coding agent, so it shows up in Active Agents and `prowl agents` with correct working/blocked status.
+
+### Improved
+
+- Custom Commands settings now let you enable/disable local commands and opt out of a Global command per repository (Repo Settings → Custom Commands → **This Repo** checkbox), with a clearer insertion indicator while reordering.
+- If a repository-local command and a Global command share the same name, Prowl now shows both instead of hiding one.
+
+### Fixed
+
+- Ask-style permission prompts from the OMP agent no longer show as "working" — they're now correctly reported as blocked until you respond.
+- Cancelling a running shell command is more reliable and no longer waits on stream teardown to terminate the process.
+
+## [2026.7.17](https://github.com/onevcat/Prowl/releases/tag/v2026.7.17)
+
+Grok Build agent detection and a reworked branch-deletion memory setting.
+
+### New
+- Prowl now detects Grok Build (xAI's `grok` CLI) as an agent, showing its icon in the tab and tracking status transitions between idle, working, and blocked (e.g. bash approval, ask-user prompts).
+
+### Improved
+- When manually deleting a worktree, the "Also delete local branch" toggle now remembers your last confirmed choice for next time.
+- Automatic branch cleanup (for merged PRs and expired archived worktrees) is now controlled by its own separate setting in Worktree Settings, independent of the manual delete toggle.
+
+## [2026.7.14](https://github.com/onevcat/Prowl/releases/tag/v2026.7.14)
+
+### New
+- `prowl list` and `prowl agents` now show short handles (`t1`, `p1`, ...) for tabs and panes in their text output, and `--tab`/`--pane` selectors accept these short handles as well as UUIDs, making it much easier to reference panes across CLI calls. JSON output is unchanged and still uses full UUIDs.
+- `prowl agents` can now report a detected agent's native session details—session ID, transcript path, and detection confidence—for supported CLI agents (Claude Code, Codex, Amp, Copilot, and others), without requiring any hook setup.
+
+### Fixed
+- Active Agents no longer shows the wrong pane's title when multiple agents run in split panes of the same tab; each row now reflects its own pane's title.
+- Worktree deletion errors are now surfaced instead of being silently treated as success, and worktrees that failed to delete due to a locked or stuck registration no longer reappear after the next refresh.
+- Repository roots opened through a symbolic link are now resolved to their canonical Git root, so branches and worktrees load consistently no matter which path was used to open the repo.
+- The sidebar now updates correctly after running `git init` inside a plain (non-Git) folder that was already open in Prowl.
+
+### Improved
+- Removed the non-functional Update Channel picker from Settings → Updates, since Prowl has shipped a single release channel for a while.
+
 ## [2026.7.10](https://github.com/onevcat/Prowl/releases/tag/v2026.7.10)
 
 This release focuses on notification control, PR status reliability, and a few editor and terminal integration additions.

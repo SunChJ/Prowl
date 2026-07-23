@@ -50,14 +50,15 @@ struct WorktreeSettingsView: View {
         Section("Cleanup") {
           VStack(alignment: .leading) {
             Toggle(
-              "Preselect branch deletion for Prowl-created worktrees",
-              isOn: $store.deleteBranchOnDeleteWorktree
+              "Delete local branch during automatic cleanup",
+              isOn: $store.deleteBranchOnAutomaticCleanup
             )
-            .help("Preselect local branch deletion for worktrees created by Prowl.")
-            Text("External worktrees stay unchecked by default. Remote branches must be deleted on GitHub.")
-              .foregroundStyle(.secondary)
-            Text("Uncommitted changes will be lost.")
-              .foregroundStyle(.red)
+            .help("Delete the local branch when automatic cleanup removes a Prowl-created worktree.")
+            Text(
+              "Applies when merged or expired worktrees are cleaned up automatically, and only to branches "
+                + "created by Prowl. The manual delete dialog remembers your last choice instead."
+            )
+            .foregroundStyle(.secondary)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           Picker(selection: $store.mergedWorktreeAction) {
@@ -71,7 +72,8 @@ struct WorktreeSettingsView: View {
             case .archive:
               Text("Archives worktrees when their pull requests are merged.")
             case .delete:
-              Text("Follows the \"Also delete local branch when deleting a worktree\" option above.")
+              let uncommittedChangesWarning = Text("Uncommitted changes will be lost.").foregroundStyle(.red)
+              Text("Deletes worktrees when their pull requests are merged. \(uncommittedChangesWarning)")
             case nil:
               EmptyView()
             }

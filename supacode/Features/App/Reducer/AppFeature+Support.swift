@@ -59,7 +59,10 @@ extension AppFeature {
   ) -> Bool {
     switch delegate {
     case .selectWorktree, .jumpToLatestUnread, .viewArchivedWorktrees,
-      .newWorktree, .toggleCanvas, .renameBranch:
+      .newWorktree, .toggleCanvas, .renameBranch, .handOff:
+      // `.handOff` opens the HUD, whose key-capture view takes first
+      // responder; restoring terminal focus here would steal it back and
+      // leak arrow keys into the live agent session.
       return true
     default:
       return false
@@ -118,17 +121,30 @@ extension AppFeature {
 
   func resolvedKeybindings(
     settings: SettingsFeature.State,
-    customCommands: [UserCustomCommand]
+    customCommands: [EffectiveCustomCommand]
   ) -> ResolvedKeybindingMap {
     let migration = LegacyCustomCommandShortcutMigration.migrate(commands: customCommands)
     var resolved = KeybindingResolver.resolve(
-      schema: .appResolverSchema(customCommands: customCommands),
+      schema: .appResolverSchema(effectiveCustomCommands: customCommands),
       userOverrides: settings.keybindingUserOverrides,
       migratedOverrides: migration.overrides
     )
-    let customCommandIDs = customCommands.map { command in
-      LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+    let localBindings: [Keybinding] =
+      customCommands
+      .filter { $0.source == .repository }
+      .compactMap { resolved.keybinding(for: $0.keybindingID) }
+    for command in customCommands where command.source == .global {
+      guard let binding = resolved.keybinding(for: command.keybindingID), localBindings.contains(binding) else {
+        continue
+      }
+      guard let resolvedBinding = resolved.binding(for: command.keybindingID) else { continue }
+      resolved.bindingsByCommandID[command.keybindingID] = ResolvedKeybinding(
+        command: resolvedBinding.command,
+        binding: nil,
+        source: resolvedBinding.source
+      )
     }
+    let customCommandIDs = customCommands.map(\.keybindingID)
     let customCommandBindings = customCommandIDs.compactMap { resolved.keybinding(for: $0) }
     guard !customCommandBindings.isEmpty else {
       return resolved
@@ -175,17 +191,21 @@ extension AppFeature {
   /// the normal `worktreeUserSettingsLoaded` action and the Canvas focus path.
   func applyWorktreeUserSettings(
     _ settings: UserRepositorySettings,
+    globalSettings: UserGlobalSettings,
     into state: inout State
   ) -> Effect<Action> {
-    state.selectedCustomCommands = UserRepositorySettings.normalizedCommands(settings.customCommands)
+    state.selectedCustomCommands = EffectiveCustomCommand.resolve(
+      repositoryCommands: settings.customCommands,
+      globalCommands: globalSettings.customCommands,
+      disabledGlobalCommandIDs: settings.disabledGlobalCommandIDs
+    )
     state.resolvedKeybindings = resolvedKeybindings(
       settings: state.settings,
       customCommands: state.selectedCustomCommands
     )
     let userOverrideConflicts = AppShortcuts.userOverrideConflicts(in: state.selectedCustomCommands)
     let shortcuts: [UserCustomShortcut] = state.selectedCustomCommands.compactMap { command in
-      let commandID = LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
-      return state.resolvedKeybindings.keybinding(for: commandID)?.userCustomShortcut
+      state.resolvedKeybindings.keybinding(for: command.keybindingID)?.userCustomShortcut
     }
     return .run { _ in
       let logger = SupaLogger("Shortcuts")

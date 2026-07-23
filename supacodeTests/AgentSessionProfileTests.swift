@@ -34,6 +34,25 @@ struct AgentSessionProfileTests {
     #expect(roots.map(\.path) == ["/Users/me/.claude/projects/-private-tmp-prowl556-review----caf-"])
   }
 
+  @Test func qoderReusesClaudeLayoutUnderQoderRoot() {
+    // Verified against Qoder CLI 1.0.48: ~/.qoder/projects/<sanitized cwd>/<uuid>.jsonl.
+    let profile = AgentSessionProfile.profile(for: .qoder)
+    let cwd = URL(fileURLWithPath: "/Users/me/Sync/github/Prowl", isDirectory: true)
+    #expect(
+      profile.candidateRoots(home, cwd, now, now).map(\.path)
+        == ["/Users/me/.qoder/projects/-Users-me-Sync-github-Prowl"]
+    )
+    #expect(profile.candidateRoots(home, nil, now, now).isEmpty)
+    let id = "40e2d9c9-dca4-4969-a9a0-56fb423e58e6"
+    let path = "/Users/me/.qoder/projects/-Users-me-Sync-github-Prowl/\(id).jsonl"
+    let parsed = profile.parsePath(path)
+    #expect(parsed?.id == id)
+    #expect(parsed?.transcriptPath?.path == path)
+    // Sibling checkpoint directories and foreign roots must not parse.
+    #expect(profile.parsePath("/Users/me/.qoder/projects/-Users-me-Sync-github-Prowl/\(id)") == nil)
+    #expect(profile.parsePath("/Users/me/.claude/projects/-Users-me-Sync-github-Prowl/\(id).jsonl") == nil)
+  }
+
   @Test func piAndDroidRootsKeepDotsAndSpaces() {
     let cwd = URL(fileURLWithPath: "/Users/me/.prowl/repos/My App", isDirectory: true)
     let piRoots = AgentSessionProfile.profile(for: .pi).candidateRoots(home, cwd, now, now)
@@ -419,6 +438,164 @@ struct AgentSessionProfileTests {
         == ["/Users/me/.qwen/projects/-private-tmp-prowl-556-enc/chats"]
     )
     #expect(qwen.fallbackRoots(home, cwd).map(\.path) == ["/Users/me/.qwen/projects"])
+  }
+
+  @Test func grokActiveSessionsYieldsPidMatchedSession() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-grok-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let id = "019f5e7e-4269-7e33-9eaf-d535ff8ebafb"
+    let cwd = "/Users/me/App"
+    let encoded = "%2FUsers%2Fme%2FApp"
+    let sessionDir = root.appending(path: ".grok/sessions/\(encoded)/\(id)")
+    try FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try "{}".write(to: sessionDir.appending(path: "events.jsonl"), atomically: true, encoding: .utf8)
+    let processStartedAt = Date(timeIntervalSince1970: 1_783_800_000)
+    let payload = """
+      [
+        {
+          "session_id": "\(id)",
+          "pid": 4242,
+          "cwd": "\(cwd)",
+          "opened_at": "2026-07-14T02:39:21.306116Z"
+        }
+      ]
+      """
+    try payload.write(
+      to: root.appending(path: ".grok/active_sessions.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let session = GrokActiveSessions.session(
+      home: root,
+      pid: 4242,
+      processStartedAt: processStartedAt
+    )
+    #expect(session?.id == id)
+    #expect(session?.source == .processLog)
+    #expect(session?.confidence == .exact)
+    // Only events.jsonl exists — the transcript falls back to it.
+    #expect(
+      session?.transcriptPath?.resolvingSymlinksInPath()
+        == sessionDir.appending(path: "events.jsonl").resolvingSymlinksInPath()
+    )
+    #expect(GrokActiveSessions.session(home: root, pid: 9999, processStartedAt: processStartedAt) == nil)
+
+    // chat_history.jsonl is the conversation log; prefer it once present.
+    try "{}".write(to: sessionDir.appending(path: "chat_history.jsonl"), atomically: true, encoding: .utf8)
+    let refreshed = GrokActiveSessions.session(
+      home: root,
+      pid: 4242,
+      processStartedAt: processStartedAt
+    )
+    #expect(
+      refreshed?.transcriptPath?.resolvingSymlinksInPath()
+        == sessionDir.appending(path: "chat_history.jsonl").resolvingSymlinksInPath()
+    )
+  }
+
+  @Test func grokActiveSessionsRejectsStaleClaimsFromReusedPids() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-grok-stale-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: root.appending(path: ".grok"),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let processStartedAt = Date(timeIntervalSince1970: 1_783_800_000)
+    let payload = """
+      [
+        {
+          "session_id": "11111111-2222-3333-4444-555555555555",
+          "pid": 4242,
+          "cwd": "/Users/me/App",
+          "opened_at": "2026-07-01T00:00:00.000000Z"
+        }
+      ]
+      """
+    try payload.write(
+      to: root.appending(path: ".grok/active_sessions.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(GrokActiveSessions.session(home: root, pid: 4242, processStartedAt: processStartedAt) == nil)
+  }
+
+  @Test func grokActiveSessionsRejectsMissingOrUnparseableOpenedAt() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-grok-opened-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: root.appending(path: ".grok"),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let processStartedAt = Date(timeIntervalSince1970: 1_783_800_000)
+
+    try """
+    [{"session_id":"11111111-2222-3333-4444-555555555555","pid":4242,"cwd":"/Users/me/App"}]
+    """.write(to: root.appending(path: ".grok/active_sessions.json"), atomically: true, encoding: .utf8)
+    #expect(GrokActiveSessions.session(home: root, pid: 4242, processStartedAt: processStartedAt) == nil)
+
+    try """
+    [{"session_id":"11111111-2222-3333-4444-555555555555","pid":4242,"cwd":"/Users/me/App","opened_at":"not-a-date"}]
+    """.write(to: root.appending(path: ".grok/active_sessions.json"), atomically: true, encoding: .utf8)
+    #expect(GrokActiveSessions.session(home: root, pid: 4242, processStartedAt: processStartedAt) == nil)
+  }
+
+  @Test func grokRootsUsePercentEncodedWorkingDirectory() {
+    let cwd = URL(fileURLWithPath: "/Users/me/My App", isDirectory: true)
+    let grok = AgentSessionProfile.profile(for: .grok)
+    #expect(
+      grok.candidateRoots(home, cwd, now, now).map(\.path)
+        == ["/Users/me/.grok/sessions/%2FUsers%2Fme%2FMy%20App"]
+    )
+    #expect(grok.fallbackRoots(home, cwd).map(\.path) == ["/Users/me/.grok/sessions"])
+  }
+
+  @Test func grokParsePathResolvesSessionDirectoryFromNestedFiles() {
+    let profile = AgentSessionProfile.profile(for: .grok)
+    let id = "019f5e7e-4269-7e33-9eaf-d535ff8ebafb"
+    // Create a temp tree so transcript resolution can succeed for events.
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-grok-parse-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let sessionDir = root.appending(path: ".grok/sessions/%2FUsers%2Fme%2FApp/\(id)")
+    try? FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try? "{}".write(to: sessionDir.appending(path: "events.jsonl"), atomically: true, encoding: .utf8)
+
+    let parsedEvents = profile.parsePath(sessionDir.appending(path: "events.jsonl").path)
+    #expect(parsedEvents?.id == id)
+    // Every non-chat open file canonicalizes to the conversation log.
+    #expect(parsedEvents?.transcriptPath?.lastPathComponent == "chat_history.jsonl")
+
+    try? FileManager.default.createDirectory(
+      at: sessionDir.appending(path: "terminal"),
+      withIntermediateDirectories: true
+    )
+    let nestedPath = sessionDir.appending(path: "terminal/call-1.log").path
+    FileManager.default.createFile(atPath: nestedPath, contents: Data())
+    let parsedNested = profile.parsePath(nestedPath)
+    #expect(parsedNested?.id == id)
+    // Non-transcript files resolve to the conversation log at the root.
+    #expect(parsedNested?.transcriptPath?.lastPathComponent == "chat_history.jsonl")
+    #expect(parsedNested?.transcriptPath?.deletingLastPathComponent().lastPathComponent == id)
+
+    #expect(profile.parsePath("/Users/me/.grok/sessions/%2FUsers%2Fme%2FApp/not-a-uuid/events.jsonl") == nil)
+  }
+
+  @Test func grokParsePathAnchorsOnDotGrokSessionsNotEarlierSessionsComponent() {
+    let profile = AgentSessionProfile.profile(for: .grok)
+    let id = "019f5e7e-4269-7e33-9eaf-d535ff8ebafb"
+    // An earlier `sessions` path component must not steal the index.
+    let path =
+      "/Volumes/sessions/home/.grok/sessions/%2FUsers%2Fme%2FApp/\(id)/events.jsonl"
+    #expect(profile.parsePath(path)?.id == id)
+
+    // An earlier unrelated `.grok` component must also be skipped.
+    let earlierDotGrok =
+      "/Volumes/.grok/home/.grok/sessions/%2FUsers%2Fme%2FApp/\(id)/events.jsonl"
+    #expect(profile.parsePath(earlierDotGrok)?.id == id)
   }
 
   @Test func geminiParsePathRequiresSessionPrefix() {

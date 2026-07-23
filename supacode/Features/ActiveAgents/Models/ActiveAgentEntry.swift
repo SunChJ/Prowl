@@ -28,6 +28,13 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   let displayState: AgentDisplayState
   let lastChangedAt: Date
   var displayName: String {
+    Self.displayName(iconLookupToken: iconLookupToken, agent: agent)
+  }
+
+  /// The user-facing agent name: the launch command token (e.g. `omp`) when it
+  /// maps to a known icon, else the semantic agent name (e.g. `pi`). Shared by
+  /// the panel rows and the toolbar Agents capsule so both always agree.
+  static func displayName(iconLookupToken: String, agent: DetectedAgent) -> String {
     let trimmed = iconLookupToken.trimmingCharacters(in: .whitespacesAndNewlines)
     guard
       !trimmed.isEmpty,

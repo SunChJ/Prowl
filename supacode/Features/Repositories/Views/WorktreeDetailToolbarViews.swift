@@ -122,6 +122,7 @@ struct RunScriptToolbarButton: View {
 struct UserCustomCommandToolbarButton: View {
   let title: String
   let systemImage: String
+  let source: CustomCommandSource
   let shortcut: String?
   let isEnabled: Bool
   let action: () -> Void
@@ -149,19 +150,28 @@ struct UserCustomCommandToolbarButton: View {
 
   private var helpText: String {
     guard isEnabled else {
-      return "\(title) (Set command script in Repository Settings)"
+      switch source {
+      case .repository:
+        return "\(title) (Set command script in Repository Settings)"
+      case .global:
+        return "\(title) (Set command script in Settings → Commands)"
+      }
     }
+    var text = title
     if let shortcut {
-      return "\(title) (\(shortcut))"
+      text = "\(title) (\(shortcut))"
     }
-    return title
+    if let note = source.tooltipNote {
+      text += " — \(note)"
+    }
+    return text
   }
 }
 
 struct CustomCommandOverflowButton: View {
-  let entries: [(index: Int, command: UserCustomCommand)]
-  let shortcutDisplay: (UserCustomCommand) -> String?
-  let onRunCustomCommand: (Int) -> Void
+  let entries: [EffectiveCustomCommand]
+  let shortcutDisplay: (EffectiveCustomCommand) -> String?
+  let onRunCustomCommand: (EffectiveCustomCommand.Identifier) -> Void
 
   @State private var isPresented = false
   private let maxVisibleRows = 10
@@ -178,10 +188,10 @@ struct CustomCommandOverflowButton: View {
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
-          ForEach(entries, id: \.command.id) { entry in
+          ForEach(entries) { entry in
             Button {
               isPresented = false
-              onRunCustomCommand(entry.index)
+              onRunCustomCommand(entry.id)
             } label: {
               HStack(spacing: 8) {
                 Image(systemName: entry.command.resolvedSystemImage)
@@ -191,7 +201,7 @@ struct CustomCommandOverflowButton: View {
                 Text(entry.command.resolvedTitle)
                   .lineLimit(1)
                 Spacer(minLength: 0)
-                if let shortcut = shortcutDisplay(entry.command) {
+                if let shortcut = shortcutDisplay(entry) {
                   Text(shortcut)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
@@ -204,6 +214,7 @@ struct CustomCommandOverflowButton: View {
             }
             .buttonStyle(.plain)
             .disabled(!entry.command.hasRunnableCommand)
+            .help(helpText(for: entry))
           }
         }
         .padding(8)
@@ -216,6 +227,17 @@ struct CustomCommandOverflowButton: View {
     let visibleRows = min(maxVisibleRows, max(entries.count, 1))
     return CGFloat(visibleRows) * 32 + 16
   }
+
+  private func helpText(for entry: EffectiveCustomCommand) -> String {
+    var text = entry.command.resolvedTitle
+    if let shortcut = shortcutDisplay(entry) {
+      text = "\(text) (\(shortcut))"
+    }
+    if let note = entry.source.tooltipNote {
+      text += " — \(note)"
+    }
+    return text
+  }
 }
 
 @MainActor
@@ -226,6 +248,11 @@ private struct WorktreeToolbarPreview: View {
   init() {
     toolbarState = WorktreeDetailView.WorktreeToolbarState(
       title: DetailToolbarTitle(kind: .branch(name: "feature/toolbar-preview")),
+      agentsCapsule: AgentsCapsuleState(
+        displayName: "codex",
+        iconSource: CommandIconMap.iconForFirstToken("codex"),
+        infoLine: "Pass this task to another agent in a new tab. codex will summarize its progress first."
+      ),
       statusToast: nil,
       pullRequest: nil,
       codeHost: .github,
@@ -237,16 +264,18 @@ private struct WorktreeToolbarPreview: View {
       runScriptEnabled: true,
       runScriptIsRunning: false,
       customCommands: [
-        UserCustomCommand(
-          title: "Test",
-          systemImage: "checkmark.circle.fill",
-          command: "swift test",
-          execution: .shellScript,
-          shortcut: UserCustomShortcut(
-            key: "u",
-            modifiers: UserCustomShortcutModifiers()
-          )
-        )
+        EffectiveCustomCommand(
+          source: .repository,
+          command: UserCustomCommand(
+            title: "Test",
+            systemImage: "checkmark.circle.fill",
+            command: "swift test",
+            execution: .shellScript,
+            shortcut: UserCustomShortcut(
+              key: "u",
+              modifiers: UserCustomShortcutModifiers()
+            )
+          ))
       ],
       isUpdateAvailable: true,
       isUpdateReadyToInstall: false,
@@ -279,7 +308,8 @@ private struct WorktreeToolbarPreview: View {
         onRunScript: {},
         onStopRunScript: {},
         onRunCustomCommand: { _ in },
-        onActivateUpdateButton: {}
+        onActivateUpdateButton: {},
+        onHandOff: {}
       )
     }
     .environment(commandKeyObserver)

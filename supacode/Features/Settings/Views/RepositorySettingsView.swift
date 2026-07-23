@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Sharing
 import SwiftUI
 
 struct RepositorySettingsView: View {
@@ -7,54 +8,7 @@ struct RepositorySettingsView: View {
   @State private var isBranchPickerPresented = false
   @State private var branchSearchText = ""
   @State private var githubIdentityViewModel = RepositoryGithubIdentityViewModel()
-
-  @State var selectedCustomCommandID: UserCustomCommand.ID?
-  @State var recordingCustomCommandID: UserCustomCommand.ID?
-  @State var recorderMonitor: Any?
-  @State var invalidMessageByCommandID: [UserCustomCommand.ID: String] = [:]
-  @State var pendingShortcutConflict: CustomCommandShortcutConflict?
-  @State var pendingShortcut: PendingCustomShortcut?
-  @State var iconPickerCommandID: UserCustomCommand.ID?
-  @State var customCommandsFocusAnchor: NSView?
-  @State var popoverRefocusTask: Task<Void, Never>?
-  @State var commandEditorCommandID: UserCustomCommand.ID?
-  @State var editingNameCommandID: UserCustomCommand.ID?
-  @FocusState var focusedNameEditorCommandID: UserCustomCommand.ID?
-
-  let keyTokenResolver = ShortcutKeyTokenResolver()
-
-  static let symbolPresets = [
-    "terminal",
-    "terminal.fill",
-    "play.fill",
-    "stop.fill",
-    "hammer.fill",
-    "shippingbox.fill",
-    "doc.text.fill",
-    "sparkles",
-    "bolt.fill",
-    "flame.fill",
-    "wand.and.stars",
-    "wrench.and.screwdriver.fill",
-    "checkmark.circle.fill",
-    "xmark.circle.fill",
-    "exclamationmark.triangle.fill",
-    "ladybug.fill",
-    "clock.fill",
-    "repeat",
-    "arrow.clockwise",
-    "folder.fill",
-    "archivebox.fill",
-    "paperplane.fill",
-    "cloud.fill",
-    "tray.and.arrow.down.fill",
-    "tray.and.arrow.up.fill",
-    "icloud.and.arrow.up.fill",
-    "square.and.arrow.up.fill",
-    "arrow.triangle.2.circlepath",
-    "folder.badge.plus",
-    "doc.badge.plus",
-  ]
+  @Shared(.userGlobalSettings) private var globalSettings
 
   var body: some View {
     let baseRefOptions =
@@ -370,12 +324,26 @@ struct RepositorySettingsView: View {
 
       if store.showsCustomCommandsSettings {
         Section {
-          customCommandsEditor
+          CustomCommandsEditor(
+            commands: $store.userSettings.customCommands,
+            source: .repository,
+            keybindingUserOverrides: store.keybindingUserOverrides,
+            globalCommands: globalSettings.customCommands,
+            globalCommandEnabled: { commandID in
+              Binding(
+                get: { store.userSettings.isGlobalCommandEnabled(commandID) },
+                set: { isEnabled in
+                  store.send(.setGlobalCommandEnabled(commandID, isEnabled))
+                }
+              )
+            }
+          )
         } header: {
           VStack(alignment: .leading, spacing: 4) {
             Text("Custom Commands")
             Text(
-              "Repository-local terminal actions. Custom command shortcuts take precedence in this repository."
+              "Repository and global terminal actions. Enabled commands appear in repository order, "
+                + "then global order. Edit global commands in Settings → Commands."
             )
             .foregroundStyle(.secondary)
           }
@@ -387,56 +355,6 @@ struct RepositorySettingsView: View {
     .task {
       store.send(.task)
       await githubIdentityViewModel.load()
-      syncSelectedCommandID(with: store.userSettings.customCommands)
-    }
-    .onChange(of: store.userSettings.customCommands) { _, commands in
-      syncSelectedCommandID(with: commands)
-      clearRemovedCommandState(using: commands)
-    }
-    .onChange(of: selectedCustomCommandID) { _, selectedID in
-      if editingNameCommandID != selectedID {
-        editingNameCommandID = nil
-      }
-      focusedNameEditorCommandID = nil
-      if let iconPickerCommandID, iconPickerCommandID != selectedID {
-        self.iconPickerCommandID = nil
-      }
-      if let commandEditorCommandID, commandEditorCommandID != selectedID {
-        self.commandEditorCommandID = nil
-      }
-      if let recordingCustomCommandID, recordingCustomCommandID != selectedID {
-        self.recordingCustomCommandID = nil
-      }
-    }
-    .onChange(of: recordingCustomCommandID) { _, commandID in
-      if commandID == nil {
-        stopRecorderMonitor()
-      } else {
-        startRecorderMonitor()
-      }
-    }
-    .onDisappear {
-      stopRecorderMonitor()
-      popoverRefocusTask?.cancel()
-      popoverRefocusTask = nil
-      focusedNameEditorCommandID = nil
-    }
-    .alert(
-      "Shortcut Conflict",
-      isPresented: isShortcutConflictAlertPresented,
-      presenting: pendingShortcutConflict
-    ) { _ in
-      Button("Replace", role: .destructive) {
-        applyPendingShortcut(replacingConflict: true)
-      }
-      Button("Cancel", role: .cancel) {
-        clearPendingShortcutConflict()
-      }
-    } message: { conflict in
-      Text(
-        "“\(conflict.newCommandTitle)” and “\(conflict.existingCommandTitle)” both use \(conflict.shortcutDisplay)."
-          + "\n\nChoose Replace to keep the new shortcut and clear the conflicting command."
-      )
     }
   }
 }

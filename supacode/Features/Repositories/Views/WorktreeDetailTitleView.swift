@@ -73,10 +73,10 @@ struct WorktreeDetailTitleView: View {
       Image(systemName: (title.supportsRename && isHovered) ? "pencil" : title.systemImage)
         .foregroundStyle(.secondary)
         .accessibilityHidden(true)
-        .frame(width: 18, height: 18)
+        .frame(width: 20, height: 20)
       Text(title.text)
     }
-    .font(.headline)
+    .font(.title3.weight(.medium))
   }
 }
 

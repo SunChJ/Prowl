@@ -20,6 +20,7 @@ struct CLITerminalPaneSnapshot: Sendable {
   let handle: Int?
   let title: String
   let cwd: String?
+  let agent: String?
 }
 
 extension WorktreeTerminalState {
@@ -35,11 +36,13 @@ extension WorktreeTerminalState {
         ).workingDirectory?.path(percentEncoded: false)
 
         let title = paneTitle(surfaceID: paneID, fallbackTabTitle: tab.displayTitle)
+        let agent = surfaceAgentStates[paneID]?.detectedAgent?.rawValue
         return CLITerminalPaneSnapshot(
           id: paneID,
           handle: registerTargetHandle(for: paneID),
           title: title,
-          cwd: cwd
+          cwd: cwd,
+          agent: agent
         )
       }
 
@@ -101,6 +104,17 @@ struct CLISendTabSnapshot {
 }
 
 extension WorktreeTerminalState {
+  /// Shell child PIDs for every live pane, for CLI caller-pane resolution.
+  func shellPIDsBySurface() -> [UUID: pid_t] {
+    var pids: [UUID: pid_t] = [:]
+    for (surfaceID, view) in surfaces {
+      if let pid = view.bridge.childPID() {
+        pids[surfaceID] = pid
+      }
+    }
+    return pids
+  }
+
   func makeCLISendSnapshot(for tabId: TerminalTabID) -> CLISendTabSnapshot? {
     let paneIDs = trees[tabId]?.leaves().map(\.id) ?? []
     guard !paneIDs.isEmpty else { return nil }

@@ -15,7 +15,7 @@ extension RepositoriesFeature {
       .workspaceCreation:
       return .none
 
-    case .activeAgents(.entryTapped(let id)):
+    case .activeAgents(.entryTapped(let id)), .activeAgents(.handOffTapped(let id)):
       guard let entry = state.activeAgents.entries[id: id] else { return .none }
       if state.isShowingCanvas {
         requestCanvasFocus(.tab(entry.tabID), openedWorktreeID: entry.worktreeID, state: &state)
@@ -40,6 +40,12 @@ extension RepositoriesFeature {
         } else {
           await send(.selectWorktree(entry.worktreeID, focusTerminal: true))
         }
+      }
+
+    case .activeAgents(.markAsReadTapped(let id)):
+      guard let entry = state.activeAgents.entries[id: id] else { return .none }
+      return .run { _ in
+        await terminalClient.markNotificationsReadForSurface(entry.worktreeID, entry.surfaceID)
       }
 
     case .activeAgents:
@@ -136,7 +142,7 @@ extension RepositoriesFeature {
           continue
         }
         let shouldDeleteBranch =
-          settingsFile.global.deleteBranchOnDeleteWorktree
+          settingsFile.global.deleteBranchOnAutomaticCleanup
           && state.prowlCreatedWorktreeIDs.contains(worktree.id)
         deleteEffects.append(
           .send(

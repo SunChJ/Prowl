@@ -162,7 +162,7 @@ struct SettingsFilePersistenceTests {
     #expect(settings.global.analyticsEnabled == true)
     #expect(settings.global.crashReportsEnabled == true)
     #expect(settings.global.githubIntegrationEnabled == true)
-    #expect(settings.global.deleteBranchOnDeleteWorktree == false)
+    #expect(settings.global.deleteBranchOnAutomaticCleanup == false)
     #expect(settings.global.mergedWorktreeAction == nil)
     #expect(settings.global.promptForWorktreeCreation == true)
     #expect(settings.global.defaultWorktreeBaseDirectoryPath == nil)
@@ -225,6 +225,55 @@ struct SettingsFilePersistenceTests {
     }
 
     #expect(settings.global.mergedWorktreeAction == nil)
+  }
+
+  @Test(.dependencies) func legacyDeleteBranchOnDeleteWorktreeMigratesToAutomaticCleanup() throws {
+    // Files written before the setting was split carry only the legacy key;
+    // an opted-in user keeps branch deletion during automatic cleanup.
+    let encoded = try JSONEncoder().encode(GlobalSettings.default)
+    var globalDict = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    globalDict.removeValue(forKey: "deleteBranchOnAutomaticCleanup")
+    globalDict["deleteBranchOnDeleteWorktree"] = true
+    let data = try JSONSerialization.data(withJSONObject: ["global": globalDict, "repositories": [:]])
+    let storage = MutableTestStorage(initialData: data)
+
+    let settings: SettingsFile = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.settingsFile) var settings: SettingsFile
+      return settings
+    }
+
+    #expect(settings.global.deleteBranchOnAutomaticCleanup == true)
+  }
+
+  @Test(.dependencies) func explicitDeleteBranchOnAutomaticCleanupWinsOverLegacyKey() throws {
+    let encoded = try JSONEncoder().encode(GlobalSettings.default)
+    var globalDict = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    globalDict["deleteBranchOnAutomaticCleanup"] = false
+    globalDict["deleteBranchOnDeleteWorktree"] = true
+    let data = try JSONSerialization.data(withJSONObject: ["global": globalDict, "repositories": [:]])
+    let storage = MutableTestStorage(initialData: data)
+
+    let settings: SettingsFile = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.settingsFile) var settings: SettingsFile
+      return settings
+    }
+
+    #expect(settings.global.deleteBranchOnAutomaticCleanup == false)
+  }
+
+  @Test func encodesAutomaticCleanupSettingWithoutLegacyKey() throws {
+    var settings = GlobalSettings.default
+    settings.deleteBranchOnAutomaticCleanup = true
+
+    let encoded = try JSONEncoder().encode(settings)
+    let globalDict = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+    #expect(globalDict["deleteBranchOnAutomaticCleanup"] as? Bool == true)
+    #expect(globalDict["deleteBranchOnDeleteWorktree"] == nil)
   }
 
   @Test(.dependencies) func roundTripsExplicitNotificationSound() throws {

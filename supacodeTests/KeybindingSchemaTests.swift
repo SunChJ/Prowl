@@ -6,6 +6,36 @@ import Testing
 
 @MainActor
 struct KeybindingSchemaTests {
+  @Test func globalCustomCommandsUseSeparateBindingNamespace() {
+    let local = EffectiveCustomCommand(
+      source: .repository,
+      command: UserCustomCommand(
+        id: "build",
+        title: "Build",
+        systemImage: "hammer",
+        command: "make build",
+        execution: .shellScript,
+        shortcut: nil
+      )
+    )
+    let global = EffectiveCustomCommand(
+      source: .global,
+      command: UserCustomCommand(
+        id: "build",
+        title: "Build Everywhere",
+        systemImage: "globe",
+        command: "make build",
+        execution: .shellScript,
+        shortcut: nil
+      )
+    )
+
+    let schema = KeybindingSchemaDocument.appResolverSchema(effectiveCustomCommands: [local, global])
+
+    #expect(schema.commands.map(\.id).contains("custom_command.build"))
+    #expect(schema.commands.map(\.id).contains("custom_command.global.build"))
+  }
+
   @Test func schemaEncodeDecodeRoundTripsWithVersion() throws {
     let schema = KeybindingSchemaDocument(
       version: 1,

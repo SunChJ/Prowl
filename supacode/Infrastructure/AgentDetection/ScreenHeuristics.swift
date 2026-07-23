@@ -28,8 +28,12 @@ extension DetectedAgent {
       return detectDroid(screen)
     case .amp:
       return detectAmp(screen)
+    case .qoder:
+      return detectQoder(screen)
     case .qwen:
       return detectQwen(screen)
+    case .grok:
+      return detectGrok(screen)
     }
   }
 }
@@ -54,7 +58,18 @@ nonisolated private func recentLines(_ content: String, limit: Int) -> String {
 }
 
 nonisolated private func detectPi(_ content: String) -> AgentRawState {
-  hasPiWorkingLine(content) ? .working : .idle
+  if hasPiAskPrompt(content) {
+    return .blocked
+  }
+  return hasPiWorkingLine(content) ? .working : .idle
+}
+
+nonisolated private func hasPiAskPrompt(_ content: String) -> Bool {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
+  return lines.contains { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    return trimmed.contains("Enter select") && trimmed.contains("Esc cancel")
+  }
 }
 
 nonisolated private func hasPiWorkingLine(_ content: String) -> Bool {
@@ -514,6 +529,139 @@ nonisolated private func detectQwen(_ content: String) -> AgentRawState {
     return .working
   }
   return .idle
+}
+
+// Qoder CLI (verified 1.0.48, live session): blocked dialogs are ephemeral
+// overlays that vanish once answered, so full-window matching is safe.
+// Permission menus always pair "Allow once" with "Reject and type something"
+// (the second row varies by tool: "Allow for this session" for edits,
+// "Always allow \"<cmd>\" for future sessions" for exec/MCP). Ask-user
+// questions render an "Asking User" header with a fixed "Type Something"
+// row; the plan-ready dialog pairs "Yes, start executing" with "Reject
+// plan". An active turn shows a braille spinner footer ending in
+// "(esc to cancel, <elapsed>)". Multi-token matches only — single labels
+// like "Allow once" or "No" can appear in transcript text.
+nonisolated private func detectQoder(_ content: String) -> AgentRawState {
+  let lower = content.lowercased()
+  if hasQoderPermissionMenu(lower) || hasQoderQuestionPrompt(lower) || hasQoderPlanReadyPrompt(lower) {
+    return .blocked
+  }
+  if hasQoderWorkingFooter(content) {
+    return .working
+  }
+  return .idle
+}
+
+nonisolated private func hasQoderPermissionMenu(_ lower: String) -> Bool {
+  lower.contains("allow once") && lower.contains("reject and type something")
+}
+
+nonisolated private func hasQoderQuestionPrompt(_ lower: String) -> Bool {
+  lower.contains("asking user") && lower.contains("type something")
+}
+
+nonisolated private func hasQoderPlanReadyPrompt(_ lower: String) -> Bool {
+  lower.contains("yes, start executing") && lower.contains("reject plan")
+}
+
+nonisolated private func hasQoderWorkingFooter(_ content: String) -> Bool {
+  content.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.unicodeScalars.first else { return false }
+    return (0x2800...0x28FF).contains(Int(first.value))
+      && trimmed.lowercased().contains("(esc to cancel,")
+  }
+}
+
+// Grok Build (verified 0.2.101): cancel mid-turn is Ctrl+C (Esc is a no-op).
+// Approval dialogs pair numbered yes-rows ("Yes, proceed", "Yes, allow all
+// edits during this session") with a reject row ("No, reject (type to add
+// feedback)") above a "Ctrl+o:always-approve" footer; ask-user dialogs render
+// "Waiting on answers for …" with a "Type your answer here" row. Working
+// turns show a braille spinner line ("⠧ Thinking… 0.2s"). Multi-token matches
+// only — single words like "approve" or "loading" appear in transcript text.
+nonisolated private func detectGrok(_ content: String) -> AgentRawState {
+  if hasGrokPermissionPrompt(content) || hasGrokQuestionPrompt(content) {
+    return .blocked
+  }
+  if hasGrokWorkingSignal(content) {
+    return .working
+  }
+  return .idle
+}
+
+nonisolated private func hasGrokPermissionPrompt(_ content: String) -> Bool {
+  let lower = content.lowercased()
+  // Tool approval dialog (verified on-screen, 0.2.101): a yes-row and a
+  // reject-row are always rendered together. Requiring the pair keeps
+  // transcript prose containing one of the phrases from matching.
+  let hasApprovalYesRow =
+    lower.contains("yes, proceed")
+    || lower.contains("yes, allow")
+    || lower.contains("yes, always allow")
+    || lower.contains("(always-approve mode)")
+  let hasApprovalNoRow =
+    lower.contains("no, reject")
+    || lower.contains("no, and tell grok")
+  if hasApprovalYesRow && hasApprovalNoRow {
+    return true
+  }
+  // Footer rendered only while an approval dialog is pending.
+  if lower.contains("ctrl+o:always-approve") {
+    return true
+  }
+  let hasAllowOnce = lower.contains("allow once")
+  let hasAlwaysAllow =
+    lower.contains("always allow this command")
+    || lower.contains("always allow on all sessions")
+    || lower.contains("always allow this exact command")
+  let hasReject = lower.contains("reject")
+  if hasAllowOnce && (hasAlwaysAllow || hasReject) {
+    return true
+  }
+  if hasAlwaysAllow && hasReject {
+    return true
+  }
+  if lower.contains("yes, and always allow this exact command")
+    || lower.contains("yes, allow all edits")
+  {
+    return true
+  }
+  return false
+}
+
+nonisolated private func hasGrokQuestionPrompt(_ content: String) -> Bool {
+  let lower = content.lowercased()
+  // Ask-user dialog (verified on-screen, 0.2.101): "◆ Waiting on answers for
+  // <question>" header plus a free-form "z (○) Type your answer here" row.
+  return lower.contains("waiting on answers for")
+    || lower.contains("type your answer here")
+    || lower.contains("pending: question")
+    || lower.contains("pending: other (type your own answer")
+    || (lower.contains("awaiting your input")
+      && (lower.contains("?") || lower.contains("select") || lower.contains("enter")))
+}
+
+nonisolated private func hasGrokWorkingSignal(_ content: String) -> Bool {
+  let lower = content.lowercased()
+  if lower.contains("tool calls in flight")
+    || lower.contains("working tools")
+    || lower.contains("still running:")
+  {
+    return true
+  }
+  // Status flag rendered while a turn is in progress (distinct from the
+  // idle "Awaiting input" / "Awaiting your input" flags).
+  if content.split(separator: "\n", omittingEmptySubsequences: false).contains(where: { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    return trimmed == "Loading" || trimmed.hasPrefix("Loading…") || trimmed.hasPrefix("Loading...")
+  }) {
+    return true
+  }
+  if hasBrailleSpinner(content) || hasSpinnerActivity(content) {
+    return true
+  }
+  return false
 }
 
 nonisolated private func hasBrailleSpinner(_ content: String) -> Bool {

@@ -82,7 +82,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case deleteWorktree(Worktree.ID, Repository.ID)
     case renameBranch
     case openRepositorySettings(Repository.ID)
-    case runCustomCommand(index: Int, commandID: String, systemImage: String)
+    case runCustomCommand(EffectiveCustomCommand.Identifier, systemImage: String)
+    case handOff
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -168,7 +169,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .outgoingChanges,
       .deleteWorktree,
       .openRepositorySettings,
-      .runCustomCommand:
+      .runCustomCommand,
+      .handOff:
       return nil
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

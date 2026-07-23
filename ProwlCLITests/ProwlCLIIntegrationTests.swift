@@ -1539,7 +1539,273 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
   }
 
+  // MARK: - Handoff command tests
+
+  func testHandoffSaveRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-save")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: makeHandoffPayload(action: .save))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "save", "--worktree", "App", "--note", "wip", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .handoff(let input) = envelope.command {
+      XCTAssertEqual(input.action, .save)
+      XCTAssertEqual(input.selector, .worktree("App"))
+      XCTAssertEqual(input.note, "wip")
+      XCTAssertTrue(input.launch)
+      XCTAssertNil(input.brief)
+      XCTAssertFalse(input.contextOnly)
+    } else {
+      XCTFail("Expected handoff command envelope")
+    }
+
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, true)
+    XCTAssertEqual(payload["command"] as? String, "handoff")
+  }
+
+  func testHandoffToSendsInlineBriefAndContextOnly() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-brief")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: makeHandoffPayload(action: .toAgent))
+    )
+
+    let brief = "# Handoff\n\n## Objective\nShip.\n\n## Current State\nGreen.\n\n## Next Steps\n1. Go."
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "to", "claude", "--brief", brief, "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .handoff(let input) = envelope.command {
+      XCTAssertEqual(input.brief, brief)
+      XCTAssertFalse(input.contextOnly)
+    } else {
+      XCTFail("Expected handoff command envelope")
+    }
+
+    let contextOnlySocket = temporarySocketPath(suffix: "handoff-no-brief")
+    let (contextOnlyRequest, contextOnlyResult) = try runWithMockServer(
+      socketPath: contextOnlySocket,
+      response: response,
+      args: ["handoff", "to", "claude", "--no-brief", "--json"]
+    )
+    XCTAssertEqual(contextOnlyResult.exitCode, 0)
+    let contextOnlyEnvelope = try JSONDecoder().decode(CommandEnvelope.self, from: contextOnlyRequest)
+    if case .handoff(let input) = contextOnlyEnvelope.command {
+      XCTAssertNil(input.brief)
+      XCTAssertTrue(input.contextOnly)
+    } else {
+      XCTFail("Expected handoff command envelope")
+    }
+  }
+
+  func testHandoffBriefConflictFailsBeforeTransport() throws {
+    let result = try runProwl(args: ["handoff", "to", "claude", "--brief", "x", "--no-brief", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testHandoffToRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-to")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: makeHandoffPayload(action: .toAgent))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "to", "claude", "--pane", "p1", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .handoff(let input) = envelope.command {
+      XCTAssertEqual(input.action, .toAgent)
+      XCTAssertEqual(input.toAgent, "claude")
+      XCTAssertEqual(input.selector, .pane("p1"))
+      XCTAssertTrue(input.launch)
+    } else {
+      XCTFail("Expected handoff command envelope")
+    }
+  }
+
+  func testHandoffToNormalizesAgentCaseAndNoLaunch() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-to-no-launch")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: makeHandoffPayload(action: .toAgent))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "to", "CODEX", "--no-launch", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .handoff(let input) = envelope.command {
+      XCTAssertEqual(input.toAgent, "codex")
+      XCTAssertFalse(input.launch)
+    } else {
+      XCTFail("Expected handoff command envelope")
+    }
+  }
+
+  func testHandoffToAcceptsDetectedAgentToken() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-to-gemini")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: makeHandoffPayload(action: .toAgent))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "to", "gemini", "--no-launch", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .handoff(let input) = envelope.command {
+      XCTAssertEqual(input.toAgent, "gemini")
+      XCTAssertFalse(input.launch)
+    } else {
+      XCTFail("Expected handoff command envelope")
+    }
+  }
+
+  func testHandoffToRejectsUnknownAgentBeforeTransport() throws {
+    let result = try runProwl(args: ["handoff", "to", "unknown-agent", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    XCTAssertEqual(payload["command"] as? String, "handoff")
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testHandoffToTextRenderingFromSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-to-text")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: HandoffCommandPayload(
+        action: .toAgent,
+        artifactPath: "/Projects/App/.prowl/handoff/current.md",
+        outgoingAgent: "codex",
+        toAgent: "claude",
+        repos: [
+          HandoffRepoPayload(name: "App", branch: "feature", isGit: true, changedFileCount: 3, insertions: 120, deletions: 14)
+        ],
+        changedFileCount: 3,
+        archivedPath: "handoff/archive/2026-06-12T1430-codex-to-claude.md",
+        sessionContext: HandoffSessionPayload(
+          agent: "codex",
+          sessionID: "codex-session",
+          paneID: "pane-0",
+          paneTitle: "codex",
+          source: "terminal-scrollback",
+          confidence: "fallback",
+          excerptPath: "handoff/sessions/2026-06-12T1430-pane-0.md",
+          transcriptPath: "/tmp/codex.jsonl"
+        ),
+        briefing: "inline",
+        hasBriefing: true,
+        launchedPane: HandoffPanePayload(
+          worktreeID: "App:/Projects/App",
+          worktreeName: "App",
+          tabID: "tab-1",
+          paneID: "pane-9",
+          paneTitle: "claude"
+        )
+      ))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "to", "claude"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stdout.contains("codex → claude"), "Missing transition header: \(result.stdout)")
+    XCTAssertTrue(result.stdout.contains("artifact:"), "Missing artifact line: \(result.stdout)")
+    XCTAssertTrue(result.stdout.contains("briefing:"), "Missing briefing line: \(result.stdout)")
+    XCTAssertTrue(result.stdout.contains("session:"), "Missing session line: \(result.stdout)")
+    XCTAssertTrue(result.stdout.contains("launched:"), "Missing launched line: \(result.stdout)")
+    XCTAssertTrue(result.stdout.contains("pane-9"), "Missing launched pane id: \(result.stdout)")
+  }
+
+  func testHandoffToWithoutLaunchTextExplainsExistingFlag() throws {
+    let socketPath = temporarySocketPath(suffix: "handoff-to-no-launch-text")
+    let response = try CommandResponse(
+      ok: true,
+      command: "handoff",
+      schemaVersion: "prowl.cli.handoff.v2",
+      data: RawJSON(encoding: HandoffCommandPayload(
+        action: .toAgent,
+        artifactPath: "/Projects/App/.prowl/handoff/current.md",
+        outgoingAgent: "codex",
+        toAgent: "claude",
+        archivedPath: "handoff/archive/2026-06-12T1430-codex-to-claude.md"
+      ))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["handoff", "to", "claude", "--no-launch"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stdout.contains("no (--no-launch); take over manually"), result.stdout)
+    XCTAssertFalse(result.stdout.contains("use --no-launch handoff"), result.stdout)
+  }
+
   // MARK: - Helpers
+
+  private func makeHandoffPayload(action: HandoffAction) -> HandoffCommandPayload {
+    HandoffCommandPayload(
+      action: action,
+      artifactPath: "/Projects/App/.prowl/handoff/current.md",
+      outgoingAgent: "codex",
+      toAgent: action == .toAgent ? "claude" : nil,
+      repos: [
+        HandoffRepoPayload(name: "App", branch: "main", isGit: true, changedFileCount: 1, insertions: 8, deletions: 2)
+      ],
+      changedFileCount: 1
+    )
+  }
 
   private func runWithMockServer(
     socketPath: String,

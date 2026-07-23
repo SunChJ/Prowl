@@ -44,6 +44,8 @@ struct SettingsView: View {
             .tag(SettingsSection.advanced)
           Label("GitHub", systemImage: "arrow.triangle.branch")
             .tag(SettingsSection.github)
+          Label("Commands", systemImage: "globe")
+            .tag(SettingsSection.customCommands)
 
           Section("Repositories") {
             ForEach(repositories) { repository in
@@ -103,6 +105,20 @@ struct SettingsView: View {
           GithubSettingsView(store: settingsStore)
             .navigationTitle("GitHub")
             .navigationSubtitle("GitHub CLI integration")
+        }
+      case .customCommands:
+        SettingsDetailView {
+          if let globalCustomCommandsStore = settingsStore.scope(
+            state: \.globalCustomCommands,
+            action: \.globalCustomCommands
+          ) {
+            GlobalCustomCommandsView(store: globalCustomCommandsStore)
+              .navigationTitle("Global Commands")
+              .navigationSubtitle("Global terminal actions and toolbar buttons")
+          } else {
+            ProgressView()
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
         }
       case .repository(let repositoryID):
         if let repository = repositories[id: repositoryID] {

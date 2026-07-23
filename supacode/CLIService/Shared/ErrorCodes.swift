@@ -47,6 +47,17 @@ public enum CLIErrorCode {
   // Pane
   public static let paneFailed = "PANE_FAILED"
 
+  // Handoff
+  public static let handoffFailed = "HANDOFF_FAILED"
+  /// Self-handoff invoked without `--brief`/`--no-brief`.
+  public static let briefRequired = "BRIEF_REQUIRED"
+  /// Inline briefing text failed validation; nothing was written.
+  public static let invalidBrief = "INVALID_BRIEF"
+  /// No selector was given and the caller is not inside a Prowl pane.
+  public static let sourceRequired = "SOURCE_REQUIRED"
+  /// A HUD-injected request was already superseded by its fallback.
+  public static let handoffRequestSuperseded = "HANDOFF_REQUEST_SUPERSEDED"
+
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"
   public static let socketPermissionDenied = "SOCKET_PERMISSION_DENIED"

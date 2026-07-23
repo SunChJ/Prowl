@@ -74,7 +74,9 @@ struct AppFeaturePlainFolderTerminalTests {
       $0.selectedRunScript = "pnpm dev"
     }
     await store.receive(\.worktreeUserSettingsLoaded) {
-      $0.selectedCustomCommands = userSettings.customCommands
+      $0.selectedCustomCommands = userSettings.customCommands.map {
+        EffectiveCustomCommand(source: .repository, command: $0)
+      }
       $0.resolvedKeybindings = KeybindingResolver.resolve(
         schema: .appResolverSchema(customCommands: userSettings.customCommands)
       )
@@ -162,7 +164,7 @@ struct AppFeaturePlainFolderTerminalTests {
     await store.send(.worktreeUserSettingsLoaded(conflicted, worktreeID: repository.id))
 
     let expectedShortcut = conflicted.customCommands[0].shortcut?.normalized()
-    #expect(store.state.selectedCustomCommands == conflicted.customCommands)
+    #expect(store.state.selectedCustomCommands.map(\.command) == conflicted.customCommands)
     #expect(registeredShortcuts.value == [expectedShortcut].compactMap { $0 })
     let customCommandID = LegacyCustomCommandShortcutMigration.customCommandBindingID(
       for: conflicted.customCommands[0].id
@@ -188,13 +190,15 @@ struct AppFeaturePlainFolderTerminalTests {
       settings: SettingsFeature.State()
     )
     state.selectedCustomCommands = [
-      UserCustomCommand(
-        title: "Watch",
-        systemImage: "terminal",
-        command: "pnpm test --watch",
-        execution: .terminalInput,
-        shortcut: nil
-      )
+      EffectiveCustomCommand(
+        source: .repository,
+        command: UserCustomCommand(
+          title: "Watch",
+          systemImage: "terminal",
+          command: "pnpm test --watch",
+          execution: .terminalInput,
+          shortcut: nil
+        ))
     ]
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -204,7 +208,7 @@ struct AppFeaturePlainFolderTerminalTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(

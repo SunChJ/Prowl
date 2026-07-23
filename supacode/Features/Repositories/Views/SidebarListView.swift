@@ -600,16 +600,23 @@ struct SidebarListView: View {
         return ActiveAgentRowDisplay(
           repositoryName: metadata.repositoryNamesByWorktreeID[key] ?? fallbackName,
           branchName: metadata.branchNamesByWorktreeID[key] ?? fallbackName,
-          color: metadata.repositoryColorsByWorktreeID[key]
+          color: metadata.repositoryColorsByWorktreeID[key],
+          directory: workingDirectory
         )
       }
       let name = Repository.name(for: workingDirectory)
-      return ActiveAgentRowDisplay(repositoryName: name, branchName: name, color: nil)
+      return ActiveAgentRowDisplay(
+        repositoryName: name,
+        branchName: name,
+        color: nil,
+        directory: workingDirectory
+      )
     }
     return ActiveAgentRowDisplay(
       repositoryName: metadata.repositoryNamesByWorktreeID[entry.worktreeID] ?? entry.worktreeName,
       branchName: metadata.branchNamesByWorktreeID[entry.worktreeID] ?? entry.worktreeName,
-      color: metadata.repositoryColorsByWorktreeID[entry.worktreeID]
+      color: metadata.repositoryColorsByWorktreeID[entry.worktreeID],
+      directory: directory(forWorktreeID: entry.worktreeID, in: repositories)
     )
   }
 
@@ -640,6 +647,23 @@ struct SidebarListView: View {
     }
     return best?.id
   }
+
+  /// Directory of the surface's owning worktree, used when the agent hasn't
+  /// reported a working directory. Plain folders are keyed by repository id.
+  static func directory(
+    forWorktreeID worktreeID: Worktree.ID,
+    in repositories: IdentifiedArrayOf<Repository>
+  ) -> URL? {
+    for repository in repositories {
+      if let worktree = repository.worktrees[id: worktreeID] {
+        return worktree.workingDirectory
+      }
+    }
+    guard let repository = repositories[id: worktreeID],
+      repository.capabilities.supportsRunnableFolderActions
+    else { return nil }
+    return repository.rootURL
+  }
 }
 
 struct ActiveAgentWorktreeMetadata: Equatable {
@@ -652,6 +676,9 @@ struct ActiveAgentRowDisplay: Equatable {
   let repositoryName: String
   let branchName: String
   let color: RepositoryColorChoice?
+  /// The directory the agent runs in (or its owning worktree's directory as a
+  /// fallback); drives the context menu's Copy Path / Reveal in Finder.
+  let directory: URL?
 }
 
 extension SidebarItem {

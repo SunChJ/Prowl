@@ -148,18 +148,61 @@ extension DependencyValues {
 
 private nonisolated let shellLogger = SupaLogger("Shell")
 
+/// Coordinates cancellation before and after the worker has started the
+/// subprocess. A cancellation request must never be lost while `Process.run()`
+/// is still racing with task or stream teardown.
+nonisolated final class ProcessCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancellationRequested = false
+  private var termination: (@Sendable () -> Void)?
+  private var didTerminate = false
+
+  func installTermination(_ termination: @escaping @Sendable () -> Void) {
+    let action: (@Sendable () -> Void)?
+    lock.lock()
+    self.termination = termination
+    action = takeTerminationLocked()
+    lock.unlock()
+    action?()
+  }
+
+  func cancel() {
+    let action: (@Sendable () -> Void)?
+    lock.lock()
+    cancellationRequested = true
+    action = takeTerminationLocked()
+    lock.unlock()
+    action?()
+  }
+
+  private func takeTerminationLocked() -> (@Sendable () -> Void)? {
+    guard cancellationRequested, !didTerminate, let termination else { return nil }
+    didTerminate = true
+    return termination
+  }
+}
+
+private struct ProcessExecution: Sendable {
+  let stream: AsyncThrowingStream<ShellStreamEvent, Error>
+  let cancel: @Sendable () -> Void
+}
+
 nonisolated private func runProcess(
   executableURL: URL,
   arguments: [String],
   currentDirectoryURL: URL?
 ) async throws -> ShellOutput {
-  let stream = runProcessStream(
+  let execution = makeProcessExecution(
     executableURL: executableURL,
     arguments: arguments,
     currentDirectoryURL: currentDirectoryURL
   )
   let command = ([executableURL.path(percentEncoded: false)] + arguments).joined(separator: " ")
-  return try await collectOutput(from: stream, command: command)
+  return try await withTaskCancellationHandler {
+    try await collectOutput(from: execution.stream, command: command)
+  } onCancel: {
+    execution.cancel()
+  }
 }
 
 nonisolated private func runProcessStream(
@@ -167,11 +210,20 @@ nonisolated private func runProcessStream(
   arguments: [String],
   currentDirectoryURL: URL?
 ) -> AsyncThrowingStream<ShellStreamEvent, Error> {
-  AsyncThrowingStream { continuation in
-    // Stored so onTermination can SIGTERM the process when the consumer of the
-    // stream goes away (Task cancellation, for-await throw, explicit finish).
-    // Without this hook structured-concurrency timeouts that wrap a ShellClient
-    // call would have to wait for the process to exit on its own.
+  makeProcessExecution(
+    executableURL: executableURL,
+    arguments: arguments,
+    currentDirectoryURL: currentDirectoryURL
+  ).stream
+}
+
+nonisolated private func makeProcessExecution(
+  executableURL: URL,
+  arguments: [String],
+  currentDirectoryURL: URL?
+) -> ProcessExecution {
+  let cancellation = ProcessCancellation()
+  let stream = AsyncThrowingStream<ShellStreamEvent, Error> { continuation in
     let processBox = LockIsolated<Process?>(nil)
     let workerTask = Task {
       let outputAccumulator = ShellOutputAccumulator()
@@ -189,7 +241,10 @@ nonisolated private func runProcessStream(
       let command = ([executableURL.path(percentEncoded: false)] + arguments).joined(separator: " ")
       do {
         try process.run()
-        processBox.withValue { $0 = process }
+        processBox.setValue(process)
+        cancellation.installTermination {
+          processBox.withValue { $0?.terminate() }
+        }
         let stdoutTask = Task {
           for await line in lineStream(from: outputHandle) {
             await outputAccumulator.append(line, source: .stdout)
@@ -205,7 +260,7 @@ nonisolated private func runProcessStream(
         await withTaskCancellationHandler {
           await waitForExit(of: process)
         } onCancel: {
-          process.terminate()
+          cancellation.cancel()
         }
         await stdoutTask.value
         await stderrTask.value
@@ -228,10 +283,11 @@ nonisolated private func runProcessStream(
       }
     }
     continuation.onTermination = { _ in
-      processBox.withValue { $0?.terminate() }
+      cancellation.cancel()
       workerTask.cancel()
     }
   }
+  return ProcessExecution(stream: stream, cancel: cancellation.cancel)
 }
 
 /// Waits asynchronously for `process` to exit using `terminationHandler`

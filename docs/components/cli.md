@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl read, prowl send, prowl key, prowl focus, prowl tab, prowl pane, prowl open, pane id, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl read, prowl send, prowl key, prowl focus, prowl tab, prowl pane, prowl open, prowl handoff, pane id, agent, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -78,8 +78,14 @@ prowl list --json
 Each item contains:
 - `worktree`: `id`, `name`, `path`, `root_path`, `kind` (`git`|`plain`|`workspace`)
 - `tab`: `id`, `title`, `selected`
-- `pane`: `id`, `title`, `cwd`, `focused`
+- `pane`: `id`, `title`, `cwd`, `focused`, `agent`
 - `task`: `status` (`running` | `idle` | null)
+
+`pane.agent` is the coding agent detected in that pane — a stable machine token
+(`claude`, `codex`, `gemini`, `cursor-agent`, …) or `null` when none is detected.
+It comes from the same agent detection described in
+[agent-detection](agent-detection.md) and is useful for coordinating who is who
+(e.g. before a [handoff](#prowl-handoff)).
 
 These are JSON fields, so `tab.id` and `pane.id` remain UUIDs. Plain `prowl list`
 instead shows `tN` for each tab and `pN` for each pane; pass either handle back
@@ -241,6 +247,84 @@ Supports `~` and `file://`. Reports `resolution` (no-argument / exact-root /
 inside-root / new-root), `app_launched`, `brought_to_front`, `created_tab`, and a
 `target`.
 
+### `prowl handoff`
+Hand a task off between agents: archive the outgoing state under the target's
+`.prowl/handoff/`, install a fresh agent-authored briefing, and launch the
+receiver in a background tab. Centred on [workspaces](workspaces.md), but works
+for any runnable target. Two subcommands:
+
+```bash
+prowl handoff to <agent> [target] [--brief -|--no-brief] [--note "…"] [--no-launch]
+prowl handoff save       [target] [--brief -|--no-brief] [--note "…"]
+```
+
+**Source resolution.** An explicit selector (`--pane p3`, `--tab t2`,
+`--worktree <name>`, or the positional target) wins; otherwise the source is
+**the calling pane** — Prowl maps the `prowl` process's ancestry to the pane
+whose shell spawned it, so an agent running the command hands off *itself*
+regardless of UI focus. Outside any Prowl pane with no selector the command
+errors with `SOURCE_REQUIRED`; the focused pane is never guessed.
+
+**Briefing.** `--brief -` reads an inline agent-authored briefing from stdin
+(heredoc) — the standard self-handoff posture, and required for one: a
+brief-less self-handoff errors (`BRIEF_REQUIRED`) with a copy-pasteable
+example, and `--no-brief` is the explicit context-only escape. A briefing must
+contain at least `## Objective`, `## Current State`, and `## Next Steps`; an
+invalid inline brief errors (`INVALID_BRIEF`) with **zero side effects**. For
+third-party sources with an exact/high-confidence claude/codex session, Prowl
+falls back to a side-effect-free session fork (Claude `--fork-session`, Codex
+`--ephemeral`, bounded to 2 minutes) to collect the briefing; a failed fork
+degrades the transition to context-only (`briefing=failed`) instead of
+blocking it.
+
+- **`to <agent>`** — archives the current artifact to
+  `.prowl/handoff/archive/<ts>-<from>-to-<to>.md` **first**, installs the
+  fresh briefing as `current.md` (or removes a stale one when the transition
+  is context-only), regenerates `context.md` from live git state, and launches
+  the receiver in a **background tab** — no worktree switch, no focus steal; a
+  notification announces the completed handoff unless you are already watching
+  that worktree. The kickoff prompt adapts to whether a briefing exists. An
+  observed unrestricted source execution policy carries over between the
+  verified Claude Code and Codex adapters for the destination launch only;
+  model identifiers remain with their original agent family. Interactive
+  launch is verified for `claude` and `codex`; `--no-launch` still archives +
+  saves and accepts the full detected-agent list: `pi`, `claude`, `codex`,
+  `gemini`, `cursor-agent`, `cline`, `opencode`, `copilot`, `kimi`, `droid`,
+  `amp`, `qodercli`, `qwen`, `grok`.
+- **`save`** — a deferred-handoff checkpoint: installs a fresh briefing
+  (archiving the replaced one) and regenerates `context.md`, with no
+  destination and no launch. A context-only `save --no-brief` refreshes
+  generated state without touching the last valid briefing.
+
+```bash
+prowl handoff to codex --brief - <<'EOF'      # self-handoff with inline briefing
+# Handoff
+## Objective
+…
+## Current State
+…
+## Next Steps
+…
+EOF
+prowl handoff save --brief - --note "eod checkpoint" <<'EOF' … EOF
+prowl handoff to claude --pane p7 --json      # hand off a third pane (fork fallback)
+```
+
+The outgoing agent is whatever Prowl detects in the source pane (see
+`pane.agent` in [`list`](#prowl-list)). Response payload
+(`prowl.cli.handoff.v2`) includes `action`, `artifact_path`, `outgoing_agent`,
+`to_agent`, `repos`, `changed_file_count`, `archived_path`, `session_context`,
+`briefing` (`inline` / `fork` / `none` / `failed`), `has_briefing`, and
+`launched_pane`. `session_context` includes the generated excerpt path plus
+native `session_id` / `transcript_path` only when the source pane has
+unambiguous native-session evidence (the same identity exposed by
+`prowl agents`); ambiguous sessions are never forked. `current.md` exists iff
+a validated briefing produced it — there is no template and nothing to
+maintain between handoffs. Full feature guide: [handoff](handoff.md).
+
+The generated `.prowl/handoff/` directory contains its own `.gitignore`, so its
+artifacts and terminal excerpts do not appear in `git status`.
+
 ## Transport & app launch
 
 - Socket: `~/Library/Application Support/com.onevcat.prowl/cli.sock` (override with
@@ -272,7 +356,7 @@ inside-root / new-root), `app_launched`, `brought_to_front`, `created_tab`, and 
 | `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`tab create` path. |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
 | `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
-| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`) | The action itself failed. |
+| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
 
 ## Safety & self-targeting
 

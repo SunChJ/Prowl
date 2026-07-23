@@ -159,6 +159,39 @@ struct RepositorySettingsFeatureTests {
     #expect(decoded.customCommands.first?.shortcut == conflicted.customCommands.first?.shortcut)
   }
 
+  @Test(.dependencies) func globalCommandOptOutPersistsThroughDedicatedAction() async throws {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo-\(UUID().uuidString)")
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    let store = TestStore(
+      initialState: RepositorySettingsFeature.State(
+        rootURL: rootURL,
+        repositoryKind: .plain,
+        settings: .default,
+        userSettings: .default
+      )
+    ) {
+      RepositorySettingsFeature()
+    } withDependencies: {
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    }
+
+    await store.send(.setGlobalCommandEnabled("global-build", false)) {
+      $0.userSettings.disabledGlobalCommandIDs = ["global-build"]
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    let persisted = try JSONDecoder().decode(
+      UserRepositorySettings.self,
+      from: #require(localStorage.data(at: SupacodePaths.userRepositorySettingsURL(for: rootURL)))
+    )
+    #expect(!persisted.isGlobalCommandEnabled("global-build"))
+
+    await store.send(.setGlobalCommandEnabled("global-build", true)) {
+      $0.userSettings.disabledGlobalCommandIDs = []
+    }
+    await store.receive(\.delegate.settingsChanged)
+  }
+
   @Test(.dependencies) func customTitleBindingPersistsToRepositoryFile() async throws {
     let rootURL = URL(fileURLWithPath: "/tmp/repo-\(UUID().uuidString)")
     let settingsStorage = SettingsTestStorage()

@@ -33,12 +33,17 @@ struct SelectorOptions: ParsableArguments {
     return .none
   }
 
-  /// Resolve with an additional auto-target value (from positional argument).
-  /// The positional target takes effect only when no flag selectors are specified.
+  /// Resolve with an additional auto-target value from a positional argument.
   func resolve(positionalTarget: String?) throws -> TargetSelector {
     let flagSelector = try resolve()
-    if case .none = flagSelector, let positional = positionalTarget {
-      return .auto(positional)
+    if let positionalTarget {
+      guard case .none = flagSelector else {
+        throw ExitError(
+          code: CLIErrorCode.invalidArgument,
+          message: "Use either a positional target or one selector flag (--target, --worktree, --tab, --pane)."
+        )
+      }
+      return .auto(positionalTarget)
     }
     return flagSelector
   }

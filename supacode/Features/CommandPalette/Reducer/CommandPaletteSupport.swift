@@ -36,9 +36,11 @@ enum CommandPaletteItemID {
     "repo.\(repositoryID).open-settings"
   }
 
-  static func customCommand(_ commandID: String) -> CommandPaletteItem.ID {
-    "custom-command.\(commandID)"
+  static func customCommand(_ command: EffectiveCustomCommand) -> CommandPaletteItem.ID {
+    command.paletteID
   }
+
+  static let handOff = "handoff.open"
 
   static var globalIDs: [CommandPaletteItem.ID] {
     [
@@ -159,8 +161,10 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
     return .togglePinWorktree(worktreeID, isCurrentlyPinned: isCurrentlyPinned)
   case .openRepositorySettings(let repositoryID):
     return .openRepositorySettings(repositoryID)
-  case .runCustomCommand(let index, _, _):
-    return .runCustomCommand(index)
+  case .runCustomCommand(let id, _):
+    return .runCustomCommand(id)
+  case .handOff:
+    return .handOff
   case .openPullRequest,
     .openRepositoryOnCodeHost,
     .markPullRequestReady,
@@ -341,7 +345,8 @@ func pullRequestDelegateAction(
     .renameBranch,
     .deleteWorktree,
     .openRepositorySettings,
-    .runCustomCommand:
+    .runCustomCommand,
+    .handOff:
     return nil
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

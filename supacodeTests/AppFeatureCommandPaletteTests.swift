@@ -818,7 +818,8 @@ struct AppFeatureCommandPaletteTests {
     }
     store.exhaustivity = .off
 
-    await store.send(.commandPalette(.delegate(.runCustomCommand(3))))
+    let commandID = EffectiveCustomCommand.Identifier(source: .global, commandID: "global-command")
+    await store.send(.commandPalette(.delegate(.runCustomCommand(commandID))))
     await store.receive(\.runCustomCommand)
   }
 

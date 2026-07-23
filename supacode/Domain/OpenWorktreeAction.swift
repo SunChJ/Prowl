@@ -109,7 +109,7 @@ enum OpenWorktreeAction: CaseIterable, Identifiable {
   // rasterizing resize cost milliseconds, and toolbar redraws request these
   // icons constantly. Only hits are cached so a newly installed app shows up
   // without invalidation; lookup misses are microseconds.
-  private static let menuIconSize = CGSize(width: 16, height: 16)
+  private static let menuIconSize = CGSize(width: 18, height: 18)
   // `@MainActor` makes the cache's isolation explicit and compiler-enforced:
   // every `menuIcon` access happens during SwiftUI rendering on the main
   // thread, so this shared mutable state is never touched concurrently. (A

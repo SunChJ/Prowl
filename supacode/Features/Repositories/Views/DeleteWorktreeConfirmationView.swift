@@ -25,10 +25,13 @@ struct DeleteWorktreeConfirmationView: View {
       )
       .help("Try to delete the local branch with git branch -d after removing the worktree.")
 
-      Text("Protected branches are kept. If safe branch deletion fails, Prowl asks before forcing it.")
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      Text(
+        "Protected branches are kept. If safe branch deletion fails, Prowl asks before forcing it. "
+          + "Your choice is remembered for the next delete."
+      )
+      .font(.footnote)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
 
       HStack {
         Spacer()

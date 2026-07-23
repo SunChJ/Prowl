@@ -48,7 +48,9 @@ nonisolated struct AgentSessionProfile: Sendable {
     case .droid: .droid
     case .opencode: .opencode
     case .amp: .amp
+    case .qoder: .qoder
     case .qwen: .qwen
+    case .grok: .grok
     }
   }
 }
@@ -199,6 +201,17 @@ nonisolated extension AgentSessionProfile {
     }
   )
 
+  /// Qoder CLI ≥ 1.0.48: `~/.qoder/projects/<sanitized cwd>/<uuid>.jsonl`,
+  /// Claude Code's layout under a different root — every non-alphanumeric cwd
+  /// character becomes `-`. Verified against a local 1.0.48 install.
+  fileprivate static let qoder = AgentSessionProfile(
+    parsePath: { uuidJSONL(path: $0, marker: "/.qoder/projects/") },
+    candidateRoots: { home, cwd, _, _ in
+      guard let cwd else { return [] }
+      return [home.appending(path: ".qoder/projects/\(alphanumericDashed(cwd.path))")]
+    }
+  )
+
   /// OpenCode ≥ 1.2: sessions live in the shared sqlite database
   /// `~/.local/share/opencode/opencode.db` (`session.directory` = plain cwd);
   /// the TUI holds no per-session file, so store rows stand in for candidate
@@ -253,6 +266,57 @@ nonisolated extension AgentSessionProfile {
         pid: pid,
         processStartedAt: processStartedAt
       )
+    }
+  )
+
+  /// Grok Build ≥ 0.2: `~/.grok/sessions/<percent-encoded cwd>/<session-id>/`
+  /// with `events.jsonl` / `chat_history.jsonl` held open during the turn, plus
+  /// an exact pid map in `~/.grok/active_sessions.json`. Cwd encoding is
+  /// full-path percent-encoding (`/Users/me/App` → `%2FUsers%2Fme%2FApp`).
+  /// Verified against Grok Build 0.2.101.
+  fileprivate static let grok = AgentSessionProfile(
+    parsePath: { path in
+      let url = URL(fileURLWithPath: path)
+      guard path.contains("/.grok/sessions/") else { return nil }
+      let components = url.pathComponents
+      // Anchor on a `.grok` component whose next component is `sessions`
+      // (not the first bare `sessions`, and not an earlier unrelated `.grok`).
+      guard
+        let grokIndex = components.indices.first(where: { index in
+          components[index] == ".grok"
+            && components.indices.contains(index + 1)
+            && components[index + 1] == "sessions"
+        }),
+        components.count > grokIndex + 3
+      else { return nil }
+      // Layout: …/.grok/sessions/<encoded-cwd>/<session-id>/…
+      let id = components[grokIndex + 3]
+      guard uuid(in: id) != nil else { return nil }
+      // Walk up from the open path to the session root
+      // (…/sessions/<cwd>/<id>/). Nested paths like `terminal/<log>.log`
+      // still resolve. The transcript is always canonicalized to
+      // chat_history.jsonl (the conversation log): the process also holds
+      // events.jsonl open, which only logs MCP/infrastructure events.
+      var dir = url.deletingLastPathComponent()
+      while dir.lastPathComponent != id, dir.pathComponents.count > grokIndex + 3 {
+        dir = dir.deletingLastPathComponent()
+      }
+      guard dir.lastPathComponent == id else { return nil }
+      let transcript: URL =
+        url.lastPathComponent == "chat_history.jsonl"
+        ? url
+        : dir.appending(path: "chat_history.jsonl")
+      return AgentSession(id: id, transcriptPath: transcript, source: .recentFile)
+    },
+    candidateRoots: { home, cwd, _, _ in
+      guard let cwd else { return [home.appending(path: ".grok/sessions")] }
+      return [home.appending(path: ".grok/sessions/\(percentEncodedPath(cwd.path))")]
+    },
+    fallbackRoots: { home, _ in
+      [home.appending(path: ".grok/sessions")]
+    },
+    pidKeyedSession: { home, pid, processStartedAt in
+      GrokActiveSessions.session(home: home, pid: pid, processStartedAt: processStartedAt)
     }
   )
 }
@@ -327,6 +391,14 @@ nonisolated extension AgentSessionProfile {
 
   fileprivate static func sha256Hex(_ value: String) -> String {
     SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// Grok session directories encode the absolute cwd as a single path
+  /// component: every character outside RFC 3986 unreserved is percent-encoded
+  /// (`/Users/me/My App` → `%2FUsers%2Fme%2FMy%20App`).
+  fileprivate static func percentEncodedPath(_ path: String) -> String {
+    let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+    return path.addingPercentEncoding(withAllowedCharacters: unreserved) ?? path
   }
 
   /// Day directories `root/YYYY/MM/DD` covering one day before the process

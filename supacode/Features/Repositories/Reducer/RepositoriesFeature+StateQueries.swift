@@ -37,12 +37,32 @@ extension RepositoriesFeature.State {
     else {
       return nil
     }
-    return Worktree(
-      id: selectedRepository.id,
-      name: selectedRepository.name,
-      detail: selectedRepository.rootURL.path(percentEncoded: false),
-      workingDirectory: selectedRepository.rootURL,
-      repositoryRootURL: selectedRepository.rootURL
+    return Self.plainFolderWorktree(for: selectedRepository)
+  }
+
+  /// Resolves a terminal target ID to its runnable worktree: a real worktree,
+  /// or the synthesized worktree representing a runnable plain-folder
+  /// repository (whose repository ID doubles as its terminal target ID).
+  func terminalWorktree(for id: Worktree.ID) -> Worktree? {
+    if let worktree = worktree(for: id) {
+      return worktree
+    }
+    guard let repository = repositories[id: id],
+      repository.capabilities.supportsRunnableFolderActions,
+      !repository.capabilities.supportsWorktrees
+    else {
+      return nil
+    }
+    return Self.plainFolderWorktree(for: repository)
+  }
+
+  static func plainFolderWorktree(for repository: Repository) -> Worktree {
+    Worktree(
+      id: repository.id,
+      name: repository.name,
+      detail: repository.rootURL.path(percentEncoded: false),
+      workingDirectory: repository.rootURL,
+      repositoryRootURL: repository.rootURL
     )
   }
 
@@ -240,13 +260,7 @@ extension RepositoriesFeature.State {
         .first
     }
     guard repository.capabilities.supportsRunnableFolderActions else { return nil }
-    return Worktree(
-      id: repository.id,
-      name: repository.name,
-      detail: repository.rootURL.path(percentEncoded: false),
-      workingDirectory: repository.rootURL,
-      repositoryRootURL: repository.rootURL
-    )
+    return Self.plainFolderWorktree(for: repository)
   }
 
   func pendingWorktree(for id: Worktree.ID?) -> PendingWorktree? {

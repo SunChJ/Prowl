@@ -8,5 +8,6 @@ enum SettingsSection: Hashable {
   case updates
   case advanced
   case github
+  case customCommands
   case repository(Repository.ID)
 }

@@ -77,9 +77,8 @@ struct WorktreeCommands: Commands {
     }
     CommandGroup(replacing: .newItem) {
       if !customCommands.isEmpty {
-        ForEach(Array(customCommands.enumerated()), id: \.element.id) { index, command in
+        ForEach(customCommands) { command in
           customCommandButton(
-            index: index,
             command: command,
             hasActiveWorktree: hasActiveWorktree
           )
@@ -185,16 +184,12 @@ struct WorktreeCommands: Commands {
     return title
   }
 
-  private func customCommandID(for command: UserCustomCommand) -> String {
-    LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+  private func customCommandShortcut(for command: EffectiveCustomCommand) -> KeyboardShortcut? {
+    store.resolvedKeybindings.keyboardShortcut(for: command.keybindingID)
   }
 
-  private func customCommandShortcut(for command: UserCustomCommand) -> KeyboardShortcut? {
-    store.resolvedKeybindings.keyboardShortcut(for: customCommandID(for: command))
-  }
-
-  private func customCommandShortcutDisplay(for command: UserCustomCommand) -> String? {
-    store.resolvedKeybindings.display(for: customCommandID(for: command))
+  private func customCommandShortcutDisplay(for command: EffectiveCustomCommand) -> String? {
+    store.resolvedKeybindings.display(for: command.keybindingID)
   }
 
   private func worktreeMenuEntries(orderedRows: [WorktreeRowModel]) -> [WorktreeMenuEntry] {
@@ -263,23 +258,29 @@ struct WorktreeCommands: Commands {
 
   @ViewBuilder
   private func customCommandButton(
-    index: Int,
-    command: UserCustomCommand,
+    command: EffectiveCustomCommand,
     hasActiveWorktree: Bool
   ) -> some View {
-    let title = command.resolvedTitle
-    let helpText: String =
+    Button(command.command.resolvedTitle, systemImage: command.command.resolvedSystemImage) {
+      store.send(.runCustomCommand(command.id))
+    }
+    .modifier(KeyboardShortcutModifier(shortcut: customCommandShortcut(for: command)))
+    .help(customCommandHelpText(for: command))
+    .disabled(!hasActiveWorktree)
+  }
+
+  private func customCommandHelpText(for command: EffectiveCustomCommand) -> String {
+    let title = command.command.resolvedTitle
+    var helpText: String =
       if let shortcut = customCommandShortcutDisplay(for: command) {
         "\(title) (\(shortcut))"
       } else {
         title
       }
-    Button(title, systemImage: command.resolvedSystemImage) {
-      store.send(.runCustomCommand(index))
+    if let note = command.source.tooltipNote {
+      helpText += " — \(note)"
     }
-    .modifier(KeyboardShortcutModifier(shortcut: customCommandShortcut(for: command)))
-    .help(helpText)
-    .disabled(!hasActiveWorktree)
+    return helpText
   }
 }
 

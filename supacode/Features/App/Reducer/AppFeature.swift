@@ -18,7 +18,7 @@ struct AppFeature {
     /// "Automatic" entry's checkmark in the toolbar's Open menu.
     var openActionIsAutomatic: Bool = true
     var selectedRunScript: String = ""
-    var selectedCustomCommands: [UserCustomCommand] = []
+    var selectedCustomCommands: [EffectiveCustomCommand] = []
     var resolvedKeybindings: ResolvedKeybindingMap = .appDefaults
     var runScriptDraft: String = ""
     var isRunScriptPromptPresented = false
@@ -30,6 +30,7 @@ struct AppFeature {
     var suppressLayoutSaveUntilRelaunch = false
     var launchedAt: Date?
     var leftSidebarVisibility: NavigationSplitViewVisibility = .all
+    @Presents var handoffHud: HandoffHudFeature.State?
     @Presents var alert: AlertState<Alert>?
 
     init(
@@ -68,7 +69,7 @@ struct AppFeature {
     case showLeftSidebar
     case setLeftSidebarVisibility(NavigationSplitViewVisibility)
     case runScript
-    case runCustomCommand(Int)
+    case runCustomCommand(EffectiveCustomCommand.Identifier)
     case canvasFocusedWorktreeChanged(Worktree.ID?)
     case runScriptDraftChanged(String)
     case runScriptPromptPresented(Bool)
@@ -85,6 +86,11 @@ struct AppFeature {
     case systemNotificationTapped(worktreeID: Worktree.ID, surfaceID: UUID)
     case alert(PresentationAction<Alert>)
     case terminalEvent(TerminalClient.Event)
+    case openHandoffHud
+    case handoffHud(PresentationAction<HandoffHudFeature.Action>)
+    /// A CLI handoff completed (announced by the socket-service handler); the
+    /// HUD uses it to observe the request it injected into the source pane.
+    case handoffCliCompleted(HandoffCLICompletion)
   }
 
   enum Alert: Equatable {
@@ -102,6 +108,7 @@ struct AppFeature {
   @Dependency(SystemNotificationClient.self) var systemNotificationClient
   @Dependency(DockClient.self) var dockClient
   @Dependency(TerminalClient.self) var terminalClient
+  @Dependency(AgentRuntimeClient.self) var agentRuntimeClient
   @Dependency(WorktreeInfoWatcherClient.self) var worktreeInfoWatcher
   @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
   @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient
@@ -369,6 +376,9 @@ struct AppFeature {
       case .settings(.setSelection(let selection)):
         let resolvedSelection = selection ?? .general
         switch resolvedSelection {
+        case .customCommands:
+          state.settings.repositorySettings = nil
+          state.settings.globalCustomCommands = .init()
         case .repository(let repositoryID):
           guard let repository = state.repositories.repositories[id: repositoryID] else {
             state.settings.repositorySettings = nil
@@ -390,10 +400,23 @@ struct AppFeature {
           repoSettingsState.globalCopyUntrackedOnWorktreeCreate = state.settings.copyUntrackedOnWorktreeCreate
           repoSettingsState.globalPullRequestMergeStrategy = state.settings.pullRequestMergeStrategy
           state.settings.repositorySettings = repoSettingsState
+          state.settings.globalCustomCommands = nil
         case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github:
           state.settings.repositorySettings = nil
+          state.settings.globalCustomCommands = nil
         }
         return .none
+
+      case .settings(.globalCustomCommands(.delegate(.settingsChanged(let globalSettings)))):
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
+          return .none
+        }
+        @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var userRepositorySettings
+        return applyWorktreeUserSettings(
+          userRepositorySettings,
+          globalSettings: globalSettings,
+          into: &state
+        )
 
       case .settings(.delegate(.settingsChanged(let settings))):
         let shouldCheckSystemNotificationPermission =
@@ -676,14 +699,14 @@ struct AppFeature {
           await terminalClient.send(.runScript(worktree, script: script))
         }
 
-      case .runCustomCommand(let index):
+      case .runCustomCommand(let commandID):
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
-        guard state.selectedCustomCommands.indices.contains(index) else {
+        guard let effectiveCommand = state.selectedCustomCommands.first(where: { $0.id == commandID }) else {
           return .none
         }
-        let customCommand = state.selectedCustomCommands[index]
+        let customCommand = effectiveCommand.command
         guard customCommand.hasRunnableCommand else {
           return .none
         }
@@ -755,6 +778,7 @@ struct AppFeature {
         let rootURL = worktree.repositoryRootURL
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+        @Shared(.userGlobalSettings) var userGlobalSettings
         // Apply both settings in this single reduce pass instead of dispatching
         // follow-up `.send`s. The Canvas focus ID (an `@Observable` on the
         // terminal manager) updates synchronously on card tap, so the toolbar's
@@ -766,7 +790,11 @@ struct AppFeature {
           workingDirectory: worktree.workingDirectory,
           into: &state
         )
-        return applyWorktreeUserSettings(userRepositorySettings, into: &state)
+        return applyWorktreeUserSettings(
+          userRepositorySettings,
+          globalSettings: userGlobalSettings,
+          into: &state
+        )
 
       case .runScriptDraftChanged(let script):
         state.runScriptDraft = script
@@ -903,7 +931,8 @@ struct AppFeature {
         guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
           return .none
         }
-        return applyWorktreeUserSettings(settings, into: &state)
+        @Shared(.userGlobalSettings) var userGlobalSettings
+        return applyWorktreeUserSettings(settings, globalSettings: userGlobalSettings, into: &state)
 
       case .systemNotificationsPermissionFailed(let errorMessage):
         return .concatenate(
@@ -938,6 +967,9 @@ struct AppFeature {
       case .alert:
         return .none
 
+      case .repositories(.activeAgents(.handOffTapped(let entryID))):
+        return openHandoffHud(state: &state, entryID: entryID)
+
       case .repositories:
         return .none
 
@@ -950,11 +982,33 @@ struct AppFeature {
       case .commandPalette(let action):
         return reduceCommandPaletteAction(action, state: &state)
 
+      case .openHandoffHud:
+        return openHandoffHud(state: &state)
+
+      case .handoffHud(.presented(.delegate(.dismiss))), .handoffHud(.dismiss):
+        let worktree = state.handoffHud?.worktree
+        state.handoffHud = nil
+        guard let worktree else { return .none }
+        // Hand keyboard focus back to the terminal the HUD captured it from.
+        return .run { _ in
+          await terminalClient.send(.focusSelectedTab(worktree))
+        }
+
+      case .handoffHud:
+        return .none
+
+      case .handoffCliCompleted(let completion):
+        guard state.handoffHud != nil else { return .none }
+        return .send(.handoffHud(.presented(.cliCompleted(completion))))
+
       case .terminalEvent(let event):
         return reduceTerminalEvent(event, state: &state)
       }
     }
     core
+      .ifLet(\.$handoffHud, action: \.handoffHud) {
+        HandoffHudFeature()
+      }
     Reduce<State, Action> { state, action in
       // Default-on focus restore: every command-palette delegate action that
       // doesn't intentionally shift selection sends focus back to the active

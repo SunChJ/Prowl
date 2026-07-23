@@ -62,6 +62,9 @@ struct ActiveAgentsPanel: View {
               }
               .buttonStyle(.plain)
               .help(helpText(for: entry))
+              .contextMenu {
+                contextMenu(for: entry)
+              }
             }
           }
         }
@@ -119,6 +122,30 @@ struct ActiveAgentsPanel: View {
 
   private func clampedHeight(_ height: Double) -> Double {
     min(maximumHeight, max(ActiveAgentsFeature.minimumPanelHeight, height))
+  }
+
+  @ViewBuilder
+  private func contextMenu(for entry: ActiveAgentEntry) -> some View {
+    Button("Hand Off…") {
+      store.send(.handOffTapped(entry.id))
+    }
+    .help("Save this agent's progress and hand the task off to another agent")
+    Button("Mark as Read") {
+      store.send(.markAsReadTapped(entry.id))
+    }
+    .help("Clear this agent's unread notifications without switching to it")
+    if let directory = rowDisplays[entry.id]?.directory {
+      Divider()
+      Button("Copy Path") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(directory.path, forType: .string)
+      }
+      .help("Copy the agent's working directory path")
+      Button("Reveal in Finder") {
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: directory.path)
+      }
+      .help("Reveal the agent's working directory in Finder")
+    }
   }
 
   private func repositoryName(for entry: ActiveAgentEntry) -> String {

@@ -1,19 +1,102 @@
 import AppKit
-import ComposableArchitecture
 import SwiftUI
 
-extension RepositorySettingsView {
-  @ViewBuilder
-  var customCommandsEditor: some View {
+/// Shared inline table editor for custom commands. Hosts pass the command
+/// list binding plus the command source so shortcut resolution and copy
+/// stay scope-aware; the editor owns all transient selection, popover, and
+/// shortcut-recording state itself.
+struct CustomCommandsEditor: View {
+  @Binding var commands: [UserCustomCommand]
+  let source: CustomCommandSource
+  let keybindingUserOverrides: KeybindingUserOverrideStore
+  let globalCommands: [UserCustomCommand]
+  let globalCommandEnabled: ((UserCustomCommand.ID) -> Binding<Bool>)?
+
+  init(
+    commands: Binding<[UserCustomCommand]>,
+    source: CustomCommandSource,
+    keybindingUserOverrides: KeybindingUserOverrideStore,
+    globalCommands: [UserCustomCommand] = [],
+    globalCommandEnabled: ((UserCustomCommand.ID) -> Binding<Bool>)? = nil
+  ) {
+    _commands = commands
+    self.source = source
+    self.keybindingUserOverrides = keybindingUserOverrides
+    self.globalCommands = globalCommands
+    self.globalCommandEnabled = globalCommandEnabled
+  }
+
+  private enum ReorderDestination: Equatable {
+    case before(UserCustomCommand.ID)
+    case append
+  }
+
+  @State private var selectedCustomCommandID: UserCustomCommand.ID?
+  @State private var recordingCustomCommandID: UserCustomCommand.ID?
+  @State private var recorderMonitor: Any?
+  @State private var invalidMessageByCommandID: [UserCustomCommand.ID: String] = [:]
+  @State private var pendingShortcutConflict: CustomCommandShortcutConflict?
+  @State private var pendingShortcut: PendingCustomShortcut?
+  @State private var iconPickerCommandID: UserCustomCommand.ID?
+  @State private var customCommandsFocusAnchor: NSView?
+  @State private var popoverRefocusTask: Task<Void, Never>?
+  @State private var commandEditorCommandID: UserCustomCommand.ID?
+  @State private var editingNameCommandID: UserCustomCommand.ID?
+  @FocusState private var focusedNameEditorCommandID: UserCustomCommand.ID?
+  @State private var reorderDestination: ReorderDestination?
+
+  private let keyTokenResolver = ShortcutKeyTokenResolver()
+
+  static let symbolPresets = [
+    "terminal",
+    "terminal.fill",
+    "play.fill",
+    "stop.fill",
+    "hammer.fill",
+    "shippingbox.fill",
+    "doc.text.fill",
+    "sparkles",
+    "bolt.fill",
+    "flame.fill",
+    "wand.and.stars",
+    "wrench.and.screwdriver.fill",
+    "checkmark.circle.fill",
+    "xmark.circle.fill",
+    "exclamationmark.triangle.fill",
+    "ladybug.fill",
+    "clock.fill",
+    "repeat",
+    "arrow.clockwise",
+    "folder.fill",
+    "archivebox.fill",
+    "paperplane.fill",
+    "cloud.fill",
+    "tray.and.arrow.down.fill",
+    "tray.and.arrow.up.fill",
+    "icloud.and.arrow.up.fill",
+    "square.and.arrow.up.fill",
+    "arrow.triangle.2.circlepath",
+    "folder.badge.plus",
+    "doc.badge.plus",
+  ]
+
+  var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       VStack(spacing: 0) {
         customCommandsHeaderRow
         Divider()
         ScrollView {
           LazyVStack(spacing: 4) {
-            ForEach(store.userSettings.customCommands) { command in
+            ForEach(commands) { command in
               customCommandRow(command)
                 .id(command.id)
+            }
+            localCommandDropTarget
+            if showsGlobalCommands {
+              ForEach(globalCommands) { command in
+                globalCustomCommandRow(command)
+                  .id("global-\(command.id)")
+              }
             }
           }
           .padding(.horizontal, 6)
@@ -50,12 +133,12 @@ extension RepositorySettingsView {
           .accessibilityLabel("Remove selected command")
         }
         .buttonStyle(.plain)
-        .disabled(store.userSettings.customCommands.isEmpty)
+        .disabled(commands.isEmpty)
         .help("Remove selected command")
 
         Spacer(minLength: 0)
 
-        Text("\(store.userSettings.customCommands.count) commands")
+        Text("\(displayedCommandCount) commands")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -64,9 +147,13 @@ extension RepositorySettingsView {
           .font(.caption)
           .foregroundStyle(.red)
       } else {
-        Text("Click cells to edit icon, name, command, and shortcut inline.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        Text(
+          showsGlobalCommands
+            ? "Global commands are managed in Settings → Commands."
+            : "Click cells to edit icon, name, command, and shortcut inline."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
     }
     .background {
@@ -77,10 +164,62 @@ extension RepositorySettingsView {
       }
       .frame(width: 0, height: 0)
     }
+    .task {
+      syncSelectedCommandID(with: commands)
+    }
+    .onChange(of: commands) { _, commands in
+      syncSelectedCommandID(with: commands)
+      clearRemovedCommandState(using: commands)
+    }
+    .onChange(of: selectedCustomCommandID) { _, selectedID in
+      if editingNameCommandID != selectedID {
+        editingNameCommandID = nil
+      }
+      focusedNameEditorCommandID = nil
+      if let iconPickerCommandID, iconPickerCommandID != selectedID {
+        self.iconPickerCommandID = nil
+      }
+      if let commandEditorCommandID, commandEditorCommandID != selectedID {
+        self.commandEditorCommandID = nil
+      }
+      if let recordingCustomCommandID, recordingCustomCommandID != selectedID {
+        self.recordingCustomCommandID = nil
+      }
+    }
+    .onChange(of: recordingCustomCommandID) { _, commandID in
+      if commandID == nil {
+        stopRecorderMonitor()
+      } else {
+        startRecorderMonitor()
+      }
+    }
+    .onDisappear {
+      stopRecorderMonitor()
+      popoverRefocusTask?.cancel()
+      popoverRefocusTask = nil
+      focusedNameEditorCommandID = nil
+    }
+    .alert(
+      "Shortcut Conflict",
+      isPresented: isShortcutConflictAlertPresented,
+      presenting: pendingShortcutConflict
+    ) { _ in
+      Button("Replace", role: .destructive) {
+        applyPendingShortcut(replacingConflict: true)
+      }
+      Button("Cancel", role: .cancel) {
+        clearPendingShortcutConflict()
+      }
+    } message: { conflict in
+      Text(
+        "“\(conflict.newCommandTitle)” and “\(conflict.existingCommandTitle)” both use \(conflict.shortcutDisplay)."
+          + "\n\nChoose Replace to keep the new shortcut and clear the conflicting command."
+      )
+    }
   }
 
   @ViewBuilder
-  func customCommandIconCell(_ command: UserCustomCommand) -> some View {
+  private func customCommandIconCell(_ command: UserCustomCommand) -> some View {
     if let binding = bindingForCustomCommand(id: command.id) {
       InlineEditableCellButton(
         isActive: iconPickerCommandID == command.id,
@@ -122,7 +261,7 @@ extension RepositorySettingsView {
   }
 
   @ViewBuilder
-  func customCommandNameCell(_ command: UserCustomCommand) -> some View {
+  private func customCommandNameCell(_ command: UserCustomCommand) -> some View {
     let isSelected = selectedCustomCommandID == command.id
     if isSelected,
       editingNameCommandID == command.id,
@@ -152,7 +291,7 @@ extension RepositorySettingsView {
   }
 
   @ViewBuilder
-  func customCommandCell(_ command: UserCustomCommand) -> some View {
+  private func customCommandCell(_ command: UserCustomCommand) -> some View {
     if let binding = bindingForCustomCommand(id: command.id) {
       InlineEditableCellButton(
         isActive: commandEditorCommandID == command.id
@@ -198,7 +337,7 @@ extension RepositorySettingsView {
   }
 
   @ViewBuilder
-  func customCommandShortcutCell(_ command: UserCustomCommand) -> some View {
+  private func customCommandShortcutCell(_ command: UserCustomCommand) -> some View {
     let resolvedBinding = resolvedCustomCommandBindings.keybinding(for: customCommandBindingID(for: command.id))
     let shortcutDisplay = resolvedBinding?.display ?? "Unassigned"
     let isRecording = recordingCustomCommandID == command.id
@@ -225,13 +364,12 @@ extension RepositorySettingsView {
     .help(isRecording ? "Recording shortcut. Press Esc to cancel." : "Click to record a shortcut.")
   }
 
-  var effectiveSelectedCommandID: UserCustomCommand.ID? {
+  private var effectiveSelectedCommandID: UserCustomCommand.ID? {
     selectedCustomCommandID ?? editingNameCommandID ?? commandEditorCommandID ?? iconPickerCommandID
       ?? recordingCustomCommandID
   }
 
-  var removableCommandID: UserCustomCommand.ID? {
-    let commands = store.userSettings.customCommands
+  private var removableCommandID: UserCustomCommand.ID? {
     if let selectedCustomCommandID,
       commands.contains(where: { $0.id == selectedCustomCommandID })
     {
@@ -245,8 +383,10 @@ extension RepositorySettingsView {
     return commands.last?.id
   }
 
-  var customCommandsHeaderRow: some View {
+  private var customCommandsHeaderRow: some View {
     HStack(spacing: 8) {
+      customCommandHeaderCell("", width: customCommandsDragColumnWidth, alignment: .center)
+      customCommandHeaderCell("", width: customCommandsEnabledColumnWidth, alignment: .center)
       customCommandHeaderCell("", width: customCommandsIconColumnWidth, alignment: .center)
       customCommandHeaderCell("Name", width: customCommandsNameColumnWidth)
       customCommandHeaderCell("Command")
@@ -259,9 +399,15 @@ extension RepositorySettingsView {
   }
 
   @ViewBuilder
-  func customCommandRow(_ command: UserCustomCommand) -> some View {
+  private func customCommandRow(_ command: UserCustomCommand) -> some View {
     let isSelected = selectedCustomCommandID == command.id
     HStack(spacing: 8) {
+      customCommandRowCell(width: customCommandsDragColumnWidth, alignment: .center) {
+        customCommandReorderHandle(command)
+      }
+      customCommandRowCell(width: customCommandsEnabledColumnWidth, alignment: .center) {
+        customCommandEnabledCell(command)
+      }
       customCommandRowCell(width: customCommandsIconColumnWidth, alignment: .center) {
         customCommandIconCell(command)
       }
@@ -281,15 +427,129 @@ extension RepositorySettingsView {
       RoundedRectangle(cornerRadius: 8)
         .fill(isSelected ? Color.accentColor.opacity(0.35) : .clear)
     }
+    .overlay(alignment: .top) {
+      if reorderDestination == .before(command.id) {
+        reorderInsertionIndicator
+      }
+    }
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .accessibilityAddTraits(.isButton)
     .onTapGesture {
       selectCustomCommand(command.id)
     }
+    .dropDestination(
+      for: String.self,
+      action: { commandIDs, _ in
+        guard
+          let commandID = commandIDs.first,
+          commands.contains(where: { $0.id == commandID })
+        else {
+          return false
+        }
+        moveCustomCommand(commandID, before: command.id)
+        reorderDestination = nil
+        return true
+      },
+      isTargeted: { isTargeted in
+        updateReorderDestination(isTargeted, destination: .before(command.id))
+      }
+    )
   }
 
   @ViewBuilder
-  func customCommandHeaderCell(
+  private func globalCustomCommandRow(_ command: UserCustomCommand) -> some View {
+    HStack(spacing: 8) {
+      customCommandRowCell(width: customCommandsDragColumnWidth, alignment: .center) {
+        Image(systemName: "lock.fill")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
+      }
+      customCommandRowCell(width: customCommandsEnabledColumnWidth, alignment: .center) {
+        globalCommandEnabledCell(command)
+      }
+      customCommandRowCell(width: customCommandsIconColumnWidth, alignment: .center) {
+        Image(systemName: command.resolvedSystemImage)
+          .foregroundStyle(.secondary)
+          .frame(width: 16, alignment: .center)
+          .accessibilityHidden(true)
+      }
+      customCommandRowCell(width: customCommandsNameColumnWidth) {
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 4) {
+            Text(command.resolvedTitle)
+              .lineLimit(1)
+            Text("Global")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if !command.isEnabled {
+            Text("Disabled globally")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      customCommandRowCell {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(inlineCommandTitle(for: command.execution))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text(inlineCommandScriptPreview(for: command.command))
+            .lineLimit(1)
+        }
+      }
+      customCommandRowCell(width: customCommandsShortcutColumnWidth) {
+        let binding = resolvedCustomCommandBindings.keybinding(
+          for: customCommandBindingID(for: command.id, source: .global)
+        )
+        Text(binding?.display ?? "Unassigned")
+          .font(.body.monospaced())
+          .foregroundStyle(binding == nil ? .secondary : .primary)
+          .lineLimit(1)
+      }
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 2)
+    .opacity(command.isEnabled ? 1 : 0.6)
+    .help("Global command. Edit it in Settings → Commands.")
+  }
+
+  @ViewBuilder
+  private func customCommandReorderHandle(_ command: UserCustomCommand) -> some View {
+    Image(systemName: "line.3.horizontal")
+      .foregroundStyle(.tertiary)
+      .frame(width: 16, height: 16)
+      .contentShape(Rectangle())
+      .accessibilityLabel("Drag \(command.resolvedTitle) to reorder")
+      .help("Drag to reorder command")
+      .draggable(command.id)
+  }
+
+  @ViewBuilder
+  private func customCommandEnabledCell(_ command: UserCustomCommand) -> some View {
+    if let binding = bindingForCustomCommand(id: command.id) {
+      Toggle("Enable \(command.resolvedTitle)", isOn: binding.isEnabled)
+        .labelsHidden()
+        .toggleStyle(.checkbox)
+        .controlSize(.small)
+        .help("Enable \(command.resolvedTitle)")
+    }
+  }
+
+  @ViewBuilder
+  private func globalCommandEnabledCell(_ command: UserCustomCommand) -> some View {
+    if let binding = globalCommandEnabled?(command.id) {
+      Toggle("Enable \(command.resolvedTitle) in this repository", isOn: binding)
+        .labelsHidden()
+        .toggleStyle(.checkbox)
+        .controlSize(.small)
+        .help("Enable \(command.resolvedTitle) in this repository")
+    }
+  }
+
+  @ViewBuilder
+  private func customCommandHeaderCell(
     _ title: String,
     width: CGFloat? = nil,
     alignment: Alignment = .leading
@@ -304,7 +564,7 @@ extension RepositorySettingsView {
   }
 
   @ViewBuilder
-  func customCommandRowCell<Content: View>(
+  private func customCommandRowCell<Content: View>(
     width: CGFloat? = nil,
     alignment: Alignment = .leading,
     @ViewBuilder content: () -> Content
@@ -319,13 +579,13 @@ extension RepositorySettingsView {
     }
   }
 
-  func selectCustomCommand(_ commandID: UserCustomCommand.ID) {
+  private func selectCustomCommand(_ commandID: UserCustomCommand.ID) {
     if selectedCustomCommandID != commandID {
       selectedCustomCommandID = commandID
     }
   }
 
-  func inlineCommandTitle(for execution: UserCustomCommandExecution) -> String {
+  private func inlineCommandTitle(for execution: UserCustomCommandExecution) -> String {
     switch execution {
     case .shellScript:
       return "New Tab"
@@ -336,7 +596,7 @@ extension RepositorySettingsView {
     }
   }
 
-  func inlineCommandScriptPreview(for script: String) -> String {
+  private func inlineCommandScriptPreview(for script: String) -> String {
     let firstLine =
       script
       .split(separator: "\n", omittingEmptySubsequences: false)
@@ -346,7 +606,7 @@ extension RepositorySettingsView {
     return firstLine.isEmpty ? "Click to set command script" : firstLine
   }
 
-  func iconEditorPopover(
+  private func iconEditorPopover(
     for command: Binding<UserCustomCommand>,
     commandID: UserCustomCommand.ID
   ) -> some View {
@@ -391,11 +651,11 @@ extension RepositorySettingsView {
     .frame(width: 360)
   }
 
-  func commandEditorPopover(for command: Binding<UserCustomCommand>) -> some View {
+  private func commandEditorPopover(for command: Binding<UserCustomCommand>) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       Text("Command")
         .font(.headline)
-      Text("Choose where this command runs and edit the script used by this repository custom command.")
+      Text(commandEditorDescription)
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -443,14 +703,23 @@ extension RepositorySettingsView {
     .frame(width: 420)
   }
 
-  var selectedCommandInvalidMessage: String? {
+  private var commandEditorDescription: String {
+    switch source {
+    case .repository:
+      return "Choose where this command runs and edit the script used by this repository custom command."
+    case .global:
+      return "Choose where this command runs and edit the script used by this global custom command."
+    }
+  }
+
+  private var selectedCommandInvalidMessage: String? {
     guard let selectedCustomCommandID else {
       return nil
     }
     return invalidMessageByCommandID[selectedCustomCommandID]
   }
 
-  func openSFSymbolsReference() {
+  private func openSFSymbolsReference() {
     if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.SFSymbols") {
       let configuration = NSWorkspace.OpenConfiguration()
       NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, _ in }
@@ -462,7 +731,7 @@ extension RepositorySettingsView {
     NSWorkspace.shared.open(url)
   }
 
-  func toggleIconEditor(for commandID: UserCustomCommand.ID) {
+  private func toggleIconEditor(for commandID: UserCustomCommand.ID) {
     if iconPickerCommandID == commandID {
       closePopoverAndRestoreCommandFocus(for: commandID)
       return
@@ -475,7 +744,7 @@ extension RepositorySettingsView {
     }
   }
 
-  func toggleCommandEditor(for commandID: UserCustomCommand.ID) {
+  private func toggleCommandEditor(for commandID: UserCustomCommand.ID) {
     if commandEditorCommandID == commandID {
       closePopoverAndRestoreCommandFocus(for: commandID)
       return
@@ -488,7 +757,7 @@ extension RepositorySettingsView {
     }
   }
 
-  func beginNameEditing(for commandID: UserCustomCommand.ID) {
+  private func beginNameEditing(for commandID: UserCustomCommand.ID) {
     editingNameCommandID = commandID
     iconPickerCommandID = nil
     commandEditorCommandID = nil
@@ -498,12 +767,12 @@ extension RepositorySettingsView {
     focusedNameEditorCommandID = commandID
   }
 
-  func endNameEditing() {
+  private func endNameEditing() {
     editingNameCommandID = nil
     focusedNameEditorCommandID = nil
   }
 
-  func closePopoverAndRestoreCommandFocus(for commandID: UserCustomCommand.ID) {
+  private func closePopoverAndRestoreCommandFocus(for commandID: UserCustomCommand.ID) {
     popoverRefocusTask?.cancel()
 
     var transaction = Transaction()
@@ -516,7 +785,7 @@ extension RepositorySettingsView {
     scheduleCommandFocusRestore(for: commandID)
   }
 
-  func focusCustomCommandsArea() {
+  private func focusCustomCommandsArea() {
     guard let window = NSApp.keyWindow else {
       return
     }
@@ -529,7 +798,7 @@ extension RepositorySettingsView {
     _ = window.makeFirstResponder(nil)
   }
 
-  func scheduleCommandFocusRestore(for commandID: UserCustomCommand.ID) {
+  private func scheduleCommandFocusRestore(for commandID: UserCustomCommand.ID) {
     popoverRefocusTask = Task { @MainActor in
       await Task.yield()
       guard !Task.isCancelled else {
@@ -538,7 +807,7 @@ extension RepositorySettingsView {
       guard iconPickerCommandID == nil, commandEditorCommandID == nil else {
         return
       }
-      guard store.userSettings.customCommands.contains(where: { $0.id == commandID }) else {
+      guard commands.contains(where: { $0.id == commandID }) else {
         return
       }
 
@@ -551,7 +820,7 @@ extension RepositorySettingsView {
     }
   }
 
-  func scriptPlaceholder(for execution: UserCustomCommandExecution) -> String {
+  private func scriptPlaceholder(for execution: UserCustomCommandExecution) -> String {
     switch execution {
     case .shellScript:
       return "npm test && swift test"
@@ -562,7 +831,7 @@ extension RepositorySettingsView {
     }
   }
 
-  func scriptDescription(for execution: UserCustomCommandExecution) -> String {
+  private func scriptDescription(for execution: UserCustomCommandExecution) -> String {
     switch execution {
     case .shellScript:
       return "Runs in a new terminal tab."
@@ -573,28 +842,33 @@ extension RepositorySettingsView {
     }
   }
 
-  var resolvedCustomCommandBindings: ResolvedKeybindingMap {
-    let commands = store.userSettings.customCommands
-    let migration = LegacyCustomCommandShortcutMigration.migrate(commands: commands)
+  private var resolvedCustomCommandBindings: ResolvedKeybindingMap {
+    let effectiveCommands =
+      commands.map { EffectiveCustomCommand(source: source, command: $0) }
+      + globalCommands.map { EffectiveCustomCommand(source: .global, command: $0) }
+    let migration = LegacyCustomCommandShortcutMigration.migrate(commands: effectiveCommands)
     return KeybindingResolver.resolve(
-      schema: .appResolverSchema(customCommands: commands),
-      userOverrides: store.keybindingUserOverrides,
+      schema: .appResolverSchema(effectiveCustomCommands: effectiveCommands),
+      userOverrides: keybindingUserOverrides,
       migratedOverrides: migration.overrides
     )
   }
 
-  func customCommandBindingID(for commandID: String) -> String {
-    LegacyCustomCommandShortcutMigration.customCommandBindingID(for: commandID)
+  private func customCommandBindingID(
+    for commandID: String,
+    source: CustomCommandSource? = nil
+  ) -> String {
+    LegacyCustomCommandShortcutMigration.customCommandBindingID(for: commandID, source: source ?? self.source)
   }
 
-  func bindingForCustomCommand(id commandID: UserCustomCommand.ID) -> Binding<UserCustomCommand>? {
-    guard store.userSettings.customCommands.contains(where: { $0.id == commandID }) else {
+  private func bindingForCustomCommand(id commandID: UserCustomCommand.ID) -> Binding<UserCustomCommand>? {
+    guard commands.contains(where: { $0.id == commandID }) else {
       return nil
     }
 
     return Binding(
       get: {
-        store.userSettings.customCommands.first(where: { $0.id == commandID })
+        commands.first(where: { $0.id == commandID })
           ?? UserCustomCommand(
             id: commandID,
             title: "",
@@ -613,12 +887,13 @@ extension RepositorySettingsView {
           command.splitDirection = updatedCommand.splitDirection
           command.closeOnSuccess = updatedCommand.closeOnSuccess
           command.shortcut = updatedCommand.shortcut
+          command.isEnabled = updatedCommand.isEnabled
         }
       }
     )
   }
 
-  func syncSelectedCommandID(with commands: [UserCustomCommand]) {
+  private func syncSelectedCommandID(with commands: [UserCustomCommand]) {
     guard !commands.isEmpty else {
       selectedCustomCommandID = nil
       recordingCustomCommandID = nil
@@ -638,7 +913,7 @@ extension RepositorySettingsView {
     selectedCustomCommandID = commands[0].id
   }
 
-  func clearRemovedCommandState(using commands: [UserCustomCommand]) {
+  private func clearRemovedCommandState(using commands: [UserCustomCommand]) {
     let validIDs = Set(commands.map(\.id))
 
     invalidMessageByCommandID = invalidMessageByCommandID.filter { validIDs.contains($0.key) }
@@ -669,11 +944,9 @@ extension RepositorySettingsView {
     }
   }
 
-  func addCustomCommand() {
-    let commandsBinding = $store.userSettings.customCommands
-    let current = commandsBinding.wrappedValue
-    let next = UserRepositorySettings.normalizedCommands(current + [.default(index: current.count)])
-    commandsBinding.wrappedValue = next
+  private func addCustomCommand() {
+    let next = UserCustomCommand.normalizedCommands(commands + [.default(index: commands.count)])
+    commands = next
     guard let commandID = next.last?.id else {
       selectedCustomCommandID = nil
       editingNameCommandID = nil
@@ -688,20 +961,19 @@ extension RepositorySettingsView {
     recordingCustomCommandID = nil
   }
 
-  func removeSelectedCustomCommand() {
+  private func removeSelectedCustomCommand() {
     guard let selectedCommandID = removableCommandID else {
       return
     }
 
-    let commandsBinding = $store.userSettings.customCommands
-    var commands = commandsBinding.wrappedValue
+    var updatedCommands = commands
     let removalIndex: Int?
-    if let index = commands.firstIndex(where: { $0.id == selectedCommandID }) {
+    if let index = updatedCommands.firstIndex(where: { $0.id == selectedCommandID }) {
       removalIndex = index
-      commands.remove(at: index)
-    } else if !commands.isEmpty {
-      removalIndex = commands.count - 1
-      commands.removeLast()
+      updatedCommands.remove(at: index)
+    } else if !updatedCommands.isEmpty {
+      removalIndex = updatedCommands.count - 1
+      updatedCommands.removeLast()
     } else {
       removalIndex = nil
     }
@@ -710,8 +982,8 @@ extension RepositorySettingsView {
       return
     }
 
-    let normalizedCommands = UserRepositorySettings.normalizedCommands(commands)
-    commandsBinding.wrappedValue = normalizedCommands
+    let normalizedCommands = UserCustomCommand.normalizedCommands(updatedCommands)
+    commands = normalizedCommands
 
     if normalizedCommands.isEmpty {
       selectedCustomCommandID = nil
@@ -723,7 +995,7 @@ extension RepositorySettingsView {
     clearRemovedCommandState(using: normalizedCommands)
   }
 
-  func clearShortcut(for commandID: UserCustomCommand.ID) {
+  private func clearShortcut(for commandID: UserCustomCommand.ID) {
     invalidMessageByCommandID[commandID] = nil
     updateCustomCommand(id: commandID) { command in
       command.shortcut = nil
@@ -733,21 +1005,41 @@ extension RepositorySettingsView {
     }
   }
 
-  func updateCustomCommand(
+  private func updateCustomCommand(
     id: UserCustomCommand.ID,
     update: (inout UserCustomCommand) -> Void
   ) {
-    let commandsBinding = $store.userSettings.customCommands
-    var commands = commandsBinding.wrappedValue
-    guard let index = commands.firstIndex(where: { $0.id == id }) else {
+    var updatedCommands = commands
+    guard let index = updatedCommands.firstIndex(where: { $0.id == id }) else {
       return
     }
 
-    update(&commands[index])
-    commandsBinding.wrappedValue = UserRepositorySettings.normalizedCommands(commands)
+    update(&updatedCommands[index])
+    commands = UserCustomCommand.normalizedCommands(updatedCommands)
   }
 
-  func toggleRecording(for commandID: UserCustomCommand.ID) {
+  private func moveCustomCommand(
+    _ commandID: UserCustomCommand.ID,
+    before destinationID: UserCustomCommand.ID? = nil
+  ) {
+    guard commandID != destinationID else {
+      return
+    }
+    var updatedCommands = commands
+    guard let sourceIndex = updatedCommands.firstIndex(where: { $0.id == commandID }) else {
+      return
+    }
+    let command = updatedCommands.remove(at: sourceIndex)
+    let destinationIndex =
+      destinationID.flatMap { destinationID in
+        updatedCommands.firstIndex(where: { $0.id == destinationID })
+      } ?? updatedCommands.endIndex
+    updatedCommands.insert(command, at: destinationIndex)
+    commands = UserCustomCommand.normalizedCommands(updatedCommands)
+    selectCustomCommand(commandID)
+  }
+
+  private func toggleRecording(for commandID: UserCustomCommand.ID) {
     invalidMessageByCommandID[commandID] = nil
     iconPickerCommandID = nil
     commandEditorCommandID = nil
@@ -761,7 +1053,7 @@ extension RepositorySettingsView {
     recordingCustomCommandID = commandID
   }
 
-  func startRecorderMonitor() {
+  private func startRecorderMonitor() {
     stopRecorderMonitor()
     recorderMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
       guard let commandID = recordingCustomCommandID else {
@@ -772,14 +1064,14 @@ extension RepositorySettingsView {
     }
   }
 
-  func stopRecorderMonitor() {
+  private func stopRecorderMonitor() {
     if let recorderMonitor {
       NSEvent.removeMonitor(recorderMonitor)
       self.recorderMonitor = nil
     }
   }
 
-  func handleRecorderEvent(_ event: NSEvent, commandID: UserCustomCommand.ID) {
+  private func handleRecorderEvent(_ event: NSEvent, commandID: UserCustomCommand.ID) {
     if event.keyCode == 53 {  // Escape
       recordingCustomCommandID = nil
       return
@@ -817,7 +1109,7 @@ extension RepositorySettingsView {
     applyRecordedShortcut(shortcut.normalized(), to: commandID)
   }
 
-  func applyRecordedShortcut(
+  private func applyRecordedShortcut(
     _ shortcut: UserCustomShortcut,
     to commandID: UserCustomCommand.ID
   ) {
@@ -832,7 +1124,7 @@ extension RepositorySettingsView {
     }
 
     let newTitle =
-      store.userSettings.customCommands.first(where: { $0.id == commandID })?.resolvedTitle ?? "Command"
+      commands.first(where: { $0.id == commandID })?.resolvedTitle ?? "Command"
 
     pendingShortcutConflict = CustomCommandShortcutConflict(
       newCommandID: commandID,
@@ -845,18 +1137,18 @@ extension RepositorySettingsView {
     recordingCustomCommandID = nil
   }
 
-  func firstConflictingCommand(
+  private func firstConflictingCommand(
     for commandID: UserCustomCommand.ID,
     shortcut: UserCustomShortcut
   ) -> UserCustomCommand? {
-    store.userSettings.customCommands.first { command in
+    commands.first { command in
       guard command.id != commandID else { return false }
       guard let existingShortcut = command.shortcut?.normalized() else { return false }
       return existingShortcut == shortcut
     }
   }
 
-  func applyPendingShortcut(replacingConflict: Bool) {
+  private func applyPendingShortcut(replacingConflict: Bool) {
     guard let pendingShortcut else {
       clearPendingShortcutConflict()
       return
@@ -877,12 +1169,12 @@ extension RepositorySettingsView {
     clearPendingShortcutConflict()
   }
 
-  func clearPendingShortcutConflict() {
+  private func clearPendingShortcutConflict() {
     pendingShortcutConflict = nil
     pendingShortcut = nil
   }
 
-  var isShortcutConflictAlertPresented: Binding<Bool> {
+  private var isShortcutConflictAlertPresented: Binding<Bool> {
     Binding(
       get: { pendingShortcutConflict != nil },
       set: { shouldPresent in
@@ -893,11 +1185,67 @@ extension RepositorySettingsView {
     )
   }
 
-  var customCommandsIconColumnWidth: CGFloat { 48 }
+  private var showsGlobalCommands: Bool {
+    source == .repository && !globalCommands.isEmpty
+  }
 
-  var customCommandsNameColumnWidth: CGFloat { 130 }
+  private var displayedCommandCount: Int {
+    commands.count + (showsGlobalCommands ? globalCommands.count : 0)
+  }
 
-  var customCommandsShortcutColumnWidth: CGFloat { 100 }
+  private var localCommandDropTarget: some View {
+    Color.clear
+      .frame(height: 12)
+      .overlay {
+        if reorderDestination == .append {
+          reorderInsertionIndicator
+        }
+      }
+      .contentShape(Rectangle())
+      .dropDestination(
+        for: String.self,
+        action: { commandIDs, _ in
+          guard
+            let commandID = commandIDs.first,
+            commands.contains(where: { $0.id == commandID })
+          else {
+            return false
+          }
+          moveCustomCommand(commandID)
+          reorderDestination = nil
+          return true
+        },
+        isTargeted: { isTargeted in
+          updateReorderDestination(isTargeted, destination: .append)
+        }
+      )
+  }
 
-  var customCommandsListHeight: CGFloat { 200 }
+  private var reorderInsertionIndicator: some View {
+    Rectangle()
+      .fill(Color.accentColor)
+      .frame(height: 2)
+      .padding(.horizontal, 4)
+      .accessibilityHidden(true)
+  }
+
+  private func updateReorderDestination(_ isTargeted: Bool, destination: ReorderDestination) {
+    if isTargeted {
+      reorderDestination = destination
+    } else if reorderDestination == destination {
+      reorderDestination = nil
+    }
+  }
+
+  private var customCommandsDragColumnWidth: CGFloat { 24 }
+
+  private var customCommandsEnabledColumnWidth: CGFloat { 24 }
+
+  private var customCommandsIconColumnWidth: CGFloat { 32 }
+
+  private var customCommandsNameColumnWidth: CGFloat { 130 }
+
+  private var customCommandsShortcutColumnWidth: CGFloat { 100 }
+
+  private var customCommandsListHeight: CGFloat { 200 }
 }

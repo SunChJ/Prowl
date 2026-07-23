@@ -157,6 +157,11 @@ struct ContentView: View {
         resolvedKeybindings: store.resolvedKeybindings
       )
     }
+    .overlay {
+      if let handoffHudStore = store.scope(state: \.handoffHud, action: \.handoffHud.presented) {
+        HandoffHudOverlayView(store: handoffHudStore)
+      }
+    }
     .background(WindowTabbingDisabler())
   }
 

@@ -823,13 +823,20 @@ enum AppShortcuts {
   static func userOverrideConflicts(
     in commands: [UserCustomCommand]
   ) -> [CustomCommandOverrideConflict] {
+    userOverrideConflicts(in: commands.map { EffectiveCustomCommand(source: .repository, command: $0) })
+  }
+
+  static func userOverrideConflicts(
+    in commands: [EffectiveCustomCommand]
+  ) -> [CustomCommandOverrideConflict] {
     var seen = Set<String>()
-    return commands.compactMap { command in
+    return commands.compactMap { effectiveCommand in
+      let command = effectiveCommand.command
       guard let shortcut = command.shortcut?.normalized(), shortcut.isValid else { return nil }
       guard let appBinding = matchingReservedBinding(for: shortcut) else { return nil }
 
       let signature =
-        "\(command.id)|\(shortcut.display)|\(appBinding.actionTitle)|\(appBinding.shortcut.display)"
+        "\(effectiveCommand.paletteID)|\(shortcut.display)|\(appBinding.actionTitle)|\(appBinding.shortcut.display)"
       guard seen.insert(signature).inserted else { return nil }
 
       return CustomCommandOverrideConflict(

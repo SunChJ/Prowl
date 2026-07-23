@@ -13,6 +13,7 @@ For the UI grouping of these into tabs, see [`components/settings.md`](../compon
 | Scope | Path |
 |-------|------|
 | Global settings | `~/.prowl/settings.json` |
+| Global custom commands | `~/.prowl/global.onevcat.json` |
 | Per-repository settings | `~/.prowl/repo/<repo-name>/prowl.json` |
 | Per-repository custom commands | `~/.prowl/repo/<repo-name>/prowl.onevcat.json` |
 
@@ -38,7 +39,7 @@ JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 | `analyticsEnabled` | Bool | `true` | Send usage analytics (PostHog; off in Debug). |
 | `crashReportsEnabled` | Bool | `true` | Send crash reports (Sentry). |
 | `githubIntegrationEnabled` | Bool | `true` | Enable GitHub/PR features (via `gh`). |
-| `deleteBranchOnDeleteWorktree` | Bool | `false` | Default "delete branch" when deleting a worktree. |
+| `deleteBranchOnAutomaticCleanup` | Bool | `false` | Delete the local branch when automatic cleanup (merged-PR delete action, archived auto-delete) removes a Prowl-created worktree. Migrates the legacy `deleteBranchOnDeleteWorktree` key. The manual delete dialog is independent: it remembers the last confirmed choice in UserDefaults (`deleteBranchOnManualWorktreeDelete`). |
 | `mergedWorktreeAction` | enum? | `nil` | What to do with a merged worktree (e.g. auto-archive); `nil` = ask. |
 | `promptForWorktreeCreation` | Bool | `true` | Show the creation dialog vs. auto-create. |
 | `fetchOriginBeforeWorktreeCreation` | Bool | `true` | `git fetch` before creating a worktree. |
@@ -88,10 +89,16 @@ Stored at `~/.prowl/repo/<repo-name>/prowl.json` (schema v2). For the tri-state
 | `observeLineDiffsAutomatically` | Bool? | `nil` (= on) | Keep worktree line-change badges updated; set `false` for large repos. |
 | `fetchPullRequestState` | Bool? | `nil` (= on) | Background-fetch PR state; set `false` to save GitHub rate limit. |
 
-**Custom Commands** (per-repo buttons/hotkeys) live separately in
-`prowl.onevcat.json`. See [`components/custom-actions.md`](../components/custom-actions.md)
-for their structure (title, icon, command, execution mode, close-on-success,
-shortcut).
+**Custom Commands** live separately in `prowl.onevcat.json`. Each command has an
+`isEnabled` Boolean that defaults to `true`; turning it off preserves its structure
+(title, icon, command, execution mode, close-on-success, shortcut, and order) but
+removes it from every command surface and hotkey dispatch.
+
+**Global Custom Commands** use the same command structure in
+`~/.prowl/global.onevcat.json`. Repository `prowl.onevcat.json` files additionally
+store `disabledGlobalCommandIDs`: an absent ID means enabled for that repository, while
+an included ID hides that Global command there. Local commands are ordered before Global
+commands; matching titles do not hide either command.
 
 ## Notes for agents
 

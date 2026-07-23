@@ -13,7 +13,15 @@ final class TerminalTabManager {
   var selectedTabId: TerminalTabID?
   private(set) var editingTabID: TerminalTabID?
 
-  func createTab(title: String, icon: String?, isTitleLocked: Bool = false) -> TerminalTabID {
+  /// Creates a tab next to the current selection. With `select: false` the
+  /// selection is left untouched (background creation, e.g. a headless handoff
+  /// launch) unless nothing was selected yet.
+  func createTab(
+    title: String,
+    icon: String?,
+    isTitleLocked: Bool = false,
+    select: Bool = true
+  ) -> TerminalTabID {
     let tab = TerminalTabItem(title: title, icon: icon, isTitleLocked: isTitleLocked)
     if let selectedTabId,
       let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabId })
@@ -22,7 +30,9 @@ final class TerminalTabManager {
     } else {
       tabs.append(tab)
     }
-    selectedTabId = tab.id
+    if select || selectedTabId == nil {
+      selectedTabId = tab.id
+    }
     return tab.id
   }
 

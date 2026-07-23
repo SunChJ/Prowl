@@ -352,6 +352,9 @@ struct RepositoriesFeature {
     var codeHostByRepositoryID: [Repository.ID: CodeHost] = [:]
     var sidebarSelectedWorktreeIDs: Set<Worktree.ID> = []
     @Shared(.appStorage("prowlCreatedWorktreeIDs")) var prowlCreatedWorktreeIDs: [Worktree.ID] = []
+    /// Last "Also delete local branch" choice confirmed in the manual delete
+    /// dialog; preselects the toggle next time.
+    @Shared(.appStorage("deleteBranchOnManualWorktreeDelete")) var deleteBranchOnManualWorktreeDelete = false
     var nextDeleteWorktreeConfirmationID = 0
     var deleteWorktreeConfirmation: DeleteWorktreeConfirmation?
     var removeWorkspaceConfirmation: RemoveWorkspaceConfirmation?

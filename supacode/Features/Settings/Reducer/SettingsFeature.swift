@@ -21,7 +21,7 @@ struct SettingsFeature {
     var analyticsEnabled: Bool
     var crashReportsEnabled: Bool
     var githubIntegrationEnabled: Bool
-    var deleteBranchOnDeleteWorktree: Bool
+    var deleteBranchOnAutomaticCleanup: Bool
     var mergedWorktreeAction: MergedWorktreeAction?
     var archivedAutoDeletePeriod: AutoDeletePeriod?
     var promptForWorktreeCreation: Bool
@@ -60,6 +60,7 @@ struct SettingsFeature {
     var dockBadgeAuthorization: SystemNotificationClient.DockBadgeAuthorization = .available
     var selection: SettingsSection? = .general
     var repositorySettings: RepositorySettingsFeature.State?
+    var globalCustomCommands: GlobalCustomCommandsFeature.State?
     @Presents var alert: AlertState<Alert>?
 
     init(settings: GlobalSettings = .default) {
@@ -79,7 +80,7 @@ struct SettingsFeature {
       analyticsEnabled = settings.analyticsEnabled
       crashReportsEnabled = settings.crashReportsEnabled
       githubIntegrationEnabled = settings.githubIntegrationEnabled
-      deleteBranchOnDeleteWorktree = settings.deleteBranchOnDeleteWorktree
+      deleteBranchOnAutomaticCleanup = settings.deleteBranchOnAutomaticCleanup
       mergedWorktreeAction = settings.mergedWorktreeAction
       archivedAutoDeletePeriod = settings.archivedAutoDeletePeriod
       promptForWorktreeCreation = settings.promptForWorktreeCreation
@@ -127,7 +128,7 @@ struct SettingsFeature {
         analyticsEnabled: analyticsEnabled,
         crashReportsEnabled: crashReportsEnabled,
         githubIntegrationEnabled: githubIntegrationEnabled,
-        deleteBranchOnDeleteWorktree: deleteBranchOnDeleteWorktree,
+        deleteBranchOnAutomaticCleanup: deleteBranchOnAutomaticCleanup,
         mergedWorktreeAction: mergedWorktreeAction,
         promptForWorktreeCreation: promptForWorktreeCreation,
         fetchOriginBeforeWorktreeCreation: fetchRemoteBeforeWorktreeCreation,
@@ -178,6 +179,7 @@ struct SettingsFeature {
     case dockBadgeAuthorizationResponse(SystemNotificationClient.DockBadgeAuthorization)
     case showNotificationPermissionAlert(errorMessage: String?)
     case repositorySettings(RepositorySettingsFeature.Action)
+    case globalCustomCommands(GlobalCustomCommandsFeature.Action)
     case alert(PresentationAction<Alert>)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -248,7 +250,7 @@ struct SettingsFeature {
         state.analyticsEnabled = normalizedSettings.analyticsEnabled
         state.crashReportsEnabled = normalizedSettings.crashReportsEnabled
         state.githubIntegrationEnabled = normalizedSettings.githubIntegrationEnabled
-        state.deleteBranchOnDeleteWorktree = normalizedSettings.deleteBranchOnDeleteWorktree
+        state.deleteBranchOnAutomaticCleanup = normalizedSettings.deleteBranchOnAutomaticCleanup
         state.mergedWorktreeAction = normalizedSettings.mergedWorktreeAction
         state.archivedAutoDeletePeriod = normalizedSettings.archivedAutoDeletePeriod
         state.promptForWorktreeCreation = normalizedSettings.promptForWorktreeCreation
@@ -437,12 +439,18 @@ struct SettingsFeature {
       case .repositorySettings:
         return .none
 
+      case .globalCustomCommands:
+        return .none
+
       case .delegate:
         return .none
       }
     }
     .ifLet(\.repositorySettings, action: \.repositorySettings) {
       RepositorySettingsFeature()
+    }
+    .ifLet(\.globalCustomCommands, action: \.globalCustomCommands) {
+      GlobalCustomCommandsFeature()
     }
   }
 

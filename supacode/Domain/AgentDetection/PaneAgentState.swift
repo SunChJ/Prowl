@@ -3,6 +3,7 @@ import Foundation
 struct PaneAgentState: Equatable, Sendable {
   var detectedAgent: DetectedAgent?
   var agentProcessID: pid_t?
+  var launchObservation: AgentLaunchObservation?
   var session: AgentSession?
   /// Consecutive resolver misses while the same process stayed detected;
   /// bounds how long a previously resolved session may be retained.
@@ -16,6 +17,7 @@ struct PaneAgentState: Equatable, Sendable {
   init(
     detectedAgent: DetectedAgent? = nil,
     agentProcessID: pid_t? = nil,
+    launchObservation: AgentLaunchObservation? = nil,
     session: AgentSession? = nil,
     iconLookupToken: String? = nil,
     fallbackState: AgentRawState = .unknown,
@@ -25,6 +27,7 @@ struct PaneAgentState: Equatable, Sendable {
   ) {
     self.detectedAgent = detectedAgent
     self.agentProcessID = agentProcessID
+    self.launchObservation = launchObservation
     self.session = session
     self.iconLookupToken = iconLookupToken
     self.fallbackState = fallbackState
@@ -52,6 +55,18 @@ struct PaneAgentState: Equatable, Sendable {
     guard isFresh else { return (previous.session, previous.sessionMissStreak) }
     let streak = previous.sessionMissStreak + 1
     return (streak >= 3 ? nil : previous.session, streak)
+  }
+
+  /// An argv observation is usable only while it belongs to the same detected
+  /// process. Unlike sessions, an absent probe never proves a safer mode.
+  static func retainedLaunchObservation(
+    observed: AgentLaunchObservation?,
+    previous: PaneAgentState,
+    identifiedPID: pid_t?
+  ) -> AgentLaunchObservation? {
+    if let observed { return observed }
+    guard let identifiedPID, identifiedPID == previous.agentProcessID else { return nil }
+    return previous.launchObservation
   }
 
   var displayState: AgentDisplayState {

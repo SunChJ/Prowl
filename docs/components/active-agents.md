@@ -48,6 +48,15 @@ Rows appear in the order agents are first detected. (See
 
 - **Click a row** → focuses that worktree + tab + pane and brings Prowl forward. A
   **Done** row downgrades to **Idle** once focused.
+- **Right-click a row** for the context menu:
+  - **Hand Off…** — opens the Hand Off HUD for that agent's pane
+    (selecting and focusing it first), regardless of which pane currently has
+    focus. Same flow as the toolbar Agents capsule; see
+    [handoff](handoff.md).
+  - **Mark as Read** — clears the pane's unread notifications without
+    switching to it.
+  - **Copy Path** / **Reveal in Finder** — the agent's working directory (or
+    its owning worktree's directory when the agent hasn't reported one).
 - **Keyboard navigation:** `⌥⌃↓` next agent, `⌥⌃↑` previous agent (wraps).
 - **Resize** the panel by dragging its top edge (height is remembered).
 - **Auto-show:** if `autoShowActiveAgentsPanel` is on and the panel is hidden, a

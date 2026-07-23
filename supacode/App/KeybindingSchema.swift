@@ -285,10 +285,15 @@ nonisolated enum LegacyCustomCommandShortcutMigration {
   private static let logger = SupaLogger("Shortcuts")
 
   static func migrate(commands: [UserCustomCommand]) -> KeybindingMigrationResult {
+    migrate(commands: commands.map { EffectiveCustomCommand(source: .repository, command: $0) })
+  }
+
+  static func migrate(commands: [EffectiveCustomCommand]) -> KeybindingMigrationResult {
     var overrides: [String: KeybindingUserOverride] = [:]
     var issues: [KeybindingMigrationIssue] = []
 
-    for command in commands {
+    for effectiveCommand in commands {
+      let command = effectiveCommand.command
       let commandID = command.id.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !commandID.isEmpty else {
         let issue = KeybindingMigrationIssue(
@@ -325,14 +330,22 @@ nonisolated enum LegacyCustomCommandShortcutMigration {
         key: shortcut.key,
         modifiers: .init(shortcut.modifiers)
       )
-      overrides[customCommandBindingID(for: commandID)] = KeybindingUserOverride(binding: binding)
+      overrides[customCommandBindingID(for: commandID, source: effectiveCommand.source)] = KeybindingUserOverride(
+        binding: binding
+      )
     }
 
     return KeybindingMigrationResult(overrides: overrides, issues: issues)
   }
 
-  static func customCommandBindingID(for commandID: String) -> String {
-    "custom_command.\(commandID)"
+  static func customCommandBindingID(
+    for commandID: String,
+    source: CustomCommandSource = .repository
+  ) -> String {
+    switch source {
+    case .repository: "custom_command.\(commandID)"
+    case .global: "custom_command.global.\(commandID)"
+    }
   }
 }
 
@@ -388,9 +401,17 @@ extension KeybindingSchemaDocument {
   }
 
   static func appResolverSchema(customCommands: [UserCustomCommand] = []) -> KeybindingSchemaDocument {
+    appResolverSchema(
+      effectiveCustomCommands: customCommands.map { EffectiveCustomCommand(source: .repository, command: $0) }
+    )
+  }
+
+  static func appResolverSchema(
+    effectiveCustomCommands: [EffectiveCustomCommand]
+  ) -> KeybindingSchemaDocument {
     KeybindingSchemaDocument(
       version: currentVersion,
-      commands: appDefaultsV1.commands + customCommands.map(\.keybindingCommandSchema)
+      commands: appDefaultsV1.commands + effectiveCustomCommands.map(\.keybindingCommandSchema)
     )
   }
 }
@@ -414,11 +435,11 @@ extension AppShortcut {
   }
 }
 
-extension UserCustomCommand {
+extension EffectiveCustomCommand {
   fileprivate var keybindingCommandSchema: KeybindingCommandSchema {
     KeybindingCommandSchema(
-      id: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: id),
-      title: resolvedTitle,
+      id: keybindingID,
+      title: command.resolvedTitle,
       scope: .customCommand,
       platform: .macOS,
       allowUserOverride: true,

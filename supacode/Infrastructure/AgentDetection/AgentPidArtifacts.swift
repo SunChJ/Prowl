@@ -88,3 +88,90 @@ nonisolated enum QwenRuntimeStatus {
     return nil
   }
 }
+
+/// Grok Build writes `~/.grok/active_sessions.json` with one entry per live
+/// interactive session: `{ session_id, pid, cwd, opened_at }`. The pid map is
+/// exact while the process is alive; quit/crash eventually drops the row, but
+/// a reused pid can still carry a stale claim until Grok rewrites the file —
+/// reject entries whose `opened_at` predates the process start.
+nonisolated enum GrokActiveSessions {
+  static func session(
+    home: URL,
+    pid: pid_t,
+    processStartedAt: Date,
+    fileManager: FileManager = .default
+  ) -> AgentSession? {
+    let url = home.appending(path: ".grok/active_sessions.json")
+    guard let data = try? Data(contentsOf: url),
+      let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+    else { return nil }
+
+    for row in rows {
+      guard let rowPID = row["pid"] as? Int, rowPID == Int(pid),
+        let id = row["session_id"] as? String, !id.isEmpty,
+        // Require a parseable opened_at: a missing/unreadable timestamp cannot
+        // prove the claim belongs to this process (pid reuse → stale exact).
+        let openedAtRaw = row["opened_at"] as? String,
+        let openedAt = parseOpenedAt(openedAtRaw),
+        openedAt >= processStartedAt.addingTimeInterval(-2)
+      else { continue }
+      let cwd = row["cwd"] as? String
+      let transcript = transcriptURL(home: home, sessionID: id, cwd: cwd, fileManager: fileManager)
+      return AgentSession(
+        id: id,
+        transcriptPath: transcript,
+        source: .processLog,
+        confidence: .exact
+      )
+    }
+    return nil
+  }
+
+  private static func parseOpenedAt(_ value: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractional.date(from: value) { return date }
+    let basic = ISO8601DateFormatter()
+    basic.formatOptions = [.withInternetDateTime]
+    return basic.date(from: value)
+  }
+
+  private static func transcriptURL(
+    home: URL,
+    sessionID: String,
+    cwd: String?,
+    fileManager: FileManager
+  ) -> URL? {
+    let sessionsRoot = home.appending(path: ".grok/sessions")
+    let candidates: [URL]
+    if let cwd {
+      // Prefer chat_history.jsonl: it is the conversation transcript
+      // (messages incl. system prompt); events.jsonl only logs
+      // MCP/infrastructure events.
+      let encoded = percentEncodedPath(cwd)
+      candidates = [
+        sessionsRoot.appending(path: "\(encoded)/\(sessionID)/chat_history.jsonl"),
+        sessionsRoot.appending(path: "\(encoded)/\(sessionID)/events.jsonl"),
+      ]
+    } else {
+      candidates = []
+    }
+    for candidate in candidates where fileManager.fileExists(atPath: candidate.path) {
+      return candidate
+    }
+    // Fall back to a shallow scan when cwd is missing or encoding diverged.
+    let projectDirs = (try? fileManager.contentsOfDirectory(at: sessionsRoot, includingPropertiesForKeys: nil)) ?? []
+    for project in projectDirs {
+      let chat = project.appending(path: "\(sessionID)/chat_history.jsonl")
+      if fileManager.fileExists(atPath: chat.path) { return chat }
+      let events = project.appending(path: "\(sessionID)/events.jsonl")
+      if fileManager.fileExists(atPath: events.path) { return events }
+    }
+    return nil
+  }
+
+  private static func percentEncodedPath(_ path: String) -> String {
+    let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+    return path.addingPercentEncoding(withAllowedCharacters: unreserved) ?? path
+  }
+}

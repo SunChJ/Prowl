@@ -128,8 +128,8 @@ Deleting removes the worktree directory (and optionally its branch).
 
 - **Right-click** the row → "Delete Worktree", or **`⌘⇧⌫`**.
 - A confirmation dialog offers an **"Also delete local branch"** toggle (its
-  tooltip notes `git branch -d`). Default behavior comes from
-  `deleteBranchOnDeleteWorktree`.
+  tooltip notes `git branch -d`). The toggle remembers the last confirmed choice
+  (`deleteBranchOnManualWorktreeDelete` in UserDefaults; defaults to off).
 - Prowl removes the worktree (relocating + `git worktree prune` if needed), then
   verifies that Git no longer registers it. Cleanup failures keep the worktree
   visible and show Git's error. If branch deletion is rejected because the branch
@@ -198,7 +198,7 @@ list. Highlights:
 - `defaultWorktreeBaseDirectoryPath` / per-repo `worktreeBaseDirectoryPath`
 - per-repo `worktreeBaseRef` (default base branch)
 - `copyIgnoredOnWorktreeCreate`, `copyUntrackedOnWorktreeCreate`
-- `deleteBranchOnDeleteWorktree`, `mergedWorktreeAction`, `archivedAutoDeletePeriod`
+- `deleteBranchOnAutomaticCleanup`, `mergedWorktreeAction`, `archivedAutoDeletePeriod`
 - per-repo `setupScript`, `archiveScript`, `openActionID`, `customTitle`
 
 ## Gotchas for agents

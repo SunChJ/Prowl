@@ -121,8 +121,8 @@ your Ghostty config (`~/.config/ghostty/config`). Typical defaults in parenthese
 | Check for Updates | ⌘⇧U | `check_for_updates` | yes |
 | Quit Application | ⌘Q | `quit_application` | **no** (fixed) |
 
-Plus any per-repository **Custom Commands**, which can each carry their own
-hotkey — see [`components/custom-actions.md`](../components/custom-actions.md).
+Plus any enabled global or per-repository **Custom Commands**, which can each carry
+their own hotkey — see [`components/custom-actions.md`](../components/custom-actions.md).
 
 ## Remapping & customization
 
@@ -132,8 +132,11 @@ hotkey — see [`components/custom-actions.md`](../components/custom-actions.md)
 - **`quit_application`** is fixed (`systemFixedAppAction`) — it can't be remapped.
 - **Canvas/local actions** (`localInteraction`, e.g. Arrange/Organize/Expand,
   Rename Branch) are remappable and conflict-checked against all remappable actions.
-- **Custom Command** hotkeys are repo-scoped and take precedence over app
-  shortcuts within the focused repository; conflicts are surfaced when recording.
+- **Custom Command** hotkeys take precedence over app shortcuts within the focused
+  repository. Local commands win global-command collisions; global bindings use a
+  separate internal command ID namespace. Conflicts are surfaced when recording.
+- Disabling a Custom Command unregisters its hotkey with every other command surface,
+  but preserves the configured key so re-enabling restores it.
 - **Terminal engine keys** are owned by Ghostty. Prowl automatically *unbinds*
   any Ghostty key that collides with an app shortcut, and re-binds the
   tab/pane-navigation actions into Ghostty so they work inside the terminal. You

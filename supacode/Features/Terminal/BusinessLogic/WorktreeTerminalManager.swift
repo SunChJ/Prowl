@@ -60,13 +60,14 @@ final class WorktreeTerminalManager {
     case .createTab(let worktree, let runSetupScriptIfNew):
       Task { createTabAsync(in: worktree, runSetupScriptIfNew: runSetupScriptIfNew) }
     case .createTabWithInput(
-      let worktree, let input, let runSetupScriptIfNew, let autoCloseOnSuccess, let customCommandName,
-      let customCommandIcon):
+      let worktree, let input, let workingDirectory, let runSetupScriptIfNew, let autoCloseOnSuccess,
+      let customCommandName, let customCommandIcon):
       Task {
         createTabAsync(
           in: worktree,
           runSetupScriptIfNew: runSetupScriptIfNew,
           initialInput: input,
+          workingDirectory: workingDirectory,
           autoCloseOnSuccess: autoCloseOnSuccess,
           customCommandName: customCommandName,
           customCommandIcon: customCommandIcon
@@ -403,6 +404,18 @@ final class WorktreeTerminalManager {
 
   func stateIfExists(for worktreeID: Worktree.ID) -> WorktreeTerminalState? {
     states[worktreeID]
+  }
+
+  /// Map of shell child PIDs to their owning pane across all live worktree
+  /// states, for the CLI service's caller-pane resolution.
+  func paneByShellPID() -> [pid_t: CallerPane] {
+    var map: [pid_t: CallerPane] = [:]
+    for (worktreeID, state) in states {
+      for (surfaceID, pid) in state.shellPIDsBySurface() {
+        map[pid] = CallerPane(worktreeID: worktreeID, surfaceID: surfaceID)
+      }
+    }
+    return map
   }
 
   func stateContaining(tabId: TerminalTabID) -> WorktreeTerminalState? {

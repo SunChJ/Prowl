@@ -13,11 +13,13 @@ enum DetectedAgent: String, CaseIterable, Equatable, Identifiable, Sendable {
   case kimi
   case droid
   case amp
+  case qoder = "qodercli"
   case qwen
+  case grok
 
   var id: String { rawValue }
 
-  var displayName: String {
+  nonisolated var displayName: String {
     switch self {
     case .cursor:
       return "cursor"

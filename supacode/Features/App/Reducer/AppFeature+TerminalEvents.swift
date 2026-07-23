@@ -21,7 +21,7 @@ extension AppFeature {
     if let effect = reduceTerminalTabEvent(event, state: state) {
       return effect
     }
-    if let effect = reduceTerminalAgentEvent(event, state: state) {
+    if let effect = reduceTerminalAgentEvent(event, state: &state) {
       return effect
     }
     return .none
@@ -140,7 +140,7 @@ extension AppFeature {
 
   func reduceTerminalAgentEvent(
     _ event: TerminalClient.Event,
-    state: State
+    state: inout State
   ) -> Effect<Action>? {
     switch event {
     case .agentEntryChanged(let entry):

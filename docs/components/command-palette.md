@@ -43,7 +43,14 @@ selected worktree has a pull request).
   the Ghostty-bridged commands; search-only).
 - **App:** Check for Updates, Open Settings, Open Repository, **Install Command
   Line Tool**, Repo Settings.
-- **Custom commands:** your per-repo Custom Commands appear here too.
+- **Custom commands:** enabled local and Global Custom Commands appear here with their
+  source. Same-titled commands can coexist; disabled commands do not appear.
+- **Handoff** (every runnable workspace, repository/worktree, or plain folder):
+  a single **Hand Off…** row opens the Hand Off HUD, where you choose the
+  receiving agent (or save progress only); Prowl then asks the live source
+  agent to write its briefing and run the hand-off itself, with fork and
+  context-only fallbacks available while you wait. Same flow as the toolbar
+  Agents capsule. See [handoff](handoff.md).
 - **Debug** (Debug builds only): toast/update/dock simulations.
 
 ## Behavior notes

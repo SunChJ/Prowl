@@ -46,8 +46,16 @@ struct PlainTextEditor: NSViewRepresentable {
 
   func updateNSView(_ nsView: NSScrollView, context: Context) {
     guard let textView = nsView.documentView as? PlaceholderTextView else { return }
-    if textView.string != text {
+    // Sync from state, but skip stale echoes of an in-flight user edit: resetting to an
+    // older value would clobber newer text and jump the caret (#608).
+    if textView.string == text {
+      context.coordinator.lastPushedText = nil
+    } else if textView.string != context.coordinator.lastPushedText {
+      let selectedRange = textView.selectedRange()
       textView.string = text
+      let selectedLocation = min(selectedRange.location, text.utf16.count)
+      let selectedLength = min(selectedRange.length, text.utf16.count - selectedLocation)
+      textView.setSelectedRange(NSRange(location: selectedLocation, length: selectedLength))
       textView.needsDisplay = true
     }
     let updatedFont = editorFont
@@ -74,12 +82,17 @@ struct PlainTextEditor: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextViewDelegate {
     @Binding var text: String
 
+    /// Last text pushed to the binding from a user edit; cleared by `updateNSView`
+    /// once the value round-trips back from state.
+    var lastPushedText: String?
+
     init(text: Binding<String>) {
       _text = text
     }
 
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? PlaceholderTextView else { return }
+      lastPushedText = textView.string
       text = textView.string
       textView.needsDisplay = true
     }

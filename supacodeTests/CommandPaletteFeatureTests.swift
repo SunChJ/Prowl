@@ -235,7 +235,10 @@ struct CommandPaletteFeatureTests {
 
     let items = CommandPaletteFeature.commandPaletteItems(
       from: RepositoriesFeature.State(),
-      customCommands: [buildCmd, emptyCmd]
+      customCommands: [
+        EffectiveCustomCommand(source: .repository, command: buildCmd),
+        EffectiveCustomCommand(source: .repository, command: emptyCmd),
+      ]
     )
     let ids = Set(items.map(\.id))
     #expect(ids.contains("custom-command.cmd-build"))
@@ -244,11 +247,14 @@ struct CommandPaletteFeatureTests {
 
     let buildItem = items.first { $0.id == "custom-command.cmd-build" }
     #expect(buildItem?.title == "Build")
-    #expect(buildItem?.subtitle == "Custom command in this repo · Opens in a new tab")
+    #expect(buildItem?.subtitle == "Local custom command · Opens in a new tab")
     #expect(buildItem?.defaultSuggestion == false)
     #expect(
       buildItem?.kind
-        == .runCustomCommand(index: 0, commandID: "cmd-build", systemImage: "hammer")
+        == .runCustomCommand(
+          .init(source: .repository, commandID: "cmd-build"),
+          systemImage: "hammer"
+        )
     )
   }
 
@@ -313,20 +319,22 @@ struct CommandPaletteFeatureTests {
 
     let items = CommandPaletteFeature.commandPaletteItems(
       from: RepositoriesFeature.State(),
-      customCommands: [shellCmd, inlineCmd, splitCmd]
+      customCommands: [shellCmd, inlineCmd, splitCmd].map {
+        EffectiveCustomCommand(source: .repository, command: $0)
+      }
     )
 
     #expect(
       items.first { $0.id == "custom-command.cmd-shell" }?.subtitle
-        == "Custom command in this repo · Opens in a new tab"
+        == "Local custom command · Opens in a new tab"
     )
     #expect(
       items.first { $0.id == "custom-command.cmd-inline" }?.subtitle
-        == "Custom command in this repo · Runs in the focused terminal"
+        == "Local custom command · Runs in the focused terminal"
     )
     #expect(
       items.first { $0.id == "custom-command.cmd-split" }?.subtitle
-        == "Custom command in this repo · Opens in a new split (down)"
+        == "Local custom command · Opens in a new split (down)"
     )
   }
 
@@ -1770,7 +1778,7 @@ private func testCategory(for kind: CommandPaletteItem.Kind) -> CommandPaletteIt
     .mergePullRequest, .closePullRequest, .copyFailingJobURL, .copyCiFailureLogs,
     .rerunFailedJobs, .openFailingCheckDetails:
     return .pullRequest
-  case .ghosttyCommand:
+  case .ghosttyCommand, .handOff:
     return .terminal
   case .toggleLeftSidebar, .toggleActiveAgentsPanel, .toggleCanvas,
     .expandCanvasCard, .arrangeCanvasCards, .organizeCanvasCards, .tileCanvasCards, .selectAllCanvasCards,
@@ -1798,7 +1806,7 @@ private func testDefaultSuggestion(for kind: CommandPaletteItem.Kind) -> Bool {
     return true
   case .worktreeSelect, .changeFocusedTabIcon,
     .ghosttyCommand, .openRepositoryOnCodeHost,
-    .deleteWorktree, .runCustomCommand:
+    .deleteWorktree, .runCustomCommand, .handOff:
     return false
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

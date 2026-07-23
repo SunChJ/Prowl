@@ -16,7 +16,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Test",
         systemImage: "checkmark.circle",
@@ -24,7 +24,7 @@ struct AppFeatureCustomCommandTests {
         execution: .shellScript,
         shortcut: nil,
       )
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -34,7 +34,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(
@@ -58,7 +58,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Watch",
         systemImage: "terminal",
@@ -66,7 +66,7 @@ struct AppFeatureCustomCommandTests {
         execution: .terminalInput,
         shortcut: nil,
       )
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -76,7 +76,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(
@@ -93,7 +93,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Tail",
         systemImage: "doc.text",
@@ -102,7 +102,7 @@ struct AppFeatureCustomCommandTests {
         splitDirection: .down,
         shortcut: nil,
       )
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -112,7 +112,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(
@@ -136,7 +136,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Build",
         systemImage: "hammer",
@@ -154,7 +154,7 @@ struct AppFeatureCustomCommandTests {
         closeOnSuccess: true,
         shortcut: nil,
       ),
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -164,8 +164,8 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
-    await store.send(.runCustomCommand(1))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[1].id))
     await store.finish()
 
     #expect(
@@ -205,6 +205,7 @@ struct AppFeatureCustomCommandTests {
     #expect(decoded.splitDirection == .right)
     #expect(decoded.closeOnSuccess == false)
     #expect(decoded.execution == .shellScript)
+    #expect(decoded.isEnabled)
   }
 
   @Test(.dependencies) func invalidCommandIndexDoesNothing() async {
@@ -223,10 +224,55 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(.init(source: .repository, commandID: "missing")))
     await store.finish()
 
     #expect(sent.value.isEmpty)
+  }
+
+  @Test(.dependencies) func globalCustomCommandExecutesForSelectedWorktree() async {
+    let worktree = makeWorktree()
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    var state = AppFeature.State(
+      repositories: makeRepositoriesState(worktree: worktree),
+      settings: SettingsFeature.State()
+    )
+    let global = EffectiveCustomCommand(
+      source: .global,
+      command: UserCustomCommand(
+        id: "global-build",
+        title: "Build Everywhere",
+        systemImage: "globe",
+        command: "make build",
+        execution: .shellScript,
+        shortcut: nil
+      )
+    )
+    state.selectedCustomCommands = [global]
+
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    } withDependencies: {
+      $0.terminalClient.send = { command in
+        sent.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.runCustomCommand(global.id))
+    await store.finish()
+
+    #expect(
+      sent.value == [
+        .createTabWithInput(
+          worktree,
+          input: "make build",
+          runSetupScriptIfNew: false,
+          autoCloseOnSuccess: false,
+          customCommandName: "Build Everywhere",
+          customCommandIcon: "globe"
+        )
+      ]
+    )
   }
 
   @Test(.dependencies) func supportsCustomCommandBeyondLegacyThreeItemLimit() async {
@@ -236,7 +282,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "One",
         systemImage: "1.circle",
@@ -272,7 +318,7 @@ struct AppFeatureCustomCommandTests {
         execution: .shellScript,
         shortcut: nil,
       ),
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -282,7 +328,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(4))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[4].id))
     await store.finish()
 
     #expect(
@@ -306,7 +352,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Default",
         systemImage: "terminal",
@@ -314,7 +360,7 @@ struct AppFeatureCustomCommandTests {
         execution: .shellScript,
         shortcut: nil,
       )
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -324,7 +370,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     // The model's "terminal" placeholder should not be pinned as a
@@ -351,7 +397,7 @@ struct AppFeatureCustomCommandTests {
       repositories: makeRepositoriesState(worktree: worktree),
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Blank",
         systemImage: "   ",
@@ -359,7 +405,7 @@ struct AppFeatureCustomCommandTests {
         execution: .shellScript,
         shortcut: nil,
       )
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -369,7 +415,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(
@@ -417,15 +463,98 @@ struct AppFeatureCustomCommandTests {
     }
 
     await store.send(.worktreeUserSettingsLoaded(settings, worktreeID: worktree.id)) {
-      $0.selectedCustomCommands = settings.customCommands
+      $0.selectedCustomCommands = effective(settings.customCommands)
       $0.resolvedKeybindings = KeybindingResolver.resolve(
-        schema: .appResolverSchema(customCommands: settings.customCommands),
+        schema: .appResolverSchema(effectiveCustomCommands: effective(settings.customCommands)),
         migratedOverrides:
           LegacyCustomCommandShortcutMigration
-          .migrate(commands: settings.customCommands)
+          .migrate(commands: effective(settings.customCommands))
           .overrides
       )
     }
+  }
+
+  @Test(.dependencies) func loadingUserSettingsExcludesDisabledCommandsFromDispatch() async {
+    let worktree = makeWorktree()
+    let localEnabled = UserCustomCommand(
+      id: "local-enabled",
+      title: "Build",
+      systemImage: "hammer",
+      command: "make build",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let localDisabled = UserCustomCommand(
+      id: "local-disabled",
+      title: "Test",
+      systemImage: "checkmark",
+      command: "make test",
+      execution: .shellScript,
+      shortcut: nil,
+      isEnabled: false
+    )
+    let globalEnabled = UserCustomCommand(
+      id: "global-enabled",
+      title: "Lint",
+      systemImage: "checkmark.circle",
+      command: "make lint",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let globalDisabled = UserCustomCommand(
+      id: "global-disabled",
+      title: "Format",
+      systemImage: "paintbrush",
+      command: "make format",
+      execution: .shellScript,
+      shortcut: nil,
+      isEnabled: false
+    )
+    let globalOptedOut = UserCustomCommand(
+      id: "global-opted-out",
+      title: "Deploy",
+      systemImage: "paperplane",
+      command: "make deploy",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let settings = UserRepositorySettings(
+      customCommands: [localEnabled, localDisabled],
+      disabledGlobalCommandIDs: ["global-opted-out"]
+    )
+    let expectedCommands = [
+      EffectiveCustomCommand(source: .repository, command: localEnabled),
+      EffectiveCustomCommand(source: .global, command: globalEnabled),
+    ]
+    let store = withDependencies {
+      $0.defaultFileStorage = .inMemory
+    } operation: {
+      @Shared(.userGlobalSettings) var globalSettings
+      $globalSettings.withLock {
+        $0 = UserGlobalSettings(customCommands: [globalEnabled, globalDisabled, globalOptedOut])
+      }
+      return TestStore(
+        initialState: AppFeature.State(
+          repositories: makeRepositoriesState(worktree: worktree),
+          settings: SettingsFeature.State()
+        )
+      ) {
+        AppFeature()
+      }
+    }
+
+    await store.send(.worktreeUserSettingsLoaded(settings, worktreeID: worktree.id)) {
+      $0.selectedCustomCommands = expectedCommands
+      $0.resolvedKeybindings = KeybindingResolver.resolve(
+        schema: .appResolverSchema(effectiveCustomCommands: expectedCommands),
+        migratedOverrides: LegacyCustomCommandShortcutMigration.migrate(commands: expectedCommands).overrides
+      )
+    }
+
+    await store.send(.runCustomCommand(.init(source: .repository, commandID: "local-disabled")))
+    await store.send(.runCustomCommand(.init(source: .global, commandID: "global-disabled")))
+    await store.send(.runCustomCommand(.init(source: .global, commandID: "global-opted-out")))
+    await store.finish()
   }
 
   @Test(.dependencies) func customCommandUsesCanvasFocusedWorktree() async {
@@ -437,7 +566,7 @@ struct AppFeatureCustomCommandTests {
       repositories: repositories,
       settings: SettingsFeature.State()
     )
-    state.selectedCustomCommands = [
+    state.selectedCustomCommands = effective(
       UserCustomCommand(
         title: "Canvas Build",
         systemImage: "hammer",
@@ -445,7 +574,7 @@ struct AppFeatureCustomCommandTests {
         execution: .shellScript,
         shortcut: nil
       )
-    ]
+    )
 
     let store = TestStore(initialState: state) {
       AppFeature()
@@ -456,7 +585,7 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(
@@ -509,12 +638,12 @@ struct AppFeatureCustomCommandTests {
     // pass so the toolbar updates atomically with the focus change.
     await store.send(.canvasFocusedWorktreeChanged(worktree.id)) {
       $0.openActionSelection = expectedDefaultOpenAction()
-      $0.selectedCustomCommands = settings.customCommands
+      $0.selectedCustomCommands = effective(settings.customCommands)
       $0.resolvedKeybindings = KeybindingResolver.resolve(
-        schema: .appResolverSchema(customCommands: settings.customCommands),
+        schema: .appResolverSchema(effectiveCustomCommands: effective(settings.customCommands)),
         migratedOverrides:
           LegacyCustomCommandShortcutMigration
-          .migrate(commands: settings.customCommands)
+          .migrate(commands: effective(settings.customCommands))
           .overrides
       )
     }
@@ -558,7 +687,7 @@ struct AppFeatureCustomCommandTests {
         settings: SettingsFeature.State()
       )
       state.selectedRunScript = "npm run repo-a"
-      state.selectedCustomCommands = [commandA]
+      state.selectedCustomCommands = effective(commandA)
 
       return TestStore(initialState: state) {
         AppFeature()
@@ -573,18 +702,18 @@ struct AppFeatureCustomCommandTests {
     await store.send(.canvasFocusedWorktreeChanged(worktreeB.id)) {
       $0.openActionSelection = expectedDefaultOpenAction()
       $0.selectedRunScript = "npm run repo-b"
-      $0.selectedCustomCommands = [commandB]
+      $0.selectedCustomCommands = effective(commandB)
       $0.resolvedKeybindings = KeybindingResolver.resolve(
-        schema: .appResolverSchema(customCommands: [commandB]),
+        schema: .appResolverSchema(effectiveCustomCommands: effective(commandB)),
         migratedOverrides:
           LegacyCustomCommandShortcutMigration
-          .migrate(commands: [commandB])
+          .migrate(commands: effective(commandB))
           .overrides
       )
     }
 
     await store.send(.runScript)
-    await store.send(.runCustomCommand(0))
+    await store.send(.runCustomCommand(store.state.selectedCustomCommands[0].id))
     await store.finish()
 
     #expect(
@@ -604,6 +733,14 @@ struct AppFeatureCustomCommandTests {
 
   private func makeWorktree() -> Worktree {
     makeWorktree(id: "/tmp/repo/wt-1", name: "wt-1", repoRoot: "/tmp/repo")
+  }
+
+  private func effective(_ commands: UserCustomCommand...) -> [EffectiveCustomCommand] {
+    effective(commands)
+  }
+
+  private func effective(_ commands: [UserCustomCommand]) -> [EffectiveCustomCommand] {
+    commands.map { EffectiveCustomCommand(source: .repository, command: $0) }
   }
 
   private func makeWorktree(id: String, name: String, repoRoot: String) -> Worktree {

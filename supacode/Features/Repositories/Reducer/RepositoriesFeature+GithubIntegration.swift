@@ -290,7 +290,7 @@ extension RepositoriesFeature {
         return .merge(
           mergedWorktreeIDs.map { worktreeID in
             let shouldDeleteBranch =
-              settingsFile.global.deleteBranchOnDeleteWorktree
+              settingsFile.global.deleteBranchOnAutomaticCleanup
               && state.prowlCreatedWorktreeIDs.contains(worktreeID)
             return .send(
               .worktreeLifecycle(

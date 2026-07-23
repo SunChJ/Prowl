@@ -287,6 +287,32 @@ Common codes and recovery:
 
 Always check the exit code before piping output into `jq`; parser-level errors print plaintext usage to stderr.
 
+## Handing Off Your Task
+
+`prowl handoff to <agent> --brief -` hands your task to another agent. Run it from your own pane (the calling pane is the source — no selector needed) and pipe your briefing on stdin:
+
+```bash
+prowl handoff to codex --brief - <<'EOF'
+# Handoff
+## Objective
+…
+## Current State
+…
+## What Has Been Done
+…
+## Open Questions
+…
+## Risks / Watch Out
+…
+## Next Steps
+…
+## Suggested Prompt For Next Agent
+…
+EOF
+```
+
+Write the briefing from your current working knowledge — required sections are `## Objective`, `## Current State`, and `## Next Steps`. The receiver launches in a background tab of the same worktree; your own session stays open. `prowl handoff save --brief -` writes the same briefing as a checkpoint without launching anyone. Use `--no-brief` only for an intentional context-only handoff, and an explicit `--pane` to hand off a pane other than your own. Details: `docs/components/handoff.md`.
+
 ## Command Set
 
-Current commands: `list`, `agents`, `read`, `send`, `key`, `focus`, `tab create`, `tab close`, `pane close`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with explicit `tab close` / `pane close` targets.
+Current commands: `list`, `agents`, `read`, `send`, `key`, `focus`, `tab create`, `tab close`, `pane close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with explicit `tab close` / `pane close` targets.

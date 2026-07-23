@@ -97,6 +97,7 @@ struct RepositorySettingsFeature {
     case userImageImportFailed(String)
     case dismissAppearanceImportError
     case resetAppearance
+    case setGlobalCommandEnabled(UserCustomCommand.ID, Bool)
     case branchDataLoaded([String], defaultBaseRef: String)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -201,6 +202,16 @@ struct RepositorySettingsFeature {
         let rootURL = state.rootURL
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         $repositorySettings.withLock { $0 = updatedSettings }
+        return .send(.delegate(.settingsChanged(rootURL)))
+
+      case .setGlobalCommandEnabled(let commandID, let isEnabled):
+        guard state.userSettings.isGlobalCommandEnabled(commandID) != isEnabled else {
+          return .none
+        }
+        state.userSettings.setGlobalCommandEnabled(isEnabled, id: commandID)
+        let rootURL = state.rootURL
+        @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+        $userRepositorySettings.withLock { $0 = state.userSettings }
         return .send(.delegate(.settingsChanged(rootURL)))
 
       case .appearanceLoaded(let appearance):

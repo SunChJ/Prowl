@@ -200,6 +200,10 @@ nonisolated enum SupacodePaths {
     baseDirectory.appending(path: "settings.json", directoryHint: .notDirectory)
   }
 
+  static var userGlobalSettingsURL: URL {
+    baseDirectory.appending(path: "global.onevcat.json", directoryHint: .notDirectory)
+  }
+
   static var repositorySnapshotURL: URL {
     cacheDirectory.appending(path: "repository-snapshot.json", directoryHint: .notDirectory)
   }

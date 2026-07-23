@@ -349,6 +349,7 @@ extension RepositoriesFeature {
         return .none
       }
       state.deleteWorktreeConfirmation = nil
+      state.$deleteBranchOnManualWorktreeDelete.withLock { $0 = confirmation.deleteBranch }
       return .merge(
         confirmation.targets.map { target in
           .send(
@@ -560,12 +561,8 @@ private func makeDeleteWorktreeConfirmation(
   targets: [RepositoriesFeature.DeleteWorktreeTarget],
   state: RepositoriesFeature.State
 ) -> DeleteWorktreeConfirmation {
-  @Shared(.settingsFile) var settingsFile
   let count = targets.count
-  let allProwlCreated = targets.allSatisfy { target in
-    state.prowlCreatedWorktreeIDs.contains(target.worktreeID)
-  }
-  let defaultDeleteBranch = settingsFile.global.deleteBranchOnDeleteWorktree && allProwlCreated
+  let defaultDeleteBranch = state.deleteBranchOnManualWorktreeDelete
   if count == 1,
     let target = targets.first,
     let worktree = state.repositories[id: target.repositoryID]?.worktrees[id: target.worktreeID]
