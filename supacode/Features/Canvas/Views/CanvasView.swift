@@ -626,9 +626,9 @@ struct CanvasView: View {
     layoutStore.setCardLayouts(layouts, zOrder: keys)
   }
 
-  /// Arrange cards using MaxRects-BSSF bin packing. Preserves each card's
-  /// current size and finds a compact layout whose aspect ratio matches
-  /// the viewport.
+  /// Arrange cards with `CanvasCardPacker`, which chooses between waterfall
+  /// and row-break layouts. Preserves each card's current size and finds a
+  /// compact layout whose aspect ratio matches the viewport.
   func arrangeCards() {
     let keys = collectCardKeys(from: terminalManager.activeWorktreeStates)
     guard !keys.isEmpty, viewportSize.width > 0, viewportSize.height > 0 else { return }
