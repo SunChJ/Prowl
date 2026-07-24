@@ -26,6 +26,12 @@ extension WorktreeTerminalState {
         guard let self, let view, self.surfaces[view.id] != nil else { return }
         let hasAgent = await self.detectAgentState(for: view, tabId: tabId)
         let now = Date()
+        // Titles land on the manager's own clock now, because a non-agent program
+        // can strand one after this schedule goes cold. An entry cannot be
+        // stranded that way: it exists only while a pane has a detected agent,
+        // and that is exactly the condition keeping this loop warm. So the poll
+        // stays the trailing flush here, and no second timer is needed.
+        self.flushPendingAgentEntry(surfaceID: view.id, now: now)
         let schedule = self.agentDetectionSchedules[view.id] ?? .cold
         self.agentDetectionSchedules[view.id] =
           hasAgent ? schedule.observedAgent(now: now) : schedule.observedNoAgent(now: now)
@@ -264,6 +270,8 @@ extension WorktreeTerminalState {
     // started agent is the user's own — default home, default account — and
     // must not wear the profile's name or config root.
     launchProfilesBySurface.removeValue(forKey: surfaceID)
+    lastAgentEntryEmitAtBySurface.removeValue(forKey: surfaceID)
+    pendingAgentEntryBySurface.removeValue(forKey: surfaceID)
     onAgentEntryRemoved?(surfaceID)
     if let tabId = tabId(containing: surfaceID) {
       updateTabAgentBusyState(for: tabId)
@@ -321,18 +329,59 @@ extension WorktreeTerminalState {
     emitAgentEntry(surfaceID: surfaceID, tabId: tabId, state: state)
   }
 
-  func emitAgentEntry(surfaceID: UUID, tabId: TerminalTabID, state: PaneAgentState) {
+  /// Minimum spacing between emissions whose only difference is the pane title.
+  /// Agent TUIs animate a spinner glyph into the terminal title at roughly 10 Hz;
+  /// forwarding each frame mutates `ActiveAgentsFeature.State.entries` and dirties
+  /// the SwiftUI graph for a change no one can perceive. One second keeps titles
+  /// feeling live while cutting those invalidations by an order of magnitude.
+  static let agentEntryTitleCoalescingInterval: TimeInterval = 1
+
+  func emitAgentEntry(
+    surfaceID: UUID,
+    tabId: TerminalTabID,
+    state: PaneAgentState,
+    now: Date = Date()
+  ) {
     guard let entry = activeAgentEntry(surfaceID: surfaceID, tabId: tabId, state: state) else {
       lastEmittedAgentEntriesBySurface.removeValue(forKey: surfaceID)
+      lastAgentEntryEmitAtBySurface.removeValue(forKey: surfaceID)
+      pendingAgentEntryBySurface.removeValue(forKey: surfaceID)
       onAgentEntryRemoved?(surfaceID)
       return
     }
-    // Dedup ignoring `rawState`: it flickers every poll while an agent animates
-    // and drives no UI, so emitting on it alone would re-render the sidebar
-    // continuously. Visible changes (displayState, title, session, …) still emit.
-    guard lastEmittedAgentEntriesBySurface[surfaceID]?.equalsIgnoringRawState(entry) != true else { return }
+    if let previous = lastEmittedAgentEntriesBySurface[surfaceID] {
+      // `rawState` flickers every poll while an agent animates and drives no UI,
+      // so it never justifies an emission on its own.
+      if previous.equalsIgnoringRawState(entry) { return }
+      // Only the animated title moved. Hold it back until the interval elapses;
+      // the suppressed entry is not recorded, so the next emission carries the
+      // title as of that moment rather than a stale frame.
+      if previous.equalsIgnoringRawStateAndPaneTitle(entry),
+        let lastEmitAt = lastAgentEntryEmitAtBySurface[surfaceID],
+        now.timeIntervalSince(lastEmitAt) < Self.agentEntryTitleCoalescingInterval
+      {
+        pendingAgentEntryBySurface[surfaceID] = entry
+        return
+      }
+    }
+    pendingAgentEntryBySurface.removeValue(forKey: surfaceID)
     lastEmittedAgentEntriesBySurface[surfaceID] = entry
+    lastAgentEntryEmitAtBySurface[surfaceID] = now
     onAgentEntryChanged?(entry)
+  }
+
+  /// Emits a title-only entry that coalescing held back, once the interval has
+  /// passed. Driven by the detection poll rather than a timer, so a spinner that
+  /// stops mid-window still settles on its final title within one poll.
+  func flushPendingAgentEntry(surfaceID: UUID, now: Date = Date()) {
+    guard let pending = pendingAgentEntryBySurface[surfaceID],
+      let lastEmitAt = lastAgentEntryEmitAtBySurface[surfaceID],
+      now.timeIntervalSince(lastEmitAt) >= Self.agentEntryTitleCoalescingInterval
+    else { return }
+    pendingAgentEntryBySurface.removeValue(forKey: surfaceID)
+    lastEmittedAgentEntriesBySurface[surfaceID] = pending
+    lastAgentEntryEmitAtBySurface[surfaceID] = now
+    onAgentEntryChanged?(pending)
   }
 
   func activeAgentEntry(surfaceID: UUID, tabId: TerminalTabID, state: PaneAgentState) -> ActiveAgentEntry? {
@@ -392,6 +441,8 @@ extension WorktreeTerminalState {
     lastAgentDetectionDiagnosticsBySurface.removeValue(forKey: surfaceId)
     lastAgentScreenScanBySurface.removeValue(forKey: surfaceId)
     lastEmittedAgentEntriesBySurface.removeValue(forKey: surfaceId)
+    lastAgentEntryEmitAtBySurface.removeValue(forKey: surfaceId)
+    pendingAgentEntryBySurface.removeValue(forKey: surfaceId)
     onAgentEntryRemoved?(surfaceId)
   }
 
@@ -408,6 +459,8 @@ extension WorktreeTerminalState {
     lastAgentDetectionDiagnosticsBySurface.removeAll()
     lastAgentScreenScanBySurface.removeAll()
     lastEmittedAgentEntriesBySurface.removeAll()
+    lastAgentEntryEmitAtBySurface.removeAll()
+    pendingAgentEntryBySurface.removeAll()
     for id in removedIDs {
       onAgentEntryRemoved?(id)
     }

@@ -125,6 +125,14 @@ final class WorktreeTerminalState {
   /// holds); comparing against the consumer-visible entry here keeps that
   /// churn out of the terminal event stream and the TCA action log.
   var lastEmittedAgentEntriesBySurface: [UUID: ActiveAgentEntry] = [:]
+  /// When each surface last emitted, used to space out title-only emissions.
+  /// Pure bookkeeping for `emitAgentEntry`; no view reads it.
+  @ObservationIgnored var lastAgentEntryEmitAtBySurface: [UUID: Date] = [:]
+  /// The most recent title-only entry held back by coalescing. A spinner that
+  /// stops animating produces no further title change, so without a trailing
+  /// flush the last frame would stay on screen until some unrelated state
+  /// change happened to carry the current title along.
+  @ObservationIgnored var pendingAgentEntryBySurface: [UUID: ActiveAgentEntry] = [:]
   var tabIsRunningById: [TerminalTabID: Bool] = [:]
   /// Per-tab aggregate of agent busy-state: `true` when at least one surface in
   /// the tab has a detected agent whose stabilized `displayState` is `.working`
