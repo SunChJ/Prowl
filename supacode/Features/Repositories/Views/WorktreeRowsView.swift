@@ -469,7 +469,7 @@ struct WorktreeRowsView: View {
       store.send(.delegate(.showDiff(worktree.id)))
     }
     .help("Show uncommitted changes for this worktree")
-    Button("Outgoing Changes") {
+    Button("Show Outgoing Changes") {
       store.send(.delegate(.showOutgoingChanges(worktree.id)))
     }
     .help("Show committed changes relative to this worktree's base")

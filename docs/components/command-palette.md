@@ -30,7 +30,7 @@ The available actions depend on context (e.g. PR actions appear only when the
 selected worktree has a pull request).
 
 - **View / layout:** Toggle Sidebar, Toggle Active Agents Panel, Toggle Canvas,
-  Toggle Shelf, Show Diff, Outgoing Changes, and Canvas actions
+  Toggle Shelf, Show Diff, Show Outgoing Changes, and Canvas actions
   (Expand/Arrange/Organize/Select-All cards).
 - **Navigation:** Reveal in Finder, Copy Path, Reveal in Sidebar, Jump to Latest
   Unread, and select-a-specific-worktree entries.

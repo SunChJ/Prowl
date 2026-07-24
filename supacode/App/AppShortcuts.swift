@@ -365,7 +365,7 @@ enum AppShortcuts {
     .init(actionTitle: "Stop Script", shortcut: stopRunScript),
     .init(actionTitle: "Check for Updates", shortcut: checkForUpdates),
     .init(actionTitle: "Show Diff", shortcut: showDiff),
-    .init(actionTitle: "Outgoing Changes", shortcut: outgoingChanges),
+    .init(actionTitle: "Show Outgoing Changes", shortcut: outgoingChanges),
     .init(actionTitle: "Open Worktree", shortcut: openFinder),
     .init(actionTitle: "Open Repository", shortcut: openRepository),
     .init(actionTitle: "Select Terminal Tab 1", shortcut: selectTerminalTab1),
@@ -481,7 +481,7 @@ enum AppShortcuts {
     ),
     .init(
       id: CommandID.outgoingChanges,
-      title: "Outgoing Changes",
+      title: "Show Outgoing Changes",
       scope: .configurableAppAction,
       shortcut: outgoingChanges
     ),

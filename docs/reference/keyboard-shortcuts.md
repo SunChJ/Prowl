@@ -45,7 +45,7 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 | Select Previous Agent (in panel) | ⌥⌃↑ | `select_previous_active_agent` | yes |
 | Jump to Latest Unread | ⌘⌥U | `jump_to_latest_unread` | yes |
 | Show Diff | ⌘⇧Y | `show_diff` | yes |
-| Outgoing Changes | ⌘⌥⇧Y | `outgoing_changes` | yes |
+| Show Outgoing Changes | ⌘⌥⇧Y | `outgoing_changes` | yes |
 | Toggle Canvas | ⌘⌥↩ | `toggle_canvas` | yes |
 | Toggle Shelf | ⌘⇧↩ | `toggle_shelf` | yes |
 

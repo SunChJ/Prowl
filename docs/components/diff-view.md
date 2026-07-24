@@ -23,10 +23,10 @@ changes the worktree's branch would contribute to a pull request
 (`git diff <base>...HEAD`). It does not change the working-tree semantics of
 Show Diff or its line-change badge.
 
-**Open:** View → Outgoing Changes, press `⌘⌥⇧Y` (`outgoing_changes`), use
-Command Palette → "Outgoing Changes", right-click a worktree row →
-"Outgoing Changes", or flip the window's **Uncommitted | Outgoing** toolbar
-switcher.
+**Open:** View → Show Outgoing Changes, press `⌘⌥⇧Y` (`outgoing_changes`),
+use Command Palette → "Show Outgoing Changes", right-click a worktree row →
+"Show Outgoing Changes", or flip the window's **Uncommitted | Outgoing**
+toolbar switcher. The View menu groups it with Show Diff behind a separator.
 
 The comparison base is resolved by a strict ladder and always shown in the
 window title and file-list header (e.g. `vs origin/main · pull request base`):
