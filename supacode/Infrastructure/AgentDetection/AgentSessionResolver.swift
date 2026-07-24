@@ -640,8 +640,16 @@ nonisolated enum AgentSessionFingerprintMatcher {
   /// Reference implementation. `normalize` must agree with it for every input;
   /// `AgentSessionFingerprintNormalizeTests` asserts that over a corpus.
   static func normalizeGeneral(_ value: String) -> String {
-    value
-      .replacing(#/\u{001B}\[[0-?]*[ -\/]*[@-~]/#, with: " ")
+    // A pattern anchored on ESC cannot match a string with no ESC byte, and
+    // nearly every transcript fragment has none. Proving absence with a byte
+    // scan is several times cheaper than letting the regex engine walk the
+    // whole string to reach the same conclusion.
+    let stripped =
+      value.utf8.contains(0x1B)
+      ? value.replacing(#/\u{001B}\[[0-?]*[ -\/]*[@-~]/#, with: " ")
+      : value
+    return
+      stripped
       .lowercased()
       .split(whereSeparator: \Character.isWhitespace)
       .joined(separator: " ")

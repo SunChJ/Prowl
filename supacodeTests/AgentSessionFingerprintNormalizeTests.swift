@@ -47,12 +47,26 @@ struct AgentSessionFingerprintNormalizeTests {
     "mixed ascii and ünicode with  spacing",
   ]
 
-  @Test func fastPathMatchesReferenceForEveryCorpusInput() {
+  /// The original formulation, before either the ASCII fast path or the
+  /// escape-absence guard. Both shipped paths must reproduce it exactly.
+  private static func pristine(_ value: String) -> String {
+    value
+      .replacing(#/\u{001B}\[[0-?]*[ -\/]*[@-~]/#, with: " ")
+      .lowercased()
+      .split(whereSeparator: \Character.isWhitespace)
+      .joined(separator: " ")
+  }
+
+  @Test func bothPathsMatchTheOriginalForEveryCorpusInput() {
     for input in Self.corpus {
+      let expected = Self.pristine(input)
       #expect(
-        AgentSessionFingerprintMatcher.normalize(input)
-          == AgentSessionFingerprintMatcher.normalizeGeneral(input),
-        "normalize diverged from the reference for \(String(reflecting: input))"
+        AgentSessionFingerprintMatcher.normalize(input) == expected,
+        "normalize diverged for \(String(reflecting: input))"
+      )
+      #expect(
+        AgentSessionFingerprintMatcher.normalizeGeneral(input) == expected,
+        "normalizeGeneral diverged for \(String(reflecting: input))"
       )
     }
   }
@@ -65,10 +79,14 @@ struct AgentSessionFingerprintNormalizeTests {
     for _ in 0..<2000 {
       let length = Int.random(in: 0...40, using: &generator)
       let input = String((0..<length).map { _ in alphabet.randomElement(using: &generator)! })
+      let expected = Self.pristine(input)
       #expect(
-        AgentSessionFingerprintMatcher.normalize(input)
-          == AgentSessionFingerprintMatcher.normalizeGeneral(input),
-        "normalize diverged from the reference for \(String(reflecting: input))"
+        AgentSessionFingerprintMatcher.normalize(input) == expected,
+        "normalize diverged for \(String(reflecting: input))"
+      )
+      #expect(
+        AgentSessionFingerprintMatcher.normalizeGeneral(input) == expected,
+        "normalizeGeneral diverged for \(String(reflecting: input))"
       )
     }
   }
