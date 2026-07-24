@@ -629,6 +629,7 @@ private func outgoingBase(displayName: String) -> OutgoingBaseResolution {
   )
 }
 
+@MainActor
 private func waitForDiffWindowState(
   _ condition: @MainActor @escaping () -> Bool,
   maxIterations: Int = 500
@@ -639,4 +640,5 @@ private func waitForDiffWindowState(
     }
     await Task.yield()
   }
+  Issue.record("Timed out waiting for the DiffWindowState condition after \(maxIterations) iterations")
 }

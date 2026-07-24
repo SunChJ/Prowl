@@ -330,7 +330,10 @@ final class DiffWindowState {
         addNextLoad()
       }
       for await (id, doc) in group {
-        guard !Task.isCancelled else { break }
+        guard !Task.isCancelled else {
+          group.cancelAll()
+          break
+        }
         documentCache[id] = doc
         if selectedFile?.id == id {
           updateDiffDocument(doc)
