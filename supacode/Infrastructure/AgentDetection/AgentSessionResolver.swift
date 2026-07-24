@@ -70,6 +70,46 @@ nonisolated struct AgentSessionResolution: Sendable {
   let isFresh: Bool
 }
 
+/// Parsed, normalized transcript fragments reused across resolver polls.
+///
+/// Fingerprint matching re-reads the same transcript tails every time a pane's
+/// session cache expires (5 s while a session stays resolved). The bytes are
+/// almost always identical and the tails sit in the page cache, so the cost is
+/// re-parsing JSON and re-normalizing text rather than I/O. Keying the parsed
+/// result on the file's modification time replays it for unchanged transcripts
+/// without altering which candidate wins.
+nonisolated struct TranscriptFragmentCache: Sendable {
+  struct Key: Hashable, Sendable {
+    let path: String
+    let modifiedAt: Date
+  }
+
+  private var entries: [Key: [String]] = [:]
+  private var consulted: Set<Key> = []
+
+  var count: Int { entries.count }
+
+  /// Returns the cached fragments for `key`, otherwise stores and returns
+  /// `load()`. A nil `load()` is deliberately not cached: an unreadable tail is
+  /// transient, and caching the failure would keep a recovered file excluded.
+  mutating func fragments(for key: Key, load: () -> [String]?) -> [String]? {
+    consulted.insert(key)
+    if let cached = entries[key] { return cached }
+    guard let loaded = load() else { return nil }
+    entries[key] = loaded
+    return loaded
+  }
+
+  /// Drops every entry not consulted since the previous prune: superseded
+  /// versions of an appended transcript, and files that left the candidate set.
+  /// Because the key carries a modification date, an actively written transcript
+  /// mints a new entry per poll; without this the cache would grow without bound.
+  mutating func pruneUnconsulted() {
+    entries = entries.filter { consulted.contains($0.key) }
+    consulted.removeAll(keepingCapacity: true)
+  }
+}
+
 /// Compatibility shim over the per-agent profiles; the actual rules live in
 /// `AgentSessionProfile`.
 nonisolated enum AgentSessionPathParser {
@@ -92,6 +132,20 @@ actor AgentSessionResolver {
     let usedWideScan: Bool
     var unresolvedStreak: Int = 0
     var provisionalSoleID: String?
+  }
+
+  /// The immutable inputs of one uncached resolution, grouped so the scan and
+  /// match steps take a single subject rather than a long parameter list.
+  private struct ResolveRequest {
+    let identified: IdentifiedAgentProcess
+    let processStartedAt: Date
+    let workingDirectory: URL?
+    let activeText: String
+    /// A relocated agent config root, when the runtime supports one. Selects the
+    /// rooted path parser and candidate roots, and suppresses the pid-keyed
+    /// lookup, whose artifacts only ever live in the default home.
+    let configRoot: URL?
+    let now: Date
   }
 
   /// Unresolved lookups retry quickly while the narrow scan stays cheap, then
@@ -132,6 +186,9 @@ actor AgentSessionResolver {
   }
 
   private var cache: [CacheKey: CachedResult] = [:]
+  /// Per-pane transcript fragment reuse, kept beside `cache` so both are evicted
+  /// on the same liveness check.
+  private var fragmentCaches: [CacheKey: TranscriptFragmentCache] = [:]
   private let fileManager: FileManager
   private let homeDirectory: URL
 
@@ -169,14 +226,20 @@ actor AgentSessionResolver {
       }
     }
 
+    var fragments = fragmentCaches[key] ?? TranscriptFragmentCache()
     let (resolved, usedWideScan) = resolveUncached(
-      identified: identified,
-      processStartedAt: startedAt,
-      workingDirectory: workingDirectory,
-      activeText: activeText,
-      configRoot: configRoot,
-      now: now
+      ResolveRequest(
+        identified: identified,
+        processStartedAt: startedAt,
+        workingDirectory: workingDirectory,
+        activeText: activeText,
+        configRoot: configRoot,
+        now: now
+      ),
+      fragments: &fragments
     )
+    fragments.pruneUnconsulted()
+    fragmentCaches[key] = fragments
     var session = resolved
     var provisionalID: String?
     if let candidate = session, candidate.confidence == .medium {
@@ -202,6 +265,7 @@ actor AgentSessionResolver {
       cache = cache.filter { entry in
         ProcessDetection.processStartDate(pid: entry.key.pid) == entry.key.startedAt
       }
+      fragmentCaches = fragmentCaches.filter { cache[$0.key] != nil }
     }
     return AgentSessionResolution(session: session, isFresh: true)
   }
@@ -229,15 +293,12 @@ actor AgentSessionResolver {
   }
 
   private func resolveUncached(
-    identified: IdentifiedAgentProcess,
-    processStartedAt: Date,
-    workingDirectory: URL?,
-    activeText: String,
-    configRoot: URL? = nil,
-    now: Date
+    _ request: ResolveRequest,
+    fragments cache: inout TranscriptFragmentCache
   ) -> (session: AgentSession?, usedWideScan: Bool) {
+    let identified = request.identified
     let profile = AgentSessionProfile.profile(for: identified.agent)
-    let parsePath = Self.pathParser(profile: profile, configRoot: configRoot)
+    let parsePath = Self.pathParser(profile: profile, configRoot: request.configRoot)
 
     let openSessions = ProcessDetection.openFilePaths(pid: identified.process.pid)
       .compactMap { parsePath($0) }
@@ -261,8 +322,8 @@ actor AgentSessionResolver {
 
     // pid-keyed artifacts live in the default home; a relocated config root
     // has no equivalent (no bound-capable runtime defines one).
-    if configRoot == nil,
-      let session = profile.pidKeyedSession?(homeDirectory, identified.process.pid, processStartedAt)
+    if request.configRoot == nil,
+      let session = profile.pidKeyedSession?(homeDirectory, identified.process.pid, request.processStartedAt)
     {
       return (session, false)
     }
@@ -275,8 +336,9 @@ actor AgentSessionResolver {
       return AgentSessionCandidate(session: session, modifiedAt: modifiedAt)
     }
     if let matched = AgentSessionFingerprintMatcher.bestMatch(
-      activeText: activeText,
-      candidates: openCandidates
+      activeText: request.activeText,
+      candidates: openCandidates,
+      fragments: &cache
     ) {
       let resolved = AgentSession(
         id: matched.session.id,
@@ -289,12 +351,16 @@ actor AgentSessionResolver {
 
     let (candidates, usedWideScan) = recentCandidates(
       profile: profile,
-      processStartedAt: processStartedAt,
-      workingDirectory: workingDirectory,
-      configRoot: configRoot,
-      now: now
+      processStartedAt: request.processStartedAt,
+      workingDirectory: request.workingDirectory,
+      configRoot: request.configRoot,
+      now: request.now
     )
-    if let matched = AgentSessionFingerprintMatcher.bestMatch(activeText: activeText, candidates: candidates) {
+    if let matched = AgentSessionFingerprintMatcher.bestMatch(
+      activeText: request.activeText,
+      candidates: candidates,
+      fragments: &cache
+    ) {
       let resolved = AgentSession(
         id: matched.session.id,
         transcriptPath: matched.session.transcriptPath,
@@ -303,7 +369,8 @@ actor AgentSessionResolver {
       )
       return (resolved, usedWideScan)
     }
-    let sole = AgentSessionCandidate.uniqueActiveCandidate(candidates, processStartedAt: processStartedAt)?.session
+    let sole = AgentSessionCandidate.uniqueActiveCandidate(candidates, processStartedAt: request.processStartedAt)?
+      .session
     return (sole, usedWideScan)
   }
 
@@ -478,9 +545,19 @@ actor AgentSessionResolver {
 }
 
 nonisolated enum AgentSessionFingerprintMatcher {
+  /// Convenience for call sites with no cache to reuse (tests, one-shot lookups).
   static func bestMatch(
     activeText: String,
     candidates: [AgentSessionCandidate]
+  ) -> AgentSessionCandidate? {
+    var scratch = TranscriptFragmentCache()
+    return bestMatch(activeText: activeText, candidates: candidates, fragments: &scratch)
+  }
+
+  static func bestMatch(
+    activeText: String,
+    candidates: [AgentSessionCandidate],
+    fragments cache: inout TranscriptFragmentCache
   ) -> AgentSessionCandidate? {
     let screen = normalize(activeText)
     guard screen.count >= 12 else { return nil }
@@ -494,16 +571,12 @@ nonisolated enum AgentSessionFingerprintMatcher {
     for group in bySession.values {
       var sessionScoreable = false
       for candidate in group.sorted(by: { $0.modifiedAt > $1.modifiedAt }).prefix(2) {
-        guard let path = candidate.session.transcriptPath, let data = tailData(at: path) else { continue }
-        // Lossy decoding is deliberate: the tail window can start mid-character
-        // in a multi-byte transcript, and a failable conversion would void the
-        // whole tail instead of just the cut first line.
-        // swiftlint:disable:next optional_data_string_conversion
-        let fragments = transcriptStrings(String(decoding: data, as: UTF8.self))
         // Scoreable means the session produced at least one fragment long
         // enough to actually enter the comparison — fragments below the floor
         // ("OK") are no testimony at all.
-        let comparable = fragments.map(normalize).filter { $0.count >= 12 }
+        guard let path = candidate.session.transcriptPath,
+          let comparable = comparableFragments(at: path, modifiedAt: candidate.modifiedAt, cache: &cache)
+        else { continue }
         if !comparable.isEmpty { sessionScoreable = true }
         let score = comparable.reduce(0) { best, normalized in
           if screen.contains(normalized) { return max(best, min(200, normalized.count + 80)) }
@@ -532,12 +605,104 @@ nonisolated enum AgentSessionFingerprintMatcher {
     return winner.best.0
   }
 
+  /// Normalized, length-filtered fragments for one transcript tail, served from
+  /// `cache` whenever the file has not been appended to since the last poll.
+  private static func comparableFragments(
+    at path: URL,
+    modifiedAt: Date,
+    cache: inout TranscriptFragmentCache
+  ) -> [String]? {
+    cache.fragments(for: TranscriptFragmentCache.Key(path: path.path, modifiedAt: modifiedAt)) {
+      guard let data = tailData(at: path) else { return nil }
+      // Lossy decoding is deliberate: the tail window can start mid-character
+      // in a multi-byte transcript, and a failable conversion would void the
+      // whole tail instead of just the cut first line.
+      // swiftlint:disable:next optional_data_string_conversion
+      return transcriptStrings(String(decoding: data, as: UTF8.self))
+        .map(normalize)
+        .filter { $0.count >= 12 }
+    }
+  }
+
+  /// Strips ANSI escapes, folds case, and collapses whitespace runs so screen
+  /// text and transcript text compare on content alone.
+  ///
+  /// The ASCII fast path exists because this runs over every transcript fragment
+  /// of every fingerprint match and dominated the resolver's CPU: Swift Regex
+  /// and grapheme-level whitespace splitting are both far more expensive than a
+  /// single byte scan. Any non-ASCII byte defers to `normalizeGeneral`, so
+  /// Unicode case folding and the full Unicode whitespace set keep their exact
+  /// semantics rather than being approximated.
   static func normalize(_ value: String) -> String {
+    normalizeASCII(value) ?? normalizeGeneral(value)
+  }
+
+  /// Reference implementation. `normalize` must agree with it for every input;
+  /// `AgentSessionFingerprintNormalizeTests` asserts that over a corpus.
+  static func normalizeGeneral(_ value: String) -> String {
     value
       .replacing(#/\u{001B}\[[0-?]*[ -\/]*[@-~]/#, with: " ")
       .lowercased()
       .split(whereSeparator: \Character.isWhitespace)
       .joined(separator: " ")
+  }
+
+  /// Returns nil when `value` holds any non-ASCII byte, leaving those inputs to
+  /// the general path.
+  private static func normalizeASCII(_ value: String) -> String? {
+    let utf8 = value.utf8
+    // Built as scalars rather than bytes: every byte kept here is ASCII, so the
+    // conversion is exact and needs no decoding pass over the result.
+    var output = String.UnicodeScalarView()
+    output.reserveCapacity(utf8.count)
+    var pendingSeparator = false
+    var index = utf8.startIndex
+
+    while index < utf8.endIndex {
+      let byte = utf8[index]
+      guard byte < 0x80 else { return nil }
+      // A well-formed CSI sequence becomes a space, which is itself a separator;
+      // a bare ESC matches no sequence and survives as ordinary text.
+      if byte == 0x1B, let end = csiEnd(utf8, from: index) {
+        pendingSeparator = true
+        index = end
+        continue
+      }
+      if isASCIIWhitespace(byte) {
+        pendingSeparator = true
+      } else {
+        // Leading whitespace produces no separator because nothing precedes it,
+        // and a trailing run is simply never flushed — matching the trim that
+        // `split` + `joined` performs.
+        if pendingSeparator {
+          if !output.isEmpty { output.append(Unicode.Scalar(UInt8(0x20))) }
+          pendingSeparator = false
+        }
+        output.append(Unicode.Scalar(byte >= 0x41 && byte <= 0x5A ? byte + 0x20 : byte))
+      }
+      index = utf8.index(after: index)
+    }
+    return String(output)
+  }
+
+  /// The Unicode `White_Space` members that fall in the ASCII range.
+  private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+    byte == 0x20 || (0x09...0x0D).contains(byte)
+  }
+
+  /// Index just past a CSI sequence starting at `start`, or nil if the bytes
+  /// there do not form one: `ESC [` , parameters, intermediates, then a final byte.
+  private static func csiEnd(
+    _ utf8: String.UTF8View,
+    from start: String.UTF8View.Index
+  ) -> String.UTF8View.Index? {
+    var index = utf8.index(after: start)
+    guard index < utf8.endIndex, utf8[index] == 0x5B else { return nil }
+    index = utf8.index(after: index)
+    while index < utf8.endIndex, (0x30...0x3F).contains(utf8[index]) { index = utf8.index(after: index) }
+    while index < utf8.endIndex, (0x20...0x2F).contains(utf8[index]) { index = utf8.index(after: index) }
+    guard index < utf8.endIndex, (0x40...0x7E).contains(utf8[index]) else { return nil }
+    return utf8.index(after: index)
   }
 
   private static func tailData(at url: URL, byteLimit: UInt64 = 131_072) -> Data? {
