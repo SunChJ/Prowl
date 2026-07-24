@@ -62,6 +62,7 @@ struct CommandPaletteFeature {
     case selectAllCanvasCards
     case toggleShelf
     case showDiff
+    case showOutgoingChanges
     case revealInFinder
     case copyPath
     case revealInSidebar
@@ -239,15 +240,7 @@ struct CommandPaletteFeature {
     }
     let worktreeActionTargetID = actionTargetWorktreeID ?? repositories.selectedWorktreeID
     if repositories.selectedWorktreeID != nil {
-      items.append(
-        .appShortcut(
-          id: CommandPaletteItemID.globalShowDiff,
-          title: "Show Diff",
-          category: .view,
-          kind: .showDiff,
-          keywords: ["diff", "changes", "git"]
-        )
-      )
+      items.append(contentsOf: selectedWorktreeViewCommandItems())
       items.append(contentsOf: worktreeNavigationCommandItems())
       items.append(
         contentsOf: worktreeActionCommandItems(
@@ -592,6 +585,25 @@ private func worktreeNavigationCommandItems() -> [CommandPaletteItem] {
       category: .navigation,
       kind: .revealInSidebar,
       keywords: ["reveal", "locate", "find worktree"]
+    ),
+  ]
+}
+
+private func selectedWorktreeViewCommandItems() -> [CommandPaletteItem] {
+  [
+    .appShortcut(
+      id: CommandPaletteItemID.globalShowDiff,
+      title: "Show Diff",
+      category: .view,
+      kind: .showDiff,
+      keywords: ["diff", "changes", "git"]
+    ),
+    .appShortcut(
+      id: CommandPaletteItemID.globalOutgoingChanges,
+      title: "Show Outgoing Changes",
+      category: .view,
+      kind: .outgoingChanges,
+      keywords: ["diff", "changes", "outgoing", "pull request", "git"]
     ),
   ]
 }

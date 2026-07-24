@@ -71,11 +71,18 @@ struct SidebarCommands: Commands {
       )
       .help(helpText(title: "Select Previous Book", commandID: AppShortcuts.CommandID.selectPreviousShelfBook))
       shelfBookMenuButtons
+      Divider()
       Button("Show Diff", systemImage: "plusminus.circle") {
         store.send(.showSelectedWorktreeDiff)
       }
       .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.showDiff)))
       .help(helpText(title: "Show Diff", commandID: AppShortcuts.CommandID.showDiff))
+      .disabled(store.repositories.selectedWorktreeID == nil)
+      Button("Show Outgoing Changes", systemImage: "arrow.up.right") {
+        store.send(.showSelectedWorktreeOutgoingChanges)
+      }
+      .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.outgoingChanges)))
+      .help(helpText(title: "Show Outgoing Changes", commandID: AppShortcuts.CommandID.outgoingChanges))
       .disabled(store.repositories.selectedWorktreeID == nil)
     }
   }

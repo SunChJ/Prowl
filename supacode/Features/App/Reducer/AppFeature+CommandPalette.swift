@@ -165,6 +165,9 @@ extension AppFeature {
     case .showDiff:
       return openSelectedWorktreeDiffEffect(state: state)
 
+    case .showOutgoingChanges:
+      return openSelectedWorktreeOutgoingChangesEffect(state: state)
+
     case .revealInFinder:
       return .send(.openWorktree(.finder))
 
@@ -215,6 +218,25 @@ extension AppFeature {
       return .none
     }
     return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
+  }
+
+  func openSelectedWorktreeOutgoingChangesEffect(state: State) -> Effect<Action> {
+    guard let worktreeID = state.repositories.selectedWorktreeID else {
+      return .none
+    }
+    return openOutgoingChangesEffect(worktreeID: worktreeID, state: state)
+  }
+
+  func openOutgoingChangesEffect(worktreeID: Worktree.ID, state: State) -> Effect<Action> {
+    guard let worktree = state.repositories.worktree(for: worktreeID) else {
+      return .none
+    }
+    let resolvedKeybindings = state.resolvedKeybindings
+    return .run { send in
+      await outgoingChangesClient.open(worktree, resolvedKeybindings) { error in
+        send(.openWorktreeFailed(error))
+      }
+    }
   }
 
   func reduceCommandPaletteWorktreeActionDelegate(

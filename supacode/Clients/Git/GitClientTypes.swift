@@ -18,6 +18,8 @@ enum GitOperation: String {
   case branchDelete = "branch_delete"
   case lineChanges = "line_changes"
   case diffNameStatus = "diff_name_status"
+  case outgoingChangesComparison = "outgoing_changes_comparison"
+  case outgoingDiffNameStatus = "outgoing_diff_name_status"
   case untrackedFilePaths = "untracked_file_paths"
   case showFile = "show_file"
   case remoteInfo = "remote_info"
@@ -125,6 +127,73 @@ nonisolated struct GitBranchRefOption: Codable, Equatable, Hashable, Sendable, I
     self.ref = ref
     self.kind = kind
   }
+}
+
+nonisolated enum OutgoingBaseSource: Equatable, Sendable {
+  case pullRequest
+  case repositorySetting
+  case automatic
+
+  var label: String {
+    switch self {
+    case .pullRequest: "pull request base"
+    case .repositorySetting: "worktree base setting"
+    case .automatic: "default branch"
+    }
+  }
+}
+
+nonisolated struct OutgoingBaseResolution: Equatable, Sendable {
+  /// Fully qualified ref (`refs/remotes/...` or `refs/heads/...`) so
+  /// `rev-parse`/`merge-base` never hit Git's short-name disambiguation,
+  /// which prefers a local branch literally named `<remote>/<branch>`.
+  let ref: String
+  let displayName: String
+  let source: OutgoingBaseSource
+}
+
+nonisolated struct GitPullRequestBase: Equatable, Sendable {
+  let url: String
+  let baseRefName: String
+}
+
+nonisolated enum OutgoingBaseResolutionError: Error, Equatable, Sendable, LocalizedError {
+  case incompletePullRequest
+  case invalidPullRequestURL(String)
+  case noMatchingRemote(host: String, repositoryPath: String)
+  case multipleMatchingRemotes([String])
+  case unresolvedPullRequestBase(remote: String, branch: String)
+  case unresolvedRepositorySettingBase(String)
+  case noResolvableBase
+
+  var errorDescription: String? {
+    switch self {
+    case .incompletePullRequest:
+      "The cached pull request has no base branch yet. Refresh pull request status and try again."
+    case .invalidPullRequestURL(let url):
+      "Prowl could not parse the pull request URL (\(url))."
+    case .noMatchingRemote(let host, let repositoryPath):
+      "No local remote matches the pull request repository \(host)/\(repositoryPath). "
+        + "Add that remote and fetch it, then try again."
+    case .multipleMatchingRemotes(let names):
+      "Multiple remotes point at the pull request repository: \(names.joined(separator: ", ")). "
+        + "Remove or rename one so Prowl can pick the base remote."
+    case .unresolvedPullRequestBase(let remote, let branch):
+      "The pull request base \(remote)/\(branch) is not available locally. "
+        + "Run `git fetch \(remote)` and try again."
+    case .unresolvedRepositorySettingBase(let ref):
+      "The configured worktree base \(ref) does not exist locally. "
+        + "Fetch it, or update the base branch in the repository's settings."
+    case .noResolvableBase:
+      "No pull request, configured base branch, or default remote branch was found to compare against."
+    }
+  }
+}
+
+nonisolated struct GitOutgoingChangesComparison: Equatable, Sendable {
+  let base: OutgoingBaseResolution
+  let mergeBase: String
+  let head: String
 }
 
 nonisolated struct GitRemoteBranchRefs: Equatable, Sendable {

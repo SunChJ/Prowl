@@ -14,6 +14,29 @@ struct DiffWindowContentView: View {
     DiffStyle(rawValue: diffStyleRaw) ?? .split
   }
 
+  private var emptyState: (title: String, description: String) {
+    switch state.mode {
+    case .uncommitted:
+      ("No Changes", "Working directory is clean")
+    case .outgoing:
+      ("No Outgoing Changes", outgoingEmptyDescription)
+    }
+  }
+
+  private var outgoingEmptyDescription: String {
+    guard let base = state.outgoingBase else {
+      return "This branch has no committed changes relative to its base"
+    }
+    return "This branch has no committed changes relative to \(base.displayName) (\(base.source.label))"
+  }
+
+  private var modeSelection: Binding<DiffMode> {
+    Binding(
+      get: { state.mode },
+      set: { state.setMode($0) },
+    )
+  }
+
   private var resolvedDiffAppearance: DiffAppearance {
     switch settingsFile.global.appearanceMode {
     case .system: colorScheme == .dark ? .dark : .light
@@ -58,6 +81,29 @@ struct DiffWindowContentView: View {
             in: resolvedKeybindings
           ))
       }
+      ToolbarItem(id: "diffMode", placement: .principal) {
+        Picker("Diff Mode", selection: modeSelection) {
+          Text("Uncommitted")
+            .tag(DiffMode.uncommitted)
+            .help(
+              AppShortcuts.helpText(
+                title: "Show uncommitted changes",
+                commandID: AppShortcuts.CommandID.showDiff,
+                in: resolvedKeybindings
+              ))
+          Text("Outgoing")
+            .tag(DiffMode.outgoing)
+            .help(
+              AppShortcuts.helpText(
+                title: "Show outgoing changes",
+                commandID: AppShortcuts.CommandID.outgoingChanges,
+                in: resolvedKeybindings
+              ))
+        }
+        .pickerStyle(.segmented)
+        .disabled(!state.canSwitchModes)
+        .help("Switch between uncommitted and outgoing changes")
+      }
       ToolbarItem(id: "diffStyle", placement: .primaryAction) {
         Picker("Diff Style", selection: $diffStyleRaw) {
           Image(systemName: "square.split.2x1")
@@ -88,22 +134,43 @@ struct DiffWindowContentView: View {
 
   private var fileListSidebar: some View {
     List(selection: selectedFileID) {
-      ForEach(state.changedFiles) { file in
-        FileRowView(file: file)
-          .tag(file.id)
+      if let base = state.outgoingBase {
+        Section {
+          fileRows
+        } header: {
+          Text("vs \(base.displayName) · \(base.source.label)")
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help("Comparing committed changes against \(base.displayName) (\(base.source.label))")
+        }
+      } else {
+        fileRows
       }
     }
     .listStyle(.sidebar)
     .overlay {
       if state.isLoadingFiles && state.changedFiles.isEmpty {
         ProgressView()
+      } else if let loadError = state.loadError {
+        ContentUnavailableView(
+          "Unable to Load Changes",
+          systemImage: "exclamationmark.triangle",
+          description: Text(loadError),
+        )
       } else if !state.isLoadingFiles && state.changedFiles.isEmpty {
         ContentUnavailableView(
-          "No Changes",
+          emptyState.title,
           systemImage: "checkmark.circle",
-          description: Text("Working directory is clean"),
+          description: Text(emptyState.description),
         )
       }
+    }
+  }
+
+  private var fileRows: some View {
+    ForEach(state.changedFiles) { file in
+      FileRowView(file: file)
+        .tag(file.id)
     }
   }
 
@@ -159,6 +226,12 @@ struct DiffWindowContentView: View {
           }
         }
         .animation(.easeInOut(duration: 0.15), value: state.renderState)
+      } else if let loadError = state.loadError {
+        ContentUnavailableView(
+          "Unable to Load Changes",
+          systemImage: "exclamationmark.triangle",
+          description: Text(loadError),
+        )
       } else if state.isLoadingFiles {
         ProgressView()
           .frame(maxWidth: .infinity, maxHeight: .infinity)

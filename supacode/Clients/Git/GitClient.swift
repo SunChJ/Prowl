@@ -563,6 +563,150 @@ struct GitClient {
     }
   }
 
+  /// Resolves the base an outgoing comparison should diff against. The ladder
+  /// advances only when a source is absent; a source that is present but fails
+  /// to resolve throws its own `OutgoingBaseResolutionError` instead of
+  /// cascading, so explicit intent (a pull request, a configured base) is
+  /// never silently replaced by a guess.
+  nonisolated func outgoingBaseResolution(
+    pullRequest: GitPullRequestBase?,
+    configuredBaseRef: String?,
+    in worktreeURL: URL
+  ) async throws -> OutgoingBaseResolution {
+    if let pullRequest {
+      return try await pullRequestBaseResolution(pullRequest, in: worktreeURL)
+    }
+    let configured = configuredBaseRef?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !configured.isEmpty {
+      guard let qualified = await qualifiedBaseRef(named: configured, repoRoot: worktreeURL) else {
+        throw OutgoingBaseResolutionError.unresolvedRepositorySettingBase(configured)
+      }
+      return OutgoingBaseResolution(
+        ref: qualified.ref,
+        displayName: qualified.displayName,
+        source: .repositorySetting
+      )
+    }
+    if let automatic = await automaticWorktreeBaseRef(for: worktreeURL),
+      let qualified = await qualifiedBaseRef(named: automatic, repoRoot: worktreeURL)
+    {
+      return OutgoingBaseResolution(
+        ref: qualified.ref,
+        displayName: qualified.displayName,
+        source: .automatic
+      )
+    }
+    throw OutgoingBaseResolutionError.noResolvableBase
+  }
+
+  nonisolated private func pullRequestBaseResolution(
+    _ pullRequest: GitPullRequestBase,
+    in worktreeURL: URL
+  ) async throws -> OutgoingBaseResolution {
+    let branch = pullRequest.baseRefName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !branch.isEmpty else {
+      throw OutgoingBaseResolutionError.incompletePullRequest
+    }
+    guard let pullRequestRepository = Self.pullRequestRepositoryWebInfo(pullRequest.url) else {
+      throw OutgoingBaseResolutionError.invalidPullRequestURL(pullRequest.url)
+    }
+    let matchingRemotes = await remoteWebCandidates(for: worktreeURL)
+      .filter { Self.matches($0.info, pullRequestRepository) }
+      .map(\.name)
+    guard !matchingRemotes.isEmpty else {
+      throw OutgoingBaseResolutionError.noMatchingRemote(
+        host: pullRequestRepository.host,
+        repositoryPath: pullRequestRepository.repositoryPath
+      )
+    }
+    guard matchingRemotes.count == 1, let remote = matchingRemotes.first else {
+      throw OutgoingBaseResolutionError.multipleMatchingRemotes(matchingRemotes.sorted())
+    }
+    let qualifiedRef = "refs/remotes/\(remote)/\(branch)"
+    guard await refExists(qualifiedRef, repoRoot: worktreeURL) else {
+      throw OutgoingBaseResolutionError.unresolvedPullRequestBase(remote: remote, branch: branch)
+    }
+    return OutgoingBaseResolution(
+      ref: qualifiedRef,
+      displayName: "\(remote)/\(branch)",
+      source: .pullRequest
+    )
+  }
+
+  /// Qualifies a user- or heuristic-provided base name (`origin/main`, `main`)
+  /// into a full ref, preferring the remote-tracking namespace. Names that are
+  /// already fully qualified are verified as-is.
+  nonisolated private func qualifiedBaseRef(
+    named name: String,
+    repoRoot: URL
+  ) async -> (ref: String, displayName: String)? {
+    if name.hasPrefix("refs/") {
+      guard await refExists(name, repoRoot: repoRoot) else { return nil }
+      let displayName =
+        name
+        .replacing(/^refs\/(remotes|heads)\//, with: "", maxReplacements: 1)
+      return (name, displayName)
+    }
+    let remoteRef = "refs/remotes/\(name)"
+    if await refExists(remoteRef, repoRoot: repoRoot) {
+      return (remoteRef, name)
+    }
+    let headRef = "refs/heads/\(name)"
+    if await refExists(headRef, repoRoot: repoRoot) {
+      return (headRef, name)
+    }
+    return nil
+  }
+
+  /// Captures the immutable Git revisions used by a three-dot pull request
+  /// comparison. The merge base is the left side; the current HEAD is the
+  /// right side. Capturing both keeps the file list and all file documents
+  /// internally consistent even if refs move while the window is loading.
+  nonisolated func outgoingChangesComparison(
+    base: OutgoingBaseResolution,
+    at worktreeURL: URL
+  ) async throws -> GitOutgoingChangesComparison {
+    let path = worktreeURL.path(percentEncoded: false)
+    let head = try await runGit(
+      operation: .outgoingChangesComparison,
+      arguments: ["-C", path, "rev-parse", "--verify", "HEAD"]
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !head.isEmpty else {
+      throw GitClientError.commandFailed(command: "git rev-parse --verify HEAD", message: "Empty output")
+    }
+    let mergeBase = try await runGit(
+      operation: .outgoingChangesComparison,
+      arguments: ["-C", path, "merge-base", base.ref, head]
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !mergeBase.isEmpty else {
+      throw GitClientError.commandFailed(command: "git merge-base \(base.ref) \(head)", message: "Empty output")
+    }
+    return GitOutgoingChangesComparison(base: base, mergeBase: mergeBase, head: head)
+  }
+
+  /// Lists committed files in a captured pull-request comparison. Unlike
+  /// `diffNameStatus(at:)`, errors deliberately propagate so callers never
+  /// mistake a missing base for an empty outgoing diff.
+  nonisolated func outgoingDiffNameStatus(
+    for comparison: GitOutgoingChangesComparison,
+    at worktreeURL: URL
+  ) async throws -> String {
+    let path = worktreeURL.path(percentEncoded: false)
+    return try await runGit(
+      operation: .outgoingDiffNameStatus,
+      arguments: [
+        "-C",
+        path,
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--name-status",
+        comparison.mergeBase,
+        comparison.head,
+      ]
+    )
+  }
+
   nonisolated func untrackedFilePaths(at worktreeURL: URL) async -> [String] {
     let path = worktreeURL.path(percentEncoded: false)
     do {
@@ -581,11 +725,15 @@ struct GitClient {
   }
 
   nonisolated func showFileAtHEAD(_ relativePath: String, in worktreeURL: URL) async -> String? {
+    await showFile(relativePath, at: "HEAD", in: worktreeURL)
+  }
+
+  nonisolated func showFile(_ relativePath: String, at revision: String, in worktreeURL: URL) async -> String? {
     let path = worktreeURL.path(percentEncoded: false)
     do {
       return try await runGit(
         operation: .showFile,
-        arguments: ["-C", path, "show", "HEAD:\(relativePath)"]
+        arguments: ["-C", path, "show", "\(revision):\(relativePath)"]
       )
     } catch {
       return nil
@@ -663,6 +811,30 @@ struct GitClient {
       return candidates
     }
     return candidates.filter { $0.name == "origin" } + candidates.filter { $0.name != "origin" }
+  }
+
+  nonisolated private static func pullRequestRepositoryWebInfo(_ pullRequestURL: String) -> GitRemoteWebInfo? {
+    guard let pullRequestInfo = parseRepositoryWebInfo(pullRequestURL) else {
+      return nil
+    }
+    let components = pullRequestInfo.repositoryPath.split(separator: "/", omittingEmptySubsequences: true)
+    guard components.count >= 4,
+      components[2].caseInsensitiveCompare("pull") == .orderedSame
+    else {
+      return nil
+    }
+    return GitRemoteWebInfo(
+      host: pullRequestInfo.host,
+      repositoryPath: "\(components[0])/\(components[1])",
+      port: pullRequestInfo.port
+    )
+  }
+
+  nonisolated private static func matches(_ lhs: GitRemoteWebInfo, _ rhs: GitRemoteWebInfo) -> Bool {
+    // Pull request URLs use the web transport while remotes commonly use SSH;
+    // their ports do not identify different repositories.
+    lhs.host.caseInsensitiveCompare(rhs.host) == .orderedSame
+      && lhs.repositoryPath.caseInsensitiveCompare(rhs.repositoryPath) == .orderedSame
   }
 
   nonisolated static func prioritizedGithubRemoteInfos(

@@ -72,6 +72,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case selectAllCanvasCards
     case toggleShelf
     case showDiff
+    case outgoingChanges
     case revealInFinder
     case copyPath
     case revealInSidebar
@@ -143,6 +144,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       return AppShortcuts.CommandID.toggleShelf
     case .showDiff:
       return AppShortcuts.CommandID.showDiff
+    case .outgoingChanges:
+      return AppShortcuts.CommandID.outgoingChanges
     case .revealInSidebar:
       return AppShortcuts.CommandID.revealInSidebar
     case .runScript:

@@ -464,6 +464,15 @@ struct WorktreeRowsView: View {
     Button("Reveal in Finder") {
       NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.workingDirectory.path)
     }
+    Divider()
+    Button("Show Diff") {
+      store.send(.delegate(.showDiff(worktree.id)))
+    }
+    .help("Show uncommitted changes for this worktree")
+    Button("Show Outgoing Changes") {
+      store.send(.delegate(.showOutgoingChanges(worktree.id)))
+    }
+    .help("Show committed changes relative to this worktree's base")
     if !row.isMainWorktree || isBulkSelection {
       Button(archiveTitle) {
         archiveWorktrees(archiveTargets)

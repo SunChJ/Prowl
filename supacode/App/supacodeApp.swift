@@ -239,6 +239,7 @@ struct SupacodeApp: App {
           handoffRequestRegistry.supersede(requestID)
         }
       )
+      values.outgoingChangesClient = Self.makeOutgoingChangesClient(storeBox: storeBox)
 
     }
 
@@ -273,6 +274,19 @@ struct SupacodeApp: App {
     #if DEBUG
       DebugWindowManager.shared.configure(store: appStore)
     #endif
+  }
+
+  /// Reads live store state so outgoing-changes resolvers pick up pull
+  /// requests created or retargeted after the diff window was opened.
+  @MainActor
+  private static func makeOutgoingChangesClient(
+    storeBox: SupacodeAppStoreBox
+  ) -> OutgoingChangesClient {
+    .live(
+      pullRequestInfo: { worktreeID in
+        storeBox.store?.withState { $0.repositories.worktreeInfo(for: worktreeID)?.pullRequest } ?? nil
+      }
+    )
   }
 
   @MainActor

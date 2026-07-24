@@ -22,6 +22,7 @@ enum CommandPaletteItemID {
   static let globalSelectAllCanvasCards = "global.select-all-canvas-cards"
   static let globalToggleShelf = "global.toggle-shelf"
   static let globalShowDiff = "global.show-diff"
+  static let globalOutgoingChanges = "global.outgoing-changes"
   static let globalRevealInFinder = "global.reveal-in-finder"
   static let globalCopyPath = "global.copy-path"
   static let globalRevealInSidebar = "global.reveal-in-sidebar"
@@ -61,6 +62,7 @@ enum CommandPaletteItemID {
       globalSelectAllCanvasCards,
       globalToggleShelf,
       globalShowDiff,
+      globalOutgoingChanges,
       globalRevealInFinder,
       globalCopyPath,
       globalRevealInSidebar,
@@ -200,6 +202,7 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
     .selectAllCanvasCards,
     .toggleShelf,
     .showDiff,
+    .outgoingChanges,
     .revealInFinder,
     .copyPath,
     .revealInSidebar,
@@ -282,6 +285,8 @@ func viewDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeat
     return .toggleShelf
   case .showDiff:
     return .showDiff
+  case .outgoingChanges:
+    return .showOutgoingChanges
   default:
     return nil
   }
@@ -330,6 +335,7 @@ func pullRequestDelegateAction(
     .selectAllCanvasCards,
     .toggleShelf,
     .showDiff,
+    .outgoingChanges,
     .revealInFinder,
     .copyPath,
     .revealInSidebar,
