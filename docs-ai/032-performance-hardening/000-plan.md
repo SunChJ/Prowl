@@ -98,3 +98,9 @@ Wave-1 fixes, each independent:
   `isMainWorktree` failure mode and added blocking filesystem calls to it; replaced with a
   cached `WorktreeDirectoryIndex` — see
   [003-sidebar-agent-row-resolution.md](003-sidebar-agent-row-resolution.md)
+- Updated 2026-07-25: wave 4 — with the sidebar fixed, the remaining steady-state CPU split
+  between agent detection and SwiftUI graph invalidation. Six fixes: emission dedup on
+  `rawState`, isolating the Active Agents panel's `entries` read, caching parsed transcript
+  fragments, short-circuiting escape stripping, coalescing emissions driven by animated pane
+  titles, and sharing transcript directory walks across panes — see
+  [004-agent-detection-steady-state.md](004-agent-detection-steady-state.md)
