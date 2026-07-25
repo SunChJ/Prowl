@@ -61,10 +61,16 @@ struct RepositorySectionView: View {
             ? (isExpanded ? "Collapse" : "Expand")
             : (repository.isWorkspace ? "Open terminal in workspace" : "Open terminal in folder")
         )
-        RepoHeaderTabCountBadge(
-          repository: repository,
-          terminalManager: terminalManager
-        )
+        // Expanded git repos move the count into the worktree rows, so the
+        // header stays quiet. Workspaces keep the header badge even when
+        // expanded (child rows carry no per-row count — tab attribution is
+        // by directory, not by child); plain folders never expand.
+        if !(isExpanded && repository.capabilities.supportsWorktrees) {
+          RepoHeaderTabCountBadge(
+            repository: repository,
+            terminalManager: terminalManager
+          )
+        }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .background {

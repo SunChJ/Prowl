@@ -29,37 +29,149 @@ struct RepositorySectionViewTests {
     #expect(
       SidebarListView.repositoryListHeaderAction(
         expandedRepoIDs: [],
-        expandableRepositoryIDs: []
+        expandableRepositoryIDs: [],
+        activeRepositoryIDs: []
       )
         == .expandAll
     )
     #expect(
       SidebarListView.repositoryListHeaderAction(
         expandedRepoIDs: [],
-        expandableRepositoryIDs: expandableIDs
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: []
       )
         == .expandAll
     )
     #expect(
       SidebarListView.repositoryListHeaderAction(
         expandedRepoIDs: [gitRepository.id],
-        expandableRepositoryIDs: expandableIDs
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: []
       )
         == .collapseAll
     )
     #expect(
       SidebarListView.repositoryListHeaderAction(
         expandedRepoIDs: [gitRepository.id, plainRepository.id],
-        expandableRepositoryIDs: expandableIDs
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: []
       )
         == .collapseAll
     )
     #expect(
       SidebarListView.repositoryListHeaderAction(
         expandedRepoIDs: [plainRepository.id],
-        expandableRepositoryIDs: expandableIDs
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: []
       )
         == .expandAll
+    )
+  }
+
+  @Test func sidebarHeaderActionCyclesThroughExpandActive() {
+    let repoA: Repository.ID = "/tmp/a"
+    let repoB: Repository.ID = "/tmp/b"
+    let expandableIDs: Set<Repository.ID> = [repoA, repoB]
+    let activeIDs: Set<Repository.ID> = [repoA]
+
+    // Fully collapsed + proper-subset active set → Expand Active.
+    #expect(
+      SidebarListView.repositoryListHeaderAction(
+        expandedRepoIDs: [],
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: activeIDs
+      )
+        == .expandActive
+    )
+    // Expanded set matches the active set exactly → Expand All.
+    #expect(
+      SidebarListView.repositoryListHeaderAction(
+        expandedRepoIDs: [repoA],
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: activeIDs
+      )
+        == .expandAll
+    )
+    // Fully expanded → Collapse All.
+    #expect(
+      SidebarListView.repositoryListHeaderAction(
+        expandedRepoIDs: expandableIDs,
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: activeIDs
+      )
+        == .collapseAll
+    )
+    // Mixed state different from the active set → Collapse All.
+    #expect(
+      SidebarListView.repositoryListHeaderAction(
+        expandedRepoIDs: [repoB],
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: activeIDs
+      )
+        == .collapseAll
+    )
+    // Active set covering every expandable repo degrades to the plain
+    // two-state cycle: Expand All from collapsed, Collapse All from expanded.
+    #expect(
+      SidebarListView.repositoryListHeaderAction(
+        expandedRepoIDs: [],
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: expandableIDs
+      )
+        == .expandAll
+    )
+    #expect(
+      SidebarListView.repositoryListHeaderAction(
+        expandedRepoIDs: expandableIDs,
+        expandableRepositoryIDs: expandableIDs,
+        activeRepositoryIDs: expandableIDs
+      )
+        == .collapseAll
+    )
+  }
+
+  @Test func activeRepositoryIDsIncludesOnlyExpandableReposWithOpenTabs() {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let busyWorktree = makeWorktree(repoRoot: "/tmp/busy", path: "/tmp/busy/main", branch: "main")
+    let busyRepository = makeRepository(
+      id: "/tmp/busy",
+      name: "busy",
+      worktrees: [busyWorktree]
+    )
+    let idleRepository = makeRepository(
+      id: "/tmp/idle",
+      name: "idle",
+      worktrees: [makeWorktree(repoRoot: "/tmp/idle", path: "/tmp/idle/main", branch: "main")]
+    )
+    // Plain folder with a tab: not expandable, so never part of the active set.
+    let plainRepository = makeRepository(
+      id: "/tmp/plain",
+      name: "plain",
+      kind: .plain,
+      worktrees: []
+    )
+    let repositories: IdentifiedArrayOf<Repository> = [
+      busyRepository, idleRepository, plainRepository,
+    ]
+    let expandableIDs = SidebarListView.expandableRepositoryIDs(in: repositories)
+
+    _ = manager.state(for: busyWorktree).tabManager.createTab(title: "work", icon: nil)
+    let plainTarget = Worktree(
+      id: plainRepository.id,
+      name: plainRepository.name,
+      detail: plainRepository.rootURL.path(percentEncoded: false),
+      workingDirectory: plainRepository.rootURL,
+      repositoryRootURL: plainRepository.rootURL
+    )
+    _ = manager.state(for: plainTarget).tabManager.createTab(title: "folder", icon: nil)
+
+    #expect(
+      SidebarListView.activeRepositoryIDs(
+        in: repositories,
+        expandableRepositoryIDs: expandableIDs,
+        terminalManager: manager
+      )
+        == [busyRepository.id]
     )
   }
 

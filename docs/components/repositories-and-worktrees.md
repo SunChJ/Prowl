@@ -102,8 +102,16 @@ new worktree (see [custom-actions](custom-actions.md)).
   the main worktree.)
 - **Reorder:** drag repositories or worktrees to rearrange; a thin accent line
   shows the drop target. Order is persisted.
-- **Expand / Collapse:** click the chevron on a repo header, or use the sidebar's
-  **Expand All / Collapse All** buttons. Collapsed state is remembered.
+- **Expand / Collapse:** click the chevron on a repo header, or cycle the
+  sidebar's header button: from all-collapsed it offers **Expand Active**
+  (double chevron `»` — expands only repos/workspaces that have open terminal
+  tabs), then **Expand All** (single chevron `›`), then **Collapse All**
+  (chevron rotated down). Expand Active is skipped when no repo (or every
+  repo) has open tabs. Collapsed state is remembered.
+- **Tab count badges:** a collapsed repo header shows its total open-tab count;
+  expanding a git repo moves the count onto the individual worktree rows
+  (hidden at zero). Workspaces and plain folders always show the count on the
+  header.
 
 ## Archiving a worktree
 
