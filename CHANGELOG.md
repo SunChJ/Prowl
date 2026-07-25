@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026.7.25](https://github.com/onevcat/Prowl/releases/tag/v2026.7.25)
+
+### New
+- **Outgoing Changes**: a new mode of the diff window showing the committed changes a worktree's branch would contribute to a pull request. Open it with ⌥⌘⇧Y, View → Show Outgoing Changes, the Command Palette, a worktree's context menu, or the new Uncommitted / Outgoing toggle in the diff window's toolbar.
+- Outgoing Changes works without an open pull request: the comparison base is resolved through a clear priority order — PR base, then the repository's Base Branch setting, then the default branch — and the base in effect is always labeled in the window title and file list.
+- The sidebar's expand/collapse header button now has a third state: Collapse All → Expand Active (expands only repositories and workspaces that have open tabs) → Expand All.
+- Tab count badges now follow the sidebar level: a collapsed repository shows its total open-tab count on the header, and expanding it moves the count onto the individual worktree rows.
+
+### Fixed
+- Fixed the text cursor jumping to the end of the field while editing a custom command in the middle of its text.
+- Fixed tab count badges getting visually compressed next to long branch names.
+
 ## [2026.7.22](https://github.com/onevcat/Prowl/releases/tag/v2026.7.22)
 
 This release introduces cross-agent handoff, letting you pass work from one coding agent to another without losing context.
