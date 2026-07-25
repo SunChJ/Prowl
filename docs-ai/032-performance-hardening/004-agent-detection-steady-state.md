@@ -7,9 +7,9 @@ filesystem work from `SidebarListView.activeAgentRowDisplays` and dropped proces
 94–134% to 29–70%. A long-running instance still burned 45–66% of a core with agents
 attached, so profiling continued against the same workload.
 
-This amendment records five fixes and, as much as the fixes themselves, the method that
+This amendment records six fixes and, as much as the fixes themselves, the method that
 found them: at each step the largest remaining cost was measured, attributed to a specific
-symbol, and the fix aimed at that symbol only. Three of the five were only visible after an
+symbol, and the fix aimed at that symbol only. Four of the six were only visible after an
 earlier one had shifted the profile, and two of them turned out to be the same defect
 arriving through a different field.
 
@@ -189,17 +189,68 @@ roughly 1% of a core.
 
 Structural results are load-independent and hold regardless of agent count:
 
-- `RepositorySectionView` absent from the profile (0.01–0.10%), against 99 re-evaluations
-  per 8 seconds before Fix 1.
-- Session resolution fell from 82% to 58–65% of `detectAgentState`; `normalize` from 42% to
-  10–14%.
-- `transcriptStrings` and `tailData` at 0.00%.
+- `RepositorySectionView` effectively absent from the profile (0.09–0.20%), against 99
+  re-evaluations per 8 seconds before Fix 1.
+- Session resolution fell from 82% to 61–71% of `detectAgentState`; `normalize` from 42% to
+  9–17%; `bestMatch` from 72% to 24–37%.
+- `transcriptStrings` and `tailData` at 0.00–0.03%.
+
+Three samples taken after the fixes were rebased onto v2026.7.25 bracket the absolute cost.
+Per-pane figures divide by pane count, because every agent pane polls at 300 ms regardless of
+state; the baseline column is a 25-pane run at load average 4.38 carrying Fixes 1–4 only.
+
+| per pane           | baseline (load 4.4) | 26 panes (load 16.9) | change |
+| ------------------ | ------------------- | -------------------- | ------ |
+| `detectAgentState` | 0.368%              | 0.241%               | −34%   |
+| `resolve`          | 0.286%              | 0.160%               | −44%   |
+| `bestMatch`        | 0.172%              | 0.090%               | −48%   |
+| `normalize`        | 0.054%              | 0.030%               | −43%   |
+| `recentCandidates` | 0.110%              | 0.066%               | −40%   |
+
+The comparison run carried four times the host load and three working agents against the
+baseline's one, both of which raise detection cost, so these are lower bounds rather than
+estimates. `recentCandidates` at −40% is the figure Fix 6 was written for: it had regressed
++92% per pane when the fragment cache landed, and the shared walk put it below its
+pre-regression level.
+
+**Fix 5 is not observable from outside the app.** `prowl agents` reports `tab.title` and
+`pane.title` from the live `ListRuntimeSnapshot`, and the payload never exposes
+`ActiveAgentEntry.paneTitle`, so CLI polling measures the spinner's source rate — confirmed at
+9.8 changes/second per working pane, and ~1/second on idle and blocked panes — not the
+emission rate coalescing governs. `AgentEntryTitleCoalescingTests` is the verification;
+the live profile is only consistent with it, showing every app-owned view body at or below
+0.30% of a core beneath a 5.74% flush.
 
 Absolute CPU comparisons proved harder to state honestly than expected. Agent count, the
 working/blocked mix, host load, and files on disk all moved between runs, and each shifts
 the number independently. `scripts/measure-agent-detection-cpu.sh` records the agent mix, load
 average, and per-symbol attribution together for this reason — a CPU percentage without its
 workload is not a measurement.
+
+## Still open
+
+With detection reduced by roughly a third, the SwiftUI flush is again the larger of the two
+paths, and the ratio that motivated Fixes 1, 2 and 5 has not changed shape:
+
+| under `flushTransactions` (5.74% total) | %core |
+| --------------------------------------- | ----- |
+| `AG::Subgraph::update`                  | 0.81% |
+| `AG::Graph::propagate_dirty`            | 0.58% |
+| `AG::Graph::UpdateStack::update`        | 0.41% |
+| largest single app view body            | 0.30% |
+
+Graph revalidation still outweighs every app-owned `body`, so something continues to dirty the
+graph more often than user-visible state changes. The remaining emission source is not
+identified: titles and `rawState` are both accounted for, and no view is slow enough to matter.
+Narrowing it further needs in-app instrumentation (`Self._printChanges()` or an emission
+counter), not `sample(1)`, because the profile can show that invalidation happens but not what
+requested it.
+
+A second cost sits entirely outside both paths and has never been examined:
+`CA::Transaction::flush_as_runloop_observer` — CoreAnimation layer commit — measured 6.70% of a
+core here and 11.77% on a starved host. Terminal surface rendering and the sidebar's
+per-worktree `ProgressView` spinners (12 running simultaneously in the sampled fleet) are both
+plausible contributors; they have not been separated.
 
 ## Tests
 
