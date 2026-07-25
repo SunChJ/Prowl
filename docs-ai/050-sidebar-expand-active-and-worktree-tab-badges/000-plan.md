@@ -157,3 +157,7 @@ _Each entry supersedes the draft above._
     gate is removed, unifying the code path);
   - workspaces keep the header badge even when expanded (child rows carry no
     per-row count; Decisions #5 unchanged) and plain folders never expand.
+- 2026-07-25: **Expand Active icon is `chevron.right.2`, not chevron + accent
+  dot.** The dot was too subtle and stole the accent color for a state hint.
+  The cycle now reads as remaining depth: `»` (two levels still collapsed) →
+  `›` (one level) → `v` (all expanded).

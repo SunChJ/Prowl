@@ -31,7 +31,12 @@ struct SidebarListView: View {
     }
 
     var systemImageName: String {
-      "chevron.right"
+      switch self {
+      case .expandActive:
+        return "chevron.right.2"
+      case .expandAll, .collapseAll:
+        return "chevron.right"
+      }
     }
 
     var rotation: Angle {
@@ -728,15 +733,6 @@ private struct RepositoryListHeaderToggle: View {
         .labelStyle(.iconOnly)
         .frame(width: 20, height: 20)
         .rotationEffect(action.rotation)
-        .overlay(alignment: .topTrailing) {
-          if action == .expandActive {
-            Circle()
-              .fill(Color.accentColor)
-              .frame(width: 4, height: 4)
-              .offset(x: -3, y: 3)
-              .accessibilityHidden(true)
-          }
-        }
         .contentShape(.rect)
     }
     .buttonStyle(.plain)
