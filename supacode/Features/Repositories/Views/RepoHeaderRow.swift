@@ -104,6 +104,9 @@ struct TabCountBadge: View {
         .padding(.horizontal, 5)
         .padding(.vertical, 1)
         .background(.quaternary, in: .capsule)
+        // Keep natural size when the row is width-starved; the sibling
+        // name text (higher layout priority) truncates instead.
+        .fixedSize()
         .help("\(count) active \(count == 1 ? "tab" : "tabs")")
     }
   }
