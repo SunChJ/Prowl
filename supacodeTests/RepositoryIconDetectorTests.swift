@@ -1,4 +1,5 @@
 import AppKit
+import Dependencies
 import Foundation
 import Testing
 
@@ -62,8 +63,8 @@ struct RepositoryIconDetectorTests {
 
   // MARK: - Apple
 
-  @Test func appleCatalogPicksLargestReferencedRaster() throws {
-    try withTemporaryProjectDirectory(
+  @Test func appleCatalogPicksLargestReferencedRaster() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["App.xcodeproj/"],
       contents: [
         "App/Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
@@ -74,14 +75,14 @@ struct RepositoryIconDetectorTests {
         "App/Assets.xcassets/AppIcon.appiconset/large.png": pngData(width: 1024, height: 1024),
       ]
     ) { root in
-      let candidate = RepositoryIconDetector.detect(at: root)
+      let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .appleAssetCatalog)
       #expect(candidate?.imageURL.lastPathComponent == "large.png")
     }
   }
 
-  @Test func appleCatalogFallsBackWhenLargestEntryFileIsMissing() throws {
-    try withTemporaryProjectDirectory(
+  @Test func appleCatalogFallsBackWhenLargestEntryFileIsMissing() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["Package.swift"],
       contents: [
         "Sources/App/Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
@@ -91,24 +92,24 @@ struct RepositoryIconDetectorTests {
         "Sources/App/Assets.xcassets/AppIcon.appiconset/present.png": pngData(width: 128, height: 128),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "present.png")
+      #expect(await RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "present.png")
     }
   }
 
-  @Test func appleCatalogWithMalformedManifestYieldsNothing() throws {
-    try withTemporaryProjectDirectory(
+  @Test func appleCatalogWithMalformedManifestYieldsNothing() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["App.xcodeproj/"],
       contents: [
         "Assets.xcassets/AppIcon.appiconset/Contents.json": Data("not json".utf8),
         "Assets.xcassets/AppIcon.appiconset/icon.png": pngData(width: 64, height: 64),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
-  @Test func appleCatalogInsideDependencyDirectoryIsIgnored() throws {
-    try withTemporaryProjectDirectory(
+  @Test func appleCatalogInsideDependencyDirectoryIsIgnored() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["App.xcodeproj/"],
       contents: [
         "node_modules/pkg/Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
@@ -117,12 +118,12 @@ struct RepositoryIconDetectorTests {
         "node_modules/pkg/Assets.xcassets/AppIcon.appiconset/icon.png": pngData(width: 64, height: 64),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
-  @Test func nearerAppleCatalogWinsOverDeeperOne() throws {
-    try withTemporaryProjectDirectory(
+  @Test func nearerAppleCatalogWinsOverDeeperOne() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["App.xcworkspace/"],
       contents: [
         "Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
@@ -135,41 +136,41 @@ struct RepositoryIconDetectorTests {
         "Modules/Deep/Assets.xcassets/AppIcon.appiconset/deep.png": pngData(width: 1024, height: 1024),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "near.png")
+      #expect(await RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "near.png")
     }
   }
 
   // MARK: - Android
 
-  @Test func androidLauncherPrefersHighestDensity() throws {
-    try withTemporaryProjectDirectory(
+  @Test func androidLauncherPrefersHighestDensity() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["gradlew", "settings.gradle"],
       contents: [
         "app/src/main/res/mipmap-mdpi/ic_launcher.png": pngData(width: 48, height: 48),
         "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": pngData(width: 192, height: 192),
       ]
     ) { root in
-      let candidate = RepositoryIconDetector.detect(at: root)
+      let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .androidLauncher)
       #expect(candidate?.imageURL.path(percentEncoded: false).contains("mipmap-xxxhdpi") == true)
     }
   }
 
-  @Test func androidAdaptiveOnlyProjectYieldsNothing() throws {
-    try withTemporaryProjectDirectory(
+  @Test func androidAdaptiveOnlyProjectYieldsNothing() async throws {
+    try await withTemporaryProjectDirectory(
       entries: ["gradlew"],
       contents: [
         "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml": Data("<adaptive-icon/>".utf8)
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
   // MARK: - Flutter / React Native
 
-  @Test func flutterPrefersIOSRunnerCatalogOverAndroidLauncher() throws {
-    try withTemporaryProjectDirectory(
+  @Test func flutterPrefersIOSRunnerCatalogOverAndroidLauncher() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "pubspec.yaml": flutterPubspec,
@@ -181,38 +182,38 @@ struct RepositoryIconDetectorTests {
         "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": pngData(width: 192, height: 192),
       ]
     ) { root in
-      let candidate = RepositoryIconDetector.detect(at: root)
+      let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .appleAssetCatalog)
       #expect(candidate?.imageURL.path(percentEncoded: false).contains("ios/Runner") == true)
     }
   }
 
-  @Test func flutterFallsBackToAndroidLauncher() throws {
-    try withTemporaryProjectDirectory(
+  @Test func flutterFallsBackToAndroidLauncher() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "pubspec.yaml": flutterPubspec,
         "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": pngData(width: 96, height: 96),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root)?.evidence == .androidLauncher)
+      #expect(await RepositoryIconDetector.detect(at: root)?.evidence == .androidLauncher)
     }
   }
 
-  @Test func pureDartPackageWithoutFlutterYieldsNothing() throws {
-    try withTemporaryProjectDirectory(
+  @Test func pureDartPackageWithoutFlutterYieldsNothing() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "pubspec.yaml": Data("name: pure_dart\nenvironment:\n  sdk: ^3.0.0\n".utf8),
         "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": pngData(width: 96, height: 96),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
-  @Test func reactNativeUsesIOSCatalogThenAndroid() throws {
-    try withTemporaryProjectDirectory(
+  @Test func reactNativeUsesIOSCatalogThenAndroid() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": reactNativePackageJSON,
@@ -222,15 +223,15 @@ struct RepositoryIconDetectorTests {
         "ios/Demo/Images.xcassets/AppIcon.appiconset/AppIcon.png": pngData(width: 1024, height: 1024),
       ]
     ) { root in
-      let candidate = RepositoryIconDetector.detect(at: root)
+      let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .appleAssetCatalog)
     }
   }
 
   // MARK: - Web
 
-  @Test func webManifestIconWinsOverFavicon() throws {
-    try withTemporaryProjectDirectory(
+  @Test func webManifestIconWinsOverFavicon() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8),
@@ -243,14 +244,14 @@ struct RepositoryIconDetectorTests {
         "public/favicon.png": pngData(width: 32, height: 32),
       ]
     ) { root in
-      let candidate = RepositoryIconDetector.detect(at: root)
+      let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .webAsset)
       #expect(candidate?.imageURL.lastPathComponent == "icon-512.png")
     }
   }
 
-  @Test func htmlRelIconIsResolvedAgainstRoot() throws {
-    try withTemporaryProjectDirectory(
+  @Test func htmlRelIconIsResolvedAgainstRoot() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8),
@@ -260,49 +261,51 @@ struct RepositoryIconDetectorTests {
         "assets/fav.png": pngData(width: 64, height: 64),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "fav.png")
+      #expect(await RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "fav.png")
     }
   }
 
-  @Test func staticFolderWithIndexHTMLAndFaviconQualifies() throws {
-    try withTemporaryProjectDirectory(
+  @Test func staticFolderWithIndexHTMLAndFaviconQualifies() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "index.html": Data("<html></html>".utf8),
         "favicon.svg": svgData,
       ]
     ) { root in
-      let candidate = RepositoryIconDetector.detect(at: root)
+      let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .webAsset)
       #expect(candidate?.imageURL.lastPathComponent == "favicon.svg")
     }
   }
 
-  @Test func rootLogoIsLastResortForWebProjects() throws {
-    try withTemporaryProjectDirectory(
+  @Test func rootLogoIsLastResortForWebProjects() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8),
         "logo.svg": svgData,
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "logo.svg")
+      #expect(await RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "logo.svg")
     }
   }
 
-  @Test func nonWebProjectIgnoresRootLogo() throws {
-    try withTemporaryProjectDirectory(
+  @Test func nonWebProjectRootLogoFallsToGenericTier() async throws {
+    // Originally rejected outright; the generic fallback tier now
+    // accepts a near-square root logo for any project kind.
+    try await withTemporaryProjectDirectory(
       entries: ["go.mod"],
       contents: [
         "logo.svg": svgData
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root)?.evidence == .genericAsset)
     }
   }
 
-  @Test func remoteAndDataIconReferencesAreRejected() throws {
-    try withTemporaryProjectDirectory(
+  @Test func remoteAndDataIconReferencesAreRejected() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8),
@@ -311,43 +314,43 @@ struct RepositoryIconDetectorTests {
         ),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
   // MARK: - Validation
 
-  @Test func undecodableImageIsRejected() throws {
-    try withTemporaryProjectDirectory(
+  @Test func undecodableImageIsRejected() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8),
         "logo.png": Data("this is not a png".utf8),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
-  @Test func oversizedRasterIsRejected() throws {
-    try withTemporaryProjectDirectory(
+  @Test func oversizedRasterIsRejected() async throws {
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8),
         "logo.png": pngData(width: 5000, height: 16),
       ]
     ) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
-  @Test func symlinkEscapingTheRepositoryIsRejected() throws {
+  @Test func symlinkEscapingTheRepositoryIsRejected() async throws {
     let fileManager = FileManager.default
     let outside = fileManager.temporaryDirectory
       .appending(path: "outside-\(UUID().uuidString).png")
     try pngData(width: 64, height: 64).write(to: outside)
     defer { try? fileManager.removeItem(at: outside) }
-    try withTemporaryProjectDirectory(
+    try await withTemporaryProjectDirectory(
       entries: [],
       contents: [
         "package.json": Data(#"{"name":"site"}"#.utf8)
@@ -357,13 +360,182 @@ struct RepositoryIconDetectorTests {
         at: root.appending(path: "logo.png"),
         withDestinationURL: outside
       )
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 
-  @Test func emptyRepositoryYieldsNothing() throws {
-    try withTemporaryProjectDirectory(entries: ["README.md"]) { root in
-      #expect(RepositoryIconDetector.detect(at: root) == nil)
+  @Test func emptyRepositoryYieldsNothing() async throws {
+    try await withTemporaryProjectDirectory(entries: ["README.md"]) { root in
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
+    }
+  }
+
+  // MARK: - Icon Composer
+
+  @Test func iconComposerBundleWinsOverAssetCatalog() async throws {
+    let rendered = FileManager.default.temporaryDirectory
+      .appending(path: "rendered-\(UUID().uuidString).png")
+    try pngData(width: 512, height: 512).write(to: rendered)
+    defer { try? FileManager.default.removeItem(at: rendered) }
+    try await withTemporaryProjectDirectory(
+      entries: ["App.xcodeproj/"],
+      contents: [
+        "assets/AppIcon.icon/icon.json": Data(#"{"fill":{"solid":"srgb:1,1,1,1"},"groups":[]}"#.utf8),
+        "assets/AppIcon.icon/Assets/layer.svg": svgData,
+        "Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
+          .init(filename: "legacy.png", size: "512x512", scale: "1x")
+        ]),
+        "Assets.xcassets/AppIcon.appiconset/legacy.png": pngData(width: 512, height: 512),
+      ]
+    ) { root in
+      let requested = LockIsolated<[URL]>([])
+      let candidate = await RepositoryIconDetector.detect(at: root) { bundle in
+        requested.withValue { $0.append(bundle) }
+        return rendered
+      }
+      #expect(candidate?.evidence == .appleIconComposer)
+      #expect(candidate?.imageURL == rendered)
+      #expect(requested.value.first?.lastPathComponent == "AppIcon.icon")
+    }
+  }
+
+  @Test func unrenderableIconComposerBundleFallsBackToAssetCatalog() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["App.xcodeproj/"],
+      contents: [
+        "AppIcon.icon/icon.json": Data(#"{"groups":[]}"#.utf8),
+        "Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
+          .init(filename: "legacy.png", size: "512x512", scale: "1x")
+        ]),
+        "Assets.xcassets/AppIcon.appiconset/legacy.png": pngData(width: 512, height: 512),
+      ]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root) { _ in nil }
+      #expect(candidate?.evidence == .appleAssetCatalog)
+    }
+  }
+
+  @Test func iconDirectoryWithoutManifestIsNotRendered() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["Package.swift", "Some.icon/"]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root) { _ in
+        Issue.record("Renderer must not run without a valid icon.json")
+        return nil
+      }
+      #expect(candidate == nil)
+    }
+  }
+
+  // MARK: - Tauri
+
+  @Test func tauriBundleIconIsUsed() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "package.json": Data(#"{"name":"app"}"#.utf8),
+        "src-tauri/tauri.conf.json": Data(
+          #"{"bundle":{"icon":["icons/32x32.png","icons/icon.icns","icons/icon.png"]}}"#.utf8
+        ),
+        "src-tauri/icons/32x32.png": pngData(width: 32, height: 32),
+        "src-tauri/icons/icon.png": pngData(width: 1024, height: 1024),
+      ]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root)
+      #expect(candidate?.evidence == .tauriBundle)
+      #expect(candidate?.imageURL.lastPathComponent == "icon.png")
+    }
+  }
+
+  @Test func tauriV1ConfigShapeIsSupported() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "src-tauri/tauri.conf.json": Data(
+          #"{"tauri":{"bundle":{"icon":["icons/icon.png"]}}}"#.utf8
+        ),
+        "src-tauri/icons/icon.png": pngData(width: 512, height: 512),
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root)?.evidence == .tauriBundle)
+    }
+  }
+
+  // MARK: - package.json icon field
+
+  @Test func packageJSONIconFieldOutranksFavicon() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "package.json": Data(#"{"name":"ext","icon":"images/ext-icon.png"}"#.utf8),
+        "images/ext-icon.png": pngData(width: 128, height: 128),
+        "public/favicon.png": pngData(width: 32, height: 32),
+      ]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root)
+      #expect(candidate?.evidence == .webAsset)
+      #expect(candidate?.imageURL.lastPathComponent == "ext-icon.png")
+    }
+  }
+
+  // MARK: - Generic fallback
+
+  @Test func genericTierAcceptsNearSquareRootIconForAnyKind() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["go.mod"],
+      contents: [
+        "icon.png": pngData(width: 256, height: 256)
+      ]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root)
+      #expect(candidate?.evidence == .genericAsset)
+      #expect(candidate?.imageURL.lastPathComponent == "icon.png")
+    }
+  }
+
+  @Test func genericTierFindsAssetsAndGithubLocations() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["Cargo.toml"],
+      contents: [
+        ".github/logo.png": pngData(width: 300, height: 260)
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root)?.evidence == .genericAsset)
+    }
+  }
+
+  @Test func genericTierRejectsWideWordmarkLogo() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["go.mod"],
+      contents: [
+        "assets/logo.png": pngData(width: 1200, height: 300)
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
+    }
+  }
+
+  @Test func kindProbeStillWinsOverGenericTier() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["gradlew"],
+      contents: [
+        "app/src/main/res/mipmap-xhdpi/ic_launcher.png": pngData(width: 96, height: 96),
+        "icon.png": pngData(width: 256, height: 256),
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root)?.evidence == .androidLauncher)
+    }
+  }
+
+  @Test func genericTierIgnoresUnrelatedFilenames() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: ["go.mod"],
+      contents: [
+        "banner.png": pngData(width: 256, height: 256),
+        "assets/screenshot.png": pngData(width: 256, height: 256),
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 }

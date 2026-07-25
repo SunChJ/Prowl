@@ -125,6 +125,41 @@ their documented editor preferences (Flutter: Android Studio → IntelliJ
   0.844 meanPickScore), and Prowl's reducer tests treat the client as a
   fixture boundary.
 
+## Follow-up (same day): more kinds and a generic tier
+
+Requested by onevcat after the initial implementation:
+
+- **Unity** became a `WorktreeProjectKind` for Automatic Open In
+  (Rider → VS Code family). The signal is
+  `ProjectSettings/ProjectVersion.txt` at the root **or one folder
+  down** — SDK-style repos (e.g. UniWebView) keep the Unity project
+  beside tooling manifests whose markers (Gemfile, root `.sln` files
+  Unity generates) would otherwise win. No icon probe: Unity serializes
+  its icon inside `ProjectSettings.asset`, which has no extractable
+  image with acceptable confidence.
+- **Icon Composer `.icon` bundles** are now the first Apple probe. The
+  format is layered (background fill + glass layers + per-appearance
+  variants), so single-layer extraction would misrepresent it; instead
+  the bundle is flattened by the system QuickLook thumbnail pipeline
+  (`.thumbnail` representation only — machines without the QL support
+  fall through to the asset-catalog probe). Renderer is injected so
+  tests stay off the system pipeline.
+- **Tauri**: `src-tauri/tauri.conf.json` (v1 and v2 shapes) declares
+  its bundle icons explicitly; the conventional flat `icon.png` is
+  preferred. Detector-only — Tauri's best editor is the VS Code family,
+  which the generic Open In fallback already reaches.
+- **`package.json` `"icon"`** (VS Code extensions and friends) became
+  step 0 of the web probe — an explicit declaration outranking every
+  convention-based source.
+- **Generic fallback tier** (product decision, superseding the plan's
+  "defer root logo.*" stance): when no kind probe yields a candidate,
+  accept `appicon`/`app-icon`/`icon`/`logo` × `svg`/`png`/`webp` at the
+  root, `assets/`, or `.github/` — gated by a **near-square aspect
+  check (≤ 1.5:1)** that rejects wordmark logos and social banners,
+  which was the original precision concern behind deferring this tier.
+- `RepositoryIconDetector.detect` became `async` (QuickLook render);
+  the client surface was already async, so only tests changed shape.
+
 ## Deviations from the plan
 
 - No pending-scan bookkeeping in `State`: cancellation uses a shared

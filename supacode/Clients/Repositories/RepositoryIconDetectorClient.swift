@@ -11,7 +11,7 @@ nonisolated enum RepositoryIconDetectorClientKey: DependencyKey {
   static var liveValue: RepositoryIconDetectorClient {
     RepositoryIconDetectorClient(
       detect: { rootURL in
-        RepositoryIconDetector.detect(at: rootURL)
+        await RepositoryIconDetector.detect(at: rootURL)
       }
     )
   }

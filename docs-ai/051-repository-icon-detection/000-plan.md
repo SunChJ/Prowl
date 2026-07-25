@@ -182,3 +182,9 @@ redistribution terms before publishing any bundled metadata as open source.
   sheet with an in-sheet Suggest button), suggestion caching (session-scoped in-memory cache
   with Regenerate), and delivery sequencing (extract the shared recommender package first,
   then ship automatic detection and the suggestion flow together).
+- 2026-07-25 (follow-up): onevcat approved additional probes — Icon Composer `.icon`
+  bundles, Tauri bundle icons, `package.json` `"icon"`, a Unity project kind for Open In,
+  and a generic near-square `icon`/`logo` fallback tier. The generic tier supersedes this
+  plan's "defer root logo" stance; the aspect-ratio gate addresses the precision concern
+  that motivated the deferral. See the follow-up section in
+  [001-action.md](001-action.md).

@@ -2,14 +2,19 @@ import AppKit
 import Foundation
 import ImageIO
 
-/// A validated icon file found inside a repository, plus the project
-/// evidence that made it trustworthy. The detector never mutates the
-/// repository or settings — committing a candidate is the reducer's job.
+/// A validated icon file plus the project evidence that made it
+/// trustworthy. `imageURL` normally points inside the repository; for
+/// Icon Composer bundles it is a freshly rendered temp PNG. The
+/// detector never mutates the repository or settings — committing a
+/// candidate is the reducer's job.
 nonisolated struct RepositoryIconCandidate: Equatable, Sendable {
   enum Evidence: Equatable, Sendable {
+    case appleIconComposer
     case appleAssetCatalog
     case androidLauncher
+    case tauriBundle
     case webAsset
+    case genericAsset
   }
 
   let imageURL: URL
@@ -18,16 +23,22 @@ nonisolated struct RepositoryIconCandidate: Equatable, Sendable {
 
 /// Evidence-based local probe for a repository's own product icon.
 ///
-/// Kinds are tried in a fixed order — Flutter, React Native, Apple,
-/// Android, Web — and each kind requires its own positive project
-/// signal before probing, falling through when it yields no valid
-/// candidate. Traversal is bounded (depth, entry budget, skip list,
-/// no symlinks) so the scan stays cheap even in huge repositories,
-/// and every candidate is validated (contained in the repo, regular
-/// file, bounded size, decodable) before being returned.
+/// Kinds are tried in a fixed order — Flutter, React Native, Tauri,
+/// Apple, Android, Web — and each kind requires its own positive
+/// project signal before probing, falling through when it yields no
+/// valid candidate. A last generic tier accepts a near-square
+/// `icon`/`logo` asset at a conventional location for any repository.
+/// Traversal is bounded (depth, entry budget, skip list, no symlinks)
+/// so the scan stays cheap even in huge repositories, and every
+/// candidate is validated (contained in the repo, regular file,
+/// bounded size, decodable) before being returned.
 nonisolated enum RepositoryIconDetector {
 
-  static func detect(at rootURL: URL, fileManager: FileManager = .default) -> RepositoryIconCandidate? {
+  static func detect(
+    at rootURL: URL,
+    fileManager: FileManager = .default,
+    renderIconComposer: (URL) async -> URL? = RepositoryIconComposerRenderer.render
+  ) async -> RepositoryIconCandidate? {
     let scanner = Scanner(rootURL: rootURL, fileManager: fileManager)
     let names = scanner.entryNames(of: rootURL)
     guard !names.isEmpty else { return nil }
@@ -44,12 +55,22 @@ nonisolated enum RepositoryIconDetector {
     {
       return candidate
     }
+    if names.contains("src-tauri"),
+      let imageURL = probeTauriBundle(scanner: scanner)
+    {
+      return RepositoryIconCandidate(imageURL: imageURL, evidence: .tauriBundle)
+    }
     if names.contains(where: {
       $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace")
-    }) || names.contains("package.swift") || names.contains("project.swift"),
-      let imageURL = probeAppleCatalog(under: scanner.rootURL, scanner: scanner)
-    {
-      return RepositoryIconCandidate(imageURL: imageURL, evidence: .appleAssetCatalog)
+    }) || names.contains("package.swift") || names.contains("project.swift") {
+      if let imageURL = await probeIconComposer(
+        under: scanner.rootURL, scanner: scanner, render: renderIconComposer
+      ) {
+        return RepositoryIconCandidate(imageURL: imageURL, evidence: .appleIconComposer)
+      }
+      if let imageURL = probeAppleCatalog(under: scanner.rootURL, scanner: scanner) {
+        return RepositoryIconCandidate(imageURL: imageURL, evidence: .appleAssetCatalog)
+      }
     }
     if names.contains("settings.gradle") || names.contains("settings.gradle.kts")
       || names.contains("build.gradle") || names.contains("build.gradle.kts")
@@ -62,6 +83,9 @@ nonisolated enum RepositoryIconDetector {
       let imageURL = probeWebAsset(scanner: scanner)
     {
       return RepositoryIconCandidate(imageURL: imageURL, evidence: .webAsset)
+    }
+    if let imageURL = probeGenericAsset(scanner: scanner) {
+      return RepositoryIconCandidate(imageURL: imageURL, evidence: .genericAsset)
     }
     return nil
   }
@@ -82,7 +106,58 @@ nonisolated enum RepositoryIconDetector {
     return nil
   }
 
+  // MARK: - Tauri
+
+  /// Reads `src-tauri/tauri.conf.json` (v1 and v2 shapes) and tries the
+  /// declared bundle icons, hoisting the conventional flat `icon.png`.
+  /// The config's presence is itself the project signal.
+  private static func probeTauriBundle(scanner: Scanner) -> URL? {
+    let tauriDirectory = scanner.rootURL.appending(path: "src-tauri", directoryHint: .isDirectory)
+    let configURL = tauriDirectory.appending(path: "tauri.conf.json", directoryHint: .notDirectory)
+    guard let data = scanner.boundedContents(of: configURL, limit: 512 * 1024),
+      let config = try? JSONDecoder().decode(TauriConfiguration.self, from: data)
+    else {
+      return nil
+    }
+    let declared = config.bundle?.icon ?? config.tauri?.bundle?.icon ?? []
+    let safe = declared.filter { !$0.contains(":") }
+    let preferred = safe.filter { $0.lowercased().hasSuffix("icon.png") }
+    let rest = safe.filter { !$0.lowercased().hasSuffix("icon.png") }
+    for reference in preferred + rest {
+      let candidate = tauriDirectory.appending(path: reference, directoryHint: .notDirectory)
+      if scanner.validatedImage(at: candidate) != nil {
+        return candidate
+      }
+    }
+    return nil
+  }
+
   // MARK: - Apple
+
+  /// Finds Icon Composer `.icon` bundles (nearest to the root first)
+  /// and asks QuickLook to flatten the first structurally valid one.
+  /// The bundle must sit inside the repository and carry a JSON
+  /// `icon.json`; the render itself happens through the injected
+  /// closure so tests can avoid the system thumbnail pipeline.
+  private static func probeIconComposer(
+    under directory: URL,
+    scanner: Scanner,
+    render: (URL) async -> URL?
+  ) async -> URL? {
+    let bundles = scanner.findDirectories(withExtension: "icon", under: directory, maxDepth: 6)
+    for bundle in bundles {
+      let manifestURL = bundle.appending(path: "icon.json", directoryHint: .notDirectory)
+      guard let data = scanner.boundedContents(of: manifestURL, limit: 1024 * 1024),
+        (try? JSONSerialization.jsonObject(with: data)) is [String: Any]
+      else {
+        continue
+      }
+      if let rendered = await render(bundle) {
+        return rendered
+      }
+    }
+    return nil
+  }
 
   /// Finds `AppIcon.appiconset` catalogs under `directory` (nearest to
   /// the root first, then lexicographic) and returns the largest valid
@@ -179,6 +254,14 @@ nonisolated enum RepositoryIconDetector {
     let publicDirectory = root.appending(path: "public", directoryHint: .isDirectory)
     let searchDirectories = [root, publicDirectory]
 
+    // An explicit `"icon"` declaration in package.json (VS Code
+    // extensions and friends) outranks every convention-based source.
+    if let declared = packageJSONIconPath(scanner: scanner) {
+      let references = resolveWebReferences(declared, baseDirectory: root, scanner: scanner)
+      for imageURL in references where scanner.validatedImage(at: imageURL) != nil {
+        return imageURL
+      }
+    }
     for directory in searchDirectories {
       for name in ["manifest.webmanifest", "site.webmanifest", "manifest.json"] {
         let manifestURL = directory.appending(path: name, directoryHint: .notDirectory)
@@ -205,6 +288,50 @@ nonisolated enum RepositoryIconDetector {
       let imageURL = root.appending(path: name, directoryHint: .notDirectory)
       if scanner.validatedImage(at: imageURL) != nil {
         return imageURL
+      }
+    }
+    return nil
+  }
+
+  private static func packageJSONIconPath(scanner: Scanner) -> String? {
+    struct Manifest: Decodable {
+      let icon: String?
+    }
+    let url = scanner.rootURL.appending(path: "package.json", directoryHint: .notDirectory)
+    guard let data = scanner.boundedContents(of: url, limit: 512 * 1024),
+      let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
+      let icon = manifest.icon, !icon.isEmpty
+    else {
+      return nil
+    }
+    return icon
+  }
+
+  // MARK: - Generic fallback
+
+  private static let genericAssetDirectories = ["", "assets", ".github"]
+  private static let genericAssetStems = ["appicon", "app-icon", "icon", "logo"]
+  private static let genericAssetExtensions = ["svg", "png", "webp"]
+
+  /// Last tier for repositories no kind-specific probe covered: a
+  /// conventionally named icon/logo at a conventional location. The
+  /// near-square gate is what keeps confidence high — wide wordmark
+  /// logos and social banners are rejected outright.
+  private static func probeGenericAsset(scanner: Scanner) -> URL? {
+    for directoryName in genericAssetDirectories {
+      let directory =
+        directoryName.isEmpty
+        ? scanner.rootURL
+        : scanner.rootURL.appending(path: directoryName, directoryHint: .isDirectory)
+      for stem in genericAssetStems {
+        for fileExtension in genericAssetExtensions {
+          let candidate = directory.appending(
+            path: "\(stem).\(fileExtension)", directoryHint: .notDirectory
+          )
+          if scanner.validatedNearSquareImage(at: candidate) != nil {
+            return candidate
+          }
+        }
       }
     }
     return nil
@@ -330,4 +457,18 @@ nonisolated private struct WebManifest: Decodable {
   }
 
   let icons: [Icon]?
+}
+
+/// `tauri.conf.json` shape — v2 keeps `bundle` at the top level, v1
+/// nests it under `tauri`; decoded fields only.
+nonisolated private struct TauriConfiguration: Decodable {
+  struct Bundle: Decodable {
+    let icon: [String]?
+  }
+  struct Nested: Decodable {
+    let bundle: Bundle?
+  }
+
+  let bundle: Bundle?
+  let tauri: Nested?
 }

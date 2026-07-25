@@ -121,6 +121,45 @@ struct WorktreeProjectKindTests {
     }
   }
 
+  // MARK: - Unity
+
+  @Test func detectsUnityFromRootProjectVersion() throws {
+    try withTemporaryProjectDirectory(
+      entries: ["Assets/", "Assembly-CSharp.csproj", "App.sln"],
+      contents: [
+        "ProjectSettings/ProjectVersion.txt": Data("m_EditorVersion: 6000.4.5f1\n".utf8)
+      ]
+    ) { directory in
+      // Unity generates root .sln/.csproj files; the Unity claim must
+      // win over .NET.
+      #expect(WorktreeProjectKind.detect(at: directory) == .unity)
+    }
+  }
+
+  @Test func detectsUnityProjectOneLevelDown() throws {
+    try withTemporaryProjectDirectory(
+      entries: ["Gemfile", "Rakefile", "Source/"],
+      contents: [
+        "UniWebViewTest/ProjectSettings/ProjectVersion.txt": Data("m_EditorVersion: 6000.4.5f1\n".utf8)
+      ]
+    ) { directory in
+      // SDK-style repo: tooling manifests at the root, the Unity test
+      // project one folder down. Unity must win over Ruby.
+      #expect(WorktreeProjectKind.detect(at: directory) == .unity)
+    }
+  }
+
+  @Test func projectSettingsFolderAloneIsNotUnity() throws {
+    try withTemporaryProjectDirectory(entries: ["ProjectSettings/", "go.mod"]) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .golang)
+    }
+  }
+
+  @Test func unityPrefersRider() {
+    #expect(WorktreeProjectKind.unity.preferredActions.first == .rider)
+    #expect(WorktreeProjectKind.unity.preferredActions.contains(.vscode))
+  }
+
   @Test func hybridKindsPreferTheirDocumentedEditors() {
     #expect(WorktreeProjectKind.flutter.preferredActions.first == .androidStudio)
     #expect(WorktreeProjectKind.flutter.preferredActions.contains(.vscode))

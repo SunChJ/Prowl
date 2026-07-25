@@ -16,8 +16,11 @@ extension RepositoryIconDetector {
       "pods", "target", "vendor",
     ]
     private static let allowedImageExtensions: Set<String> = [
-      "png", "jpg", "jpeg", "webp", "ico", "svg",
+      "png", "jpg", "jpeg", "webp", "ico", "icns", "svg",
     ]
+    /// Widest width:height ratio the near-square gate accepts; wide
+    /// wordmark logos and social banners fail this on purpose.
+    private static let maxNearSquareAspectRatio = 1.5
     private static let maxImageBytes = 5 * 1024 * 1024
     private static let maxRasterPixelDimension = 4096
     private static let minRasterPixelDimension = 16
@@ -62,6 +65,24 @@ extension RepositoryIconDetector {
     /// lexicographically within one depth. Respects the shared entry
     /// budget and cooperative cancellation.
     func findDirectories(named lowercasedName: String, under directory: URL, maxDepth: Int) -> [URL] {
+      findDirectories(under: directory, maxDepth: maxDepth) {
+        $0.lastPathComponent.lowercased() == lowercasedName
+      }
+    }
+
+    /// Same search keyed on a directory extension (e.g. Icon Composer
+    /// `.icon` bundles, which carry arbitrary base names).
+    func findDirectories(withExtension lowercasedExtension: String, under directory: URL, maxDepth: Int) -> [URL] {
+      findDirectories(under: directory, maxDepth: maxDepth) {
+        $0.pathExtension.lowercased() == lowercasedExtension
+      }
+    }
+
+    private func findDirectories(
+      under directory: URL,
+      maxDepth: Int,
+      matches: (URL) -> Bool
+    ) -> [URL] {
       var found: [URL] = []
       var frontier = [directory]
       var depth = 0
@@ -69,7 +90,7 @@ extension RepositoryIconDetector {
         var next: [URL] = []
         for parent in frontier {
           for child in childDirectories(of: parent) {
-            if child.lastPathComponent.lowercased() == lowercasedName {
+            if matches(child) {
               found.append(child)
             } else {
               next.append(child)
@@ -99,6 +120,21 @@ extension RepositoryIconDetector {
     /// after resolving symlinks, a regular file of bounded size, an
     /// allowed format, and actually decodable at a sane pixel size.
     func validatedImage(at url: URL) -> URL? {
+      validatedImageSize(at: url) == nil ? nil : url
+    }
+
+    /// `validatedImage` plus a near-square gate: wide wordmark logos
+    /// and banner images make terrible sidebar icons, so the generic
+    /// fallback tier refuses them.
+    func validatedNearSquareImage(at url: URL) -> URL? {
+      guard let size = validatedImageSize(at: url), size.width > 0, size.height > 0 else {
+        return nil
+      }
+      let ratio = max(size.width, size.height) / min(size.width, size.height)
+      return ratio <= Scanner.maxNearSquareAspectRatio ? url : nil
+    }
+
+    private func validatedImageSize(at url: URL) -> CGSize? {
       let fileExtension = url.pathExtension.lowercased()
       guard Scanner.allowedImageExtensions.contains(fileExtension) else { return nil }
       let resolved = url.resolvingSymlinksInPath()
@@ -115,9 +151,9 @@ extension RepositoryIconDetector {
         return nil
       }
       if fileExtension == "svg" {
-        return isDecodableSVG(at: resolved) ? url : nil
+        return decodableSVGSize(at: resolved)
       }
-      return isDecodableRaster(at: resolved) ? url : nil
+      return decodableRasterSize(at: resolved)
     }
 
     // MARK: - Private
@@ -146,32 +182,37 @@ extension RepositoryIconDetector {
     /// Cheap structural sniff plus a real decode. `NSImage` is the same
     /// renderer the app uses later, so a pass here guarantees the icon
     /// won't turn into the missing-file placeholder.
-    private func isDecodableSVG(at url: URL) -> Bool {
+    private func decodableSVGSize(at url: URL) -> CGSize? {
       guard let prefix = boundedContents(of: url, limit: Scanner.maxImageBytes),
         let head = String(data: prefix.prefix(4096), encoding: .utf8),
         head.localizedCaseInsensitiveContains("<svg")
       else {
-        return false
+        return nil
       }
-      guard let image = NSImage(contentsOf: url) else { return false }
-      return image.size.width > 0 && image.size.height > 0
+      guard let image = NSImage(contentsOf: url),
+        image.size.width > 0, image.size.height > 0
+      else {
+        return nil
+      }
+      return image.size
     }
 
     /// Metadata-only probe via ImageIO — no bitmap is decompressed, so
     /// a decompression bomb can't hurt us; the pixel cap keeps later
     /// rendering bounded too.
-    private func isDecodableRaster(at url: URL) -> Bool {
+    private func decodableRasterSize(at url: URL) -> CGSize? {
       let options = [kCGImageSourceShouldCache: false] as CFDictionary
       guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
         CGImageSourceGetCount(source) > 0,
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
         let width = properties[kCGImagePropertyPixelWidth] as? Int,
-        let height = properties[kCGImagePropertyPixelHeight] as? Int
+        let height = properties[kCGImagePropertyPixelHeight] as? Int,
+        (Scanner.minRasterPixelDimension...Scanner.maxRasterPixelDimension).contains(width),
+        (Scanner.minRasterPixelDimension...Scanner.maxRasterPixelDimension).contains(height)
       else {
-        return false
+        return nil
       }
-      return (Scanner.minRasterPixelDimension...Scanner.maxRasterPixelDimension).contains(width)
-        && (Scanner.minRasterPixelDimension...Scanner.maxRasterPixelDimension).contains(height)
+      return CGSize(width: width, height: height)
     }
   }
 }

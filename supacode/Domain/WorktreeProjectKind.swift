@@ -5,6 +5,7 @@ import Foundation
 enum WorktreeProjectKind: CaseIterable {
   case flutter
   case reactNative
+  case unity
   case apple
   case android
   case dotnet
@@ -40,6 +41,13 @@ enum WorktreeProjectKind: CaseIterable {
       packageJSONDependsOnReactNative(in: directory)
     {
       return .reactNative
+    }
+    // Before the generic language markers: a Unity project generates
+    // root-level `.sln`/`.csproj` files that would otherwise win as
+    // .NET, and SDK-style repos (a Unity project one folder down next
+    // to tooling manifests) would fall to whatever the tooling uses.
+    if isUnityProject(entries: entries, names: names, in: directory, fileManager: fileManager) {
+      return .unity
     }
     if hasFile(withExtension: "xcodeproj") || hasFile(withExtension: "xcworkspace")
       || names.contains("package.swift") || names.contains("project.swift")
@@ -107,6 +115,37 @@ enum WorktreeProjectKind: CaseIterable {
     return contents.contains(/^\s*flutter\s*:/.anchorsMatchLineEndings())
   }
 
+  /// A Unity project is proven by `ProjectSettings/ProjectVersion.txt`
+  /// — either at the root, or one level down, which covers SDK-style
+  /// repos that keep the Unity test project next to tooling manifests
+  /// (a `Gemfile` or `package.json` at the root must not outrank an
+  /// actual Unity project). The nested pass is bounded and skips
+  /// hidden entries.
+  nonisolated private static func isUnityProject(
+    entries: [String],
+    names: Set<String>,
+    in directory: URL,
+    fileManager: FileManager
+  ) -> Bool {
+    func hasProjectVersion(in projectDirectory: URL) -> Bool {
+      let versionFile =
+        projectDirectory
+        .appending(path: "ProjectSettings", directoryHint: .isDirectory)
+        .appending(path: "ProjectVersion.txt", directoryHint: .notDirectory)
+      return fileManager.fileExists(atPath: versionFile.path(percentEncoded: false))
+    }
+    if names.contains("projectsettings"), hasProjectVersion(in: directory) {
+      return true
+    }
+    for entry in entries.sorted().prefix(50) where !entry.hasPrefix(".") {
+      let child = directory.appending(path: entry, directoryHint: .isDirectory)
+      if hasProjectVersion(in: child) {
+        return true
+      }
+    }
+    return false
+  }
+
   /// React Native needs `react-native` as a declared dependency; the
   /// `ios`/`android` shell folders alone are checked by the caller.
   /// Internal because `RepositoryIconDetector` reuses the same signal.
@@ -137,6 +176,7 @@ enum WorktreeProjectKind: CaseIterable {
     switch self {
     case .flutter: [.androidStudio, .intellij, .intellijEAP] + Self.vsCodeFamily
     case .reactNative: Self.vsCodeFamily + [.webstorm, .androidStudio]
+    case .unity: [.rider] + Self.vsCodeFamily
     case .apple: [.xcode]
     case .android: [.androidStudio, .intellij, .intellijEAP]
     case .dotnet: [.rider]
