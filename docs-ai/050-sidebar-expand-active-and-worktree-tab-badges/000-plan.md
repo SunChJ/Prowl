@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented — see [001-action.md](001-action.md) |
 | **Anchor date** | 2026-07-25 |
-| **Primary PRs** | TBD |
+| **Primary PRs** | [#612](https://github.com/onevcat/Prowl/pull/612) |
 | **Related** | [026 sidebar-container-refactor](../026-sidebar-container-refactor/000-plan.md), [033 ui-refresh-2026-05](../033-ui-refresh-2026-05/000-plan.md), [042 project-workspaces](../042-project-workspaces/000-plan.md) |
 
 ## Background
