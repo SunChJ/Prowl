@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented on `feature/sidebar-expand-active` |
 | **Date** | 2026-07-25 |
-| **Plan** | [000-plan.md](000-plan.md) — implemented as decided; no deviations |
+| **Plan** | [000-plan.md](000-plan.md) — implemented as decided, then revised per PR #612 review (see the plan's Amendments and "Post-review follow-ups" below) |
 
 ## What was built
 
@@ -24,8 +24,9 @@
   subscribes to terminal churn) and the click handler; `.expandActive`
   assigns `expanded = (expanded − expandable) ∪ active` through the existing
   binding in a single write.
-- Glyph: `chevron.right` + 4pt `Color.accentColor` circle overlaid at
-  top-trailing (`offset(x: -3, y: 3)`), `accessibilityHidden`.
+- Glyph: `chevron.right.2` (double chevron). Initially shipped as
+  `chevron.right` + 4pt accent-dot overlay; replaced post-review — the cycle
+  now reads as remaining depth: `»` → `›` → rotated-down chevron.
 
 ### Per-worktree tab badges (`RepoHeaderRow.swift`, `WorktreeRow.swift`, `WorktreeRowsView.swift`)
 
@@ -36,8 +37,24 @@
 - `WorktreeRow` gained an optional `tabCountBadge: WorktreeTabCountBadge?`
   (default `nil`), rendered right after the name text, before the Spacer.
   Workspace child rows and previews are untouched (nil default).
-- `WorktreeRowsView.worktreeRowView` injects the badge only when
-  `repository.worktrees.count >= 2`.
+- `WorktreeRowsView.worktreeRowView` injects the badge unconditionally for
+  git-repo worktree rows; it hides itself at count 0. (Initially gated on
+  `repository.worktrees.count >= 2`; the gate was removed post-review when
+  badges became exclusive per level — see plan Amendments.)
+
+## Post-review follow-ups (2026-07-25)
+
+- **Badges exclusive per level:** collapsed git repo → aggregate count on the
+  header; expanded → header badge hidden, every worktree row shows its own
+  count. Workspaces keep the header badge when expanded; plain folders never
+  expand. (`RepositorySectionView` gates `RepoHeaderTabCountBadge` on
+  `!(isExpanded && supportsWorktrees)`.)
+- **Badge compression fix:** `TabCountBadge` gained `.fixedSize()` — the
+  name text's `layoutPriority(1)` otherwise squeezed the capsule below its
+  natural size next to long branch names.
+- **Expand Active glyph:** `chevron.right.2` replaced the chevron+dot combo
+  (see above). The e2e verification section below predates this swap and the
+  badge-exclusivity change; the recorded cycle behavior is unchanged.
 
 ## Tests
 
