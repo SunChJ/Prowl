@@ -246,11 +246,30 @@ Narrowing it further needs in-app instrumentation (`Self._printChanges()` or an 
 counter), not `sample(1)`, because the profile can show that invalidation happens but not what
 requested it.
 
-A second cost sits entirely outside both paths and has never been examined:
-`CA::Transaction::flush_as_runloop_observer` — CoreAnimation layer commit — measured 6.70% of a
-core here and 11.77% on a starved host. Terminal surface rendering and the sidebar's
-per-worktree `ProgressView` spinners (12 running simultaneously in the sampled fleet) are both
-plausible contributors; they have not been separated.
+A second cost sits entirely outside the SwiftUI path: `CA::Transaction::flush_as_runloop_observer`
+measured 6.70% of a core here and 11.77% on a starved host. Despite the CoreAnimation symbol
+names it is not layer rendering. The commit runs AppKit's display-cycle observer, which
+performs constraint-based layout of the whole window:
+
+```
+CA::Transaction::commit                        4.27%
+  run_commit_handlers → NSDisplayCycleFlush     4.19%
+    -[NSWindow layoutIfNeeded]                  3.85%
+      -[NSWindow _layoutViewTree]               3.77%
+        -[NSView _layoutSubtreeWithOldSize:]    ×33 nested frames
+```
+
+The recursion is 33 `NSView` levels deep and still carries 18% of its root cost at the deepest
+frame, over a window holding 32 tabs across 29 worktrees. Almost no app-owned frame appears
+anywhere inside it — the cost is tree traversal, not any view's own layout. Two candidates were
+ruled out by measurement: `NSProgressIndicator`, the sidebar's per-worktree spinner, at 0.01%
+(12 were animating), and terminal surface rendering, which does not appear on the path.
+
+This is most likely the same defect as the graph invalidation above rather than a second one.
+An invalidation that dirties the SwiftUI graph also marks the hosting view tree as needing
+layout, and the two costs then bill separately — roughly 5.7% in graph revalidation plus 3.8%
+in AppKit layout, together larger than agent detection. Finding the single invalidation source
+would address both; optimizing either subtree in isolation would not.
 
 ## Tests
 
