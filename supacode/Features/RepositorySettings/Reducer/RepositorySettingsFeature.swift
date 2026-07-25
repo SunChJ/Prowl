@@ -3,6 +3,22 @@ import Foundation
 
 @Reducer
 struct RepositorySettingsFeature {
+  private enum CancelID {
+    static let symbolSuggestions = "repositorySettings.symbolSuggestions"
+  }
+
+  /// Lifecycle of the "Suggested for this repository" section inside
+  /// the symbol picker sheet. Successful results also live in the
+  /// session cache owned by `RepositorySymbolSuggestionClient`, so
+  /// `.idle` on a fresh State still resolves instantly when a cached
+  /// run exists.
+  enum SymbolSuggestionsPhase: Equatable {
+    case idle
+    case loading
+    case loaded(RepositorySymbolSuggestions)
+    case failed(String)
+  }
+
   @ObservableState
   struct State: Equatable {
     var rootURL: URL
@@ -26,6 +42,8 @@ struct RepositorySettingsFeature {
     var isBranchDataLoaded = false
     var keybindingUserOverrides: KeybindingUserOverrideStore = .empty
     var appearanceImportError: String?
+    var isSymbolPickerPresented = false
+    var symbolSuggestions: SymbolSuggestionsPhase = .idle
 
     var capabilities: Repository.Capabilities {
       switch repositoryKind {
@@ -92,6 +110,12 @@ struct RepositorySettingsFeature {
     case appearanceLoaded(RepositoryAppearance)
     case setAppearanceColor(RepositoryColorChoice?)
     case setAppearanceIcon(RepositoryIconSource?)
+    case chooseSymbolTapped
+    case suggestIconTapped
+    case regenerateSuggestionsTapped
+    case symbolPickerDismissed
+    case symbolSuggestionsLoaded(RepositorySymbolSuggestions)
+    case symbolSuggestionsFailed(String)
     case importUserImage(URL)
     case userImageImported(filename: String)
     case userImageImportFailed(String)
@@ -110,6 +134,7 @@ struct RepositorySettingsFeature {
 
   @Dependency(GitClientDependency.self) private var gitClient
   @Dependency(\.repositoryIconAssetStore) private var repositoryIconAssetStore
+  @Dependency(\.repositorySymbolSuggestionClient) private var symbolSuggestionClient
 
   var body: some Reducer<State, Action> {
     BindingReducer()
@@ -227,6 +252,11 @@ struct RepositorySettingsFeature {
         let previousIcon = state.appearance.icon
         guard previousIcon != newIcon else { return .none }
         state.appearance.icon = newIcon
+        if newIcon == nil {
+          // An explicit clear also suppresses automatic detection so an
+          // in-flight detector can't restore the icon the user removed.
+          state.appearance.iconDetectionSuppressed = true
+        }
         let persist = persistAppearance(state.appearance, repositoryID: state.repositoryID)
         let cleanup = removeAbandonedUserImage(
           previous: previousIcon,
@@ -258,11 +288,48 @@ struct RepositorySettingsFeature {
         state.appearanceImportError = nil
         return .none
 
+      case .chooseSymbolTapped:
+        state.isSymbolPickerPresented = true
+        guard case .idle = state.symbolSuggestions else { return .none }
+        // Surface a cached run if one exists; otherwise the section
+        // stays idle with an explicit Suggest button.
+        let repositoryID = state.repositoryID
+        let client = symbolSuggestionClient
+        return .run { send in
+          if let cached = await client.cachedSuggestions(repositoryID) {
+            await send(.symbolSuggestionsLoaded(cached))
+          }
+        }
+
+      case .suggestIconTapped:
+        state.isSymbolPickerPresented = true
+        switch state.symbolSuggestions {
+        case .loading, .loaded:
+          return .none
+        case .idle, .failed:
+          state.symbolSuggestions = .loading
+          return suggestionsEffect(state: state, forceRegenerate: false)
+        }
+
+      case .regenerateSuggestionsTapped:
+        state.symbolSuggestions = .loading
+        return suggestionsEffect(state: state, forceRegenerate: true)
+
+      case .symbolSuggestionsLoaded(let suggestions):
+        state.symbolSuggestions = .loaded(suggestions)
+        return .none
+
+      case .symbolSuggestionsFailed(let message):
+        state.symbolSuggestions = .failed(message)
+        return .none
+
       case .resetAppearance:
         let previousIcon = state.appearance.icon
         guard !state.appearance.isEmpty else { return .none }
-        state.appearance = .empty
-        let persist = persistAppearance(.empty, repositoryID: state.repositoryID)
+        // Removing an icon via reset counts as an explicit clear for
+        // detection purposes; a reset that only dropped a color does not.
+        state.appearance = RepositoryAppearance(iconDetectionSuppressed: previousIcon != nil)
+        let persist = persistAppearance(state.appearance, repositoryID: state.repositoryID)
         let cleanup = removeAbandonedUserImage(
           previous: previousIcon,
           new: nil,
@@ -282,6 +349,14 @@ struct RepositorySettingsFeature {
         state.branchOptions = options
         state.isBranchDataLoaded = true
         return .none
+
+      case .symbolPickerDismissed:
+        state.isSymbolPickerPresented = false
+        return reduceSymbolPickerDismissal(state: &state)
+
+      case .binding(\.isSymbolPickerPresented):
+        guard !state.isSymbolPickerPresented else { return .none }
+        return reduceSymbolPickerDismissal(state: &state)
 
       case .binding:
         if state.isBareRepository {
@@ -313,6 +388,46 @@ struct RepositorySettingsFeature {
     }
   }
 
+  /// Sheet dismissed: cancel an in-flight generation and reset a
+  /// transient loading state so reopening starts cleanly (a finished
+  /// run stays visible — it's also session-cached).
+  private func reduceSymbolPickerDismissal(state: inout State) -> Effect<Action> {
+    if case .loading = state.symbolSuggestions {
+      state.symbolSuggestions = .idle
+    }
+    return .cancel(id: CancelID.symbolSuggestions)
+  }
+
+  /// Kicks off (or resolves from cache) one suggestion run. The model
+  /// call is cooperatively cancellable; closing the sheet cancels it
+  /// via `CancelID.symbolSuggestions`.
+  private func suggestionsEffect(state: State, forceRegenerate: Bool) -> Effect<Action> {
+    let repositoryID = state.repositoryID
+    let rootURL = state.rootURL
+    let displayName: String =
+      if let custom = state.settings.customTitle, !custom.isEmpty {
+        custom
+      } else {
+        state.rootURL.lastPathComponent
+      }
+    let client = symbolSuggestionClient
+    return .run { send in
+      if !forceRegenerate, let cached = await client.cachedSuggestions(repositoryID) {
+        await send(.symbolSuggestionsLoaded(cached))
+        return
+      }
+      do {
+        let suggestions = try await client.generateSuggestions(repositoryID, rootURL, displayName)
+        await send(.symbolSuggestionsLoaded(suggestions))
+      } catch is CancellationError {
+        // Sheet closed mid-generation — nothing to report.
+      } catch {
+        await send(.symbolSuggestionsFailed(error.localizedDescription))
+      }
+    }
+    .cancellable(id: CancelID.symbolSuggestions, cancelInFlight: true)
+  }
+
   /// Writes the appearance back to the global `@Shared` dict, dropping
   /// the entry when it's been cleared so the on-disk file stays tight.
   private func persistAppearance(
@@ -331,17 +446,17 @@ struct RepositorySettingsFeature {
     }
   }
 
-  /// When the icon transitions away from a user-imported file, the old
-  /// asset on disk is no longer referenced and should be cleaned up.
-  /// No-op when the previous icon wasn't a user image or when the new
-  /// icon is the same user image.
+  /// When the icon transitions away from a file-backed source (user
+  /// import or automatic detection), the old asset on disk is no longer
+  /// referenced and should be cleaned up. No-op when the previous icon
+  /// wasn't file-backed or when the new icon keeps the same file.
   private func removeAbandonedUserImage(
     previous: RepositoryIconSource?,
     new: RepositoryIconSource?,
     rootURL: URL
   ) -> Effect<Action> {
-    guard case .userImage(let oldFilename) = previous else { return .none }
-    if case .userImage(let newFilename) = new, newFilename == oldFilename {
+    guard let oldFilename = previous?.storedImageFilename else { return .none }
+    if new?.storedImageFilename == oldFilename {
       return .none
     }
     let store = repositoryIconAssetStore

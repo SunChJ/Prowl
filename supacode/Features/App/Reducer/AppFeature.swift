@@ -443,7 +443,12 @@ struct AppFeature {
           customCommands: state.selectedCustomCommands
         )
         let badgeCount = settings.showNotificationDotOnDock ? state.notificationIndicatorCount : 0
+        let cancelIconDetections: Effect<Action> =
+          settings.detectRepositoryIconsAutomatically
+          ? .none
+          : .send(.repositories(.repositoryManagement(.cancelPendingIconDetections)))
         return .merge(
+          cancelIconDetections,
           .send(.repositories(.githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
           .send(
             .repositories(

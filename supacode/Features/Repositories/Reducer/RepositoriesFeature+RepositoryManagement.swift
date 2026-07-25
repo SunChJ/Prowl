@@ -174,6 +174,7 @@ extension RepositoriesFeature {
             allEffects.append(.send(.selectRepository(firstNew.id)))
           }
         }
+        allEffects.append(contentsOf: iconDetectionEffects(for: Array(newRepos)))
       }
       return .merge(allEffects)
 
@@ -326,23 +327,30 @@ extension RepositoriesFeature {
       state.repositoryRoots.removeAll {
         isSameRepositoryPath($0.standardizedFileURL.path(percentEncoded: false), repositoryID)
       }
+      let failedIconCleanup = iconDetectionRemovalEffect(
+        repositoryID: repositoryID,
+        rootURL: state.repositories[id: repositoryID]?.rootURL
+      )
       let remainingRoots = state.repositoryRoots
-      return .run { send in
-        let loadedEntries = await loadPersistedRepositoryEntries(fallbackRoots: remainingRoots)
-        let remainingEntries = loadedEntries.filter { !isSameRepositoryPath($0.path, repositoryID) }
-        await repositoryPersistence.saveRepositoryEntries(remainingEntries)
-        let roots = remainingEntries.map { URL(fileURLWithPath: $0.path) }
-        let (repositories, failures) = await loadRepositoriesData(remainingEntries)
-        await send(
-          .repositoriesLoaded(
-            repositories,
-            failures: failures,
-            roots: roots,
-            animated: true
+      return .merge(
+        failedIconCleanup,
+        .run { send in
+          let loadedEntries = await loadPersistedRepositoryEntries(fallbackRoots: remainingRoots)
+          let remainingEntries = loadedEntries.filter { !isSameRepositoryPath($0.path, repositoryID) }
+          await repositoryPersistence.saveRepositoryEntries(remainingEntries)
+          let roots = remainingEntries.map { URL(fileURLWithPath: $0.path) }
+          let (repositories, failures) = await loadRepositoriesData(remainingEntries)
+          await send(
+            .repositoriesLoaded(
+              repositories,
+              failures: failures,
+              roots: roots,
+              animated: true
+            )
           )
-        )
-      }
-      .cancellable(id: CancelID.load, cancelInFlight: true)
+        }
+        .cancellable(id: CancelID.load, cancelInFlight: true)
+      )
 
     case .repositoryRemoved(let repositoryID, let selectionWasRemoved):
       analyticsClient.capture("repository_removed", [String: Any]?.none)
@@ -352,9 +360,14 @@ extension RepositoriesFeature {
         state.selectedWorkspaceChildID = nil
         state.shouldSelectFirstAfterReload = true
       }
+      let iconCleanup = iconDetectionRemovalEffect(
+        repositoryID: repositoryID,
+        rootURL: state.repositories[id: repositoryID]?.rootURL
+      )
       let selectedWorktree = state.worktree(for: state.selectedWorktreeID)
       let remainingRoots = state.repositoryRoots
       return .merge(
+        iconCleanup,
         .send(.delegate(.selectedWorktreeChanged(selectedWorktree))),
         .run { send in
           let loadedEntries = await loadPersistedRepositoryEntries(fallbackRoots: remainingRoots)
@@ -376,6 +389,12 @@ extension RepositoriesFeature {
 
     case .openRepositorySettings(let repositoryID):
       return .send(.delegate(.openRepositorySettings(repositoryID)))
+
+    case .repositoryIconDetected(let repositoryID, let filename):
+      return reduceIconDetected(state: &state, repositoryID: repositoryID, filename: filename)
+
+    case .cancelPendingIconDetections:
+      return .cancel(id: Self.iconDetectionUmbrellaID)
     }
   }
 

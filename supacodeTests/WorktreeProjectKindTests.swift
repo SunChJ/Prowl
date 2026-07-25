@@ -51,6 +51,84 @@ struct WorktreeProjectKindTests {
     }
   }
 
+  // MARK: - Flutter
+
+  @Test func detectsFlutterFromPubspecWithFlutterKey() throws {
+    try withTemporaryProjectDirectory(
+      entries: ["ios/", "android/"],
+      contents: [
+        "pubspec.yaml": Data("name: demo\ndependencies:\n  flutter:\n    sdk: flutter\n".utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .flutter)
+    }
+  }
+
+  @Test func pureDartPubspecIsNotFlutter() throws {
+    try withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "pubspec.yaml": Data("name: pure\nenvironment:\n  sdk: ^3.0.0\n".utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == nil)
+    }
+  }
+
+  @Test func flutterWinsOverNativeShellMarkers() throws {
+    try withTemporaryProjectDirectory(
+      entries: ["App.xcworkspace/", "gradlew"],
+      contents: [
+        "pubspec.yaml": Data("name: demo\nflutter:\n  uses-material-design: true\n".utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .flutter)
+    }
+  }
+
+  // MARK: - React Native
+
+  @Test func detectsReactNativeFromDependencyAndNativeShell() throws {
+    try withTemporaryProjectDirectory(
+      entries: ["android/"],
+      contents: [
+        "package.json": Data(#"{"dependencies":{"react-native":"0.80.0"}}"#.utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .reactNative)
+    }
+  }
+
+  @Test func reactNativeDependencyWithoutNativeShellIsWeb() throws {
+    try withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "package.json": Data(#"{"dependencies":{"react-native":"0.80.0"}}"#.utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .web)
+    }
+  }
+
+  @Test func plainPackageJSONWithNativeFoldersIsWeb() throws {
+    try withTemporaryProjectDirectory(
+      entries: ["ios/"],
+      contents: [
+        "package.json": Data(#"{"dependencies":{"react":"19.0.0"}}"#.utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .web)
+    }
+  }
+
+  @Test func hybridKindsPreferTheirDocumentedEditors() {
+    #expect(WorktreeProjectKind.flutter.preferredActions.first == .androidStudio)
+    #expect(WorktreeProjectKind.flutter.preferredActions.contains(.vscode))
+    #expect(WorktreeProjectKind.reactNative.preferredActions.first == .cursor)
+    #expect(WorktreeProjectKind.reactNative.preferredActions.contains(.webstorm))
+    #expect(WorktreeProjectKind.reactNative.preferredActions.contains(.androidStudio))
+  }
+
   @Test func returnsNilForMissingDirectory() {
     let directory = FileManager.default.temporaryDirectory
       .appending(path: "missing-\(UUID().uuidString)")

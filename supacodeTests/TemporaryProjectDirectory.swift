@@ -5,6 +5,7 @@ import Foundation
 /// runs.
 func withTemporaryProjectDirectory(
   entries: [String],
+  contents: [String: Data] = [:],
   body: (URL) throws -> Void
 ) throws {
   let fileManager = FileManager.default
@@ -21,6 +22,14 @@ func withTemporaryProjectDirectory(
     } else {
       try Data().write(to: directory.appending(path: entry))
     }
+  }
+  for (path, data) in contents {
+    let fileURL = directory.appending(path: path)
+    try fileManager.createDirectory(
+      at: fileURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try data.write(to: fileURL)
   }
   try body(directory)
 }

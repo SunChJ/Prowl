@@ -71,4 +71,39 @@ struct RepositoryAppearanceTests {
     #expect(decoded.icon == .sfSymbol("folder"))
     #expect(decoded.color == .red)
   }
+
+  // MARK: - Detection suppression
+
+  @Test func legacyPayloadDecodesWithSuppressionOff() throws {
+    let raw = Data(#"{"icon": "folder"}"#.utf8)
+    let decoded = try JSONDecoder().decode(RepositoryAppearance.self, from: raw)
+    #expect(!decoded.iconDetectionSuppressed)
+  }
+
+  @Test func suppressionRoundTrips() throws {
+    let original = RepositoryAppearance(icon: nil, color: nil, iconDetectionSuppressed: true)
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(RepositoryAppearance.self, from: data)
+    #expect(decoded == original)
+  }
+
+  @Test func suppressionKeyIsOmittedWhenFalse() throws {
+    let data = try JSONEncoder().encode(RepositoryAppearance(icon: .sfSymbol("folder")))
+    let json = try #require(String(bytes: data, encoding: .utf8))
+    #expect(!json.contains("iconDetectionSuppressed"))
+  }
+
+  @Test func suppressionAloneIsNotEmpty() {
+    // Pruning an entry that only carries suppression would let an
+    // in-flight detection commit after an explicit clear.
+    let appearance = RepositoryAppearance(icon: nil, color: nil, iconDetectionSuppressed: true)
+    #expect(!appearance.isEmpty)
+  }
+
+  @Test func codableRoundTripDetectedIcon() throws {
+    let original = RepositoryAppearance(icon: .detectedImage(filename: "abc.png"), color: nil)
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(RepositoryAppearance.self, from: data)
+    #expect(decoded == original)
+  }
 }

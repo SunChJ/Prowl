@@ -42,6 +42,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var shelfSpineTintFollowsRepositoryColor: Bool
   var externalDiffToolID: String = ExternalDiffTool.builtIn.settingsID
   var externalDiffCustomCommand: String = ""
+  var detectRepositoryIconsAutomatically: Bool = true
 
   static let `default` = GlobalSettings(
     appearanceMode: .dark,
@@ -218,6 +219,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encode(shelfSpineTintFollowsRepositoryColor, forKey: .shelfSpineTintFollowsRepositoryColor)
     try container.encode(externalDiffToolID, forKey: .externalDiffToolID)
     try container.encode(externalDiffCustomCommand, forKey: .externalDiffCustomCommand)
+    try container.encode(detectRepositoryIconsAutomatically, forKey: .detectRepositoryIconsAutomatically)
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -264,6 +266,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case shelfSpineTintFollowsRepositoryColor
     case externalDiffToolID
     case externalDiffCustomCommand
+    case detectRepositoryIconsAutomatically
     // Legacy keys for migration
     case automaticallyArchiveMergedWorktrees
     case notificationSoundEnabled
@@ -359,6 +362,9 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     (windowTintMode, windowTintCustomColor) = try Self.decodeWindowTint(from: container)
     (shelfSpineTintFallback, shelfSpineTintFollowsRepositoryColor) = try Self.decodeShelfSpineTint(from: container)
     (externalDiffToolID, externalDiffCustomCommand) = try Self.decodeExternalDiffSettings(from: container)
+    detectRepositoryIconsAutomatically =
+      try container.decodeIfPresent(Bool.self, forKey: .detectRepositoryIconsAutomatically)
+      ?? true
     let toolbarAndDock = try Self.decodeToolbarAndDockSettings(from: container)
     showRunButtonInToolbar = toolbarAndDock.showRunButtonInToolbar
     showDefaultEditorInToolbar = toolbarAndDock.showDefaultEditorInToolbar
