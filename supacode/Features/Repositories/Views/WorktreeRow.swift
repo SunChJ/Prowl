@@ -6,7 +6,7 @@ struct WorktreeRow: View {
   let worktreeName: String
   let info: WorktreeInfoEntry?
   /// Per-worktree open-tab count badge; `nil` hides the badge entirely
-  /// (single-worktree repos and workspace child rows pass nil).
+  /// (workspace child rows — tab attribution is per directory, not per child).
   let tabCountBadge: WorktreeTabCountBadge?
   let iconSystemName: String?
   let showsPullRequestInfo: Bool

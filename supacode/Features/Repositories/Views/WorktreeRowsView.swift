@@ -364,9 +364,7 @@ struct WorktreeRowsView: View {
       name: config.displayName,
       worktreeName: config.worktreeName,
       info: row.info,
-      tabCountBadge: repository.worktrees.count >= 2
-        ? WorktreeTabCountBadge(worktreeID: row.id, terminalManager: terminalManager)
-        : nil,
+      tabCountBadge: WorktreeTabCountBadge(worktreeID: row.id, terminalManager: terminalManager),
       showsPullRequestInfo: !isWorktreeDragActive,
       isHovered: config.isHovered,
       isPinned: row.isPinned,

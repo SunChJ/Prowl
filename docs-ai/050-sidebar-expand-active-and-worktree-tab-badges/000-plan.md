@@ -145,3 +145,15 @@ _Each entry supersedes the draft above._
 - Manual smoke: mixed repos (with/without tabs), workspace, plain folder;
   cycle through the three states; single- vs multi-worktree badge visibility.
 - `make check`, `make build-app`.
+
+## Amendments
+
+- 2026-07-25 (post-PR review by onevcat): **badges are exclusive per level,
+  not duplicated.** Showing `repo 5 / main 2 / other 3` simultaneously reads
+  as redundant. Revised rule supersedes Decisions #4's multi-worktree gate:
+  - git repo **collapsed** → header shows the aggregate count;
+  - git repo **expanded** → header badge hidden, every worktree row shows its
+    own count (single-worktree repos included — the `worktrees.count >= 2`
+    gate is removed, unifying the code path);
+  - workspaces keep the header badge even when expanded (child rows carry no
+    per-row count; Decisions #5 unchanged) and plain folders never expand.

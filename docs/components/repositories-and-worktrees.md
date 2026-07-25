@@ -108,9 +108,10 @@ new worktree (see [custom-actions](custom-actions.md)).
   terminal tabs), then **Expand All**, then **Collapse All**. Expand Active is
   skipped when no repo (or every repo) has open tabs. Collapsed state is
   remembered.
-- **Tab count badges:** a repo header shows its total open-tab count; in repos
-  with more than one worktree, each worktree row also shows its own count
-  (hidden at zero).
+- **Tab count badges:** a collapsed repo header shows its total open-tab count;
+  expanding a git repo moves the count onto the individual worktree rows
+  (hidden at zero). Workspaces and plain folders always show the count on the
+  header.
 
 ## Archiving a worktree
 
