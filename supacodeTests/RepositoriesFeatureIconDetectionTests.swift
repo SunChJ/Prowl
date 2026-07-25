@@ -410,6 +410,39 @@ struct RepositoriesFeatureIconDetectionTests {
     #expect(appearances()["/tmp/repo"]?.icon == .userImage(filename: "mine.png"))
   }
 
+  @Test func globalOptOutCancelsInFlightScans() async {
+    let newRepo = makeRepository(id: "/tmp/new", name: "new", kind: .plain)
+    let store = TestStore(initialState: makeState(repositories: [])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryIconDetector.detect = { _ in
+        // Parks until cancelled, standing in for a long scan.
+        let (stream, _) = AsyncStream<Never>.makeStream()
+        for await _ in stream {}
+        return nil
+      }
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.gitClient.repositoryWebURL = { _ in nil }
+    }
+    store.exhaustivity = .off
+
+    await store.send(
+      .repositoryManagement(
+        .openRepositoriesFinished(
+          [newRepo],
+          failures: [],
+          invalidRoots: [],
+          openFailures: [],
+          roots: [newRepo.rootURL]
+        )
+      )
+    )
+    await store.send(.repositoryManagement(.cancelPendingIconDetections))
+    await store.finish()
+
+    #expect(appearances()["/tmp/new"] == nil)
+  }
+
   @Test func detectorOwnedTemporaryFileIsDeletedAfterImport() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appending(path: "icon-composer-artifact-\(UUID().uuidString).png")
