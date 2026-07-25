@@ -5,6 +5,9 @@ struct WorktreeRow: View {
   let name: String
   let worktreeName: String
   let info: WorktreeInfoEntry?
+  /// Per-worktree open-tab count badge; `nil` hides the badge entirely
+  /// (single-worktree repos and workspace child rows pass nil).
+  let tabCountBadge: WorktreeTabCountBadge?
   let iconSystemName: String?
   let showsPullRequestInfo: Bool
   let isHovered: Bool
@@ -30,6 +33,7 @@ struct WorktreeRow: View {
     name: String,
     worktreeName: String,
     info: WorktreeInfoEntry?,
+    tabCountBadge: WorktreeTabCountBadge? = nil,
     iconSystemName: String? = nil,
     showsPullRequestInfo: Bool,
     isHovered: Bool,
@@ -52,6 +56,7 @@ struct WorktreeRow: View {
     self.name = name
     self.worktreeName = worktreeName
     self.info = info
+    self.tabCountBadge = tabCountBadge
     self.iconSystemName = iconSystemName
     self.showsPullRequestInfo = showsPullRequestInfo
     self.isHovered = isHovered
@@ -128,6 +133,9 @@ struct WorktreeRow: View {
           .truncationMode(.middle)
           .layoutPriority(1)
           .help(name)
+        if let tabCountBadge {
+          tabCountBadge
+        }
         Spacer(minLength: 4)
         if isHovered, pinAction != nil {
           Button {

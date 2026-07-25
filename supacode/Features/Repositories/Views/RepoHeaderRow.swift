@@ -67,10 +67,35 @@ struct RepoHeaderTabCountBadge: View {
   let terminalManager: WorktreeTerminalManager
 
   var body: some View {
-    let count = RepositorySectionView.openTabCount(
-      for: repository,
-      terminalManager: terminalManager
+    TabCountBadge(
+      count: RepositorySectionView.openTabCount(
+        for: repository,
+        terminalManager: terminalManager
+      )
     )
+  }
+}
+
+/// Leaf view that renders the open-tab count badge for a single worktree
+/// row. Isolated for the same reason as `RepoHeaderTabCountBadge`: only
+/// this subtree subscribes to terminal state churn.
+struct WorktreeTabCountBadge: View {
+  let worktreeID: Worktree.ID
+  let terminalManager: WorktreeTerminalManager
+
+  var body: some View {
+    TabCountBadge(
+      count: terminalManager.stateIfExists(for: worktreeID)?.tabManager.tabs.count ?? 0
+    )
+  }
+}
+
+/// Capsule open-tab count badge shared by the repository header and
+/// worktree rows. Hidden at count 0.
+struct TabCountBadge: View {
+  let count: Int
+
+  var body: some View {
     if count > 0 {
       Text("\(count)")
         .font(.caption2)

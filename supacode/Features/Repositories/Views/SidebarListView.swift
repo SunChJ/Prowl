@@ -7,14 +7,26 @@ import SwiftUI
 struct SidebarListView: View {
   enum RepositoryListHeaderAction: Equatable {
     case expandAll
+    case expandActive
     case collapseAll
 
     var title: String {
       switch self {
       case .expandAll:
         return "Expand All"
+      case .expandActive:
+        return "Expand Active"
       case .collapseAll:
         return "Collapse All"
+      }
+    }
+
+    var helpText: String {
+      switch self {
+      case .expandActive:
+        return "Expand repositories with open tabs"
+      case .expandAll, .collapseAll:
+        return title
       }
     }
 
@@ -24,7 +36,7 @@ struct SidebarListView: View {
 
     var rotation: Angle {
       switch self {
-      case .expandAll:
+      case .expandAll, .expandActive:
         return .zero
       case .collapseAll:
         return .degrees(90)
@@ -53,10 +65,6 @@ struct SidebarListView: View {
     let hotkeyRows = state.orderedWorktreeRows(includingRepositoryIDs: expandedRepoIDs)
     let presentation = state.sidebarPresentation(expandedRepositoryIDs: expandedRepoIDs)
     let expandableRepositoryIDs = Self.expandableRepositoryIDs(in: state.repositories)
-    let repositoryListHeaderAction = Self.repositoryListHeaderAction(
-      expandedRepoIDs: expandedRepoIDs,
-      expandableRepositoryIDs: expandableRepositoryIDs
-    )
     let repositoryItems = presentation.items.filter(\.isRepositoryOrderItem)
     let selectedWorktreeIDs = Self.selectedWorktreeIDs(in: state)
     let selectedSurfaceID = state.selectedWorktreeID.flatMap { worktreeID in
@@ -100,7 +108,6 @@ struct SidebarListView: View {
           // carries the prompt and the Add button instead.
           if !repositoryItems.isEmpty {
             repositoryListHeader(
-              action: repositoryListHeaderAction,
               expandableRepositoryIDs: expandableRepositoryIDs
             )
           }
@@ -316,7 +323,6 @@ struct SidebarListView: View {
   }
 
   private func repositoryListHeader(
-    action: RepositoryListHeaderAction,
     expandableRepositoryIDs: Set<Repository.ID>
   ) -> some View {
     HStack(spacing: 4) {
@@ -325,25 +331,12 @@ struct SidebarListView: View {
         .foregroundStyle(.tertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
       if !expandableRepositoryIDs.isEmpty {
-        Button {
-          withAnimation(.easeOut(duration: 0.2)) {
-            switch action {
-            case .expandAll:
-              expandedRepoIDs.formUnion(expandableRepositoryIDs)
-            case .collapseAll:
-              expandedRepoIDs.subtract(expandableRepositoryIDs)
-            }
-          }
-        } label: {
-          Label(action.title, systemImage: action.systemImageName)
-            .labelStyle(.iconOnly)
-            .frame(width: 20, height: 20)
-            .rotationEffect(action.rotation)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(action.title)
+        RepositoryListHeaderToggle(
+          repositories: store.state.repositories,
+          expandableRepositoryIDs: expandableRepositoryIDs,
+          expandedRepoIDs: $expandedRepoIDs,
+          terminalManager: terminalManager
+        )
       }
     }
     .frame(maxWidth: .infinity, minHeight: 26, alignment: .center)
@@ -506,13 +499,42 @@ struct SidebarListView: View {
     )
   }
 
+  /// Expandable repositories/workspaces with at least one open terminal tab.
+  static func activeRepositoryIDs<Repositories: Sequence>(
+    in repositories: Repositories,
+    expandableRepositoryIDs: Set<Repository.ID>,
+    terminalManager: WorktreeTerminalManager
+  ) -> Set<Repository.ID> where Repositories.Element == Repository {
+    Set(
+      repositories
+        .filter { expandableRepositoryIDs.contains($0.id) }
+        .filter {
+          RepositorySectionView.openTabCount(for: $0, terminalManager: terminalManager) > 0
+        }
+        .map(\.id)
+    )
+  }
+
+  /// Next action offered by the header toggle, derived purely from the
+  /// current expansion state (no stored mode). Cycle from fully collapsed:
+  /// Expand Active → Expand All → Collapse All. Expand Active is skipped
+  /// when the active set is empty or covers every expandable repository,
+  /// and any manually mixed state falls back to Collapse All.
   static func repositoryListHeaderAction(
     expandedRepoIDs: Set<Repository.ID>,
-    expandableRepositoryIDs: Set<Repository.ID>
+    expandableRepositoryIDs: Set<Repository.ID>,
+    activeRepositoryIDs: Set<Repository.ID>
   ) -> RepositoryListHeaderAction {
-    !expandedRepoIDs.isDisjoint(with: expandableRepositoryIDs)
-      ? .collapseAll
-      : .expandAll
+    let expanded = expandedRepoIDs.intersection(expandableRepositoryIDs)
+    let active = activeRepositoryIDs.intersection(expandableRepositoryIDs)
+    let activeIsProperSubset = !active.isEmpty && active != expandableRepositoryIDs
+    if expanded.isEmpty {
+      return activeIsProperSubset ? .expandActive : .expandAll
+    }
+    if activeIsProperSubset, expanded == active {
+      return .expandAll
+    }
+    return .collapseAll
   }
 
   static func selectedWorktreeIDs(in state: RepositoriesFeature.State) -> Set<Worktree.ID> {
@@ -663,6 +685,63 @@ struct SidebarListView: View {
       repository.capabilities.supportsRunnableFolderActions
     else { return nil }
     return repository.rootURL
+  }
+}
+
+/// Header expand/collapse toggle as its own leaf view: deriving the offered
+/// action needs per-repository open-tab counts, and this split keeps the
+/// `WorktreeTerminalManager` read out of `SidebarListView.body` (same
+/// isolation rationale as `RepoHeaderTabCountBadge`).
+private struct RepositoryListHeaderToggle: View {
+  let repositories: IdentifiedArrayOf<Repository>
+  let expandableRepositoryIDs: Set<Repository.ID>
+  @Binding var expandedRepoIDs: Set<Repository.ID>
+  let terminalManager: WorktreeTerminalManager
+
+  var body: some View {
+    let activeRepositoryIDs = SidebarListView.activeRepositoryIDs(
+      in: repositories,
+      expandableRepositoryIDs: expandableRepositoryIDs,
+      terminalManager: terminalManager
+    )
+    let action = SidebarListView.repositoryListHeaderAction(
+      expandedRepoIDs: expandedRepoIDs,
+      expandableRepositoryIDs: expandableRepositoryIDs,
+      activeRepositoryIDs: activeRepositoryIDs
+    )
+    Button {
+      withAnimation(.easeOut(duration: 0.2)) {
+        switch action {
+        case .expandAll:
+          expandedRepoIDs.formUnion(expandableRepositoryIDs)
+        case .expandActive:
+          var next = expandedRepoIDs
+          next.subtract(expandableRepositoryIDs)
+          next.formUnion(activeRepositoryIDs)
+          expandedRepoIDs = next
+        case .collapseAll:
+          expandedRepoIDs.subtract(expandableRepositoryIDs)
+        }
+      }
+    } label: {
+      Label(action.title, systemImage: action.systemImageName)
+        .labelStyle(.iconOnly)
+        .frame(width: 20, height: 20)
+        .rotationEffect(action.rotation)
+        .overlay(alignment: .topTrailing) {
+          if action == .expandActive {
+            Circle()
+              .fill(Color.accentColor)
+              .frame(width: 4, height: 4)
+              .offset(x: -3, y: 3)
+              .accessibilityHidden(true)
+          }
+        }
+        .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(.secondary)
+    .help(action.helpText)
   }
 }
 
