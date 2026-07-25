@@ -19,6 +19,11 @@ nonisolated struct RepositoryIconCandidate: Equatable, Sendable {
 
   let imageURL: URL
   let evidence: Evidence
+  /// `true` when `imageURL` is a detector-produced temp artifact (an
+  /// Icon Composer render) that the consumer must delete once the
+  /// import — successful or not — is over. Repository-owned files are
+  /// never flagged and must never be deleted.
+  var ownsImageFile = false
 }
 
 /// Evidence-based local probe for a repository's own product icon.
@@ -66,7 +71,9 @@ nonisolated enum RepositoryIconDetector {
       if let imageURL = await probeIconComposer(
         under: scanner.rootURL, scanner: scanner, render: renderIconComposer
       ) {
-        return RepositoryIconCandidate(imageURL: imageURL, evidence: .appleIconComposer)
+        return RepositoryIconCandidate(
+          imageURL: imageURL, evidence: .appleIconComposer, ownsImageFile: true
+        )
       }
       if let imageURL = probeAppleCatalog(under: scanner.rootURL, scanner: scanner) {
         return RepositoryIconCandidate(imageURL: imageURL, evidence: .appleAssetCatalog)
@@ -198,13 +205,26 @@ nonisolated enum RepositoryIconDetector {
   }
 
   /// `size` is `"WxH"`, `scale` is `"Nx"`; a single-size catalog entry
-  /// may omit the scale. Unparseable entries rank last, not out.
+  /// may omit the scale. Unparseable entries rank last, not out. All
+  /// numbers are clamped before multiplying: a hostile manifest can
+  /// declare infinity/NaN/enormous values, and `Int(Double.infinity)`
+  /// would trap the whole process.
   private static func pixelArea(size: String?, scale: String?) -> Int {
     guard let size else { return 0 }
-    let dimensions = size.lowercased().split(separator: "x").compactMap { Double($0) }
+    let dimensions = size.lowercased().split(separator: "x")
+      .compactMap { clampedDimension($0, upperBound: 100_000) }
     guard dimensions.count == 2 else { return 0 }
-    let scaleFactor = scale.flatMap { Double($0.lowercased().replacing("x", with: "")) } ?? 1
+    let scaleFactor =
+      scale
+      .map { $0.lowercased().replacing("x", with: "") }
+      .flatMap { clampedDimension($0, upperBound: 100) } ?? 1
     return Int(dimensions[0] * scaleFactor * dimensions[1] * scaleFactor)
+  }
+
+  /// Positive, finite, bounded — or nothing.
+  private static func clampedDimension(_ raw: some StringProtocol, upperBound: Double) -> Double? {
+    guard let value = Double(raw), value.isFinite, value > 0 else { return nil }
+    return min(value, upperBound)
   }
 
   // MARK: - Android
@@ -368,8 +388,11 @@ nonisolated enum RepositoryIconDetector {
 
   /// `sizes` is space-separated `"WxH"` tokens or `"any"` (scalable —
   /// ranked like a large raster so SVG icons win over small PNGs).
+  /// Dimensions outside a sane range are ignored: a hostile manifest
+  /// can declare `Int.max` and checked multiplication would trap.
   private static func declaredPixelArea(sizes: String?, source: String) -> Int {
     let scalableRank = 512 * 512
+    let sane = 1...100_000
     guard let sizes, !sizes.isEmpty else {
       return source.lowercased().hasSuffix(".svg") ? scalableRank : 0
     }
@@ -380,7 +403,7 @@ nonisolated enum RepositoryIconDetector {
         continue
       }
       let dimensions = token.split(separator: "x").compactMap { Int($0) }
-      if dimensions.count == 2 {
+      if dimensions.count == 2, dimensions.allSatisfy({ sane.contains($0) }) {
         best = max(best, dimensions[0] * dimensions[1])
       }
     }

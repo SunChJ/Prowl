@@ -34,11 +34,14 @@ extension RepositoriesFeature {
       let assetStore = repositoryIconAssetStore
       effects.append(
         .run(priority: .utility) { send in
-          guard let candidate = await detector.detect(rootURL), !Task.isCancelled,
-            let filename = try? assetStore.importImage(candidate.imageURL, rootURL)
-          else {
-            return
+          guard let candidate = await detector.detect(rootURL), !Task.isCancelled else { return }
+          let filename = try? assetStore.importImage(candidate.imageURL, rootURL)
+          if candidate.ownsImageFile {
+            // Detector-produced temp artifact (Icon Composer render):
+            // delete it whether or not the import succeeded.
+            try? FileManager.default.removeItem(at: candidate.imageURL)
           }
+          guard let filename else { return }
           await send(
             .repositoryManagement(.repositoryIconDetected(repositoryID, filename: filename))
           )

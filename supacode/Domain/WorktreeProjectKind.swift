@@ -149,13 +149,19 @@ enum WorktreeProjectKind: CaseIterable {
   /// React Native needs `react-native` as a declared dependency; the
   /// `ios`/`android` shell folders alone are checked by the caller.
   /// Internal because `RepositoryIconDetector` reuses the same signal.
+  /// The read is bounded up front — a pathological multi-hundred-MB
+  /// `package.json` must never be materialized on this path.
   nonisolated static func packageJSONDependsOnReactNative(in directory: URL) -> Bool {
     struct Manifest: Decodable {
       let dependencies: [String: String]?
       let devDependencies: [String: String]?
     }
+    let limit = 512 * 1024
     let url = directory.appending(path: "package.json", directoryHint: .notDirectory)
-    guard let data = try? Data(contentsOf: url), data.count <= 512 * 1024,
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: limit + 1),
+      data.count <= limit,
       let manifest = try? JSONDecoder().decode(Manifest.self, from: data)
     else {
       return false

@@ -110,6 +110,22 @@ struct WorktreeProjectKindTests {
     }
   }
 
+  @Test func oversizedPackageJSONIsNotParsedForReactNative() throws {
+    // The dependency check must reject the file up front instead of
+    // materializing hundreds of megabytes on the classification path.
+    var oversized = #"{"dependencies":{"react-native":"0.80.0"},"padding":""#
+    oversized += String(repeating: "x", count: 600 * 1024)
+    oversized += #""}"#
+    try withTemporaryProjectDirectory(
+      entries: ["android/"],
+      contents: [
+        "package.json": Data(oversized.utf8)
+      ]
+    ) { directory in
+      #expect(WorktreeProjectKind.detect(at: directory) == .web)
+    }
+  }
+
   @Test func plainPackageJSONWithNativeFoldersIsWeb() throws {
     try withTemporaryProjectDirectory(
       entries: ["ios/"],

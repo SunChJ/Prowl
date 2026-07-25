@@ -395,6 +395,7 @@ struct RepositoryIconDetectorTests {
       }
       #expect(candidate?.evidence == .appleIconComposer)
       #expect(candidate?.imageURL == rendered)
+      #expect(candidate?.ownsImageFile == true)
       #expect(requested.value.first?.lastPathComponent == "AppIcon.icon")
     }
   }
@@ -524,6 +525,60 @@ struct RepositoryIconDetectorTests {
       ]
     ) { root in
       #expect(await RepositoryIconDetector.detect(at: root)?.evidence == .androidLauncher)
+    }
+  }
+
+  // MARK: - Hostile manifests
+
+  @Test func hostileAppIconManifestNumbersDoNotTrap() async throws {
+    // Infinity/NaN products must not reach `Int(_:)`, and the clamped
+    // hostile entry must not block a valid fallback candidate.
+    try await withTemporaryProjectDirectory(
+      entries: ["App.xcodeproj/"],
+      contents: [
+        "Assets.xcassets/AppIcon.appiconset/Contents.json": appIconSetManifest([
+          .init(filename: "evil.png", size: "1e308x1e308", scale: "1e308x"),
+          .init(filename: "weird.png", size: "nanxnan", scale: "nanx"),
+          .init(filename: "good.png", size: "128x128", scale: "1x"),
+        ]),
+        "Assets.xcassets/AppIcon.appiconset/evil.png": Data("not an image".utf8),
+        "Assets.xcassets/AppIcon.appiconset/good.png": pngData(width: 128, height: 128),
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root)?.imageURL.lastPathComponent == "good.png")
+    }
+  }
+
+  @Test func hostileWebManifestSizesDoNotTrap() async throws {
+    // Int.max × 2 would overflow checked multiplication; out-of-range
+    // dimensions are ignored, the icon itself remains usable.
+    try await withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "package.json": Data(#"{"name":"site"}"#.utf8),
+        "manifest.json": Data(
+          #"{"icons":[{"src":"icon.png","sizes":"9223372036854775807x2 -5x-5"}]}"#.utf8
+        ),
+        "icon.png": pngData(width: 256, height: 256),
+      ]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root)
+      #expect(candidate?.evidence == .webAsset)
+      #expect(candidate?.imageURL.lastPathComponent == "icon.png")
+    }
+  }
+
+  @Test func oversizedSVGCanvasIsRejected() async throws {
+    let hugeSVG =
+      #"<svg xmlns="http://www.w3.org/2000/svg" width="99999" height="99999">"#
+      + #"<rect width="99999" height="99999" fill="tomato"/></svg>"#
+    try await withTemporaryProjectDirectory(
+      entries: ["package.json"],
+      contents: [
+        "logo.svg": Data(hugeSVG.utf8)
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 

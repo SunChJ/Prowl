@@ -410,6 +410,45 @@ struct RepositoriesFeatureIconDetectionTests {
     #expect(appearances()["/tmp/repo"]?.icon == .userImage(filename: "mine.png"))
   }
 
+  @Test func detectorOwnedTemporaryFileIsDeletedAfterImport() async throws {
+    let temp = FileManager.default.temporaryDirectory
+      .appending(path: "icon-composer-artifact-\(UUID().uuidString).png")
+    try Data([0xDE, 0xAD]).write(to: temp)
+    let newRepo = makeRepository(id: "/tmp/new", name: "new", kind: .plain)
+    let store = TestStore(initialState: makeState(repositories: [])) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.repositoryIconDetector.detect = { _ in
+        RepositoryIconCandidate(
+          imageURL: temp,
+          evidence: .appleIconComposer,
+          ownsImageFile: true
+        )
+      }
+      $0.repositoryIconAssetStore = recordingAssetStore()
+      $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
+      $0.gitClient.repositoryWebURL = { _ in nil }
+    }
+    store.exhaustivity = .off
+
+    await store.send(
+      .repositoryManagement(
+        .openRepositoriesFinished(
+          [newRepo],
+          failures: [],
+          invalidRoots: [],
+          openFailures: [],
+          roots: [newRepo.rootURL]
+        )
+      )
+    )
+    await store.receive(\.repositoryManagement.repositoryIconDetected)
+    await store.finish()
+
+    #expect(!FileManager.default.fileExists(atPath: temp.path(percentEncoded: false)))
+    #expect(appearances()["/tmp/new"]?.icon == .detectedImage(filename: "detected.png"))
+  }
+
   // MARK: - Workspace exclusion
 
   @Test func workspaceContainersAreNeverScanned() async {

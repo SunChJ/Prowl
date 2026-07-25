@@ -80,6 +80,8 @@ struct RepositorySymbolSuggestionsSection: View {
         }
         .buttonStyle(.plain)
         .help(symbol)
+        .accessibilityLabel(symbol == suggestions.primary ? "\(symbol), best match" : symbol)
+        .accessibilityHint("Fills the symbol name field with this suggestion.")
       }
       Spacer(minLength: 0)
     }

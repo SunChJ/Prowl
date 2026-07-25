@@ -181,7 +181,10 @@ extension RepositoryIconDetector {
 
     /// Cheap structural sniff plus a real decode. `NSImage` is the same
     /// renderer the app uses later, so a pass here guarantees the icon
-    /// won't turn into the missing-file placeholder.
+    /// won't turn into the missing-file placeholder. The declared
+    /// canvas must be finite and within the same pixel ceiling as
+    /// rasters — vectors have no quality floor, so only the upper
+    /// bound applies.
     private func decodableSVGSize(at url: URL) -> CGSize? {
       guard let prefix = boundedContents(of: url, limit: Scanner.maxImageBytes),
         let head = String(data: prefix.prefix(4096), encoding: .utf8),
@@ -189,12 +192,16 @@ extension RepositoryIconDetector {
       else {
         return nil
       }
-      guard let image = NSImage(contentsOf: url),
-        image.size.width > 0, image.size.height > 0
+      guard let image = NSImage(contentsOf: url) else { return nil }
+      let size = image.size
+      let ceiling = CGFloat(Scanner.maxRasterPixelDimension)
+      guard size.width.isFinite, size.height.isFinite,
+        size.width > 0, size.height > 0,
+        size.width <= ceiling, size.height <= ceiling
       else {
         return nil
       }
-      return image.size
+      return size
     }
 
     /// Metadata-only probe via ImageIO — no bitmap is decompressed, so
