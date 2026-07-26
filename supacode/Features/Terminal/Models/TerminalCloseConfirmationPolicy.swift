@@ -42,6 +42,26 @@ enum TerminalCloseConfirmationPolicy {
     )
   }
 
+  /// Alert body for a close prompt. Always names the worktree: the prompt can
+  /// be triggered from the sidebar against a worktree whose tabs are not
+  /// visible, so the target's identity must be part of the confirmation.
+  static func informativeMessage(
+    for decision: TerminalCloseConfirmationDecision,
+    worktreeName: String
+  ) -> String {
+    let paneText = decision.protectedPaneCount == 1 ? "pane" : "panes"
+    let reasonText: String
+    if decision.reasons == Set([.agentActive]) {
+      reasonText = "active agent work or an unseen agent result"
+    } else if decision.reasons == Set([.longRunningCommand]) {
+      reasonText = "a command that has been running for at least 10 seconds"
+    } else {
+      reasonText = "active agent work, unseen agent results, or long-running commands"
+    }
+    return
+      "This will close \(decision.protectedPaneCount) \(paneText) in “\(worktreeName)” with \(reasonText)."
+  }
+
   private static func protectionReason(
     for candidate: TerminalCloseProtectionCandidate,
     threshold: TimeInterval

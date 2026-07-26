@@ -292,6 +292,27 @@ struct WorktreeRowsView: View {
     }
   }
 
+  private func newTerminalTab(for row: WorktreeRowModel) {
+    let tabCount = terminalManager.stateIfExists(for: row.id)?.tabManager.tabs.count ?? 0
+    guard tabCount > 0 else {
+      // Opening a worktree that has no tabs already creates its first tab at
+      // the worktree root (running the repo setup script); reuse that flow so
+      // the context menu doesn't race `ensureInitialTab` into a second tab.
+      openWorktree(row.id)
+      return
+    }
+    store.send(.newTerminalTab(row.id))
+  }
+
+  private func openWorktree(_ worktreeID: Worktree.ID) {
+    if store.state.isShowingCanvas {
+      store.send(.focusCanvasWorktree(worktreeID))
+    } else {
+      store.send(.selectWorktree(worktreeID, focusTerminal: true))
+      focusTerminalAfterSelection(worktreeID: worktreeID)
+    }
+  }
+
   private func focusTerminalAfterSelection(worktreeID: Worktree.ID) {
     Task { @MainActor [terminalManager] in
       for _ in 0..<4 {
@@ -445,7 +466,19 @@ struct WorktreeRowsView: View {
       isBulkSelection
       ? "Delete Selected Worktrees (\(deleteShortcut))"
       : "Delete Worktree (\(deleteShortcut))"
+    let tabCount = terminalManager.stateIfExists(for: row.id)?.tabManager.tabs.count ?? 0
+    Button("New Terminal Tab") {
+      newTerminalTab(for: row)
+    }
+    .help("Open a new terminal tab at this worktree's root")
+    if let stopRunScript = stopRunScriptHandler(for: row.id) {
+      Button("Stop Running Script") {
+        stopRunScript()
+      }
+      .help("Stop the run script Prowl is tracking for this worktree")
+    }
     if !row.isMainWorktree {
+      Divider()
       if row.isPinned {
         Button("Unpin") {
           togglePin(for: worktree.id, isPinned: true)
@@ -458,12 +491,23 @@ struct WorktreeRowsView: View {
         .help("Pin to top")
       }
     }
+    Divider()
     Button("Copy Path") {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(worktree.workingDirectory.path, forType: .string)
     }
+    Button("Copy Branch Name") {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(row.name, forType: .string)
+    }
     Button("Reveal in Finder") {
       NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.workingDirectory.path)
+    }
+    if row.info?.pullRequest != nil {
+      Button("Open Pull Request") {
+        store.send(.githubIntegration(.pullRequestAction(row.id, .openOnCodeHost)))
+      }
+      .help("Open this worktree's pull request on the code host")
     }
     Divider()
     Button("Show Diff") {
@@ -474,6 +518,12 @@ struct WorktreeRowsView: View {
       store.send(.delegate(.showOutgoingChanges(worktree.id)))
     }
     .help("Show committed changes relative to this worktree's base")
+    Divider()
+    Button("Close All Tabs") {
+      terminalManager.stateIfExists(for: row.id)?.closeAllTabs()
+    }
+    .help("Close all terminal tabs in this worktree; the worktree itself stays")
+    .disabled(tabCount == 0)
     if !row.isMainWorktree || isBulkSelection {
       Button(archiveTitle) {
         archiveWorktrees(archiveTargets)

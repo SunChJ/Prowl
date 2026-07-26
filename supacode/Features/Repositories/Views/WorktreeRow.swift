@@ -186,6 +186,7 @@ struct WorktreeRow: View {
         worktreeName: detailText,
         showsPullRequestTag: showsPullRequestTag,
         pullRequestNumber: display.pullRequest?.number,
+        pullRequestURL: display.pullRequest.flatMap { URL(string: $0.url) },
         pullRequestState: display.pullRequestState,
         mergeReadiness: mergeReadiness,
         isQueued: isQueued,
@@ -237,6 +238,7 @@ private struct WorktreeRowInfoView: View {
   let worktreeName: String
   let showsPullRequestTag: Bool
   let pullRequestNumber: Int?
+  let pullRequestURL: URL?
   let pullRequestState: String?
   let mergeReadiness: PullRequestMergeReadiness?
   let isQueued: Bool
@@ -279,6 +281,9 @@ private struct WorktreeRowInfoView: View {
       appendSeparator()
       var segment = AttributedString("PR #\(pullRequestNumber)")
       segment.foregroundColor = .secondary
+      // Clickable via `Text`'s built-in link handling; the rest of the row
+      // keeps its tap-to-select behavior.
+      segment.link = pullRequestURL
       result.append(segment)
     }
     if pullRequestState == "MERGED" {

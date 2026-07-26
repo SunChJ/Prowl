@@ -110,6 +110,7 @@ current branch, uncommitted line counts, and pull request badge when available,
 including immediately after a newly created workspace is opened. Click a child
 row to select it and focus its terminal tab rooted at that repository folder
 inside the workspace, creating that tab the first time it is selected.
+Right-click a child row for **Copy Path** / **Reveal in Finder**.
 
 ## Removing a workspace
 
