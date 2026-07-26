@@ -85,6 +85,15 @@ enum WorktreeDirectoryIndexCache {
   private static var cachedIndex = WorktreeDirectoryIndex()
   private static var nextCanonicalRevalidation: ContinuousClock.Instant?
 
+  /// Resolutions already computed against `cachedIndex`, keyed by the directory as asked for.
+  /// A resolution normalizes that directory, so it carries the same symlink assumption the index
+  /// does and is dropped on the same cadence.
+  private static var cachedResolutions: [URL: Worktree.ID?] = [:]
+
+  /// An agent's working directory is stable for the life of its pane, but a pane can `cd`
+  /// anywhere, so the memo is capped rather than assumed bounded by pane count.
+  private static let resolutionMemoLimit = 256
+
   private struct Entry: Equatable {
     let id: Worktree.ID
     let directory: URL
@@ -106,6 +115,11 @@ enum WorktreeDirectoryIndexCache {
     }
     cachedSignature = signature
     nextCanonicalRevalidation = now.advanced(by: canonicalRevalidationInterval)
+    // Resolutions normalize the directory they are asked about, so a symlink retarget can make one
+    // stale exactly as it can make the index stale. Clearing here rather than only when the index
+    // is rebuilt gives them the same staleness bound the revalidation interval already sets, which
+    // still collapses every lookup within an interval down to one.
+    cachedResolutions.removeAll(keepingCapacity: true)
     guard canonicalSignature != cachedCanonicalSignature else {
       return cachedIndex
     }
@@ -115,6 +129,32 @@ enum WorktreeDirectoryIndexCache {
       normalizedDirectories: canonicalSignature.map { (id: $0.id, directory: $0.directory) }
     )
     return cachedIndex
+  }
+
+  /// Resolves a working directory against the cached index, remembering the answer.
+  ///
+  /// `WorktreeDirectoryIndex.worktreeID(forWorkingDirectory:)` normalizes the directory it is
+  /// asked about, and `PathPolicy.normalizeURL` touches the filesystem — a `stat` plus a symlink
+  /// walk. The sidebar resolves every agent row on every render, so without this memo a window
+  /// with N agents pays N filesystem round-trips per frame on the main thread, for paths that
+  /// almost never change.
+  static func worktreeID(
+    forWorkingDirectory directory: URL,
+    in repositories: IdentifiedArrayOf<Repository>,
+    now: ContinuousClock.Instant = ContinuousClock.now
+  ) -> Worktree.ID? {
+    // Ordered first: a repository-set change or a due revalidation clears the memo, so a stale
+    // resolution can never be returned for an index that has moved on.
+    let index = index(for: repositories, now: now)
+    if let memoized = cachedResolutions[directory] {
+      return memoized
+    }
+    let resolved = index.worktreeID(forWorkingDirectory: directory)
+    if cachedResolutions.count >= resolutionMemoLimit {
+      cachedResolutions.removeAll(keepingCapacity: true)
+    }
+    cachedResolutions[directory] = resolved
+    return resolved
   }
 
   /// The id/directory pairs the index is built from, in build order. Comparing these avoids
@@ -140,5 +180,6 @@ enum WorktreeDirectoryIndexCache {
     cachedCanonicalSignature = []
     cachedIndex = WorktreeDirectoryIndex()
     nextCanonicalRevalidation = nil
+    cachedResolutions.removeAll()
   }
 }

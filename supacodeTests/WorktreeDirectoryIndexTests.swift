@@ -148,7 +148,183 @@ struct WorktreeDirectoryIndexTests {
     #expect(revalidated.worktreeID(forWorkingDirectory: firstTarget) == nil)
   }
 
+  // MARK: - Resolution memo
+
+  /// Proves the memo by making recomputation impossible to reproduce: the symlink the first
+  /// lookup resolved through is deleted, so a fresh resolution would no longer reach the worktree.
+  /// An answer that survives that can only have come from the memo.
+  @Test func repeatedLookupIsServedFromTheMemo() throws {
+    let fixture = try SymlinkedWorktreeFixture()
+    defer { fixture.cleanUp() }
+    WorktreeDirectoryIndexCache.reset()
+    // Both lookups sit inside one revalidation interval, which is where the memo applies.
+    let start = ContinuousClock.now
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start
+      ) == fixture.worktreeID
+    )
+
+    try fixture.removeSymlink()
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start.advanced(by: .milliseconds(16))
+      ) == fixture.worktreeID,
+      "The symlink is gone, so only a memoized answer can still resolve"
+    )
+
+    // And the memo is the only reason: dropping it must recompute, which now finds nothing.
+    WorktreeDirectoryIndexCache.reset()
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start.advanced(by: .milliseconds(32))
+      ) == nil
+    )
+  }
+
+  /// A resolution is only valid against the index that produced it, so changing the repository
+  /// set must not leave an answer computed against the previous one.
+  @Test func memoIsDroppedWhenTheRepositorySetChanges() {
+    WorktreeDirectoryIndexCache.reset()
+    let mainWorktree = makeWorktree(repoRoot: "/tmp/repo", path: "/tmp/repo", branch: "main")
+    let nested = makeWorktree(repoRoot: "/tmp/repo", path: "/tmp/repo/worktrees/feature", branch: "feature")
+    let directory = URL(fileURLWithPath: "/tmp/repo/worktrees/feature/lib")
+    let start = ContinuousClock.now
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: directory,
+        in: [makeRepository(id: "/tmp/repo", worktrees: [mainWorktree])],
+        now: start
+      ) == mainWorktree.id
+    )
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: directory,
+        in: [makeRepository(id: "/tmp/repo", worktrees: [mainWorktree, nested])],
+        now: start.advanced(by: .milliseconds(16))
+      ) == nested.id,
+      "A stale memo would still report the main worktree"
+    )
+  }
+
+  /// A memoized resolution normalizes the directory it was asked about, so it can go stale the same
+  /// way the index can. It must not outlive the revalidation that exists to catch exactly that.
+  @Test func memoIsDroppedWhenCanonicalPathsAreRevalidated() throws {
+    let fixture = try SymlinkedWorktreeFixture()
+    defer { fixture.cleanUp() }
+    WorktreeDirectoryIndexCache.reset()
+    let start = ContinuousClock.now
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start
+      ) == fixture.worktreeID
+    )
+
+    try fixture.removeSymlink()
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start.advanced(by: .seconds(1))
+      ) == nil,
+      "Past the revalidation interval the answer must be recomputed, and it no longer resolves"
+    )
+  }
+
+  /// A pane can `cd` anywhere, so the memo must not grow without bound.
+  @Test func memoIsBoundedAndEvictsOldEntries() throws {
+    let fixture = try SymlinkedWorktreeFixture()
+    defer { fixture.cleanUp() }
+    WorktreeDirectoryIndexCache.reset()
+    // Held at one instant so revalidation never fires, leaving the cap as the only thing that can
+    // drop the entry.
+    let start = ContinuousClock.now
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start
+      ) == fixture.worktreeID
+    )
+    try fixture.removeSymlink()
+
+    // Flood past the cap with directories that resolve to nothing.
+    for offset in 0..<300 {
+      _ = WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: URL(fileURLWithPath: "/tmp/flood-\(offset)"),
+        in: fixture.repositories,
+        now: start
+      )
+    }
+
+    #expect(
+      WorktreeDirectoryIndexCache.worktreeID(
+        forWorkingDirectory: fixture.queryThroughSymlink,
+        in: fixture.repositories,
+        now: start
+      ) == nil,
+      "The original entry should have been evicted and recomputed"
+    )
+  }
+
   // MARK: - Helpers
+
+  /// A real worktree directory plus a symlink pointing at it, so a test can revoke the symlink and
+  /// observe whether a later lookup recomputed or replayed.
+  private struct SymlinkedWorktreeFixture {
+    let root: URL
+    let repositories: IdentifiedArrayOf<Repository>
+    let worktreeID: Worktree.ID
+    let queryThroughSymlink: URL
+
+    init() throws {
+      root = FileManager.default.temporaryDirectory
+        .appending(path: "prowl-directory-memo-\(UUID().uuidString)", directoryHint: .isDirectory)
+      let real = root.appending(path: "real", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(
+        at: real.appending(path: "sub", directoryHint: .isDirectory),
+        withIntermediateDirectories: true
+      )
+      try FileManager.default.createSymbolicLink(
+        at: root.appending(path: "link", directoryHint: .isDirectory),
+        withDestinationURL: real
+      )
+      let worktree = Worktree(
+        id: real.path,
+        name: "main",
+        detail: "main",
+        workingDirectory: real,
+        repositoryRootURL: real
+      )
+      worktreeID = worktree.id
+      repositories = [
+        Repository(id: real.path, rootURL: real, name: "real", kind: .git, worktrees: [worktree])
+      ]
+      queryThroughSymlink = root.appending(path: "link/sub", directoryHint: .isDirectory)
+    }
+
+    func removeSymlink() throws {
+      try FileManager.default.removeItem(at: root.appending(path: "link", directoryHint: .isDirectory))
+    }
+
+    func cleanUp() {
+      try? FileManager.default.removeItem(at: root)
+    }
+  }
 
   private func makeWorktree(repoRoot: String, path: String, branch: String) -> Worktree {
     Worktree(

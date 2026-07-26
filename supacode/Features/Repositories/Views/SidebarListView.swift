@@ -585,16 +585,21 @@ struct SidebarListView: View {
     repositories: IdentifiedArrayOf<Repository>,
     metadata: ActiveAgentWorktreeMetadata
   ) -> [ActiveAgentEntry.ID: ActiveAgentRowDisplay] {
-    // Built (or reused) once for the whole batch: resolving each row against every worktree
-    // individually put a filesystem round-trip per row/worktree pair on the main thread.
-    let directoryIndex = WorktreeDirectoryIndexCache.index(for: repositories)
+    // Resolutions are memoized across renders, not just shared within this batch. The index made
+    // the *build* side cheap; the lookup still normalizes the queried directory, and that
+    // normalization is a filesystem round-trip. This view re-runs whenever an agent's state
+    // changes, so re-resolving unchanged directories put N `stat`s plus N symlink walks on the
+    // main thread per frame.
     var displays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay] = [:]
     for entry in entries {
+      let resolvedWorktreeID = entry.workingDirectory.flatMap {
+        WorktreeDirectoryIndexCache.worktreeID(forWorkingDirectory: $0, in: repositories)
+      }
       displays[entry.id] = activeAgentRowDisplay(
         for: entry,
         repositories: repositories,
         metadata: metadata,
-        directoryIndex: directoryIndex
+        resolvedWorktreeID: resolvedWorktreeID
       )
     }
     return displays
@@ -606,17 +611,37 @@ struct SidebarListView: View {
   /// 2. `workingDirectory` is known but outside every repo → derive a name from its last path
   ///    component (same logic as adding a repository).
   /// 3. `workingDirectory` is unknown → fall back to the surface's owning worktree (legacy behavior).
-  /// `directoryIndex` is supplied by `activeAgentRowDisplays` so a batch shares one index; passing
-  /// `nil` builds a throwaway one for a single lookup.
+  /// `directoryIndex` resolves the entry's working directory; passing `nil` builds a throwaway
+  /// index for the single lookup. `activeAgentRowDisplays` does not come through here — it resolves
+  /// through the memo in `WorktreeDirectoryIndexCache` and calls the `resolvedWorktreeID` overload.
   static func activeAgentRowDisplay(
     for entry: ActiveAgentEntry,
     repositories: IdentifiedArrayOf<Repository>,
     metadata: ActiveAgentWorktreeMetadata,
     directoryIndex: WorktreeDirectoryIndex? = nil
   ) -> ActiveAgentRowDisplay {
+    let resolvedWorktreeID = entry.workingDirectory.flatMap { workingDirectory in
+      (directoryIndex ?? WorktreeDirectoryIndex(repositories: repositories))
+        .worktreeID(forWorkingDirectory: workingDirectory)
+    }
+    return activeAgentRowDisplay(
+      for: entry,
+      repositories: repositories,
+      metadata: metadata,
+      resolvedWorktreeID: resolvedWorktreeID
+    )
+  }
+
+  /// Builds the display from an already-resolved owning worktree, so a caller that resolves in
+  /// bulk pays the directory normalization once per directory instead of once per row.
+  static func activeAgentRowDisplay(
+    for entry: ActiveAgentEntry,
+    repositories: IdentifiedArrayOf<Repository>,
+    metadata: ActiveAgentWorktreeMetadata,
+    resolvedWorktreeID: Worktree.ID?
+  ) -> ActiveAgentRowDisplay {
     if let workingDirectory = entry.workingDirectory {
-      let index = directoryIndex ?? WorktreeDirectoryIndex(repositories: repositories)
-      if let key = index.worktreeID(forWorkingDirectory: workingDirectory) {
+      if let key = resolvedWorktreeID {
         let fallbackName = workingDirectory.lastPathComponent
         return ActiveAgentRowDisplay(
           repositoryName: metadata.repositoryNamesByWorktreeID[key] ?? fallbackName,
@@ -649,8 +674,7 @@ struct SidebarListView: View {
     forWorkingDirectory workingDirectory: URL,
     in repositories: IdentifiedArrayOf<Repository>
   ) -> Worktree.ID? {
-    WorktreeDirectoryIndexCache.index(for: repositories)
-      .worktreeID(forWorkingDirectory: workingDirectory)
+    WorktreeDirectoryIndexCache.worktreeID(forWorkingDirectory: workingDirectory, in: repositories)
   }
 
   /// Directory of the surface's owning worktree, used when the agent hasn't
