@@ -96,12 +96,9 @@ enum WorktreeProjectKind: CaseIterable {
   /// when a repo carries a pathological manifest.
   nonisolated private static func markerFileContents(named name: String, in directory: URL) -> String? {
     let url = directory.appending(path: name, directoryHint: .notDirectory)
-    guard let handle = try? FileHandle(forReadingFrom: url),
-      let data = try? handle.read(upToCount: 128 * 1024)
-    else {
-      return nil
-    }
-    try? handle.close()
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: 128 * 1024) else { return nil }
     return String(data: data, encoding: .utf8)
   }
 

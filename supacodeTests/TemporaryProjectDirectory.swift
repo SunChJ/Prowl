@@ -31,23 +31,28 @@ private func makeTemporaryProjectDirectory(
   let directory = fileManager.temporaryDirectory
     .appending(path: "project-fixture-\(UUID().uuidString)")
   try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-  for entry in entries {
-    if entry.hasSuffix("/") {
+  do {
+    for entry in entries {
+      if entry.hasSuffix("/") {
+        try fileManager.createDirectory(
+          at: directory.appending(path: String(entry.dropLast())),
+          withIntermediateDirectories: true
+        )
+      } else {
+        try Data().write(to: directory.appending(path: entry))
+      }
+    }
+    for (path, data) in contents {
+      let fileURL = directory.appending(path: path)
       try fileManager.createDirectory(
-        at: directory.appending(path: String(entry.dropLast())),
+        at: fileURL.deletingLastPathComponent(),
         withIntermediateDirectories: true
       )
-    } else {
-      try Data().write(to: directory.appending(path: entry))
+      try data.write(to: fileURL)
     }
-  }
-  for (path, data) in contents {
-    let fileURL = directory.appending(path: path)
-    try fileManager.createDirectory(
-      at: fileURL.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try data.write(to: fileURL)
+  } catch {
+    try? fileManager.removeItem(at: directory)
+    throw error
   }
   return directory
 }
