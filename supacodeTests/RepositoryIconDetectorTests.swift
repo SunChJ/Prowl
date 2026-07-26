@@ -35,6 +35,16 @@ struct RepositoryIconDetectorTests {
     return Data(svg.utf8)
   }
 
+  /// Mimics Astro's default favicon: `fill="none"` on the root with
+  /// paths colored only through an embedded `<style>` block, which
+  /// CoreSVG ignores — NSImage renders it fully transparent.
+  private var styleColoredSVGData: Data {
+    let svg =
+      #"<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 64 64">"#
+      + #"<path d="M8 8h48v48H8z"/><style>path { fill: #000; }</style></svg>"#
+    return Data(svg.utf8)
+  }
+
   private struct ManifestEntry {
     var filename: String
     var size: String
@@ -565,6 +575,33 @@ struct RepositoryIconDetectorTests {
       let candidate = await RepositoryIconDetector.detect(at: root)
       #expect(candidate?.evidence == .webAsset)
       #expect(candidate?.imageURL.lastPathComponent == "icon.png")
+    }
+  }
+
+  @Test func invisiblyRenderingSVGFaviconFallsBackToRasterFavicon() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "package.json": Data(#"{"name":"site"}"#.utf8),
+        "public/favicon.svg": styleColoredSVGData,
+        "public/favicon.png": pngData(width: 32, height: 32),
+      ]
+    ) { root in
+      let candidate = await RepositoryIconDetector.detect(at: root)
+      #expect(candidate?.evidence == .webAsset)
+      #expect(candidate?.imageURL.lastPathComponent == "favicon.png")
+    }
+  }
+
+  @Test func invisiblyRenderingSVGAloneYieldsNothing() async throws {
+    try await withTemporaryProjectDirectory(
+      entries: [],
+      contents: [
+        "package.json": Data(#"{"name":"site"}"#.utf8),
+        "public/favicon.svg": styleColoredSVGData,
+      ]
+    ) { root in
+      #expect(await RepositoryIconDetector.detect(at: root) == nil)
     }
   }
 

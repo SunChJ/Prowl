@@ -184,7 +184,8 @@ extension RepositoryIconDetector {
     /// won't turn into the missing-file placeholder. The declared
     /// canvas must be finite and within the same pixel ceiling as
     /// rasters — vectors have no quality floor, so only the upper
-    /// bound applies.
+    /// bound applies. A final rasterization pass rejects SVGs that
+    /// load fine but draw nothing.
     private func decodableSVGSize(at url: URL) -> CGSize? {
       guard let prefix = boundedContents(of: url, limit: Scanner.maxImageBytes),
         let head = String(data: prefix.prefix(4096), encoding: .utf8),
@@ -201,7 +202,45 @@ extension RepositoryIconDetector {
       else {
         return nil
       }
-      return size
+      return rendersVisiblePixels(image) ? size : nil
+    }
+
+    /// CoreSVG ignores embedded `<style>` blocks, so a favicon that
+    /// leaves `fill="none"` on the root and colors its paths via CSS
+    /// (Astro's default favicon, GitHub's dark-mode favicon) loads
+    /// with a valid canvas yet rasterizes fully transparent. The only
+    /// reliable gate is to actually draw it and look for coverage.
+    private func rendersVisiblePixels(_ image: NSImage) -> Bool {
+      let sample = 32
+      guard
+        let bitmap = NSBitmapImageRep(
+          bitmapDataPlanes: nil,
+          pixelsWide: sample,
+          pixelsHigh: sample,
+          bitsPerSample: 8,
+          samplesPerPixel: 4,
+          hasAlpha: true,
+          isPlanar: false,
+          colorSpaceName: .deviceRGB,
+          bytesPerRow: 0,
+          bitsPerPixel: 0
+        ),
+        let context = NSGraphicsContext(bitmapImageRep: bitmap)
+      else {
+        return false
+      }
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = context
+      image.draw(in: NSRect(x: 0, y: 0, width: sample, height: sample))
+      NSGraphicsContext.restoreGraphicsState()
+      guard let pixels = bitmap.bitmapData else { return false }
+      for row in 0..<sample {
+        let rowStart = pixels + row * bitmap.bytesPerRow
+        for column in 0..<sample where rowStart[column * 4 + 3] > 25 {
+          return true
+        }
+      }
+      return false
     }
 
     /// Metadata-only probe via ImageIO — no bitmap is decompressed, so
