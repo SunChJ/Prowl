@@ -5,7 +5,7 @@
 | Date | Change | Ref |
 | --- | --- | --- |
 | 2026-07-27 | Design review of the proposed menus; object boundary settled (path/terminal actions follow the runnable-directory capability, not the node level); `Close All Tabs` moved to the teardown group | this entry's plan |
-| 2026-07-27 | Implemented worktree-row menu regroup + `newTerminalTab` reducer action, header menus, workspace-child menu, PR click-through, worktree-named close confirmation; tests + docs | PR #613 |
+| 2026-07-27 | Implemented worktree-row menu regroup + `newTerminalTab` reducer action, header menus, workspace-child menu, PR click-through, worktree-named close confirmation; tests + docs | PR #614 |
 
 ## Outcome & current state (as of 2026-07-27)
 

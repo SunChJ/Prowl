@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-07-27 |
-| **Primary PRs** | #613 |
+| **Primary PRs** | #614 |
 | **Related** | [050-sidebar-expand-active-and-worktree-tab-badges](../050-sidebar-expand-active-and-worktree-tab-badges/000-plan.md), `docs/components/repositories-and-worktrees.md` |
 
 ## Background
