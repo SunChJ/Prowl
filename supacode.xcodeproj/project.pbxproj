@@ -11,6 +11,7 @@
 		886A649F771240E8A5AC792D /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = 8D787DCF45744283A83F226F /* Dependencies */; };
 		C8B33B9AFE69E738ABFA08BE /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 497B582F42253CBC8FBF101F /* ComposableArchitecture */; };
 		D1BB05892F5ACB5900553512 /* YiTong in Frameworks */ = {isa = PBXBuildFile; productRef = D1BB05882F5ACB5900553512 /* YiTong */; };
+		66055880DA0BAF0D05D67D02 /* GlyphonKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0C10F7612452A2EF85A71541 /* GlyphonKit */; };
 		D63D00F72F2A5EEE00018D05 /* DependenciesTestSupport in Frameworks */ = {isa = PBXBuildFile; productRef = D63D00F62F2A5EEE00018D05 /* DependenciesTestSupport */; };
 		D64162B02F23CAF100260CA3 /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = D64162AD2F23CAF100260CA3 /* ghostty */; };
 		D64162B12F23CAF100260CA3 /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = D64162AE2F23CAF100260CA3 /* terminfo */; };
@@ -78,6 +79,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D1BB05892F5ACB5900553512 /* YiTong in Frameworks */,
+				66055880DA0BAF0D05D67D02 /* GlyphonKit in Frameworks */,
 				C8B33B9AFE69E738ABFA08BE /* ComposableArchitecture in Frameworks */,
 				886A649F771240E8A5AC792D /* Dependencies in Frameworks */,
 				D6A1CB312F1F4ABF004FDABD /* GhosttyKit.xcframework in Frameworks */,
@@ -162,6 +164,7 @@
 				8B2985744DB94333AE1B5878 /* Sentry */,
 				D6D054272F2E3EBF00D70ED5 /* PostHog */,
 				D1BB05882F5ACB5900553512 /* YiTong */,
+				0C10F7612452A2EF85A71541 /* GlyphonKit */,
 			);
 			productName = supacode;
 			productReference = D69CE04A2F1F378200584C57 /* Prowl.app */;
@@ -227,6 +230,7 @@
 				899A0B6B6B42424B92CD20C2 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				D6D054262F2E3EB300D70ED5 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				D1BB05872F5ACB5900553512 /* XCRemoteSwiftPackageReference "YiTong" */,
+				AA918EA35EA8913669138FE5 /* XCRemoteSwiftPackageReference "GlyphonKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D69CE04B2F1F378200584C57 /* Products */;
@@ -703,6 +707,14 @@
 				minimumVersion = 0.2.0;
 			};
 		};
+		AA918EA35EA8913669138FE5 /* XCRemoteSwiftPackageReference "GlyphonKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/onevcat/GlyphonKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 		D6D054262F2E3EB300D70ED5 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/PostHog/posthog-ios.git";
@@ -738,6 +750,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D1BB05872F5ACB5900553512 /* XCRemoteSwiftPackageReference "YiTong" */;
 			productName = YiTong;
+		};
+		0C10F7612452A2EF85A71541 /* GlyphonKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA918EA35EA8913669138FE5 /* XCRemoteSwiftPackageReference "GlyphonKit" */;
+			productName = GlyphonKit;
 		};
 		D63D00F62F2A5EEE00018D05 /* DependenciesTestSupport */ = {
 			isa = XCSwiftPackageProductDependency;

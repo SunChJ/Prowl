@@ -81,6 +81,19 @@ struct AppearanceSettingsView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
         }
+        Section("Repository Icons") {
+          Toggle(
+            "Detect project icons automatically",
+            isOn: $store.detectRepositoryIconsAutomatically
+          )
+          .help("Use a project's own app icon or logo as the repository icon when adding it.")
+          Text(
+            "Detection runs locally when a repository is added. It never replaces an icon "
+              + "you picked, and turning it off leaves already detected icons unchanged."
+          )
+          .foregroundStyle(.secondary)
+          .font(.callout)
+        }
         Section("Splits") {
           Toggle(
             "Dim unfocused split panes",

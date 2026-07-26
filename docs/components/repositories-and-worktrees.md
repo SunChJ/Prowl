@@ -155,7 +155,14 @@ it from Prowl (closing its open terminals); it does **not** delete files on disk
 
 `⌘O` opens the worktree with the selected open action. When the action is
 **Automatic** (the default), Prowl inspects the worktree's top-level files and
-prefers an app matching the project type: `.xcodeproj`/`.xcworkspace`/
+prefers an app matching the project type: Flutter (`pubspec.yaml` with a
+`flutter:` key) → Android Studio (then IntelliJ, then the VS Code family),
+React Native (`package.json` depending on `react-native` plus an `ios/` or
+`android/` folder) → VS Code family (then WebStorm, then Android Studio),
+Unity (`ProjectSettings/ProjectVersion.txt` at the root or one folder down,
+covering SDK repos that keep the Unity project beside tooling manifests) →
+Rider (then the VS Code family),
+`.xcodeproj`/`.xcworkspace`/
 `Package.swift`/`Project.swift` → Xcode, Gradle files → Android Studio (then
 IntelliJ IDEA, then IDEA EAP), `*.sln`/`*.csproj` → Rider, `pom.xml` →
 IntelliJ IDEA (then IDEA EAP), `go.mod` → GoLand, `Cargo.toml` → RustRover,
@@ -188,6 +195,32 @@ a custom color). The color tints the icon, the name, the Shelf spine (if
 `shelfSpineTintFollowsRepositoryColor`), and the window chrome (if
 `windowTintMode = repositoryColor`). You can also set a **custom display title**
 (`customTitle`) that overrides the folder name.
+
+**Automatic icon detection** (`detectRepositoryIconsAutomatically`, default on):
+when a repository or folder is newly added, Prowl scans it locally in the
+background for a high-confidence product icon — an Icon Composer `.icon`
+bundle (flattened via QuickLook) or `AppIcon.appiconset` raster for Apple
+projects, an Android launcher raster, the iOS/Android assets of a Flutter or
+React Native project, Tauri bundle icons from `src-tauri/tauri.conf.json`, a
+`package.json` `"icon"` declaration, or a web manifest icon / `rel=icon`
+favicon / root logo for web projects — and silently sets it as the repo icon.
+For any other repository, a last generic tier accepts a near-square
+`icon`/`logo`/`appicon` image (`svg`/`png`/`webp`) at the root, `assets/`, or
+`.github/`; wide wordmark logos and banners are rejected by an aspect-ratio
+gate. Detection never runs for existing repositories, workspaces, or repos
+that already have an icon, and it never replaces a manual choice. **Clear Icon** removes a
+detected icon and suppresses re-detection; only removing and re-adding the
+repository triggers a fresh scan. Detected icons keep their original colors
+(they are never tinted, unlike user-picked SVGs/symbols).
+
+**Suggest an Icon…** (Repository Icon menu): generates SF Symbol suggestions
+for the repository on-device from its README (falling back to the package
+manifest description, then the repo name). The picker sheet opens immediately
+with an inline loading state; results show the best pick plus four
+alternates, a reasoning line, and the input source. When Apple Intelligence
+is unavailable the results are labeled **Keyword suggestions**. Nothing is
+applied until you pick a symbol and confirm. Results are cached in memory for
+the session; **Regenerate** runs a fresh pass.
 
 ## Lifecycle states (what the row can show)
 

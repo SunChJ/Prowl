@@ -17,7 +17,6 @@ import UniformTypeIdentifiers
 struct RepositoryAppearancePickerView: View {
   @Bindable var store: StoreOf<RepositorySettingsFeature>
 
-  @State private var isSymbolPickerPresented = false
   @State private var isHoveringIconTile = false
   /// Retains the AppKit controller that drives the shared color panel for the
   /// custom-color swatch. `NSColorPanel` keeps its target weakly, so this must
@@ -46,7 +45,7 @@ struct RepositoryAppearancePickerView: View {
         importErrorBanner(message: message)
       }
     }
-    .sheet(isPresented: $isSymbolPickerPresented) {
+    .sheet(isPresented: $store.isSymbolPickerPresented) {
       TabIconPickerView(
         initialIcon: currentSymbolName,
         defaultIcon: "folder.fill",
@@ -55,8 +54,23 @@ struct RepositoryAppearancePickerView: View {
           "Pick a preset or enter any SF Symbol name. SVG and SF Symbol icons are tinted "
           + "with the repo color; bitmap formats keep their own colors.",
         presets: RepositoryIconPresets.presets,
+        suggestionsSection: { symbolName in
+          AnyView(
+            RepositorySymbolSuggestionsSection(
+              phase: store.symbolSuggestions,
+              onSuggest: {
+                if case .loaded = store.symbolSuggestions {
+                  store.send(.regenerateSuggestionsTapped)
+                } else {
+                  store.send(.suggestIconTapped)
+                }
+              },
+              onPick: { symbolName.wrappedValue = $0 }
+            )
+          )
+        },
         onApply: { applySymbolFromPicker($0) },
-        onCancel: { isSymbolPickerPresented = false }
+        onCancel: { dismissSymbolPicker() }
       )
     }
   }
@@ -99,7 +113,10 @@ struct RepositoryAppearancePickerView: View {
   private var iconMenu: some View {
     Menu {
       Button("Choose Symbol…") {
-        isSymbolPickerPresented = true
+        store.send(.chooseSymbolTapped)
+      }
+      Button("Suggest an Icon…") {
+        store.send(.suggestIconTapped)
       }
       Button("Choose Image…") {
         presentImageImporter()
@@ -181,6 +198,8 @@ struct RepositoryAppearancePickerView: View {
       return "Bitmap icons keep their original colors and ignore the repo color."
     case .userImage:
       return "User-provided SVGs are tinted with the repo color."
+    case .detectedImage:
+      return "Detected automatically from this project's assets. It keeps its original colors."
     case .sfSymbol:
       return "SF Symbols pick up the repo color when one is set."
     case .bundledAsset:
@@ -386,12 +405,18 @@ struct RepositoryAppearancePickerView: View {
   // MARK: - Actions
 
   private func applySymbolFromPicker(_ name: String?) {
-    isSymbolPickerPresented = false
+    dismissSymbolPicker()
     if let name {
       store.send(.setAppearanceIcon(.sfSymbol(name)))
     } else {
       store.send(.setAppearanceIcon(nil))
     }
+  }
+
+  /// Dismissal goes through the reducer so an in-flight suggestion run
+  /// is cancelled in one place.
+  private func dismissSymbolPicker() {
+    store.send(.symbolPickerDismissed)
   }
 
   // Uses `NSOpenPanel` (rather than SwiftUI's `.fileImporter`) so the

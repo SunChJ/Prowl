@@ -103,11 +103,55 @@ struct RepositorySettingsAppearanceTests {
 
     await store.send(.setAppearanceIcon(nil)) {
       $0.appearance.icon = nil
+      $0.appearance.iconDetectionSuppressed = true
     }
     await store.finish()
 
     #expect(removed.value.count == 1)
     #expect(removed.value.first?.0 == "old.png")
+  }
+
+  @Test func clearingDetectedIconRecordsSuppressionAndRemovesFile() async throws {
+    let removed = LockIsolated<[(String, URL)]>([])
+    let appearancesURL = URL(fileURLWithPath: "/tmp/appearances-\(UUID().uuidString).json")
+    let settingsStorage = SettingsTestStorage()
+    let store = makeStore(
+      initialAppearance: RepositoryAppearance(
+        icon: .detectedImage(filename: "detected.png"), color: nil
+      ),
+      iconAssetStore: .testRecording(removed: removed),
+      appearancesURL: appearancesURL,
+      settingsStorage: settingsStorage
+    )
+
+    await store.send(.setAppearanceIcon(nil)) {
+      $0.appearance.icon = nil
+      $0.appearance.iconDetectionSuppressed = true
+    }
+    await store.finish()
+
+    #expect(removed.value.first?.0 == "detected.png")
+    // Suppression must survive persistence so a pending detection
+    // can't restore the icon the user just cleared.
+    let persisted = readAppearances(at: appearancesURL, storage: settingsStorage)
+    #expect(persisted["repo-1"]?.iconDetectionSuppressed == true)
+  }
+
+  @Test func replacingDetectedIconWithManualOneRemovesDetectedFile() async throws {
+    let removed = LockIsolated<[(String, URL)]>([])
+    let store = makeStore(
+      initialAppearance: RepositoryAppearance(
+        icon: .detectedImage(filename: "detected.png"), color: nil
+      ),
+      iconAssetStore: .testRecording(removed: removed)
+    )
+
+    await store.send(.setAppearanceIcon(.sfSymbol("folder"))) {
+      $0.appearance.icon = .sfSymbol("folder")
+    }
+    await store.finish()
+
+    #expect(removed.value.first?.0 == "detected.png")
   }
 
   @Test func replacingUserImageRemovesPreviousFile() async throws {
@@ -223,11 +267,32 @@ struct RepositorySettingsAppearanceTests {
     )
 
     await store.send(.resetAppearance) {
-      $0.appearance = .empty
+      // Reset removed an icon, so it records suppression like Clear.
+      $0.appearance = RepositoryAppearance(iconDetectionSuppressed: true)
     }
     await store.finish()
 
     #expect(removed.value.first?.0 == "abc.png")
+    let persisted = readAppearances(at: appearancesURL, storage: settingsStorage)
+    #expect(persisted["repo-1"]?.iconDetectionSuppressed == true)
+    #expect(persisted["repo-1"]?.icon == nil)
+    #expect(persisted["repo-1"]?.color == nil)
+  }
+
+  @Test func resetAppearanceWithColorOnlyDoesNotSuppressDetection() async throws {
+    let appearancesURL = URL(fileURLWithPath: "/tmp/appearances-\(UUID().uuidString).json")
+    let settingsStorage = SettingsTestStorage()
+    let store = makeStore(
+      initialAppearance: RepositoryAppearance(icon: nil, color: .blue),
+      appearancesURL: appearancesURL,
+      settingsStorage: settingsStorage
+    )
+
+    await store.send(.resetAppearance) {
+      $0.appearance = .empty
+    }
+    await store.finish()
+
     let persisted = readAppearances(at: appearancesURL, storage: settingsStorage)
     #expect(persisted["repo-1"] == nil)
   }

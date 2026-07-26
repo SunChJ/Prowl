@@ -7,6 +7,13 @@ struct TabIconPickerView: View {
   let title: String
   let subtitle: String
   let presets: [String]
+  /// Optional host-provided section rendered between the header and
+  /// the symbol field — the repository picker injects its
+  /// "Suggested for this repository" content here. Receives a binding
+  /// to the symbol name so tapping a suggestion fills the field.
+  /// Type-erased because a generic parameter would forbid this type's
+  /// static preset table.
+  let suggestionsSection: ((Binding<String>) -> AnyView)?
   let onApply: (String?) -> Void
   let onCancel: () -> Void
 
@@ -19,6 +26,7 @@ struct TabIconPickerView: View {
     title: String = "Tab Icon",
     subtitle: String = "Pick a preset or enter any SF Symbol name available in your system.",
     presets: [String] = TabIconPickerView.symbolPresets,
+    suggestionsSection: ((Binding<String>) -> AnyView)? = nil,
     onApply: @escaping (String?) -> Void,
     onCancel: @escaping () -> Void
   ) {
@@ -27,6 +35,7 @@ struct TabIconPickerView: View {
     self.title = title
     self.subtitle = subtitle
     self.presets = presets
+    self.suggestionsSection = suggestionsSection
     self.onApply = onApply
     self.onCancel = onCancel
     _symbolName = State(initialValue: initialIcon ?? "")
@@ -40,6 +49,10 @@ struct TabIconPickerView: View {
         Text(subtitle)
           .font(.caption)
           .foregroundStyle(.secondary)
+      }
+
+      if let suggestionsSection {
+        suggestionsSection($symbolName)
       }
 
       HStack(spacing: 10) {

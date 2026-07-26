@@ -67,6 +67,7 @@ JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 | `shelfSpineTintFollowsRepositoryColor` | Bool | `true` | Tint shelf spines by repo color. |
 | `externalDiffToolID` | String | `built-in` | Tool used by diff badges and Show Diff: `built-in`, `hunk`, `filemerge`, `kaleidoscope`, or `custom`. |
 | `externalDiffCustomCommand` | String | `""` | Command template for `externalDiffToolID = custom`; supports `{leftPath}`, `{rightPath}`, `{worktreePath}`, `{repoPath}`, and `{branch}`. |
+| `detectRepositoryIconsAutomatically` | Bool | `true` | Scan newly added repositories locally for a high-confidence project icon (app icon, launcher, favicon/logo) and use it as the repo icon. Applies to future additions only; never replaces a manual icon. |
 
 ## Per-repository settings (`RepositorySettings`)
 

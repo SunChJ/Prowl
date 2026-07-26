@@ -114,4 +114,37 @@ struct RepositoryIconSourceTests {
   @Test func svgUserImageWithUppercaseExtensionIsTintable() {
     #expect(RepositoryIconSource.userImage(filename: "abc.SVG").isTintable)
   }
+
+  // MARK: - detectedImage
+
+  @Test func detectedImageUsesDetectedMarker() {
+    let icon = RepositoryIconSource.detectedImage(filename: "abc.png")
+    #expect(icon.storageString == "@detected:abc.png")
+  }
+
+  @Test func parseDetectedMarker() {
+    #expect(
+      RepositoryIconSource.parse("@detected:abc.svg") == .detectedImage(filename: "abc.svg")
+    )
+  }
+
+  @Test func detectedImageRoundTrip() {
+    let source = RepositoryIconSource.detectedImage(filename: "abc-123.webp")
+    #expect(RepositoryIconSource.parse(source.storageString) == source)
+  }
+
+  @Test func detectedImageIsNeverTintable() {
+    // A detected SVG keeps its intrinsic colors — unlike a user SVG.
+    #expect(!RepositoryIconSource.detectedImage(filename: "abc.svg").isTintable)
+    #expect(!RepositoryIconSource.detectedImage(filename: "abc.png").isTintable)
+  }
+
+  // MARK: - storedImageFilename
+
+  @Test func storedImageFilenameCoversFileBackedCases() {
+    #expect(RepositoryIconSource.userImage(filename: "a.png").storedImageFilename == "a.png")
+    #expect(RepositoryIconSource.detectedImage(filename: "b.svg").storedImageFilename == "b.svg")
+    #expect(RepositoryIconSource.sfSymbol("folder").storedImageFilename == nil)
+    #expect(RepositoryIconSource.bundledAsset("Docker").storedImageFilename == nil)
+  }
 }

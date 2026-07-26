@@ -113,6 +113,9 @@ struct RepositoriesFeature {
       "repositories.delayedPRRefresh.\(worktreeID)"
     }
     static let branchNameSuggestion = "repositories.branchNameSuggestion"
+    static func iconDetection(_ repositoryID: Repository.ID) -> String {
+      "repositories.iconDetection.\(repositoryID)"
+    }
   }
 
   @CasePathable
@@ -253,6 +256,11 @@ struct RepositoriesFeature {
     )
     case repositoryRemoved(Repository.ID, selectionWasRemoved: Bool)
     case openRepositorySettings(Repository.ID)
+    /// `filename` is the already-imported icon asset; scans that find
+    /// no valid candidate end silently. Commit guards run in the
+    /// reducer, which deletes the asset again when a guard fails.
+    case repositoryIconDetected(Repository.ID, filename: String)
+    case cancelPendingIconDetections
   }
 
   @CasePathable
@@ -548,6 +556,8 @@ struct RepositoriesFeature {
   @Dependency(\.date.now) var now
   @Dependency(BranchNameSuggestionClient.self) var branchNameSuggestionClient
   @Dependency(\.uuid) var uuid
+  @Dependency(\.repositoryIconDetector) var repositoryIconDetector
+  @Dependency(\.repositoryIconAssetStore) var repositoryIconAssetStore
 
   var body: some Reducer<State, Action> {
     CombineReducers {

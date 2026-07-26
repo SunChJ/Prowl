@@ -1,5 +1,5 @@
 {
-  "originHash" : "bff63941030a723fd0d04591f427af4a080c1f826220929fca37799cf784ab71",
+  "originHash" : "e72afa9e5f10f1505a3d4fb929733c3183a228458b9840524d15027f7afd88ff",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "fd16d76fd8b9a976d88bfb6cacc05ca8d19c91b6",
         "version" : "1.1.0"
+      }
+    },
+    {
+      "identity" : "glyphonkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/onevcat/GlyphonKit.git",
+      "state" : {
+        "revision" : "9a9e44a5e137fe45db7ff548c2fd64c1ae831815",
+        "version" : "0.1.0"
       }
     },
     {

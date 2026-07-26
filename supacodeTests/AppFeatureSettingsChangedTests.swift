@@ -41,6 +41,19 @@ struct AppFeatureSettingsChangedTests {
     await store.finish()
   }
 
+  @Test(.dependencies) func disablingIconDetectionCancelsPendingScans() async {
+    var settings = GlobalSettings.default
+    settings.detectRepositoryIconsAutomatically = false
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.settings(.delegate(.settingsChanged(settings))))
+    await store.receive(\.repositories.repositoryManagement.cancelPendingIconDetections)
+    await store.finish()
+  }
+
   @Test(.dependencies) func terminalFontSizeEventDoesNotFanOutGlobalSettingsEffects() async {
     let sentTerminalCommands = LockIsolated<[TerminalClient.Command]>([])
     let watcherCommands = LockIsolated<[WorktreeInfoWatcherClient.Command]>([])

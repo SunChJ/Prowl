@@ -52,6 +52,7 @@ struct SettingsFeature {
     var showNotificationDotOnDock: Bool
     var externalDiffToolID: String
     var externalDiffCustomCommand: String
+    var detectRepositoryIconsAutomatically: Bool
     var cliInstallStatus: CLIInstallStatus = .notInstalled
     var cliInstallShowAlert: Bool = true
     /// Whether macOS will render the Dock notification badge (notification
@@ -109,6 +110,7 @@ struct SettingsFeature {
       showNotificationDotOnDock = settings.showNotificationDotOnDock
       externalDiffToolID = settings.externalDiffToolID
       externalDiffCustomCommand = settings.externalDiffCustomCommand
+      detectRepositoryIconsAutomatically = settings.detectRepositoryIconsAutomatically
     }
 
     var globalSettings: GlobalSettings {
@@ -159,6 +161,7 @@ struct SettingsFeature {
       )
       settings.externalDiffToolID = externalDiffToolID
       settings.externalDiffCustomCommand = externalDiffCustomCommand
+      settings.detectRepositoryIconsAutomatically = detectRepositoryIconsAutomatically
       return settings
     }
   }

@@ -53,7 +53,7 @@ struct RepositoryIconImage: View {
         .resizable()
         .aspectRatio(contentMode: .fit)
         .accessibilityHidden(true)
-    case .userImage(let filename):
+    case .userImage(let filename), .detectedImage(let filename):
       userImage(filename: filename)
     }
   }
