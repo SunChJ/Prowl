@@ -146,6 +146,21 @@ struct ActiveAgentsPanel: View {
       }
       .help("Reveal the agent's working directory in Finder")
     }
+    if let transcriptPath = entry.session?.transcriptPath {
+      Divider()
+      Button("Copy Session Path") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(transcriptPath.path, forType: .string)
+      }
+      .help("Copy the on-disk path of this agent's session log")
+      Button("Reveal Session in Finder") {
+        NSWorkspace.shared.selectFile(
+          transcriptPath.path,
+          inFileViewerRootedAtPath: transcriptPath.deletingLastPathComponent().path
+        )
+      }
+      .help("Select this agent's session log in Finder")
+    }
   }
 
   private func repositoryName(for entry: ActiveAgentEntry) -> String {

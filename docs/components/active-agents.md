@@ -57,6 +57,12 @@ Rows appear in the order agents are first detected. (See
     switching to it.
   - **Copy Path** / **Reveal in Finder** — the agent's working directory (or
     its owning worktree's directory when the agent hasn't reported one).
+  - **Copy Session Path** / **Reveal Session in Finder** — the on-disk session
+    log of the agent's native session (e.g. Claude Code's
+    `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). Shown only when
+    Prowl has resolved the session to a file (see
+    [agent-detection](agent-detection.md)); agents with server-side or
+    store-only sessions (e.g. Amp threads) don't offer it.
 - **Keyboard navigation:** `⌥⌃↓` next agent, `⌥⌃↑` previous agent (wraps).
 - **Resize** the panel by dragging its top edge (height is remembered).
 - **Auto-show:** if `autoShowActiveAgentsPanel` is on and the panel is hidden, a

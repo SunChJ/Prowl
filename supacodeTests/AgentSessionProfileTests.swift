@@ -556,7 +556,7 @@ struct AgentSessionProfileTests {
   @Test func grokParsePathResolvesSessionDirectoryFromNestedFiles() {
     let profile = AgentSessionProfile.profile(for: .grok)
     let id = "019f5e7e-4269-7e33-9eaf-d535ff8ebafb"
-    // Create a temp tree so transcript resolution can succeed for events.
+    // The parser must never claim a transcript path that does not exist.
     let root = FileManager.default.temporaryDirectory
       .appending(path: "prowl-grok-parse-\(UUID().uuidString)", directoryHint: .isDirectory)
     let sessionDir = root.appending(path: ".grok/sessions/%2FUsers%2Fme%2FApp/\(id)")
@@ -566,8 +566,8 @@ struct AgentSessionProfileTests {
 
     let parsedEvents = profile.parsePath(sessionDir.appending(path: "events.jsonl").path)
     #expect(parsedEvents?.id == id)
-    // Every non-chat open file canonicalizes to the conversation log.
-    #expect(parsedEvents?.transcriptPath?.lastPathComponent == "chat_history.jsonl")
+    // Before chat history exists, the opened events log is the only known log.
+    #expect(parsedEvents?.transcriptPath?.lastPathComponent == "events.jsonl")
 
     try? FileManager.default.createDirectory(
       at: sessionDir.appending(path: "terminal"),
@@ -577,9 +577,13 @@ struct AgentSessionProfileTests {
     FileManager.default.createFile(atPath: nestedPath, contents: Data())
     let parsedNested = profile.parsePath(nestedPath)
     #expect(parsedNested?.id == id)
-    // Non-transcript files resolve to the conversation log at the root.
-    #expect(parsedNested?.transcriptPath?.lastPathComponent == "chat_history.jsonl")
-    #expect(parsedNested?.transcriptPath?.deletingLastPathComponent().lastPathComponent == id)
+    // An arbitrary nested file identifies the session but is not itself a session log.
+    #expect(parsedNested?.transcriptPath == nil)
+
+    let chatHistory = sessionDir.appending(path: "chat_history.jsonl")
+    try? "{}".write(to: chatHistory, atomically: true, encoding: .utf8)
+    let parsedAfterChat = profile.parsePath(nestedPath)
+    #expect(parsedAfterChat?.transcriptPath?.path == chatHistory.path)
 
     #expect(profile.parsePath("/Users/me/.grok/sessions/%2FUsers%2Fme%2FApp/not-a-uuid/events.jsonl") == nil)
   }
