@@ -7,11 +7,15 @@ filesystem work from `SidebarListView.activeAgentRowDisplays` and dropped proces
 94–134% to 29–70%. A long-running instance still burned 45–66% of a core with agents
 attached, so profiling continued against the same workload.
 
-This amendment records six fixes and, as much as the fixes themselves, the method that
+This amendment records eight fixes and, as much as the fixes themselves, the method that
 found them: at each step the largest remaining cost was measured, attributed to a specific
-symbol, and the fix aimed at that symbol only. Four of the six were only visible after an
-earlier one had shifted the profile, and two of them turned out to be the same defect
+symbol, and the fix aimed at that symbol only. Six of the eight were only visible after an
+earlier one had shifted the profile, and three of them turned out to be the same defect
 arriving through a different field.
+
+Fixes 7 and 8 were added after the first six were verified. Fix 7 addresses the invalidation
+source that the original "Still open" section could not name — it was found by sampling a
+several-100% spike while it was happening, rather than by profiling steady state.
 
 Measurements come from `sample(1)` over a Debug build. Sample counts are reported as a
 percentage of one core (a 20-second window at 1 ms produces roughly 15,000 samples per
@@ -185,6 +189,65 @@ canonically equivalent, so byte matching would miss text differing only in NFC/N
 composition and would silently fail to resolve those sessions — a correctness hazard for
 roughly 1% of a core.
 
+## Fix 7 — Animated tab titles rebuilding the tab bar
+
+The six fixes above left the profile in the shape the original "Still open" section
+described: graph revalidation outweighing every app-owned `body`, plus a comparable AppKit
+layout cost, with no named requester for either. Steady-state sampling could not close it.
+
+What closed it was catching the failure at full size. A long-running instance reached several
+100% of a core, and a 300-second `sample(1)` taken while it was happening produced
+an attribution that a 20-second steady-state window had never shown:
+
+| main thread (300 s window, 32 tabs) | %core  |
+| ----------------------------------- | ------ |
+| busy (non-idle leaves)              | 82.50% |
+| `GraphHost.flushTransactions`       | 47.78% |
+| `CA::Transaction::commit`           | 32.33% |
+| ↳ AppKit view-tree layout           | 18.96% |
+| `detectAgentState`                  | 2.39%  |
+
+Detection — the subject of Fixes 1–6 — was 2.4% against 80% for invalidation and layout.
+
+**Root cause.** `TerminalTabItem.title` is a `var` inside `TerminalTabManager.tabs`, an array
+on an `@Observable` class. Observation granularity is per-property, not per-element: writing
+one element's title invalidates every view that read `tabs`. The same spinner animation
+behind Fix 5 therefore had a second consumer nobody had accounted for. At roughly 10 Hz per
+working pane, the tab bar rebuilt every tab 20–30 times per second, and each rebuild also
+marked the hosting view tree as needing layout — which is exactly the "most likely the same
+defect" hypothesis the previous section recorded, confirmed.
+
+`updateTitle` now drops no-op writes outright and holds a changed title that arrives inside a
+one-second window, newest-wins. As with Fix 5, a spinner that stops animating would strand its
+final frame, so `flushPendingTitles` lands it from the detection poll — no timer, because the
+poll is already running for precisely the panes that animate. `@ObservationIgnored` on both
+bookkeeping dictionaries keeps the coalescing from defeating itself.
+
+**A second defect in the same view.** `TerminalTabsRowView` looked each row up with
+`manager.tabs.first(where:)` *inside* a `ForEach` over that same array — 1,024 comparisons per
+rebuild at 32 tabs. It now reads `tabs` once and indexes it into a dictionary. This was
+harmless at the rebuild rate the tab bar was designed for and quadratic at the rate the
+spinner produced.
+
+## Fix 8 — Working-directory resolution repeated per render
+
+[003](003-sidebar-agent-row-resolution.md) made index *construction* cheap and cached the
+index against the repository set. The query side stayed hot: every lookup still normalized the
+directory being asked about, and `PathPolicy.normalizeURL` is a `fileExists` check plus
+`resolvingSymlinksInPath()` — one `getattrlist` per path component. The sidebar re-runs
+whenever any agent's state changes, so unchanged directories were re-normalized every frame.
+
+`WorktreeDirectoryIndexCache` now memoizes resolutions keyed by the directory as asked for. A
+resolution is a pure function of that directory and the index, so it stays valid until the
+index is rebuilt; rebuilding clears it in the same step, ordered so a stale answer cannot
+outlive its index. A pane can `cd` anywhere, so the memo is capped at 256 entries rather than
+assumed bounded by pane count.
+
+Measured at 0.11–0.16% of a core before the fix and 1.13% in the post-fix sample — the figure
+went *up* in absolute terms because the sample that produced it carried a far heavier
+workload. This fix is small, and an earlier commit message overstated it by quoting a
+14-millisecond window; the amended message records the real figures.
+
 ## Verification
 
 Structural results are load-independent and hold regardless of agent count:
@@ -227,49 +290,106 @@ the number independently. `scripts/measure-agent-detection-cpu.sh` records the a
 average, and per-symbol attribution together for this reason — a CPU percentage without its
 workload is not a measurement.
 
+## Verification of Fixes 7 and 8
+
+Measured on a live instance after installing the fixed build, against 28 tabs with 6 agents
+working and 1 blocked. A 20-second `sample(1)`, 13,138 samples at 1 ms:
+
+| main thread                   | spike (32 tabs) | after (28 tabs) | change |
+| ----------------------------- | --------------- | --------------- | ------ |
+| busy (non-idle leaves)        | 82.50%          | 11.70%          | −86%   |
+| `GraphHost.flushTransactions` | 47.78%          | 3.86%           | −92%   |
+| `CA::Transaction::commit`     | 32.33%          | 2.09%           | −94%   |
+| ↳ AppKit `_layoutViewTree`    | 18.96%          | 1.54%           | −92%   |
+| `detectAgentState`            | 2.39%           | 3.82%           | —      |
+| directory resolution          | —               | 1.13%           | —      |
+
+The main thread is 88.30% idle. `detectAgentState` did not grow; it stopped being buried, and
+is now the largest named main-thread cost.
+
+Unlike Fix 5, Fix 7 **is** observable from outside the app. `prowl list` reports `tab.title`
+from the live snapshot, which reads the same `tabs` array the tab bar observes. Polling it
+7.9 times per second for 30 seconds across 28 tabs:
+
+| animating tab                | changes/s |
+| ---------------------------- | --------- |
+| `[ . ] Action Required \| …` | 0.96      |
+| `[ ! ] Action Required \| …` | 0.96      |
+| `⠴ plugins-d`                | 0.93      |
+| `⠹ spx-j`                    | 0.93      |
+| three further panes          | 0.73      |
+
+Every animating tab sits at or below the one-second interval, against a measured source rate
+of 9.79 changes/second per working pane. Seven animating tabs produced 6.01 writes/second
+where the source would have produced roughly 68. Blocked panes animate too — their
+`[ . ]`/`[ ! ]` alternation was among the fastest — so a mostly-blocked roster is not a quiet
+one.
+
+Sustained process CPU, differenced from `ps -o time=` over awake time only:
+
+| window                 | agent mix             | %core |
+| ---------------------- | --------------------- | ----- |
+| 25.6 min               | 6 working, 1 blocked  | 18.3% |
+| 63 min (sleep-excised) | 1 working, 10 blocked | 24.5% |
+
+**Caveats.** The comparison run carried 28 tabs against the spike's 32, and the post-fix
+sample is a 20-second window against the spike's 300. Dividing CPU time by wall-clock
+understates cost whenever the host sleeps — two clamshell sleeps occurred during this session
+and the figures above exclude them. `scripts/capture-cpu-spike.sh` was written to catch a
+recurrence unattended; across four runs it never fired, but its coverage was thin enough
+(sleep, plus runs terminated early) that this is not evidence of absence.
+
 ## Still open
 
-With detection reduced by roughly a third, the SwiftUI flush is again the larger of the two
-paths, and the ratio that motivated Fixes 1, 2 and 5 has not changed shape:
+The invalidation source that the previous revision could not name was Fix 7, and the AppKit
+layout cost fell with it — confirming that the two were one defect billed to two subsystems,
+as hypothesized. What remains is smaller and differently shaped:
 
-| under `flushTransactions` (5.74% total) | %core |
-| --------------------------------------- | ----- |
-| `AG::Subgraph::update`                  | 0.81% |
-| `AG::Graph::propagate_dirty`            | 0.58% |
-| `AG::Graph::UpdateStack::update`        | 0.41% |
-| largest single app view body            | 0.30% |
+- `detectAgentState` at 3.82% is now the largest named main-thread cost. Fixes 3, 4 and 6
+  reduced it 34–48% per pane; the remainder is the 300 ms poll cadence itself, which every
+  agent pane runs regardless of state.
+- A residual `flushTransactions` at 3.86% with `propagate_dirty` at 0.33%. Far below the
+  ratio that motivated Fixes 1, 2, 5 and 7, and no longer the dominant path.
 
-Graph revalidation still outweighs every app-owned `body`, so something continues to dirty the
-graph more often than user-visible state changes. The remaining emission source is not
-identified: titles and `rawState` are both accounted for, and no view is slow enough to matter.
-Narrowing it further needs in-app instrumentation (`Self._printChanges()` or an emission
-counter), not `sample(1)`, because the profile can show that invalidation happens but not what
-requested it.
+Neither is worth attacking without first establishing that the current cost is a problem.
 
-A second cost sits entirely outside the SwiftUI path: `CA::Transaction::flush_as_runloop_observer`
-measured 6.70% of a core here and 11.77% on a starved host. Despite the CoreAnimation symbol
-names it is not layer rendering. The commit runs AppKit's display-cycle observer, which
-performs constraint-based layout of the whole window:
+## Refs
 
-```
-CA::Transaction::commit                        4.27%
-  run_commit_handlers → NSDisplayCycleFlush     4.19%
-    -[NSWindow layoutIfNeeded]                  3.85%
-      -[NSWindow _layoutViewTree]               3.77%
-        -[NSView _layoutSubtreeWithOldSize:]    ×33 nested frames
-```
+All branches are off `main` and unmerged at time of writing. The fixes do not map one-to-one
+onto branches: two pairs share a commit, and the branches form three stacks.
 
-The recursion is 33 `NSView` levels deep and still carries 18% of its root cost at the deepest
-frame, over a window holding 32 tabs across 29 worktrees. Almost no app-owned frame appears
-anywhere inside it — the cost is tree traversal, not any view's own layout. Two candidates were
-ruled out by measurement: `NSProgressIndicator`, the sidebar's per-worktree spinner, at 0.01%
-(12 were animating), and terminal surface rendering, which does not appear on the path.
+**Stack A** — `perf/agent-entry-churn`, then `perf/agent-title-coalescing` on top of it:
 
-This is most likely the same defect as the graph invalidation above rather than a second one.
-An invalidation that dirties the SwiftUI graph also marks the hosting view tree as needing
-layout, and the two costs then bill separately — roughly 5.7% in graph revalidation plus 3.8%
-in AppKit layout, together larger than agent detection. Finding the single invalidation source
-would address both; optimizing either subtree in isolation would not.
+| commit     | subject                                                          | fix   |
+| ---------- | ---------------------------------------------------------------- | ----- |
+| `eee5a988` | Stop agent-state churn from re-rendering the whole sidebar       | 1 + 2 |
+| `ad6e10e2` | Drop dead try/throws from the emission dedup fixture             | —     |
+| `4c7725ad` | Space out Active Agents emissions driven by animated pane titles | 5     |
+
+**Stack B** — `perf/session-fingerprint-cache`, then `perf/session-scan-cache`:
+
+| commit     | subject                                                                 | fix   |
+| ---------- | ----------------------------------------------------------------------- | ----- |
+| `2d33d2e3` | Cut agent session resolution CPU by reusing parsed transcript tails     | 3 + 4 |
+| `a06a0b31` | Skip escape stripping when a fragment holds no escape byte              | 4     |
+| `eae28144` | Share transcript directory walks across panes and cut redundant scoring | 6     |
+
+**Stack C** — `perf/sidebar-worktree-resolution`, then `perf/worktree-directory-query-memo`.
+`3420844c` is [003](003-sidebar-agent-row-resolution.md)'s fix rather than one of these eight;
+`c1c0b1d0` and `1aa1096a` are its documentation:
+
+| commit     | subject                                                      | fix |
+| ---------- | ------------------------------------------------------------ | --- |
+| `3420844c` | Resolve agent rows through a cached worktree directory index | 003 |
+| `2a7090cb` | Memoize agent working-directory resolution across renders    | 8   |
+
+**Standalone:** `perf/tab-title-coalescing` (`8662264d`) carries fix 7.
+`perf/agent-detection-scan-cache` (`9648f2ea`, "Memoize agent screen scans to skip re-parsing
+unchanged terminals") is part of this wave but is not one of the numbered fixes — it is covered
+only by `AgentScreenScanCacheTests` below. `perf/tca-action-log-gating` (`51cdab5b`) gates
+per-action TCA logging behind `PROWL_LOG_TCA_ACTIONS` and is a logging change, not a fix.
+
+`perf/combined-verify` stacks everything for local verification and is not a PR candidate.
 
 ## Tests
 
@@ -283,6 +403,19 @@ would address both; optimizing either subtree in isolation would not.
   shared across differing thresholds, and kept separate per root.
 - `AgentSessionFingerprintNormalizeTests` — both optimized paths reproduce the original
   formulation over a corpus and 2,000 seeded random inputs.
+- `TerminalTabTitleCoalescingTests` — 11 tests: frames inside the interval never reach `tabs`,
+  the flush lands only the most recent suppressed title, coalescing is per-tab rather than
+  global, a locked title is neither written nor held, a custom title masks a flushed live one,
+  and closing a tab drops its coalescing state.
+- `WorktreeDirectoryIndexTests` — the memo is proven by revoking the symlink a first lookup
+  resolved through: an answer that survives that can only have been memoized. Plus
+  invalidation on a repository-set change and eviction past the 256-entry cap.
+
+`TerminalTabManager` and `WorktreeTerminalState` coalesce on separate clocks, so
+`AgentEntryTitleCoalescingTests` stamps its titles through a fixture clock spaced past the tab
+interval. Without it the tab layer withholds a title the entry test expects to see, and the
+two mechanisms cannot be exercised independently. Whichever of the two coalescing branches
+merges second needs this fixture change.
 
 ## Lessons
 
@@ -292,8 +425,20 @@ profile; each became the top cost only after the one before it landed.
 **A cheap check that proves an expensive one unnecessary beats optimizing the expensive one.**
 The ESC-absence guard outperformed the hand-written ASCII scanner it was meant to support.
 
-**Fixing one volatile field does not fix the class.** `rawState` and `paneTitle` were the
-same defect. A field's presence in an equatable identity is what matters, not what it means.
+**Fixing one volatile field does not fix the class.** `rawState`, `paneTitle`, and
+`TerminalTabItem.title` were one defect found three times, each through a different consumer.
+A field's presence in an equatable identity — or in an observed collection — is what matters,
+not what it means. After closing two of them the third was still costing 80% of a core.
+
+**Sample the failure, not the steady state.** Six fixes of steady-state profiling could not
+name the invalidation source; one 300-second sample taken *while* the spike was happening
+named it immediately, at 47.78%. A cost that is intermittent is invisible in a window that
+averages over its absence, which is what `scripts/capture-cpu-spike.sh` exists to avoid.
+
+**Observation granularity is per-property, not per-element.** Mutating one element of an
+`@Observable` array invalidates every reader of that array. A 10 Hz write to one tab's title
+rebuilt all 32 — and a `first(where:)` lookup that was harmless at the designed rebuild rate
+became quadratic at the spinner's.
 
 **Attribute the flush before optimizing views.** 76% `AttributeGraph` internals against 13%
 app view bodies said "dirtied too often", not "views too slow".
