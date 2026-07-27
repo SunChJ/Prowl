@@ -131,6 +131,18 @@ final class TerminalTabManager {
     pendingLiveTitles = pendingLiveTitles.filter { liveIDs.contains($0.key) }
   }
 
+  /// Every tab the coalescing bookkeeping still holds an entry for.
+  ///
+  /// The dictionaries are private so a title write is only ever observable through
+  /// `tabs`, which is what keeps them from invalidating the tab bar. That also hides
+  /// whether closing a tab pruned them: `flushPendingTitles` skips an absent tab on
+  /// its own existence guard, so it returns the same empty result either way. Without
+  /// this seam a test cannot tell a working prune from a leak that grows with every
+  /// tab ever closed.
+  var coalescedTabIDsForTesting: Set<TerminalTabID> {
+    Set(lastLiveTitleWriteAt.keys).union(pendingLiveTitles.keys)
+  }
+
   /// Sets (or clears, when blank) the user-defined title. Returns `true` when
   /// the visible `displayTitle` actually changed.
   @discardableResult

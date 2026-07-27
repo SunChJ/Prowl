@@ -26,11 +26,7 @@ extension WorktreeTerminalState {
         guard let self, let view, self.surfaces[view.id] != nil else { return }
         let hasAgent = await self.detectAgentState(for: view, tabId: tabId)
         let now = Date()
-        // Lands the last frame of a spinner that stopped animating. Cheap when
-        // nothing is pending, which is the common case.
-        for flushedTabID in self.tabManager.flushPendingTitles(now: now) {
-          self.refreshAgentEntriesForTitleChange(in: flushedTabID)
-        }
+        self.flushCoalescedTabTitles(now: now)
         let schedule = self.agentDetectionSchedules[view.id] ?? .cold
         self.agentDetectionSchedules[view.id] =
           hasAgent ? schedule.observedAgent(now: now) : schedule.observedNoAgent(now: now)
@@ -268,6 +264,23 @@ extension WorktreeTerminalState {
     for surfaceID in surfaceIDs {
       refreshAgentEntryForTitleChange(surfaceID: surfaceID, in: tabId)
     }
+  }
+
+  /// Lands tab titles held back by coalescing and refreshes the Active Agents
+  /// entries that follow them — the same refresh a title written directly through
+  /// `updateTitle` triggers, so the two paths cannot drift.
+  ///
+  /// Driven by the detection poll: a spinner that stops animating leaves no further
+  /// title change to carry its last frame, and the poll is already running for
+  /// exactly the panes that animate. Split out of that `Task` loop because the loop
+  /// offers no synchronous seam a test can drive.
+  @discardableResult
+  func flushCoalescedTabTitles(now: Date = Date()) -> [TerminalTabID] {
+    let flushed = tabManager.flushPendingTitles(now: now)
+    for tabID in flushed {
+      refreshAgentEntriesForTitleChange(in: tabID)
+    }
+    return flushed
   }
 
   /// Single-pane variant for a surface whose own title changed without moving

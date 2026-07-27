@@ -127,13 +127,56 @@ struct TerminalTabTitleCoalescingTests {
     #expect(manager.tabs.first(where: { $0.id == id })?.displayTitle == "my tab")
   }
 
+  /// Asserts the bookkeeping itself, not `flushPendingTitles`'s return value: that
+  /// value is empty for a closed tab whether or not the prune ran, because the flush
+  /// skips any id missing from `tabs`. Reading the retained ids is the only way to
+  /// tell a working prune from a leak that grows with every tab ever closed.
   @Test func closingATabDropsItsCoalescingState() {
     let (manager, id) = makeManager()
     _ = manager.updateTitle(id, title: "⠋ working", now: start)
     _ = manager.updateTitle(id, title: "⠙ working", now: start.addingTimeInterval(0.2))
+    #expect(manager.coalescedTabIDsForTesting == [id], "Both a last-write stamp and a pending title are held")
+
     manager.closeTab(id)
 
+    #expect(manager.coalescedTabIDsForTesting.isEmpty, "Closing the tab must drop its bookkeeping, not leak it")
     #expect(manager.flushPendingTitles(now: start.addingTimeInterval(5)).isEmpty)
     #expect(manager.tabs.isEmpty)
+  }
+
+  /// A surviving tab must keep its state when a sibling closes, so the prune cannot
+  /// be "fixed" by clearing everything.
+  @Test func closingOneTabKeepsAnotherTabsCoalescingState() {
+    let (manager, kept) = makeManager()
+    let closed = manager.createTab(title: "second", icon: nil)
+    _ = manager.updateTitle(kept, title: "⠋ kept", now: start)
+    _ = manager.updateTitle(closed, title: "⠋ closed", now: start)
+
+    manager.closeTab(closed)
+
+    #expect(manager.coalescedTabIDsForTesting == [kept])
+  }
+
+  /// Pins the comparison at `TerminalTabManager.swift`'s `<` against the interval.
+  /// Without a case landing exactly on the boundary, changing it to `<=` — which
+  /// would withhold a title that has waited the full interval — passes every other
+  /// test in this file.
+  @Test func aTitleArrivingExactlyOnTheIntervalIsWritten() {
+    let (manager, id) = makeManager()
+    _ = manager.updateTitle(id, title: "⠋ working", now: start)
+    let boundary = start.addingTimeInterval(TerminalTabManager.liveTitleCoalescingInterval)
+
+    #expect(manager.updateTitle(id, title: "⠙ working", now: boundary))
+    #expect(title(of: manager, id) == "⠙ working")
+  }
+
+  /// The other side of the same boundary: one instant earlier must still be withheld.
+  @Test func aTitleArrivingJustInsideTheIntervalIsWithheld() {
+    let (manager, id) = makeManager()
+    _ = manager.updateTitle(id, title: "⠋ working", now: start)
+    let justInside = start.addingTimeInterval(TerminalTabManager.liveTitleCoalescingInterval - 0.001)
+
+    #expect(manager.updateTitle(id, title: "⠙ working", now: justInside) == false)
+    #expect(title(of: manager, id) == "⠋ working")
   }
 }
