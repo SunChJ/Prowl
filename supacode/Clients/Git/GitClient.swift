@@ -496,10 +496,10 @@ struct GitClient {
       if probedByteCount < binaryProbeByteCount {
         let remainingProbeCount = binaryProbeByteCount - probedByteCount
         let probe = chunk.prefix(remainingProbeCount)
-        if probe.contains(0x00) { return nil }
+        if probe.containsByte(0x00) { return nil }
         probedByteCount += probe.count
       }
-      lineCount += chunk.reduce(0) { $0 + ($1 == 0x0A ? 1 : 0) }
+      lineCount += chunk.countOccurrences(of: 0x0A)
       lastByte = chunk.last
     }
 
@@ -1406,4 +1406,40 @@ struct GitClient {
     return GithubRemoteInfo(host: remoteWebInfo.host, owner: owner, repo: repo)
   }
 
+}
+
+/// Byte scans over `Data`'s contiguous storage.
+///
+/// `Data` conforms to `Sequence`, so `reduce` and `contains` walk it through
+/// `Data.Iterator` with a value-witness call per byte. Sampling a running instance
+/// for 300 s attributed roughly one whole core to exactly that path inside
+/// `countLines` — 31% in `Sequence.reduce`, 30% in `Data.Iterator.next`, 22% in
+/// value witnesses — about 72% of everything the process was burning, while
+/// counting lines in untracked files. `memchr` covers the same bytes in one
+/// vectorized pass over contiguous memory.
+extension Data {
+  /// Occurrences of `byte` in the whole buffer.
+  fileprivate nonisolated func countOccurrences(of byte: UInt8) -> Int {
+    withUnsafeBytes { raw -> Int in
+      guard let base = raw.baseAddress, !raw.isEmpty else { return 0 }
+      var count = 0
+      var scanned = 0
+      while scanned < raw.count,
+        let hit = memchr(base + scanned, Int32(byte), raw.count - scanned)
+      {
+        // memchr returns the hit itself, so resume one byte past it.
+        scanned = base.distance(to: UnsafeRawPointer(hit)) + 1
+        count += 1
+      }
+      return count
+    }
+  }
+
+  /// Whether `byte` occurs anywhere in the buffer. Stops at the first hit.
+  fileprivate nonisolated func containsByte(_ byte: UInt8) -> Bool {
+    withUnsafeBytes { raw -> Bool in
+      guard let base = raw.baseAddress, !raw.isEmpty else { return false }
+      return memchr(base, Int32(byte), raw.count) != nil
+    }
+  }
 }

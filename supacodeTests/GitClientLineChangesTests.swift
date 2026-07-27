@@ -312,6 +312,62 @@ struct GitClientLineChangesTests {
     #expect(count == 2)
   }
 
+  /// The reader works in 64 KiB chunks, so a scan that resumed from the wrong offset
+  /// after a hit — or restarted per chunk — would miscount only once a file is larger
+  /// than one chunk. Every other case in this file fits in a single chunk.
+  @Test func countLinesInFilesCountsAcrossChunkBoundaries() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    // 40_000 lines of "line\n" is ~200 KB, spanning four chunks.
+    let content = String(repeating: "line\n", count: 40_000)
+    try content.write(to: tempRoot.appending(path: "big.txt"), atomically: true, encoding: .utf8)
+
+    #expect(GitClient.countLinesInFiles(["big.txt"], relativeTo: tempRoot) == 40_000)
+  }
+
+  /// A newline landing on the final byte of a chunk is the boundary case: the scan must
+  /// neither drop it nor double-count it against the next chunk's first byte.
+  @Test func countLinesInFilesCountsANewlineOnTheChunkBoundary() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    let chunkByteCount = 64 * 1_024
+    var bytes = Data(repeating: UInt8(ascii: "a"), count: chunkByteCount - 1)
+    bytes.append(0x0A)  // exactly the last byte of chunk one
+    bytes.append(contentsOf: Data("second\n".utf8))
+    try bytes.write(to: tempRoot.appending(path: "boundary.txt"))
+
+    #expect(GitClient.countLinesInFiles(["boundary.txt"], relativeTo: tempRoot) == 2)
+  }
+
+  /// Binary detection probes only the first 8 KiB. A NUL past that window has always
+  /// been counted as text, and the faster scan must not widen the probe by accident.
+  @Test func countLinesInFilesTreatsALateNULAsText() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    var bytes = Data(repeating: UInt8(ascii: "a"), count: 10_000)
+    bytes.append(0x00)  // beyond the 8 KiB probe
+    bytes.append(0x0A)
+    try bytes.write(to: tempRoot.appending(path: "late-nul.txt"))
+
+    #expect(GitClient.countLinesInFiles(["late-nul.txt"], relativeTo: tempRoot) == 1)
+  }
+
+  @Test func countLinesInFilesCountsAnEmptyFileAsZero() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try Data().write(to: tempRoot.appending(path: "empty.txt"))
+
+    #expect(GitClient.countLinesInFiles(["empty.txt"], relativeTo: tempRoot) == 0)
+  }
+
   private func writeGitIndexHeader(
     version: UInt32 = 2,
     entryCount: UInt32,
