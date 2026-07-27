@@ -6,12 +6,34 @@ import Observation
 final class TerminalTabManager {
   var tabs: [TerminalTabItem] = [] {
     didSet {
+      // Only when tabs actually went away: this fires on every title write too,
+      // and the prune is O(n) where the guard is O(1).
+      if tabs.count < oldValue.count {
+        pruneTitleCoalescingState()
+      }
       guard let editingTabID, !tabs.contains(where: { $0.id == editingTabID }) else { return }
       self.editingTabID = nil
     }
   }
   var selectedTabId: TerminalTabID?
   private(set) var editingTabID: TerminalTabID?
+
+  /// Shortest gap between two live title writes for one tab.
+  ///
+  /// An agent TUI animates a spinner glyph inside its terminal title at roughly
+  /// 10 Hz. `tabs` is observed as a whole, so one tab's frame invalidates every
+  /// view reading the array — the tab bar then rebuilds every tab and AppKit
+  /// re-lays the window's view tree. Sampling a spike measured that at 47% of a
+  /// core in `flushTransactions` plus 32% in the CoreAnimation commit, against
+  /// 2% for agent detection.
+  static let liveTitleCoalescingInterval: TimeInterval = 1
+
+  /// Bookkeeping only — a write here must never invalidate the tab bar, which is
+  /// the whole point of the coalescing.
+  @ObservationIgnored private var lastLiveTitleWriteAt: [TerminalTabID: Date] = [:]
+  /// The most recent title held back by coalescing. A spinner that stops leaves
+  /// no further change to carry it, so `flushPendingTitles` lands it instead.
+  @ObservationIgnored private var pendingLiveTitles: [TerminalTabID: String] = [:]
 
   /// Creates a tab next to the current selection. With `select: false` the
   /// selection is left untouched (background creation, e.g. a headless handoff
@@ -45,15 +67,68 @@ final class TerminalTabManager {
   /// `displayTitle` actually changed (a custom title masks live updates),
   /// so callers can refresh derived UI like the Active Agents subtitle.
   @discardableResult
-  func updateTitle(_ id: TerminalTabID, title: String) -> Bool {
+  func updateTitle(_ id: TerminalTabID, title: String, now: Date = Date()) -> Bool {
     guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
     guard !tabs[index].isTitleLocked else { return false }
     // A TUI re-emits the same title constantly; skip the no-op write so it
     // doesn't invalidate the tab bar while an agent streams output.
     guard tabs[index].title != title else { return false }
+    // A changed title arriving inside the interval is almost always the next
+    // frame of an animation. Hold it rather than rebuilding the tab bar for it;
+    // the newest one wins, so nothing queues up.
+    if let lastWriteAt = lastLiveTitleWriteAt[id],
+      now.timeIntervalSince(lastWriteAt) < Self.liveTitleCoalescingInterval
+    {
+      pendingLiveTitles[id] = title
+      return false
+    }
+    return writeLiveTitle(title, toTabAt: index, id: id, now: now)
+  }
+
+  /// Lands any held-back title whose interval has elapsed. Returns the tabs whose
+  /// visible `displayTitle` moved, so callers can refresh derived UI exactly as
+  /// they would after `updateTitle`.
+  ///
+  /// Driven by the agent-detection poll rather than a timer: the only way a
+  /// pending title is left stranded is that the writes stopped, and the poll is
+  /// already running for precisely the panes that animate.
+  @discardableResult
+  func flushPendingTitles(now: Date = Date()) -> [TerminalTabID] {
+    guard !pendingLiveTitles.isEmpty else { return [] }
+    var changed: [TerminalTabID] = []
+    for (id, title) in pendingLiveTitles {
+      guard let lastWriteAt = lastLiveTitleWriteAt[id],
+        now.timeIntervalSince(lastWriteAt) >= Self.liveTitleCoalescingInterval
+      else { continue }
+      pendingLiveTitles.removeValue(forKey: id)
+      guard let index = tabs.firstIndex(where: { $0.id == id }),
+        !tabs[index].isTitleLocked,
+        tabs[index].title != title
+      else { continue }
+      if writeLiveTitle(title, toTabAt: index, id: id, now: now) {
+        changed.append(id)
+      }
+    }
+    return changed
+  }
+
+  private func writeLiveTitle(
+    _ title: String,
+    toTabAt index: Int,
+    id: TerminalTabID,
+    now: Date
+  ) -> Bool {
+    pendingLiveTitles.removeValue(forKey: id)
+    lastLiveTitleWriteAt[id] = now
     let previousDisplayTitle = tabs[index].displayTitle
     tabs[index].title = title
     return tabs[index].displayTitle != previousDisplayTitle
+  }
+
+  private func pruneTitleCoalescingState() {
+    let liveIDs = Set(tabs.map(\.id))
+    lastLiveTitleWriteAt = lastLiveTitleWriteAt.filter { liveIDs.contains($0.key) }
+    pendingLiveTitles = pendingLiveTitles.filter { liveIDs.contains($0.key) }
   }
 
   /// Sets (or clears, when blank) the user-defined title. Returns `true` when

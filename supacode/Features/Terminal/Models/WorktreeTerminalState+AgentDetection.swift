@@ -26,6 +26,11 @@ extension WorktreeTerminalState {
         guard let self, let view, self.surfaces[view.id] != nil else { return }
         let hasAgent = await self.detectAgentState(for: view, tabId: tabId)
         let now = Date()
+        // Lands the last frame of a spinner that stopped animating. Cheap when
+        // nothing is pending, which is the common case.
+        for flushedTabID in self.tabManager.flushPendingTitles(now: now) {
+          self.refreshAgentEntriesForTitleChange(in: flushedTabID)
+        }
         let schedule = self.agentDetectionSchedules[view.id] ?? .cold
         self.agentDetectionSchedules[view.id] =
           hasAgent ? schedule.observedAgent(now: now) : schedule.observedNoAgent(now: now)
