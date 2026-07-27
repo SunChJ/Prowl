@@ -150,4 +150,5 @@ the clicked node). Workspace child rows: `Copy Path`, `Reveal in Finder`.
 
 ## Amendments
 
+- Updated 2026-07-27: Canvas New Terminal Tab now focuses its exact created tab — see [002-canvas-new-tab-focus.md](002-canvas-new-tab-focus.md).
 (append `- Updated 2026-MM-DD: ... — see [00N-topic.md](00N-topic.md)` lines here)

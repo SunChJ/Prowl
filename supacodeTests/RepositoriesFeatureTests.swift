@@ -2587,45 +2587,35 @@ struct RepositoriesFeatureTests {
     )
   }
 
-  @Test func newTerminalTabInCanvasFocusesCanvasWorktreeWithoutLeavingCanvas() async {
+  @Test func newTerminalTabInCanvasCreatesAndFocusesNewCanvasTab() async {
     let worktree = makeWorktree(id: "/tmp/repo/wt", name: "wt")
     let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
+    let createdTabID = TerminalTabID(rawValue: UUID())
     var initialState = makeState(repositories: [repository])
     initialState.selection = .canvas
 
-    let sentCommands = LockIsolated<[TerminalClient.Command]>([])
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.terminalClient.send = { command in
-        sentCommands.withValue { $0.append(command) }
+      $0.terminalClient.createTabInDirectory = { actualWorktree, actualDirectory in
+        #expect(actualWorktree == worktree)
+        #expect(actualDirectory == worktree.workingDirectory)
+        return createdTabID
       }
     }
 
     await store.send(.newTerminalTab(worktree.id))
-    await store.receive(\.focusCanvasWorktree) {
+    await store.receive(\.newTerminalTabCreatedInCanvas) {
       $0.nextCanvasFocusRequestID = 1
       $0.pendingCanvasFocusRequest = CanvasFocusRequest(
         id: 1,
-        target: .worktree(worktree.id)
+        target: .tab(createdTabID)
       )
       $0.openedWorktreeIDs = [worktree.id]
     }
     await store.finish()
 
     #expect(store.state.selection == .canvas)
-    // The two effects run concurrently, so assert membership rather than order.
-    #expect(sentCommands.value.count == 2)
-    #expect(
-      sentCommands.value.contains(
-        .createTabInDirectory(worktree, directory: worktree.workingDirectory)
-      )
-    )
-    #expect(
-      sentCommands.value.contains(
-        .ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false)
-      )
-    )
   }
 
   @Test func newTerminalTabWithUnknownWorktreeDoesNothing() async {

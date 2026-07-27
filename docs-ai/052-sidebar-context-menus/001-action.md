@@ -18,9 +18,10 @@
   when the worktree has no tabs (see Deviations).
 - `RepositoriesFeature.Action.newTerminalTab(Worktree.ID)`
   (`supacode/Features/Repositories/Reducer/RepositoriesFeature+CoreReducer.swift`) —
-  selects the worktree (or canvas-focuses it when Canvas is showing) and sends
-  `TerminalClient.Command.createTabInDirectory(worktree, directory: worktree.workingDirectory)`
-  so the tab opens at the worktree root instead of inheriting the focused surface's cwd.
+  selects the worktree and dispatches `TerminalClient.Command.createTabInDirectory` in
+  tabbed view. In Canvas it synchronously creates the root-directory tab through
+  `TerminalClient.createTabInDirectory`, then requests focus for the returned tab ID so a
+  pre-existing card cannot win the focus race.
 - `supacode/Features/Repositories/Views/RepositorySectionView.swift` — hover `…` menu and
   header context menu share one `headerMenuItems` builder: git repos get New Worktree /
   Repo Settings… / Remove Repository; plain folders and workspaces get Copy Path / Reveal
