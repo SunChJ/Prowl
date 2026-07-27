@@ -209,13 +209,27 @@ struct AgentEntryTitleCoalescingTests {
     confidence: .exact
   )
 
+  /// `TerminalTabManager` spaces out its own live title writes on a separate
+  /// clock. These tests exercise the entry-level coalescing, so each title is
+  /// stamped far enough apart that the tab layer never withholds one and the
+  /// two mechanisms stay independently testable.
+  private final class TitleClock {
+    private var now = Date(timeIntervalSince1970: 0)
+
+    func next() -> Date {
+      now = now.addingTimeInterval(TerminalTabManager.liveTitleCoalescingInterval * 2)
+      return now
+    }
+  }
+
   private struct Fixture {
     let state: WorktreeTerminalState
     let tabId: TerminalTabID
     let pane: GhosttySurfaceView
+    let titleClock = TitleClock()
 
     func setTitle(_ title: String) {
-      state.tabManager.updateTitle(tabId, title: title)
+      state.tabManager.updateTitle(tabId, title: title, now: titleClock.next())
     }
 
     func emit(_ paneState: PaneAgentState, at now: Date) {
