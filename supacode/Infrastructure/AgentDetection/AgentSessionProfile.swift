@@ -294,18 +294,23 @@ nonisolated extension AgentSessionProfile {
       guard uuid(in: id) != nil else { return nil }
       // Walk up from the open path to the session root
       // (…/sessions/<cwd>/<id>/). Nested paths like `terminal/<log>.log`
-      // still resolve. The transcript is always canonicalized to
-      // chat_history.jsonl (the conversation log): the process also holds
-      // events.jsonl open, which only logs MCP/infrastructure events.
+      // still resolve.
       var dir = url.deletingLastPathComponent()
       while dir.lastPathComponent != id, dir.pathComponents.count > grokIndex + 3 {
         dir = dir.deletingLastPathComponent()
       }
       guard dir.lastPathComponent == id else { return nil }
-      let transcript: URL =
-        url.lastPathComponent == "chat_history.jsonl"
-        ? url
-        : dir.appending(path: "chat_history.jsonl")
+      // Prefer the conversation transcript. If it has not been created yet,
+      // retain the opened events log rather than claiming a nonexistent path.
+      let chatHistory = dir.appending(path: "chat_history.jsonl")
+      let transcript: URL?
+      if url.lastPathComponent == "chat_history.jsonl" || FileManager.default.fileExists(atPath: chatHistory.path) {
+        transcript = chatHistory
+      } else if url.lastPathComponent == "events.jsonl" {
+        transcript = url
+      } else {
+        transcript = nil
+      }
       return AgentSession(id: id, transcriptPath: transcript, source: .recentFile)
     },
     candidateRoots: { home, cwd, _, _ in
