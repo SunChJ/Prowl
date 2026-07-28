@@ -11,8 +11,8 @@ import Testing
 /// changes so that churn never floods the terminal event stream.
 @MainActor
 struct AgentEntryEmissionDedupTests {
-  @Test func identicalEntryIsEmittedOnce() throws {
-    let fixture = try makeFixture()
+  @Test func identicalEntryIsEmittedOnce() {
+    let fixture = makeFixture()
     var received: [ActiveAgentEntry] = []
     fixture.state.onAgentEntryChanged = { received.append($0) }
 
@@ -32,8 +32,8 @@ struct AgentEntryEmissionDedupTests {
     #expect(received.map(\.rawState) == [.working, .idle])
   }
 
-  @Test func visibleChangeStillEmits() throws {
-    let fixture = try makeFixture()
+  @Test func visibleChangeStillEmits() {
+    let fixture = makeFixture()
     var received: [ActiveAgentEntry] = []
     fixture.state.onAgentEntryChanged = { received.append($0) }
 
@@ -45,8 +45,8 @@ struct AgentEntryEmissionDedupTests {
     #expect(received.map(\.displayState) == [.working, .idle])
   }
 
-  @Test func removalClearsTheCacheSoReattachEmits() throws {
-    let fixture = try makeFixture()
+  @Test func removalClearsTheCacheSoReattachEmits() {
+    let fixture = makeFixture()
     var changed: [ActiveAgentEntry] = []
     var removed: [UUID] = []
     fixture.state.onAgentEntryChanged = { changed.append($0) }
@@ -73,7 +73,7 @@ struct AgentEntryEmissionDedupTests {
     let pane: GhosttySurfaceView
   }
 
-  private func makeFixture() throws -> Fixture {
+  private func makeFixture() -> Fixture {
     let state = WorktreeTerminalState(
       runtime: GhosttyRuntime(),
       worktree: Worktree(
@@ -93,7 +93,7 @@ struct AgentEntryEmissionDedupTests {
     )
     let tabId = state.tabManager.createTab(title: "worktree 1", icon: "terminal")
     state.surfaces[pane.id] = pane
-    state.trees[tabId] = try SplitTree<GhosttySurfaceView>(view: pane)
+    state.trees[tabId] = SplitTree<GhosttySurfaceView>(view: pane)
     state.focusedSurfaceIdByTab[tabId] = pane.id
     return Fixture(state: state, tabId: tabId, pane: pane)
   }
