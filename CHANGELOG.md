@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026.7.29](https://github.com/onevcat/Prowl/releases/tag/v2026.7.29)
+
+Prowl 2026.7.29 adds automatic repository icon detection and an on-device icon suggestion tool, along with a reworked sidebar context-menu system.
+
+### New
+
+- Newly added repositories now get a product icon detected automatically in the background (Apple, Android, Flutter, React Native, Web, Unity, Tauri, and more project kinds are recognized). This can be turned off in Settings → Appearance → Repository Icons ("Detect project icons automatically").
+- Repository Icon menu gains **Suggest an Icon…**, which recommends SF Symbols on-device based on your README or package metadata, with alternates and a "Regenerate" option.
+- Sidebar context menus for repositories and worktrees have been reorganized: worktree rows get `New Terminal Tab` (always opens at the worktree root), `Stop Running Script`, `Copy Branch Name`, `Open Pull Request`, and a `Close All Tabs` action grouped with Archive/Delete.
+- The `PR #N` tag in the sidebar is now a clickable link that opens the pull request.
+- The Active Agents context menu gains a Session group with **Copy Session Path** and **Reveal Session in Finder**, for agents that keep a native session log on disk.
+
+### Fixed
+
+- Canvas tabs opened from the sidebar now focus correctly on creation.
+- Grok session log paths now resolve to the correct transcript file.
+
 ## [2026.7.25](https://github.com/onevcat/Prowl/releases/tag/v2026.7.25)
 
 ### New
