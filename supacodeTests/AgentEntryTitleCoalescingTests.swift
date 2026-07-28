@@ -115,32 +115,99 @@ struct AgentEntryTitleCoalescingTests {
     #expect(!base.equalsIgnoringRawState(spinnerMoved))
   }
 
+  /// The test above pins one field this comparison must still notice. It
+  /// normalizes two, and nothing structural stops a later edit from normalizing
+  /// a third — the failure would be silent: it compiles, every test in this file
+  /// still passes, and the only symptom is a real change that never reaches the
+  /// sidebar. Walk the remaining fields so widening the normalization fails here
+  /// instead of in the UI.
+  @Test func everyOtherFieldStillBreaksTheTitleComparison() {
+    let base = makeEntry()
+    let variants: [(field: String, entry: ActiveAgentEntry)] = [
+      ("id", makeEntry(id: Self.otherEntryID)),
+      ("worktreeID", makeEntry(worktreeID: "/tmp/repo/other")),
+      ("worktreeName", makeEntry(worktreeName: "other")),
+      // Resolves the repository and branch the row displays, so a suppressed
+      // change leaves the sidebar naming the directory the agent has left.
+      ("workingDirectory", makeEntry(workingDirectory: URL(fileURLWithPath: "/tmp/repo/other"))),
+      ("workingDirectory=nil", makeEntry(workingDirectory: nil)),
+      ("tabID", makeEntry(tabID: Self.otherEntryTabID)),
+      ("surfaceID", makeEntry(surfaceID: Self.otherEntryID)),
+      ("paneIndex", makeEntry(paneIndex: 2)),
+      ("iconLookupToken", makeEntry(iconLookupToken: "codex")),
+      ("agent", makeEntry(agent: .codex)),
+      // Carries the resume target `prowl agents` reports; a suppressed change
+      // would keep pointing at the previous session's transcript.
+      ("session", makeEntry(session: Self.otherSession)),
+      ("session=nil", makeEntry(session: nil)),
+      ("displayState", makeEntry(displayState: .blocked)),
+      ("lastChangedAt", makeEntry(lastChangedAt: Date(timeIntervalSince1970: 5_000))),
+    ]
+
+    for variant in variants {
+      #expect(
+        !base.equalsIgnoringRawStateAndPaneTitle(variant.entry),
+        "A change to \(variant.field) must still emit; normalizing it would hide the change from the sidebar"
+      )
+    }
+
+    // The two fields the comparison exists to ignore, moving together.
+    #expect(base.equalsIgnoringRawStateAndPaneTitle(makeEntry(paneTitle: "⠧ spx-h", rawState: .idle)))
+  }
+
+  /// Defaults spell out every field so a case can override exactly one and the
+  /// assertion stays about that field alone.
   private func makeEntry(
-    paneTitle: String,
-    rawState: AgentRawState,
-    displayState: AgentDisplayState
+    id: UUID = entryID,
+    worktreeID: Worktree.ID = "/tmp/repo/worktree",
+    worktreeName: String = "worktree",
+    workingDirectory: URL? = URL(fileURLWithPath: "/tmp/repo/worktree"),
+    tabID: TerminalTabID = entryTabID,
+    paneTitle: String = "⠦ spx-h",
+    surfaceID: UUID = entryID,
+    paneIndex: Int = 1,
+    iconLookupToken: String = "claude",
+    agent: DetectedAgent = .claude,
+    session: AgentSession? = baseSession,
+    rawState: AgentRawState = .working,
+    displayState: AgentDisplayState = .working,
+    lastChangedAt: Date = Date(timeIntervalSince1970: 0)
   ) -> ActiveAgentEntry {
     ActiveAgentEntry(
-      id: Self.entryID,
-      worktreeID: "/tmp/repo/worktree",
-      worktreeName: "worktree",
-      workingDirectory: nil,
-      tabID: Self.entryTabID,
+      id: id,
+      worktreeID: worktreeID,
+      worktreeName: worktreeName,
+      workingDirectory: workingDirectory,
+      tabID: tabID,
       paneTitle: paneTitle,
-      surfaceID: Self.entryID,
-      paneIndex: 1,
-      iconLookupToken: "claude",
-      agent: .claude,
-      session: nil,
+      surfaceID: surfaceID,
+      paneIndex: paneIndex,
+      iconLookupToken: iconLookupToken,
+      agent: agent,
+      session: session,
       rawState: rawState,
       displayState: displayState,
-      lastChangedAt: Date(timeIntervalSince1970: 0)
+      lastChangedAt: lastChangedAt
     )
   }
 
   private static let entryID = UUID(uuidString: "00000000-0000-0000-0000-0000000000FF")!
+  private static let otherEntryID = UUID(uuidString: "00000000-0000-0000-0000-0000000000FE")!
   /// Shared so two entries under comparison differ only in the field under test.
   private static let entryTabID = TerminalTabID()
+  private static let otherEntryTabID = TerminalTabID()
+  private static let baseSession = AgentSession(
+    id: "session-1",
+    transcriptPath: URL(fileURLWithPath: "/tmp/transcripts/session-1.jsonl"),
+    source: .openFile,
+    confidence: .exact
+  )
+  private static let otherSession = AgentSession(
+    id: "session-2",
+    transcriptPath: URL(fileURLWithPath: "/tmp/transcripts/session-2.jsonl"),
+    source: .openFile,
+    confidence: .exact
+  )
 
   private struct Fixture {
     let state: WorktreeTerminalState
