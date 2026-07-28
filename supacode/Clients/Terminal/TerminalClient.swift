@@ -3,6 +3,8 @@ import Foundation
 
 struct TerminalClient {
   var send: @MainActor @Sendable (Command) -> Void
+  /// Creates and selects a tab synchronously so Canvas can target its exact ID.
+  var createTabInDirectory: @MainActor @Sendable (Worktree, URL) -> TerminalTabID?
   var events: @MainActor @Sendable () -> AsyncStream<Event>
   var canvasFocusedWorktreeID: @MainActor @Sendable () -> Worktree.ID?
   /// Active surface in the selected tab. Lets the reducer capture the target
@@ -92,6 +94,7 @@ struct TerminalClient {
 extension TerminalClient: DependencyKey {
   static let liveValue = TerminalClient(
     send: { _ in fatalError("TerminalClient.send not configured") },
+    createTabInDirectory: { _, _ in fatalError("TerminalClient.createTabInDirectory not configured") },
     events: { fatalError("TerminalClient.events not configured") },
     canvasFocusedWorktreeID: { nil },
     selectedSurfaceID: { _ in nil },
@@ -107,6 +110,7 @@ extension TerminalClient: DependencyKey {
 
   static let testValue = TerminalClient(
     send: { _ in },
+    createTabInDirectory: { _, _ in nil },
     events: { AsyncStream { $0.finish() } },
     canvasFocusedWorktreeID: { nil },
     selectedSurfaceID: { _ in nil },

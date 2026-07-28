@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Sharing
 import SwiftUI
@@ -99,15 +100,10 @@ struct RepositorySectionView: View {
       }
       if isHovering {
         Menu {
-          Button("Repo Settings") {
-            openRepoSettings()
-          }
-          .help("Repo Settings ")
-          Button("Remove Repository") {
-            store.send(.repositoryManagement(.requestRemoveRepository(repository.id)))
-          }
-          .help("Remove repository ")
-          .disabled(isRemovingRepository)
+          headerMenuItems(
+            isRemovingRepository: isRemovingRepository,
+            openRepoSettings: openRepoSettings
+          )
         } label: {
           Label("Repository options", systemImage: "ellipsis")
             .labelStyle(.iconOnly)
@@ -230,15 +226,10 @@ struct RepositorySectionView: View {
     .accessibilityAddTraits(.isButton)
     .contentShape(.rect)
     .contextMenu {
-      Button("Repo Settings") {
-        openRepoSettings()
-      }
-      .help("Repo Settings ")
-      Button("Remove Repository") {
-        store.send(.repositoryManagement(.requestRemoveRepository(repository.id)))
-      }
-      .help("Remove repository ")
-      .disabled(isRemovingRepository)
+      headerMenuItems(
+        isRemovingRepository: isRemovingRepository,
+        openRepoSettings: openRepoSettings
+      )
     }
     .contentShape(.dragPreview, .rect)
     .listRowBackground(Color.clear)
@@ -271,6 +262,49 @@ struct RepositorySectionView: View {
       }
     }
     .id(SidebarScrollID.repository(repository.id))
+  }
+
+  /// Shared between the hover `…` menu and the header context menu so both
+  /// surfaces always offer the same actions. Git repo headers are logical
+  /// groups (their `rootURL` can be a bare dir), so only worktree-less nodes
+  /// — plain folders and workspaces — get path actions here.
+  @ViewBuilder
+  private func headerMenuItems(
+    isRemovingRepository: Bool,
+    openRepoSettings: @escaping () -> Void
+  ) -> some View {
+    if repository.capabilities.supportsWorktrees {
+      Button("New Worktree") {
+        store.send(.worktreeCreation(.createRandomWorktreeInRepository(repository.id)))
+      }
+      .help(
+        AppShortcuts.helpText(
+          title: "New Worktree",
+          commandID: AppShortcuts.CommandID.newWorktree,
+          in: resolvedKeybindings
+        )
+      )
+      .disabled(isRemovingRepository)
+    } else {
+      Button("Copy Path") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(repository.rootURL.path, forType: .string)
+      }
+      Button("Reveal in Finder") {
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repository.rootURL.path)
+      }
+    }
+    Divider()
+    Button("Repo Settings…") {
+      openRepoSettings()
+    }
+    .help("Repo Settings")
+    Divider()
+    Button("Remove Repository") {
+      store.send(.repositoryManagement(.requestRemoveRepository(repository.id)))
+    }
+    .help("Remove repository")
+    .disabled(isRemovingRepository)
   }
 
   private var headerCellHeight: CGFloat {

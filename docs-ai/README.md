@@ -103,3 +103,4 @@ agent-facing manual for that).
 | 049 | [agents-toolbar-entry](049-agents-toolbar-entry/000-plan.md) | 2026-07-20 | Agents status capsule + staged handoff HUD toolbar entry |
 | 050 | [sidebar-expand-active-and-worktree-tab-badges](050-sidebar-expand-active-and-worktree-tab-badges/000-plan.md) | 2026-07-25 | Sidebar Expand Active third state + per-worktree tab count badges |
 | 051 | [repository-icon-detection](051-repository-icon-detection/000-plan.md) | 2026-07-25 | High-confidence local repository icon detection on add; deferred, reviewable Foundation Model recommendations |
+| 052 | [sidebar-context-menus](052-sidebar-context-menus/000-plan.md) | 2026-07-27 | Sidebar context menu overhaul: worktree terminal actions, header/workspace path actions, PR click-through |

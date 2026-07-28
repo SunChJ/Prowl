@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Rows for the child repositories of an expanded workspace.
@@ -52,6 +53,15 @@ struct WorkspaceChildRowsView: View {
       }
       .accessibilityAddTraits(.isButton)
       .help("Focus Terminal in \(row.repositoryName)")
+      .contextMenu {
+        Button("Copy Path") {
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(row.workingDirectory.path, forType: .string)
+        }
+        Button("Reveal in Finder") {
+          NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: row.workingDirectory.path)
+        }
+      }
       .id(row.id)
     }
   }

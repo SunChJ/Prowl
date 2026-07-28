@@ -57,16 +57,7 @@ extension WorktreeTerminalState {
   }
 
   func closeConfirmationMessage(for decision: TerminalCloseConfirmationDecision) -> String {
-    let paneText = decision.protectedPaneCount == 1 ? "pane" : "panes"
-    let reasonText: String
-    if decision.reasons == Set([.agentActive]) {
-      reasonText = "active agent work or an unseen agent result"
-    } else if decision.reasons == Set([.longRunningCommand]) {
-      reasonText = "a command that has been running for at least 10 seconds"
-    } else {
-      reasonText = "active agent work, unseen agent results, or long-running commands"
-    }
-    return "This will close \(decision.protectedPaneCount) \(paneText) with \(reasonText)."
+    TerminalCloseConfirmationPolicy.informativeMessage(for: decision, worktreeName: worktree.name)
   }
 
   func splitTree(

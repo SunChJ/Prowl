@@ -627,6 +627,35 @@ extension RepositoriesFeature {
       let selectedWorktree = state.worktree(for: worktreeID)
       return .send(.delegate(.selectedWorktreeChanged(selectedWorktree)))
 
+    case .newTerminalTab(let worktreeID):
+      guard let worktree = state.worktree(for: worktreeID) else { return .none }
+      // Pin the new tab's cwd to the worktree root: Ghostty's default new-tab
+      // behavior inherits the focused surface's cwd, which is wrong when the
+      // user targets a worktree from the sidebar.
+      if state.isShowingCanvas {
+        return .run { send in
+          guard
+            let tabID = await terminalClient.createTabInDirectory(
+              worktree,
+              worktree.workingDirectory
+            )
+          else {
+            return
+          }
+          await send(.newTerminalTabCreatedInCanvas(worktreeID, tabID))
+        }
+      }
+      let createTab: Effect<Action> = .run { _ in
+        await terminalClient.send(
+          .createTabInDirectory(worktree, directory: worktree.workingDirectory))
+      }
+      return .merge(.send(.selectWorktree(worktreeID, focusTerminal: true)), createTab)
+
+    case .newTerminalTabCreatedInCanvas(let worktreeID, let tabID):
+      guard state.isShowingCanvas, state.worktree(for: worktreeID) != nil else { return .none }
+      requestCanvasFocus(.tab(tabID), openedWorktreeID: worktreeID, state: &state)
+      return .none
+
     case .focusCanvasRepository(let repositoryID):
       guard state.isShowingCanvas,
         let worktree = state.canvasNavigationWorktree(forRepositoryID: repositoryID)

@@ -51,6 +51,7 @@ and stores its actual git root so branches and worktrees continue to load.
 - **Shortcut:** `⌘N` (`new_worktree`)
 - **Button:** the **+** on a repository's header (only for git repos that support
   worktrees).
+- **Context menu:** right-click a repository header → "New Worktree".
 - **Command Palette:** "New Worktree".
 
 By default a **creation prompt** appears (controlled by
@@ -184,8 +185,21 @@ CLion, PhpStorm, RubyMine), GitHub Desktop
 and terminals (Alacritty, Ghostty, iTerm2, Kitty, Warp, WezTerm). If the
 chosen app isn't installed, Prowl shows an alert.
 
-Other per-row context-menu items: **Copy Path**, **Reveal in Finder**. (Repo
-Settings lives on the repository **header** menu, not the worktree row.)
+Other per-row context-menu items: **New Terminal Tab** (selects the worktree and
+opens a tab at the worktree **root** — unlike a plain new tab, it never inherits
+the focused tab's current directory), **Stop Running Script** (only while a
+Prowl-tracked run script is running), **Copy Path**, **Copy Branch Name**,
+**Reveal in Finder**, **Open Pull Request** (only when the worktree has a PR),
+and **Close All Tabs** (disabled when the worktree has no tabs; uses the same
+active-agent / long-running-command confirmation as the tab bar's "Close All",
+and the confirmation names the target worktree).
+
+The repository **header** menu (right-click, or the **⋯** button) offers
+**New Worktree** (git repos only), **Repo Settings…**, and
+**Remove Repository**. Plain folders and workspaces get **Copy Path** /
+**Reveal in Finder** instead of New Worktree; git repo headers deliberately have
+no path actions because a repository's root can be a bare directory — use the
+worktree rows for paths.
 
 ## Repository appearance (icon & color)
 

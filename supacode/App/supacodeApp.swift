@@ -352,6 +352,9 @@ struct SupacodeApp: App {
       send: { command in
         terminalManager.handleCommand(command)
       },
+      createTabInDirectory: { worktree, directory in
+        terminalManager.createTabInDirectory(worktree, directory: directory)
+      },
       events: {
         terminalManager.eventStream()
       },

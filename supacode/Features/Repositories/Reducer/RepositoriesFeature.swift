@@ -451,6 +451,8 @@ struct RepositoriesFeature {
     case selectRepository(Repository.ID?)
     case openWorkspaceChild(String)
     case selectWorktree(Worktree.ID?, focusTerminal: Bool = false, recordHistory: Bool = true)
+    case newTerminalTab(Worktree.ID)
+    case newTerminalTabCreatedInCanvas(Worktree.ID, TerminalTabID)
     case focusCanvasRepository(Repository.ID)
     case focusCanvasWorktree(Worktree.ID)
     case selectNextWorktree

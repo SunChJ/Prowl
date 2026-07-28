@@ -55,6 +55,11 @@ final class WorktreeTerminalManager {
     handleManagementCommand(command)
   }
 
+  /// Creates a tab at an explicit directory and returns its ID for immediate Canvas selection.
+  func createTabInDirectory(_ worktree: Worktree, directory: URL) -> TerminalTabID? {
+    createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)
+  }
+
   private func handleTabCommand(_ command: TerminalClient.Command) -> Bool {
     switch command {
     case .createTab(let worktree, let runSetupScriptIfNew):
@@ -302,6 +307,7 @@ final class WorktreeTerminalManager {
     return state
   }
 
+  @discardableResult
   private func createTabAsync(
     in worktree: Worktree,
     runSetupScriptIfNew: Bool,
@@ -310,7 +316,7 @@ final class WorktreeTerminalManager {
     autoCloseOnSuccess: Bool = false,
     customCommandName: String? = nil,
     customCommandIcon: String? = nil
-  ) {
+  ) -> TerminalTabID? {
     let state = state(for: worktree) { runSetupScriptIfNew }
     let setupScript: String?
     // Skip setup injection when auto-close is requested so the setup script's
@@ -338,6 +344,7 @@ final class WorktreeTerminalManager {
         state.applyCustomCommandIcon(customCommandIcon, surfaceId: surfaceId)
       }
     }
+    return tabId
   }
 
   private func createSplitAsync(

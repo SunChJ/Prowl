@@ -97,4 +97,53 @@ struct TerminalCloseConfirmationPolicyTests {
     #expect(decision.reasons.contains(.agentActive))
     #expect(decision.reasons.contains(.longRunningCommand))
   }
+
+  @Test func informativeMessageNamesWorktree() {
+    let decision = TerminalCloseConfirmationPolicy.decision(
+      for: [
+        TerminalCloseProtectionCandidate(
+          hasAgent: true,
+          agentDisplayState: .working,
+          commandRunningDuration: nil
+        )
+      ]
+    )
+
+    let message = TerminalCloseConfirmationPolicy.informativeMessage(
+      for: decision,
+      worktreeName: "feature/foo"
+    )
+
+    #expect(
+      message
+        == "This will close 1 pane in “feature/foo” with active agent work or an unseen agent result."
+    )
+  }
+
+  @Test func informativeMessageAggregatesMixedReasons() {
+    let decision = TerminalCloseConfirmationPolicy.decision(
+      for: [
+        TerminalCloseProtectionCandidate(
+          hasAgent: true,
+          agentDisplayState: .working,
+          commandRunningDuration: nil
+        ),
+        TerminalCloseProtectionCandidate(
+          hasAgent: false,
+          agentDisplayState: nil,
+          commandRunningDuration: 30
+        ),
+      ]
+    )
+
+    let message = TerminalCloseConfirmationPolicy.informativeMessage(
+      for: decision,
+      worktreeName: "wt"
+    )
+
+    #expect(
+      message
+        == "This will close 2 panes in “wt” with active agent work, unseen agent results, or long-running commands."
+    )
+  }
 }

@@ -92,6 +92,7 @@ struct WorkspaceChildRowModel: Equatable, Identifiable {
   let repositoryName: String
   let branchName: String?
   let info: WorktreeInfoEntry?
+  let workingDirectory: URL
 }
 
 struct FailedRepositoryModel: Equatable, Identifiable {

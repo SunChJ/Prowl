@@ -210,7 +210,8 @@ extension RepositoriesFeature.State {
         id: child.id,
         repositoryName: child.repositoryName,
         branchName: workspaceChildBranchByID[child.id] ?? child.metadataBranch,
-        info: workspaceChildInfoByID[child.id]
+        info: workspaceChildInfoByID[child.id],
+        workingDirectory: child.workingDirectory
       )
     }
   }
