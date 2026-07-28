@@ -67,6 +67,103 @@ struct AgentEntryEmissionDedupTests {
     #expect(removed == [fixture.pane.id])
   }
 
+  /// `equalsIgnoringRawState` normalizes one field and compares the rest through
+  /// the synthesized `==`. Nothing structural stops a later edit from
+  /// normalizing a second field, and the damage would be silent: the helper
+  /// still compiles, every test above still passes, and the only symptom is a
+  /// real change to that field never reaching the sidebar. `emitAgentEntry`
+  /// promises "displayState, title, session, …" still emit, so pin the whole
+  /// promise — one differing field must always be enough to break equality.
+  @Test func everyFieldExceptRawStateBreaksEmissionEquality() {
+    let base = Self.entry()
+    let variants: [(field: String, entry: ActiveAgentEntry)] = [
+      ("id", Self.entry(id: Self.otherID)),
+      ("worktreeID", Self.entry(worktreeID: "/tmp/repo/other")),
+      ("worktreeName", Self.entry(worktreeName: "other")),
+      // Resolves the repository and branch the row displays, so a suppressed
+      // change leaves the sidebar naming the directory the agent has left.
+      ("workingDirectory", Self.entry(workingDirectory: URL(fileURLWithPath: "/tmp/repo/other"))),
+      ("workingDirectory=nil", Self.entry(workingDirectory: nil)),
+      ("tabID", Self.entry(tabID: Self.otherTabID)),
+      ("paneTitle", Self.entry(paneTitle: "other title")),
+      ("surfaceID", Self.entry(surfaceID: Self.otherID)),
+      ("paneIndex", Self.entry(paneIndex: 2)),
+      ("iconLookupToken", Self.entry(iconLookupToken: "codex")),
+      ("agent", Self.entry(agent: .codex)),
+      // Carries the resume target `prowl agents` reports; a suppressed change
+      // would keep pointing at the previous session's transcript.
+      ("session", Self.entry(session: Self.otherSession)),
+      ("session=nil", Self.entry(session: nil)),
+      ("displayState", Self.entry(displayState: .blocked)),
+      ("lastChangedAt", Self.entry(lastChangedAt: Date(timeIntervalSince1970: 5_000))),
+    ]
+
+    for variant in variants {
+      #expect(
+        !base.equalsIgnoringRawState(variant.entry),
+        "A change to \(variant.field) must still emit; normalizing it would hide the change from the sidebar"
+      )
+    }
+
+    // The single field the helper exists to ignore.
+    #expect(base.equalsIgnoringRawState(Self.entry(rawState: .idle)))
+  }
+
+  private static let baseID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
+  private static let otherID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
+  /// Fixed rather than freshly generated, so two entries under comparison differ
+  /// only in the field the case is about.
+  private static let baseTabID = TerminalTabID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!)
+  private static let otherTabID = TerminalTabID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!)
+  private static let baseSession = AgentSession(
+    id: "session-1",
+    transcriptPath: URL(fileURLWithPath: "/tmp/transcripts/session-1.jsonl"),
+    source: .openFile,
+    confidence: .exact
+  )
+  private static let otherSession = AgentSession(
+    id: "session-2",
+    transcriptPath: URL(fileURLWithPath: "/tmp/transcripts/session-2.jsonl"),
+    source: .openFile,
+    confidence: .exact
+  )
+
+  /// Defaults spell out every field so a case can override exactly one and the
+  /// assertion stays about that field alone.
+  private static func entry(
+    id: UUID = baseID,
+    worktreeID: Worktree.ID = "/tmp/repo/worktree",
+    worktreeName: String = "worktree",
+    workingDirectory: URL? = URL(fileURLWithPath: "/tmp/repo/worktree"),
+    tabID: TerminalTabID = baseTabID,
+    paneTitle: String = "spx-h",
+    surfaceID: UUID = baseID,
+    paneIndex: Int = 1,
+    iconLookupToken: String = "claude",
+    agent: DetectedAgent = .claude,
+    session: AgentSession? = baseSession,
+    rawState: AgentRawState = .working,
+    displayState: AgentDisplayState = .working,
+    lastChangedAt: Date = Date(timeIntervalSince1970: 1_000)
+  ) -> ActiveAgentEntry {
+    ActiveAgentEntry(
+      id: id,
+      worktreeID: worktreeID,
+      worktreeName: worktreeName,
+      workingDirectory: workingDirectory,
+      tabID: tabID,
+      paneTitle: paneTitle,
+      surfaceID: surfaceID,
+      paneIndex: paneIndex,
+      iconLookupToken: iconLookupToken,
+      agent: agent,
+      session: session,
+      rawState: rawState,
+      displayState: displayState,
+      lastChangedAt: lastChangedAt
+    )
+  }
+
   private struct Fixture {
     let state: WorktreeTerminalState
     let tabId: TerminalTabID
