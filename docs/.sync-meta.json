@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "bd45e0fbf962cbddb64f5687e5b441404752db28",
-  "last_synced_date": "2026-07-25",
-  "note": "Verified Outgoing Changes diff mode (PR #610) and sidebar Expand Active + tab badges (PR #612) docs written alongside their PRs; no manual changes required."
+  "last_synced_commit": "1fa2cdc266f8925a4473797c590d2fd3ed5614ad",
+  "last_synced_date": "2026-07-29",
+  "note": "Verified repository icon detection, sidebar context menus and PR click-through, and Active Agents session-log actions; their matching docs were updated with the implementation."
 }
