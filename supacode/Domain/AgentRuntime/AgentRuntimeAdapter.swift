@@ -4,6 +4,15 @@ nonisolated protocol AgentRuntimeAdapter: Sendable {
   var agent: DetectedAgent { get }
   /// Human-readable product name for UI entry points ("Claude Code").
   var displayName: String { get }
+  /// Environment variable that relocates the runtime's entire home for
+  /// per-profile account isolation, or nil when the runtime has no verified
+  /// mechanism. Relocation is all-or-nothing: skills, instruction files, and
+  /// session history follow the home (docs-ai 053, #617).
+  var accountHomeEnvironmentVariable: String? { get }
+  /// Known reasoning-effort values offered as editor suggestions. Any
+  /// free-form value stays accepted as a literal argument; an unknown value
+  /// fails at CLI startup, visibly in the new surface.
+  var reasoningEffortSuggestions: [String] { get }
 
   func observe(arguments: [String]) -> AgentLaunchObservation
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation
@@ -15,18 +24,67 @@ nonisolated protocol AgentRuntimeAdapter: Sendable {
   func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation
 }
 
+nonisolated extension AgentRuntimeAdapter {
+  var supportsAccountIsolation: Bool { accountHomeEnvironmentVariable != nil }
+}
+
 nonisolated enum AgentExecutionMode: String, Codable, Equatable, Sendable {
   case standard
   case unrestricted
 }
 
+/// How an agent process should begin. An empty prompt sentinel is forbidden by
+/// construction: interactive-with-no-prompt and prompted starts are distinct
+/// CLI semantics (docs-ai 053).
+nonisolated enum AgentStartIntent: Equatable, Sendable {
+  /// Launch the interactive TUI with no initial prompt.
+  case interactive
+  /// Launch the interactive TUI seeded with an initial prompt.
+  case prompt(String)
+  /// One-shot non-interactive execution (print/exec mode). No UI consumer in
+  /// V1; the case keeps the intent space complete for CLI/handoff waves.
+  case headless(String)
+
+  /// The prompt payload for prompted or headless starts; nil for interactive.
+  var promptText: String? {
+    switch self {
+    case .interactive: nil
+    case .prompt(let prompt), .headless(let prompt): prompt
+    }
+  }
+}
+
 nonisolated struct AgentLaunchConfiguration: Codable, Equatable, Sendable {
   var model: String?
   var executionMode: AgentExecutionMode
+  var reasoningEffort: String?
+  /// Literal argv tokens appended after adapter-generated options (last-wins)
+  /// and before any positional prompt. Never shell-interpreted.
+  var extraArguments: [String]
 
-  init(model: String? = nil, executionMode: AgentExecutionMode = .standard) {
+  init(
+    model: String? = nil,
+    executionMode: AgentExecutionMode = .standard,
+    reasoningEffort: String? = nil,
+    extraArguments: [String] = []
+  ) {
     self.model = model
     self.executionMode = executionMode
+    self.reasoningEffort = reasoningEffort
+    self.extraArguments = extraArguments
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case model, executionMode, reasoningEffort, extraArguments
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    model = try container.decodeIfPresent(String.self, forKey: .model)
+    executionMode =
+      try container.decodeIfPresent(AgentExecutionMode.self, forKey: .executionMode) ?? .standard
+    reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
+    extraArguments = try container.decodeIfPresent([String].self, forKey: .extraArguments) ?? []
   }
 }
 
@@ -44,12 +102,12 @@ nonisolated struct AgentLaunchObservation: Equatable, Sendable {
 
 nonisolated struct AgentStartRequest: Equatable, Sendable {
   let agent: DetectedAgent
-  let prompt: String
+  let intent: AgentStartIntent
   let configuration: AgentLaunchConfiguration
 
-  init(agent: DetectedAgent, prompt: String, configuration: AgentLaunchConfiguration = .init()) {
+  init(agent: DetectedAgent, intent: AgentStartIntent, configuration: AgentLaunchConfiguration = .init()) {
     self.agent = agent
-    self.prompt = prompt
+    self.intent = intent
     self.configuration = configuration
   }
 }
@@ -164,6 +222,8 @@ nonisolated enum AgentRuntimeAdapterRegistry {
 nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   let agent: DetectedAgent = .codex
   let displayName = "Codex"
+  let accountHomeEnvironmentVariable: String? = "CODEX_HOME"
+  let reasoningEffortSuggestions = ["minimal", "low", "medium", "high", "xhigh"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let explicitlyBypassesSandbox =
@@ -176,7 +236,15 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   }
 
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
-    AgentInvocation(executable: "codex", arguments: options(for: request.configuration) + [request.prompt])
+    let options = options(for: request.configuration)
+    return switch request.intent {
+    case .interactive:
+      AgentInvocation(executable: "codex", arguments: options)
+    case .prompt(let prompt):
+      AgentInvocation(executable: "codex", arguments: options + [prompt])
+    case .headless(let prompt):
+      AgentInvocation(executable: "codex", arguments: ["exec"] + options + [prompt])
+    }
   }
 
   func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation {
@@ -200,16 +268,23 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
     if let model = configuration.model {
       options += ["--model", model]
     }
+    if let effort = configuration.reasoningEffort {
+      // Codex parses `-c` values as TOML and falls back to a string literal,
+      // so the effort value needs no extra quoting here.
+      options += ["-c", "model_reasoning_effort=\(effort)"]
+    }
     if configuration.executionMode == .unrestricted {
       options.append("--dangerously-bypass-approvals-and-sandbox")
     }
-    return options
+    return options + configuration.extraArguments
   }
 }
 
 nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   let agent: DetectedAgent = .claude
   let displayName = "Claude Code"
+  let accountHomeEnvironmentVariable: String? = "CLAUDE_CONFIG_DIR"
+  let reasoningEffortSuggestions = ["low", "medium", "high"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let explicitlyBypassesPermissions =
@@ -222,7 +297,15 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   }
 
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
-    AgentInvocation(executable: "claude", arguments: options(for: request.configuration) + [request.prompt])
+    let options = options(for: request.configuration)
+    return switch request.intent {
+    case .interactive:
+      AgentInvocation(executable: "claude", arguments: options)
+    case .prompt(let prompt):
+      AgentInvocation(executable: "claude", arguments: options + [prompt])
+    case .headless(let prompt):
+      AgentInvocation(executable: "claude", arguments: ["-p"] + options + [prompt])
+    }
   }
 
   func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation {
@@ -242,10 +325,13 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
     if let model = configuration.model {
       options += ["--model", model]
     }
+    if let effort = configuration.reasoningEffort {
+      options += ["--effort", effort]
+    }
     if configuration.executionMode == .unrestricted {
       options.append("--dangerously-skip-permissions")
     }
-    return options
+    return options + configuration.extraArguments
   }
 }
 

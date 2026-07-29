@@ -427,7 +427,7 @@ struct HandoffHudFeature {
         )
         let request = AgentStartRequest(
           agent: destination,
-          prompt: HandoffCommandHandler.kickoffPrompt(hasBriefing: artifacts.hasBriefing),
+          intent: .prompt(HandoffCommandHandler.kickoffPrompt(hasBriefing: artifacts.hasBriefing)),
           configuration: configuration
         )
         let kickoff = try AgentRuntimeAdapterRegistry.makeStartInvocation(request).terminalInput

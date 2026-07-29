@@ -10,7 +10,7 @@ struct AgentRuntimeAdapterTests {
     let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
       AgentStartRequest(
         agent: .codex,
-        prompt: "Continue the handoff.",
+        intent: .prompt("Continue the handoff."),
         configuration: AgentLaunchConfiguration(model: "gpt-5.4", executionMode: .unrestricted)
       )
     )
@@ -20,6 +20,91 @@ struct AgentRuntimeAdapterTests {
       invocation.arguments
         == ["--model", "gpt-5.4", "--dangerously-bypass-approvals-and-sandbox", "Continue the handoff."]
     )
+  }
+
+  @Test func interactiveStartRendersNoPromptArgument() throws {
+    let codex = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(agent: .codex, intent: .interactive)
+    )
+    #expect(codex.executable == "codex")
+    #expect(codex.arguments.isEmpty)
+
+    let claude = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(
+        agent: .claude,
+        intent: .interactive,
+        configuration: AgentLaunchConfiguration(model: "claude-opus-5")
+      )
+    )
+    #expect(claude.executable == "claude")
+    #expect(claude.arguments == ["--model", "claude-opus-5"])
+  }
+
+  @Test func headlessStartRendersOneShotExecutionMode() throws {
+    let codex = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(agent: .codex, intent: .headless("Summarize the repo."))
+    )
+    #expect(codex.arguments == ["exec", "Summarize the repo."])
+
+    let claude = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(agent: .claude, intent: .headless("Summarize the repo."))
+    )
+    #expect(claude.arguments == ["-p", "Summarize the repo."])
+  }
+
+  @Test func reasoningEffortMapsToRuntimeSpecificOptions() throws {
+    let claude = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(
+        agent: .claude,
+        intent: .interactive,
+        configuration: AgentLaunchConfiguration(reasoningEffort: "high")
+      )
+    )
+    #expect(claude.arguments == ["--effort", "high"])
+
+    let codex = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(
+        agent: .codex,
+        intent: .interactive,
+        configuration: AgentLaunchConfiguration(reasoningEffort: "xhigh")
+      )
+    )
+    #expect(codex.arguments == ["-c", "model_reasoning_effort=xhigh"])
+  }
+
+  @Test func extraArgumentsAppendAfterAdapterOptionsBeforePrompt() throws {
+    let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(
+        agent: .codex,
+        intent: .prompt("Go."),
+        configuration: AgentLaunchConfiguration(
+          model: "gpt-5.4",
+          extraArguments: ["--search", "--cd", "/tmp/with space"]
+        )
+      )
+    )
+    #expect(
+      invocation.arguments == ["--model", "gpt-5.4", "--search", "--cd", "/tmp/with space", "Go."]
+    )
+  }
+
+  @Test func accountIsolationCapabilityIsDeclaredPerAdapter() {
+    let codex = AgentRuntimeAdapterRegistry.adapter(for: .codex)
+    #expect(codex?.supportsAccountIsolation == true)
+    #expect(codex?.accountHomeEnvironmentVariable == "CODEX_HOME")
+
+    let claude = AgentRuntimeAdapterRegistry.adapter(for: .claude)
+    #expect(claude?.supportsAccountIsolation == true)
+    #expect(claude?.accountHomeEnvironmentVariable == "CLAUDE_CONFIG_DIR")
+    #expect(claude?.reasoningEffortSuggestions.contains("high") == true)
+  }
+
+  @Test func launchConfigurationDecodesLegacyPayloadWithoutNewFields() throws {
+    let legacy = Data(#"{"model":"gpt-5.4","executionMode":"standard"}"#.utf8)
+    let configuration = try JSONDecoder().decode(AgentLaunchConfiguration.self, from: legacy)
+    #expect(configuration.model == "gpt-5.4")
+    #expect(configuration.reasoningEffort == nil)
+    #expect(configuration.extraArguments.isEmpty)
   }
 
   @Test func claudeResumeStaysReadOnlyAndKeepsModel() throws {

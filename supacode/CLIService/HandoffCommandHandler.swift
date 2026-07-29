@@ -302,7 +302,7 @@ final class HandoffCommandHandler: CommandHandler {
         target,
         AgentStartRequest(
           agent: destinationAgent,
-          prompt: Self.kickoffPrompt(hasBriefing: artifacts.hasBriefing),
+          intent: .prompt(Self.kickoffPrompt(hasBriefing: artifacts.hasBriefing)),
           configuration: configuration
         )
       )
