@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented(见 [001-action.md](001-action.md)) |
 | **Anchor date** | 2026-07-29 |
-| **Primary PRs** | pending |
+| **Primary PRs** | [#620](https://github.com/onevcat/Prowl/pull/620) |
 | **Related** | [047 cross-agent handoff](../047-cross-agent-handoff/000-plan.md), [048 agent runtime adapters](../048-agent-runtime-adapters/000-plan.md), [049 Agents toolbar entry](../049-agents-toolbar-entry/000-plan.md), closed prototype [#617](https://github.com/onevcat/Prowl/pull/617) |
 
 ## 背景
