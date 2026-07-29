@@ -123,6 +123,101 @@ struct AgentProfileTests {
     #expect(ShellWordSplitter.split("--note 'unterminated tail") == ["--note", "unterminated tail"])
   }
 
+  // MARK: - Launch plan
+
+  @Test func purePresetPlanHasNoEnvironmentAndSplitsExtraArguments() throws {
+    var preset = profile(name: "Codex · Deep")
+    preset.model = "gpt-5.4"
+    preset.reasoningEffort = "xhigh"
+    preset.extraArguments = "--search --cd '/tmp/with space'"
+
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: preset,
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.environment.isEmpty)
+    #expect(plan.dedicatedHome == nil)
+    #expect(plan.invocation.executable == "codex")
+    #expect(
+      plan.invocation.arguments == [
+        "--model", "gpt-5.4",
+        "-c", "model_reasoning_effort=xhigh",
+        "--search", "--cd", "/tmp/with space",
+      ]
+    )
+    #expect(plan.previewText == plan.invocation.terminalInput)
+  }
+
+  @Test func boundProfilePlanDerivesHomeFromUUIDInsideBase() throws {
+    var bound = profile(name: "Codex · Work")
+    bound.bindsDedicatedHome = true
+    let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
+
+    let plan = try AgentProfileLaunchPlanner.plan(for: bound, homeBaseDirectory: base)
+
+    let home = try #require(plan.dedicatedHome)
+    #expect(
+      AgentProfileLaunchPlanner.pathString(home) == "/base/agent-profiles/\(bound.id.uuidString)"
+    )
+    #expect(plan.environment == ["CODEX_HOME": "/base/agent-profiles/\(bound.id.uuidString)"])
+    #expect(plan.previewText.hasPrefix("CODEX_HOME=/base/agent-profiles/"))
+    #expect(AgentProfileLaunchPlanner.isContained(home, in: base))
+  }
+
+  @Test func boundClaudeProfileUsesConfigDirVariable() throws {
+    var bound = profile(name: "Claude · Personal", runtime: .claude)
+    bound.bindsDedicatedHome = true
+
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: bound,
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.environment.keys.contains("CLAUDE_CONFIG_DIR"))
+  }
+
+  @Test func containmentRejectsBaseItselfAndOutsidePaths() {
+    let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
+    #expect(!AgentProfileLaunchPlanner.isContained(base, in: base))
+    #expect(
+      !AgentProfileLaunchPlanner.isContained(
+        URL(fileURLWithPath: "/base/agent-profiles/../../.codex", isDirectory: true),
+        in: base
+      )
+    )
+    #expect(
+      !AgentProfileLaunchPlanner.isContained(
+        URL(fileURLWithPath: "/base/agent-profiles-other/x", isDirectory: true),
+        in: base
+      )
+    )
+  }
+
+  @Test func provisionerRefusesHomesOutsideBase() {
+    let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
+    #expect(throws: AgentProfileLaunchPlanError.self) {
+      try AgentProfileHomeProvisioner.provision(
+        home: URL(fileURLWithPath: "/Users/x/.codex", isDirectory: true),
+        base: base
+      )
+    }
+  }
+
+  @Test func provisionerCreatesOwnerOnlyHome() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "agent-profile-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+
+    try AgentProfileHomeProvisioner.provision(home: home, base: root)
+
+    let attributes = try FileManager.default.attributesOfItem(
+      atPath: home.path(percentEncoded: false)
+    )
+    #expect((attributes[.posixPermissions] as? NSNumber)?.int16Value == 0o700)
+  }
+
   // MARK: - Settings persistence
 
   @Test func globalSettingsDecodeLegacyJSONWithoutProfileFields() throws {

@@ -9,6 +9,50 @@ struct AgentSessionProfileTests {
   private let home = URL(fileURLWithPath: "/Users/me", isDirectory: true)
   private let now = Date(timeIntervalSince1970: 1_783_800_000)
 
+  // MARK: - Relocated config roots (docs-ai 053)
+
+  @Test func rootedClaudeLayoutFollowsRelocatedConfigRoot() throws {
+    let configRoot = URL(fileURLWithPath: "/Users/me/.prowl/agent-profiles/ABC", isDirectory: true)
+    let cwd = URL(fileURLWithPath: "/tmp/repo")
+    let profile = AgentSessionProfile.profile(for: .claude)
+
+    let roots = try #require(profile.rootedCandidateRoots?(configRoot, cwd, now, now))
+    #expect(roots.map(\.path) == ["/Users/me/.prowl/agent-profiles/ABC/projects/-tmp-repo"])
+    #expect(profile.rootedCandidateRoots?(configRoot, nil, now, now).isEmpty == true)
+
+    let id = "3f19a50a-2bd5-49b0-a071-1f59970ebcdf"
+    let transcript = "/Users/me/.prowl/agent-profiles/ABC/projects/-tmp-repo/\(id).jsonl"
+    #expect(profile.rootedParsePath?(transcript, configRoot)?.id == id)
+    // The default marker cannot own a relocated path, and the rooted parser
+    // must not claim files from the default home.
+    #expect(profile.parsePath(transcript) == nil)
+    #expect(
+      profile.rootedParsePath?("/Users/me/.claude/projects/-tmp-repo/\(id).jsonl", configRoot) == nil
+    )
+  }
+
+  @Test func rootedCodexLayoutFollowsRelocatedConfigRoot() throws {
+    let configRoot = URL(fileURLWithPath: "/Users/me/.prowl/agent-profiles/ABC", isDirectory: true)
+    let profile = AgentSessionProfile.profile(for: .codex)
+
+    let fallback = try #require(profile.rootedFallbackRoots?(configRoot, nil))
+    #expect(fallback.map(\.path) == ["/Users/me/.prowl/agent-profiles/ABC/sessions"])
+    let dayRoots = try #require(profile.rootedCandidateRoots?(configRoot, nil, now, now))
+    #expect(dayRoots.allSatisfy { $0.path.hasPrefix("/Users/me/.prowl/agent-profiles/ABC/sessions/") })
+
+    let id = "019fadfd-9ecd-7b71-b849-70fd53ee7231"
+    let rollout =
+      "/Users/me/.prowl/agent-profiles/ABC/sessions/2026/07/29/rollout-2026-07-29T22-08-27-\(id).jsonl"
+    #expect(profile.rootedParsePath?(rollout, configRoot)?.id == id)
+    #expect(profile.parsePath(rollout) == nil)
+    #expect(
+      profile.rootedParsePath?(
+        "/Users/me/.codex/sessions/2026/07/29/rollout-2026-07-29T22-08-27-\(id).jsonl",
+        configRoot
+      ) == nil
+    )
+  }
+
   // MARK: - Working-directory encoders
 
   @Test func claudeRootSanitizesEveryNonAlphanumericCharacter() {

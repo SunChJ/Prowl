@@ -126,7 +126,8 @@ extension WorktreeTerminalState {
       identified: identified,
       previous: previous,
       workingDirectory: workingDirectory,
-      activeText: activeText
+      activeText: activeText,
+      configRoot: launchProfilesBySurface[surfaceID]?.dedicatedHome
     )
     // Re-check after the suspension: the pane may have been closed and its
     // agent state cleaned up while the resolver was doing file inspection;
@@ -193,14 +194,16 @@ extension WorktreeTerminalState {
     identified: IdentifiedAgentProcess?,
     previous: PaneAgentState,
     workingDirectory: URL?,
-    activeText: String
+    activeText: String,
+    configRoot: URL?
   ) async -> (session: AgentSession?, missStreak: Int) {
     var resolution = AgentSessionResolution(session: nil, isFresh: false)
     if let identified {
       resolution = await AgentSessionResolver.shared.resolve(
         identified: identified,
         workingDirectory: workingDirectory,
-        activeText: activeText
+        activeText: activeText,
+        configRoot: configRoot
       )
     }
     return PaneAgentState.retainedSession(

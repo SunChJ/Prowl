@@ -34,6 +34,16 @@ nonisolated struct AgentSessionProfile: Sendable {
   /// Candidate enumeration for agents whose sessions live in a shared store
   /// instead of per-session files (OpenCode's sqlite database).
   var storeCandidates: (@Sendable (_ home: URL, _ cwd: URL?, _ processStartedAt: Date) -> [AgentSessionCandidate])?
+  /// Layout under a relocated config root for account-bound Prowl-launched
+  /// surfaces (docs-ai 053): the runtime's entire home moved, so paths carry
+  /// no `.claude`/`.codex` component and the default markers cannot match.
+  /// Only runtimes with verified account isolation define these; when a
+  /// surface has a config root, the resolver uses the rooted layout
+  /// exclusively — scanning the default home would misattribute sessions.
+  var rootedCandidateRoots:
+    (@Sendable (_ configRoot: URL, _ cwd: URL?, _ processStartedAt: Date, _ now: Date) -> [URL])?
+  var rootedFallbackRoots: (@Sendable (_ configRoot: URL, _ cwd: URL?) -> [URL])?
+  var rootedParsePath: (@Sendable (_ path: String, _ configRoot: URL) -> AgentSession?)?
 
   static func profile(for agent: DetectedAgent) -> AgentSessionProfile {
     switch agent {
@@ -74,6 +84,19 @@ nonisolated extension AgentSessionProfile {
     },
     fallbackRoots: { home, _ in
       [home.appending(path: ".codex/sessions")]
+    },
+    rootedCandidateRoots: { configRoot, _, processStartedAt, now in
+      dayDirectories(
+        root: configRoot.appending(path: "sessions"),
+        from: processStartedAt,
+        to: now
+      )
+    },
+    rootedFallbackRoots: { configRoot, _ in
+      [configRoot.appending(path: "sessions")]
+    },
+    rootedParsePath: { path, configRoot in
+      uuidJSONL(path: path, underRoot: configRoot.appending(path: "sessions"))
     }
   )
 
@@ -85,6 +108,13 @@ nonisolated extension AgentSessionProfile {
     candidateRoots: { home, cwd, _, _ in
       guard let cwd else { return [] }
       return [home.appending(path: ".claude/projects/\(alphanumericDashed(cwd.path))")]
+    },
+    rootedCandidateRoots: { configRoot, cwd, _, _ in
+      guard let cwd else { return [] }
+      return [configRoot.appending(path: "projects/\(alphanumericDashed(cwd.path))")]
+    },
+    rootedParsePath: { path, configRoot in
+      uuidJSONL(path: path, underRoot: configRoot.appending(path: "projects"))
     }
   )
 
@@ -332,6 +362,18 @@ nonisolated extension AgentSessionProfile {
   fileprivate static func uuidJSONL(path: String, marker: String) -> AgentSession? {
     let url = URL(fileURLWithPath: path)
     guard path.contains(marker), url.pathExtension == "jsonl",
+      let id = uuid(in: url.deletingPathExtension().lastPathComponent)
+    else { return nil }
+    return AgentSession(id: id, transcriptPath: url, source: .recentFile)
+  }
+
+  /// Marker matching for relocated homes: the config root replaces the global
+  /// `/.codex/…` substring, so ownership is a root prefix check instead.
+  fileprivate static func uuidJSONL(path: String, underRoot root: URL) -> AgentSession? {
+    let rootPath = root.standardizedFileURL.path(percentEncoded: false)
+    guard path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/") else { return nil }
+    let url = URL(fileURLWithPath: path)
+    guard url.pathExtension == "jsonl",
       let id = uuid(in: url.deletingPathExtension().lastPathComponent)
     else { return nil }
     return AgentSession(id: id, transcriptPath: url, source: .recentFile)

@@ -204,6 +204,13 @@ nonisolated enum SupacodePaths {
     baseDirectory.appending(path: "global.onevcat.json", directoryHint: .notDirectory)
   }
 
+  /// Base for account-bound agent profile homes: `~/.prowl/agent-profiles/`.
+  /// Chosen over Application Support to keep the path free of spaces handed
+  /// to third-party CLIs (docs-ai 053).
+  static var agentProfileHomesDirectory: URL {
+    baseDirectory.appending(path: "agent-profiles", directoryHint: .isDirectory)
+  }
+
   static var repositorySnapshotURL: URL {
     cacheDirectory.appending(path: "repository-snapshot.json", directoryHint: .notDirectory)
   }
