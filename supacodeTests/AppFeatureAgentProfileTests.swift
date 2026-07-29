@@ -147,6 +147,68 @@ struct AppFeatureAgentProfileTests {
     }
   }
 
+  @Test func actionTargetResolverPrefersSelectionThenExplicitTerminalTarget() {
+    let worktree = makeWorktree()
+    var repositories = makeRepositoriesState(worktree: worktree)
+
+    // Selection wins over any explicit target.
+    #expect(
+      repositories.actionTargetTerminalWorktree(explicitTargetID: "unknown")?.id == worktree.id
+    )
+
+    // Without a selection, the explicit target resolves through the full
+    // terminal-target path — including synthesized plain-folder worktrees.
+    repositories.selection = nil
+    #expect(
+      repositories.actionTargetTerminalWorktree(explicitTargetID: worktree.id)?.id == worktree.id
+    )
+    let rootURL = URL(fileURLWithPath: "/tmp/plain-folder")
+    let plain = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "plain-folder",
+      kind: .plain,
+      worktrees: []
+    )
+    repositories.repositories.append(plain)
+    #expect(
+      repositories.actionTargetTerminalWorktree(explicitTargetID: plain.id)?.workingDirectory
+        == rootURL
+    )
+    #expect(repositories.actionTargetTerminalWorktree(explicitTargetID: nil) == nil)
+  }
+
+  @Test(.dependencies) func paletteBuildsLaunchItemsForFocusedPlainFolderCanvasCard() {
+    // A runnable plain folder's terminal target ID is its repository ID; the
+    // factory must resolve it through the same synthesized-worktree path the
+    // launch action uses.
+    let rootURL = URL(fileURLWithPath: "/tmp/plain-folder")
+    let plain = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: "plain-folder",
+      kind: .plain,
+      worktrees: []
+    )
+    var repositories = RepositoriesFeature.State()
+    repositories.repositories = IdentifiedArray(uniqueElements: [plain])
+    repositories.selection = nil
+    let storage = SettingsTestStorage()
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    } operation: {
+      let profile = AgentProfile(name: "Codex", runtime: .codex)
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [profile] }
+
+      let items = agentProfileLaunchItems(repositories, actionTargetWorktreeID: plain.id)
+      #expect(items.map(\.title) == ["Launch Agent: Codex"])
+      #expect(items.first?.subtitle?.contains("plain-folder") == true)
+    }
+  }
+
   @Test func launchedSurfaceEntryShowsProfileName() {
     var entry = ActiveAgentEntry(
       id: UUID(),

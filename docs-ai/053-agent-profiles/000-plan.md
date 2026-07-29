@@ -333,6 +333,13 @@ agent 列表不变。
 - 2026-07-30 — Review 四轮(P2):palette 的 Launch Agent 条目工厂改用与 launch
   action 相同的 action-target 解析(selectedTerminalWorktree ?? Canvas 聚焦卡),
   Canvas 模式下条目不再缺席;补 Canvas 聚焦卡回归测试。
+- 2026-07-30 — Review 五轮(P2)+ 治本重构:plain-folder 聚焦卡的 ID 是 repository
+  ID,工厂用 `worktree(for:)` 解析不到(第三次同族偏差)。新增单一 resolver
+  `RepositoriesFeature.State.actionTargetTerminalWorktree(explicitTargetID:)`
+  (选中 terminal worktree ?? 显式 target 经 `terminalWorktree(for:)` 完整解析,
+  含 plain-folder 合成),palette 工厂与 `AppFeature.actionTargetWorktree` 均改为
+  调用它——生成端与执行端从此共享同一份目标解析,无法再各漏半步;配语义锁定
+  测试与 plain-folder 回归测试。
 - 2026-07-30 — Review 三轮(P2/P3):(a) surface 的 launch 身份增加 runtime,config
   root 只对**同 runtime 的检测**生效——bound pane 内手动启动其他 agent 时不再张冠
   李戴、也不再压制默认布局扫描;(b) 删除确认的判断从"当前 bindsDedicatedHome 意愿"

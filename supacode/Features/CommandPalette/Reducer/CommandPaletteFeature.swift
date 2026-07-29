@@ -547,10 +547,11 @@ func agentProfileLaunchItems(
   _ repositories: RepositoriesFeature.State,
   actionTargetWorktreeID: Worktree.ID? = nil
 ) -> [CommandPaletteItem] {
-  let target =
-    repositories.selectedTerminalWorktree
-    ?? actionTargetWorktreeID.flatMap { repositories.worktree(for: $0) }
-  guard let worktree = target else { return [] }
+  guard
+    let worktree = repositories.actionTargetTerminalWorktree(
+      explicitTargetID: actionTargetWorktreeID
+    )
+  else { return [] }
   @Shared(.userGlobalSettings) var globalSettings
   let profiles = globalSettings.agentProfiles
   let enabled = profiles.filter(\.isEnabled)

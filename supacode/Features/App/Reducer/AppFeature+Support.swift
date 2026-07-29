@@ -77,19 +77,24 @@ extension AppFeature {
   }
 
   func actionTargetWorktree(repositories: RepositoriesFeature.State) -> Worktree? {
-    if let worktree = repositories.selectedTerminalWorktree {
-      return worktree
-    }
-    return canvasFocusedTerminalWorktree(repositories: repositories)
+    // Same resolver as every UI entry point (palette item factories); only
+    // the source of the explicit target — the focused Canvas card — lives
+    // here, behind the terminal client dependency.
+    repositories.actionTargetTerminalWorktree(
+      explicitTargetID: canvasFocusedWorktreeID(repositories: repositories)
+    )
   }
 
   func canvasFocusedTerminalWorktree(repositories: RepositoriesFeature.State) -> Worktree? {
-    guard repositories.isShowingCanvas,
-      let worktreeID = terminalClient.canvasFocusedWorktreeID()
-    else {
+    guard let worktreeID = canvasFocusedWorktreeID(repositories: repositories) else {
       return nil
     }
     return terminalWorktree(for: worktreeID, repositories: repositories)
+  }
+
+  private func canvasFocusedWorktreeID(repositories: RepositoriesFeature.State) -> Worktree.ID? {
+    guard repositories.isShowingCanvas else { return nil }
+    return terminalClient.canvasFocusedWorktreeID()
   }
 
   func terminalWorktree(
