@@ -78,8 +78,9 @@ Settings 新增独立的 **Agents** tab(`SettingsSection` 新 case,与 Custom Co
 平级;命名取 Agents 而非 Agent Profiles,与工具栏 Agents capsule 的入口层级一致,并为
 未来 agent 相关设置留出空间)。tab 内容为可排序的 profile 列表(顺序即推荐兜底的优先
 级)与选中 profile 的编辑器;per-repo 的 Default Agent Profile 选择器在既有的
-repository section 中。profile 集合本身有序存放于 `UserGlobalSettings`:
-账号与 agent 偏好是本地用户的私有配置,不得成为仓库配置。per-repo 的 Default Agent
+repository section 中。profile 集合(连同播种 flag)有序存放于 `UserGlobalSettings`
+(`~/.prowl/global.onevcat.json`):账号与 agent 偏好是本地用户的私有配置,不得成为
+仓库配置。per-repo 的 Default Agent
 Profile 指定与上次启动记忆存于 `UserRepositorySettings`(本地文件
 `~/.prowl/repo/<name>/prowl.onevcat.json`,同样不进仓库)。
 
@@ -153,8 +154,11 @@ normalization 时清理悬空的 per-repo 指定。runtime CLI 是否可用不�
 账号绑定由 adapter 能力位(`supportsAccountIsolation`)门控;两家已验证 runtime 均通过
 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` 支持。
 
-绑定 profile 的 home 从其 UUID 派生,位于 Prowl 数据目录之下,绝不来自显示名或用户
-提供的路径。启动准备阶段先创建 runtime 目录(Codex 拒绝不存在的 `CODEX_HOME`)、校验
+绑定 profile 的 home 从其 UUID 派生:**`~/.prowl/agent-profiles/<uuid>/`**
+(`SupacodePaths.baseDirectory` 之下),环境变量直接指向该目录,不加中间层。绝不来自
+显示名或用户提供的路径。选 `~/.prowl` 而非 Application Support 的技术理由:后者路径
+含空格,第三方 CLI 及其子进程的引号处理是真实风险面;且与 repo 设置同根、对
+"Reveal Profile Files" 直观。启动准备阶段先创建 runtime 目录(Codex 拒绝不存在的 `CODEX_HOME`)、校验
 解析后的路径仍在 profile-home 基目录内,并施加 owner-only 权限。
 
 home 对 Prowl 是不透明的:对应环境变量只附加到新终端 surface——Claude Code 用
