@@ -28,7 +28,9 @@ Command Palette → "Toggle Active Agents Panel".
   icon even though it reports as the Pi agent; unknown wrappers fall back to the
   agent icon, then a sparkle).
 - **Title** — detected command/agent name + repository (repo color-coded);
-  command aliases such as `omp` are shown directly.
+  command aliases such as `omp` are shown directly. Panes Prowl launched from
+  an [agent profile](agent-profiles.md) show the profile's display name
+  instead (frozen at launch).
 - **Subtitle** — the agent's pane title (if `showActiveAgentTabTitles`) or branch
   name. The pane title is the surface's own terminal title, falling back to the
   tab title, so agents in different splits of one tab keep distinct subtitles.
