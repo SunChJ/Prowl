@@ -121,10 +121,14 @@ struct AgentProfilesSettingsView: View {
         Text("Standard").tag(AgentExecutionMode.standard)
         Text("Unrestricted").tag(AgentExecutionMode.unrestricted)
       }
-      if profile.executionMode == .unrestricted {
-        Text("Runs without permission prompts or sandboxing.")
-          .font(.caption)
-          .foregroundStyle(.red)
+      if profile.effectiveExecutionMode == .unrestricted {
+        Text(
+          profile.executionMode == .unrestricted
+            ? "Runs without permission prompts or sandboxing."
+            : "Extra arguments enable unrestricted execution — no permission prompts or sandboxing."
+        )
+        .font(.caption)
+        .foregroundStyle(.red)
       }
       Picker("Open In", selection: binding.placement) {
         Text("New Tab").tag(AgentProfilePlacement.tab)

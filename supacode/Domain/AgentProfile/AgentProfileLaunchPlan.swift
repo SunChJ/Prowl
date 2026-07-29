@@ -25,10 +25,28 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   }
 }
 
+nonisolated extension AgentProfile {
+  /// The execution mode the launch will actually have. Extra arguments are
+  /// respected as explicit user configuration — never blocked or stripped —
+  /// but the display must not claim Standard while the argv says otherwise
+  /// (docs-ai 053): a bypass flag the adapter's `observe` recognizes
+  /// (`--yolo`, `--dangerously-*`, `--permission-mode bypassPermissions`)
+  /// makes the effective mode `.unrestricted`.
+  var effectiveExecutionMode: AgentExecutionMode {
+    if executionMode == .unrestricted { return .unrestricted }
+    let observed = AgentRuntimeAdapterRegistry.observe(
+      agent: runtime.agent,
+      arguments: ShellWordSplitter.split(extraArguments)
+    )
+    return observed.executionMode == .unrestricted ? .unrestricted : .standard
+  }
+}
+
 nonisolated enum AgentProfileLaunchPlanError: Error, Equatable, Sendable {
   case runtimeUnavailable(AgentProfileRuntime)
   case accountIsolationUnsupported(AgentProfileRuntime)
   case homeEscapesBase(URL)
+  case homeIsSymbolicLink(URL)
 }
 
 nonisolated enum AgentProfileLaunchPlanner {
@@ -107,6 +125,7 @@ nonisolated enum AgentProfileHomeProvisioner {
     guard AgentProfileLaunchPlanner.isContained(home, in: base) else {
       throw AgentProfileLaunchPlanError.homeEscapesBase(home)
     }
+    try validatePhysicalContainment(home: home, base: base, fileManager: fileManager)
     try fileManager.createDirectory(
       at: home,
       withIntermediateDirectories: true,
@@ -118,5 +137,38 @@ nonisolated enum AgentProfileHomeProvisioner {
       [.posixPermissions: 0o700],
       ofItemAtPath: home.path(percentEncoded: false)
     )
+  }
+
+  /// Lexical containment is not enough: a `<uuid>` leaf replaced by a symlink
+  /// to a real agent home (`~/.codex`) passes the string check while every
+  /// following file operation lands on the link target. Reject a symlink leaf
+  /// outright, then require the *canonical* home to stay inside the
+  /// *canonical* base — which deliberately keeps a symlinked base itself
+  /// legal (e.g. `~/.prowl` living on a synced volume resolves consistently
+  /// on both sides of the comparison).
+  static func validatePhysicalContainment(
+    home: URL,
+    base: URL,
+    fileManager: FileManager = .default
+  ) throws {
+    let homePath = AgentProfileLaunchPlanner.pathString(home)
+    if let attributes = try? fileManager.attributesOfItem(atPath: homePath),
+      attributes[.type] as? FileAttributeType == .typeSymbolicLink
+    {
+      throw AgentProfileLaunchPlanError.homeIsSymbolicLink(home)
+    }
+    // `resolvingSymlinksInPath()` leaves ancestors unresolved when the leaf
+    // does not exist yet (first provision), so resolve the parent — which
+    // must exist for the comparison to mean anything — and reattach the leaf.
+    // The leaf itself was just proven not to be a symlink.
+    let canonicalHome =
+      home
+      .deletingLastPathComponent()
+      .resolvingSymlinksInPath()
+      .appending(path: home.lastPathComponent, directoryHint: .isDirectory)
+    let canonicalBase = base.resolvingSymlinksInPath()
+    guard AgentProfileLaunchPlanner.isContained(canonicalHome, in: canonicalBase) else {
+      throw AgentProfileLaunchPlanError.homeEscapesBase(home)
+    }
   }
 }

@@ -20,6 +20,8 @@ extension AgentProfileHomeClient: DependencyKey {
     },
     revealHome: { id in
       guard let home = containedHome(for: id) else { return }
+      // provision re-runs the physical containment gate (symlink leaf,
+      // canonical base escape) before touching anything.
       try? AgentProfileHomeProvisioner.provision(
         home: home,
         base: SupacodePaths.agentProfileHomesDirectory
@@ -28,6 +30,10 @@ extension AgentProfileHomeClient: DependencyKey {
     },
     trashHome: { id in
       guard let home = containedHome(for: id) else { return }
+      try AgentProfileHomeProvisioner.validatePhysicalContainment(
+        home: home,
+        base: SupacodePaths.agentProfileHomesDirectory
+      )
       guard FileManager.default.fileExists(atPath: AgentProfileLaunchPlanner.pathString(home)) else {
         return
       }

@@ -62,7 +62,10 @@ presets are removed with no file operations at all.
 
 The **Extra Arguments** field appends literal argv tokens after the
 preset-generated options (quotes group values with spaces; nothing is ever
-shell-interpreted). The **Launch Preview** at the bottom of the editor shows
+shell-interpreted). Your flags are respected as-is — including bypass flags
+like `--yolo` or `--dangerously-skip-permissions` — but the editor recognizes
+them and shows the unrestricted-execution warning even when the Execution
+Mode picker says Standard, so the display never lies about the effective mode. The **Launch Preview** at the bottom of the editor shows
 the exact rendered invocation — including the env prefix for bound profiles —
 using the same rendering as the real launch.
 

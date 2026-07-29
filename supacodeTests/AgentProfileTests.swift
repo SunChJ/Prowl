@@ -194,6 +194,56 @@ struct AgentProfileTests {
     )
   }
 
+  @Test func effectiveExecutionModeRecognizesBypassFlagsInExtraArguments() {
+    var codex = profile(name: "Codex")
+    #expect(codex.effectiveExecutionMode == .standard)
+
+    codex.extraArguments = "--search --yolo"
+    #expect(codex.effectiveExecutionMode == .unrestricted)
+
+    codex.extraArguments = "--dangerously-bypass-approvals-and-sandbox"
+    #expect(codex.effectiveExecutionMode == .unrestricted)
+
+    var claude = profile(name: "Claude", runtime: .claude)
+    claude.extraArguments = "--permission-mode bypassPermissions"
+    #expect(claude.effectiveExecutionMode == .unrestricted)
+
+    claude.extraArguments = "--verbose"
+    #expect(claude.effectiveExecutionMode == .standard)
+    claude.executionMode = .unrestricted
+    #expect(claude.effectiveExecutionMode == .unrestricted)
+  }
+
+  @Test func physicalContainmentRejectsSymlinkLeafAndEscapingTargets() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory
+      .appending(path: "agent-profile-symlink-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? fileManager.removeItem(at: root) }
+    let base = root.appending(path: "agent-profiles", directoryHint: .isDirectory)
+    let outside = root.appending(path: "fake-codex-home", directoryHint: .isDirectory)
+    try fileManager.createDirectory(at: base, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+
+    // A <uuid> leaf replaced by a symlink to a directory outside the base
+    // must be rejected before any file operation.
+    let linkedHome = base.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    try fileManager.createSymbolicLink(at: linkedHome, withDestinationURL: outside)
+    #expect(throws: AgentProfileLaunchPlanError.self) {
+      try AgentProfileHomeProvisioner.provision(home: linkedHome, base: base)
+    }
+    #expect(throws: AgentProfileLaunchPlanError.self) {
+      try AgentProfileHomeProvisioner.validatePhysicalContainment(home: linkedHome, base: base)
+    }
+
+    // A symlinked *base* (e.g. ~/.prowl on a synced volume) stays legal:
+    // both sides of the comparison resolve consistently.
+    let baseLink = root.appending(path: "agent-profiles-link", directoryHint: .isDirectory)
+    try fileManager.createSymbolicLink(at: baseLink, withDestinationURL: base)
+    let homeViaLink = baseLink.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    try AgentProfileHomeProvisioner.provision(home: homeViaLink, base: baseLink)
+    #expect(fileManager.fileExists(atPath: AgentProfileLaunchPlanner.pathString(homeViaLink)))
+  }
+
   @Test func provisionerRefusesHomesOutsideBase() {
     let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
     #expect(throws: AgentProfileLaunchPlanError.self) {

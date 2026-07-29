@@ -330,6 +330,14 @@ agent 列表不变。
 
 ## Amendments
 
+- 2026-07-30 — Review 修正(PR #620):(a) extra args 中的 bypass flag **尊重不拦截**,
+  但 domain 提供 `effectiveExecutionMode`(复用 adapter `observe` 的识别),编辑器
+  据此显示 unrestricted 警示——显示永不谎报 Standard;(b) profile home 的包含校验
+  升级为物理校验:拒绝 symlink leaf,并以"解析后的父目录 + 叶名"对"解析后的 base"
+  做 canonical containment(symlink 的 base 本身仍合法,如同步盘场景),
+  provision/reveal/trash 共用此闸;(c) Settings 快照回写不再冲掉外部写入的
+  launch 记忆;空名不再静默删除 profile(持久化边界回退旧名)。
+
 - 2026-07-29 — 依据与 onevcat 的设计讨论全文重写并改用中文:profile 从"私有 runtime
   home"重新定义为"preset + 可选账号绑定";新增 adapter 能力位与永远是菜单的 Agents
   capsule;指令/skill 注入与子目录共享明确列为 follow-up;handoff 边界维持不变。
