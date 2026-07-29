@@ -262,7 +262,12 @@ struct CommandPaletteFeature {
     }
     items.append(contentsOf: customCommandItems(customCommands))
     items.append(contentsOf: handoffCommandItems(repositories))
-    items.append(contentsOf: agentProfileLaunchItems(repositories))
+    items.append(
+      contentsOf: agentProfileLaunchItems(
+        repositories,
+        actionTargetWorktreeID: worktreeActionTargetID
+      )
+    )
     if let terminalWorktree = repositories.selectedTerminalWorktree {
       items.append(
         CommandPaletteItem(
@@ -532,12 +537,20 @@ private func customCommandItems(_ commands: [EffectiveCustomCommand]) -> [Comman
   }
 }
 
-/// Launch rows for enabled agent profiles: the selected worktree's
-/// Recommended profile first, then list order. Dispatches the same single
-/// profile-launch action as the toolbar Agents menu (docs-ai 053) — the
-/// palette is an entry point, never a second launch path. Internal for tests.
-func agentProfileLaunchItems(_ repositories: RepositoriesFeature.State) -> [CommandPaletteItem] {
-  guard let worktree = repositories.selectedTerminalWorktree else { return [] }
+/// Launch rows for enabled agent profiles: the target worktree's Recommended
+/// profile first, then list order. Dispatches the same single profile-launch
+/// action as the toolbar Agents menu (docs-ai 053) — the palette is an entry
+/// point, never a second launch path. The target mirrors the launch action's
+/// resolution: the selected terminal worktree in Normal mode, the focused
+/// Canvas card otherwise. Internal for tests.
+func agentProfileLaunchItems(
+  _ repositories: RepositoriesFeature.State,
+  actionTargetWorktreeID: Worktree.ID? = nil
+) -> [CommandPaletteItem] {
+  let target =
+    repositories.selectedTerminalWorktree
+    ?? actionTargetWorktreeID.flatMap { repositories.worktree(for: $0) }
+  guard let worktree = target else { return [] }
   @Shared(.userGlobalSettings) var globalSettings
   let profiles = globalSettings.agentProfiles
   let enabled = profiles.filter(\.isEnabled)

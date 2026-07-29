@@ -330,6 +330,9 @@ agent 列表不变。
 
 ## Amendments
 
+- 2026-07-30 — Review 四轮(P2):palette 的 Launch Agent 条目工厂改用与 launch
+  action 相同的 action-target 解析(selectedTerminalWorktree ?? Canvas 聚焦卡),
+  Canvas 模式下条目不再缺席;补 Canvas 聚焦卡回归测试。
 - 2026-07-30 — Review 三轮(P2/P3):(a) surface 的 launch 身份增加 runtime,config
   root 只对**同 runtime 的检测**生效——bound pane 内手动启动其他 agent 时不再张冠
   李戴、也不再压制默认布局扫描;(b) 删除确认的判断从"当前 bindsDedicatedHome 意愿"

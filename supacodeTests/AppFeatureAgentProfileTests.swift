@@ -124,6 +124,29 @@ struct AppFeatureAgentProfileTests {
     }
   }
 
+  @Test(.dependencies) func paletteBuildsLaunchItemsForFocusedCanvasCard() {
+    let worktree = makeWorktree()
+    var repositories = makeRepositoriesState(worktree: worktree)
+    // Canvas: no selected terminal worktree, only the focused card passed as
+    // the action target.
+    repositories.selection = nil
+    let storage = SettingsTestStorage()
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    } operation: {
+      let profile = AgentProfile(name: "Codex", runtime: .codex)
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [profile] }
+
+      #expect(agentProfileLaunchItems(repositories).isEmpty)
+      let items = agentProfileLaunchItems(repositories, actionTargetWorktreeID: worktree.id)
+      #expect(items.map(\.title) == ["Launch Agent: Codex"])
+      #expect(items.first?.subtitle?.contains(worktree.name) == true)
+    }
+  }
+
   @Test func launchedSurfaceEntryShowsProfileName() {
     var entry = ActiveAgentEntry(
       id: UUID(),
