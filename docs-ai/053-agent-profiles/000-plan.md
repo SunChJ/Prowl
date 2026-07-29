@@ -75,9 +75,12 @@ Settings 新增 **Agents** 区,持有有序的全局 profile 集合与 path rout
 不得成为仓库配置。
 
 一个 profile 包含:稳定 UUID、显示名、启用状态、runtime、可选 model、可选 reasoning
-effort、既有的显式 execution mode,以及**可选的账号绑定**。V1 暴露两家验证过的通用档位
-**Low / Medium / High**,`nil` 表示 runtime 默认;两个 adapter 各自渲染同一意图:Claude
-Code 用 `--effort`,Codex 用类型化的 `model_reasoning_effort` config override。
+effort、既有的显式 execution mode,以及**可选的账号绑定**。reasoning effort 存为自由
+字符串,`nil` 表示 runtime 默认;编辑器按 runtime 展示 adapter 自带的已知档位建议
+(两家共有的 low/medium/high,及各自的扩展档位,如 Codex 的 `minimal` / `xhigh`),同时
+允许直接填写任意值。自定义值只作为**单一参数值**渲染进类型化参数——Claude Code 的
+`--effort`、Codex 的 `model_reasoning_effort` config override——走既有的安全 argv 渲染,
+不经过 shell 解释;未知档位由 CLI 启动时自行报错,在新 tab 内直接可见,Prowl 不做预校验。
 `.unrestricted` 保留但视觉上标记为危险,保存时需要显式确认;绝不从其他 profile 或来源
 pane 推断。
 
@@ -183,7 +186,8 @@ specification 有意可被 handoff 复用,但 V1 的 handoff 目标列表维持�
 - Domain 测试:profile normalization、UUID 稳定性、非法/缺失 route、最长路径边界匹配、
   旧版 JSON 解码、无任何持久化的敏感材料;纯 preset profile 必须产生空环境 patch。
 - Adapter 测试(`supacodeTests/AgentRuntimeAdapterTests.swift`):无 prompt 的交互式
-  argv、model/effort 映射、标准与危险模式、shell 转义、能力位取值。
+  argv、model/effort 映射(含自定义 effort 值的安全渲染)、标准与危险模式、shell 转义、
+  能力位取值。
 - Settings 与 profile-home 测试:保存/重载、绑定 profile 的派生目录 owner-only 权限、
   home 缺失时的状态判定、stdout/stderr/非零退出码的登录状态解析、绝不访问真实凭据。
 - Reducer/终端测试:菜单各可用性状态、正确的 worktree/cwd/环境 patch、每次选择恰好新建
@@ -219,3 +223,6 @@ specification 有意可被 handoff 复用,但 V1 的 handoff 目标列表维持�
 - 2026-07-29 — 依据与 onevcat 的设计讨论全文重写并改用中文:profile 从"私有 runtime
   home"重新定义为"preset + 可选账号绑定";新增 adapter 能力位与永远是菜单的 Agents
   capsule;指令/skill 注入与子目录共享明确列为 follow-up;handoff 边界维持不变。
+- 2026-07-29 — reasoning effort 从固定三档改为"per-runtime 建议档位 + 自由填值":档位
+  集合随模型演进,硬编码枚举会过时;自定义值仅作为类型化参数的单一值渲染,不构成自由
+  格式 flag。execution mode 维持既有 `standard` / `unrestricted` 两档不变。
