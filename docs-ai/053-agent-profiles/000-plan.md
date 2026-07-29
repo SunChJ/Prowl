@@ -330,6 +330,11 @@ agent 列表不变。
 
 ## Amendments
 
+- 2026-07-30 — Review 三轮(P2/P3):(a) surface 的 launch 身份增加 runtime,config
+  root 只对**同 runtime 的检测**生效——bound pane 内手动启动其他 agent 时不再张冠
+  李戴、也不再压制默认布局扫描;(b) 删除确认的判断从"当前 bindsDedicatedHome 意愿"
+  改为"意愿 ∨ 磁盘上 home 实际存在"——bind→launch→unbind→delete 不再静默遗留凭据
+  目录;(c) Reveal 后回发 homeStatusRefreshed,被动状态行即时更新。
 - 2026-07-30 — Review 修正(PR #620):(a) extra args 中的 bypass flag **尊重不拦截**,
   但 domain 提供 `effectiveExecutionMode`(复用 adapter `observe` 的识别),编辑器
   据此显示 unrestricted 警示——显示永不谎报 Standard;二轮追审后改为**三态**:

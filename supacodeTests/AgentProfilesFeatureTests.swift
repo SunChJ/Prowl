@@ -157,6 +157,84 @@ struct AgentProfilesFeatureTests {
     #expect(trashed.value == [bound.id])
   }
 
+  @Test(.dependencies) func unboundProfileWithHomeOnDiskStillConfirmsRemoval() async {
+    // bind → launch (home created) → unbind → remove: the gate keys on the
+    // disk fact, so the credentials never get orphaned silently.
+    let unbound = AgentProfile(name: "Codex · Was Bound", runtime: .codex)
+    let storage = SettingsTestStorage()
+    let trashed = LockIsolated<[AgentProfile.ID]>([])
+    let store = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [unbound] }
+      var initial = AgentProfilesFeature.State()
+      initial.settings = settings
+      initial.selectedProfileID = unbound.id
+      return TestStore(initialState: initial) {
+        AgentProfilesFeature()
+      } withDependencies: {
+        $0[AgentProfileHomeClient.self].homeExists = { _ in true }
+        $0[AgentProfileHomeClient.self].trashHome = { id in
+          trashed.withValue { $0.append(id) }
+        }
+      }
+    }
+
+    await store.send(.removeSelectedTapped) {
+      $0.alert = AgentProfilesFeature.removalAlert(profile: unbound)
+    }
+    await store.send(.alert(.presented(.removeTrashingFiles(unbound.id)))) {
+      $0.alert = nil
+      $0.settings.agentProfiles = []
+      $0.selectedProfileID = nil
+    }
+    await store.receive(\.delegate.settingsChanged)
+    await store.finish()
+    #expect(trashed.value == [unbound.id])
+  }
+
+  @Test(.dependencies) func revealRefreshesThePassiveHomeStatus() async {
+    var bound = AgentProfile(name: "Codex · Work", runtime: .codex)
+    bound.bindsDedicatedHome = true
+    let storage = SettingsTestStorage()
+    let homeOnDisk = LockIsolated(false)
+    let store = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [bound] }
+      var initial = AgentProfilesFeature.State()
+      initial.settings = settings
+      initial.selectedProfileID = bound.id
+      return TestStore(initialState: initial) {
+        AgentProfilesFeature()
+      } withDependencies: {
+        $0[AgentProfileHomeClient.self].homeExists = { _ in homeOnDisk.value }
+        $0[AgentProfileHomeClient.self].revealHome = { _ in homeOnDisk.setValue(true) }
+      }
+    }
+
+    await store.send(.revealProfileFiles)
+    await store.receive(\.homeStatusRefreshed) {
+      $0.selectedHomeInitialized = true
+    }
+  }
+
+  @Test func launchConfigRootOnlyAppliesToTheLaunchedRuntime() {
+    let home = URL(fileURLWithPath: "/base/agent-profiles/ABC", isDirectory: true)
+    let identity = WorktreeTerminalState.SurfaceLaunchProfile(
+      profileID: UUID(),
+      name: "Codex · Work",
+      runtime: .codex,
+      dedicatedHome: home
+    )
+    #expect(identity.configRoot(forDetected: .codex) == home)
+    // A different agent started manually in the same pane uses its default
+    // home; handing it the profile home would break session attribution.
+    #expect(identity.configRoot(forDetected: .claude) == nil)
+  }
+
   @Test(.dependencies) func removingPurePresetSkipsConfirmationAndFileOperations() async {
     let preset = AgentProfile(name: "Claude", runtime: .claude)
     let storage = SettingsTestStorage()

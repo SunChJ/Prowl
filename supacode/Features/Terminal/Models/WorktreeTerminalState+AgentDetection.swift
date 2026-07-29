@@ -127,7 +127,7 @@ extension WorktreeTerminalState {
       previous: previous,
       workingDirectory: workingDirectory,
       activeText: activeText,
-      configRoot: launchProfilesBySurface[surfaceID]?.dedicatedHome
+      configRoot: launchProfilesBySurface[surfaceID]?.configRoot(forDetected: agent)
     )
     // Re-check after the suspension: the pane may have been closed and its
     // agent state cleaned up while the resolver was doing file inspection;

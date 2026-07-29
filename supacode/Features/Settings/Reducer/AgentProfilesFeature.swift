@@ -31,6 +31,7 @@ struct AgentProfilesFeature {
     case moveProfiles(IndexSet, Int)
     case selectProfile(AgentProfile.ID?)
     case revealProfileFiles
+    case homeStatusRefreshed(AgentProfile.ID, Bool)
     case alert(PresentationAction<Alert>)
     case delegate(Delegate)
   }
@@ -97,8 +98,12 @@ struct AgentProfilesFeature {
 
       case .removeSelectedTapped:
         guard let profile = state.selectedProfile else { return .none }
-        guard profile.bindsDedicatedHome else {
-          // Pure presets have no home reference: removal performs zero file
+        // The confirmation gate keys on the *disk fact*, not the current
+        // binding intent: a profile that was bound, launched (home created),
+        // then unbound still owns credentials on disk — deleting it silently
+        // would orphan them with no UI path back.
+        guard profile.bindsDedicatedHome || homeClient.homeExists(profile.id) else {
+          // Pure presets with no home on disk: removal performs zero file
           // operations by construction.
           removeProfile(&state, id: profile.id)
           return persist(state.settings)
@@ -119,7 +124,17 @@ struct AgentProfilesFeature {
         guard let profile = state.selectedProfile, profile.bindsDedicatedHome else { return .none }
         let id = profile.id
         let client = homeClient
-        return .run { _ in client.revealHome(id) }
+        return .run { send in
+          // Reveal provisions the home when missing; report the fresh status
+          // so the passive indicator doesn't keep saying "Not initialized".
+          client.revealHome(id)
+          await send(.homeStatusRefreshed(id, client.homeExists(id)))
+        }
+
+      case .homeStatusRefreshed(let profileID, let initialized):
+        guard state.selectedProfileID == profileID else { return .none }
+        state.selectedHomeInitialized = initialized
+        return .none
 
       case .alert(.presented(.confirmUnrestricted(let profileID))):
         guard let index = state.settings.agentProfiles.firstIndex(where: { $0.id == profileID })

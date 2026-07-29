@@ -75,10 +75,20 @@ final class WorktreeTerminalState {
     /// Display name recorded at launch. Deliberately frozen: later profile
     /// renames or deletions never relabel a live pane.
     let name: String
+    /// The runtime this profile launched. The config root only applies to
+    /// detections of the same runtime: after the launched agent exits, a
+    /// manually started *different* agent in the same pane uses its default
+    /// home, and handing it the profile home would break its session
+    /// attribution.
+    let runtime: AgentProfileRuntime
     /// Relocated runtime home for account-bound profiles; the session
     /// resolver uses it as the config root for this surface. Nil for pure
     /// presets (default home layout).
     let dedicatedHome: URL?
+
+    func configRoot(forDetected agent: DetectedAgent) -> URL? {
+      runtime.agent == agent ? dedicatedHome : nil
+    }
   }
 
   var surfaceAgentStates: [UUID: PaneAgentState] = [:]
@@ -419,6 +429,7 @@ final class WorktreeTerminalState {
     let identity = SurfaceLaunchProfile(
       profileID: plan.profileID,
       name: plan.profileName,
+      runtime: plan.runtime,
       dedicatedHome: plan.dedicatedHome
     )
     if plan.placement == .split,

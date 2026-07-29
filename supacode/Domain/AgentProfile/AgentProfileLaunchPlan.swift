@@ -6,6 +6,7 @@ import Foundation
 nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   let profileID: UUID
   let profileName: String
+  let runtime: AgentProfileRuntime
   let invocation: AgentInvocation
   let placement: AgentProfilePlacement
   let splitDirection: UserCustomSplitDirection
@@ -96,6 +97,7 @@ nonisolated enum AgentProfileLaunchPlanner {
     return AgentProfileLaunchPlan(
       profileID: profile.id,
       profileName: profile.name,
+      runtime: profile.runtime,
       invocation: invocation,
       placement: profile.placement,
       splitDirection: profile.splitDirection,
