@@ -75,7 +75,7 @@ Settings 新增 **Agents** 区,持有有序的全局 profile 集合与 path rout
 不得成为仓库配置。
 
 一个 profile 包含:稳定 UUID、显示名、启用状态、runtime、可选 model、可选 reasoning
-effort、既有的显式 execution mode,以及**可选的账号绑定**。reasoning effort 存为自由
+effort、既有的显式 execution mode、启动位置(placement),以及**可选的账号绑定**。reasoning effort 存为自由
 字符串,`nil` 表示 runtime 默认;编辑器按 runtime 展示 adapter 自带的已知档位建议
 (两家共有的 low/medium/high,及各自的扩展档位,如 Codex 的 `minimal` / `xhigh`),同时
 允许直接填写任意值。自定义值只作为**单一参数值**渲染进类型化参数——Claude Code 的
@@ -102,8 +102,11 @@ Agents capsule 不再因无运行中 agent 而禁用,而是**永远作为菜单*
   "Manage Agent Profiles…" 直达 Settings。
 - 有运行中 agent 时:保留现有 Active Agents / Hand Off 内容,并附带上述启动项。
 
-选择 profile 即在该 worktree 新建 tab 并以交互模式启动 runtime,无初始 prompt。绝不向
-既有 shell 注入文本:Prowl 无法证明那个 shell 处于空闲、可安全接管的状态。
+选择 profile 即在该 worktree 新建一个 surface 并以交互模式启动 runtime,无初始 prompt。
+启动位置由 profile 的 placement 决定:**New Tab**(默认)或 **New Split**(带方向,复用
+custom command 既有的 `UserCustomSplitDirection`)。split 同样是全新 surface,身份记录与
+结构化启动规则完全一致;当该 worktree 尚无可分割的 surface 时,split 退化为新 tab。绝不
+向既有 shell 注入文本:Prowl 无法证明那个 shell 处于空闲、可安全接管的状态。
 
 Prowl 启动的 surface 在创建时记录 profile UUID;检测到但非 Prowl 启动的 agent 只显示
 "检测到 Codex"这类事实,绝不猜测其归属的 profile 或账号。
@@ -136,8 +139,8 @@ home 的 skills/、session 目录)。#617 的分叉教训针对的是会被 CLI 
 
 ## 实现方式
 
-1. 引入 Codable 的 `AgentProfile` domain model(preset 字段 + 可选账号绑定)与 route
-   resolver 及 normalization 测试。runtime enum 限定为 Claude Code 与 Codex,校验非空
+1. 引入 Codable 的 `AgentProfile` domain model(preset 字段 + placement + 可选账号绑定)
+   与 route resolver 及 normalization 测试。runtime enum 限定为 Claude Code 与 Codex,校验非空
    显示名与 UUID 唯一性,normalization 时丢弃指向不可用 profile 的 route。扩展
    `supacode/Features/Settings/Models/UserGlobalSettings.swift` 及其 shared key,兼容缺少
    新字段的既有 JSON。
@@ -146,11 +149,12 @@ home 的 skills/、session 目录)。#617 的分叉教训针对的是会被 CLI 
    增加可选 reasoning effort,由各 adapter 自行完成 argv/config 映射与校验。为 adapter
    增加能力位:V1 实际使用 `supportsAccountIsolation`,为 handoff 与指令注入预留位置,
    取代散落的品牌硬编码判断。
-3. 把 profile 解析为单一 launch specification:profile UUID、类型化启动请求、argv,以及
-   **仅账号绑定时非空**的环境 patch。扩展 `supacode/Clients/Terminal/TerminalClient.swift`
-   与 `supacode/Features/Terminal/Models/WorktreeTerminalState.swift` 的 surface 创建路径,
-   使新 tab 经 `GhosttySurfaceView(environment:)` 接收 patch;不得把环境变量赋值拼进
-   shell 输入。在既有检测状态旁记录每个 surface 的启动 profile。
+3. 把 profile 解析为单一 launch specification:profile UUID、类型化启动请求、argv、
+   placement,以及**仅账号绑定时非空**的环境 patch。扩展
+   `supacode/Clients/Terminal/TerminalClient.swift` 与
+   `supacode/Features/Terminal/Models/WorktreeTerminalState.swift` 的 surface 创建路径,
+   使新 tab 与新 split 均经 `GhosttySurfaceView(environment:)` 接收 patch;不得把环境
+   变量赋值拼进 shell 输入。在既有检测状态旁记录每个 surface 的启动 profile。
 4. 新增小型 Settings reducer/view:profile 编辑、route 编辑,以及账号绑定分支的状态/登录
    动作。文件操作全部藏在注入的 profile-home dependency 之后,测试绝不触碰真实登录目录。
 5. 扩展 `supacode/Features/Repositories/Views/AgentsToolbarButton.swift` 及其在
@@ -191,8 +195,8 @@ specification 有意可被 handoff 复用,但 V1 的 handoff 目标列表维持�
 - Settings 与 profile-home 测试:保存/重载、绑定 profile 的派生目录 owner-only 权限、
   home 缺失时的状态判定、stdout/stderr/非零退出码的登录状态解析、绝不访问真实凭据。
 - Reducer/终端测试:菜单各可用性状态、正确的 worktree/cwd/环境 patch、每次选择恰好新建
-  一个 tab、route 编辑后 surface 的 profile 身份保持稳定、纯 preset 启动不设任何环境
-  变量。
+  一个 surface(tab 或按 placement 的 split,空 worktree 时 split 退化为 tab)、route
+  编辑后 surface 的 profile 身份保持稳定、纯 preset 启动不设任何环境变量。
 - 手动验证:(a) 同一 runtime 的两个纯 preset(不同 model/effort)并排启动,确认共享同一
   登录且 `--resume` 历史统一;(b) 两个账号绑定 profile 分别登录不同账号并排运行,确认
   各 CLI 报告自己的身份;(c) 修改 route 后确认只有后续启动受影响。
@@ -226,3 +230,6 @@ specification 有意可被 handoff 复用,但 V1 的 handoff 目标列表维持�
 - 2026-07-29 — reasoning effort 从固定三档改为"per-runtime 建议档位 + 自由填值":档位
   集合随模型演进,硬编码枚举会过时;自定义值仅作为类型化参数的单一值渲染,不构成自由
   格式 flag。execution mode 维持既有 `standard` / `unrestricted` 两档不变。
+- 2026-07-29 — profile 新增 per-profile 启动位置(placement):New Tab(默认)或
+  New Split(方向复用 custom command 的 `UserCustomSplitDirection`);无可分割 surface
+  时退化为新 tab。粒度与 custom command 的 per-command 先例一致。
