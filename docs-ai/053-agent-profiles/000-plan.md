@@ -56,7 +56,9 @@ Profile 的本体是 **preset**(对已知 runtime 的一组命名预置配置);�
 - 不把 API key、OAuth token、`auth.json` 内容放进 Prowl JSON、日志、分析或 SwiftUI 状态;
   V1 只使用 CLI 自管认证。裸 API key 输入(需 Keychain 引用 + agent-only 启动边界)整体
   推迟。
-- 不接受任意可执行文件路径、shell 片段或自由格式 CLI flag。
+- 不接受任意可执行文件路径或 shell 片段。自定义附加参数(Advanced)是**字面 argv
+  token**:按 shell-words 规则切分后逐个追加,永不经过 shell 解释(无变量展开、命令
+  替换或重定向)。
 - 不在 profile 或推荐指定变化时修改运行中的 pane,不拦截用户在既有 shell 中手动输入的
   `claude` / `codex`。
 - 不支持检测到但未验证的 runtime。
@@ -85,7 +87,8 @@ Profile 指定与上次启动记忆存于 `UserRepositorySettings`(本地文件
 `~/.prowl/repo/<name>/prowl.onevcat.json`,同样不进仓库)。
 
 一个 profile 包含:稳定 UUID、显示名、启用状态、runtime、可选 model、可选 reasoning
-effort、既有的显式 execution mode、启动位置(placement),以及**可选的账号绑定**。
+effort、既有的显式 execution mode、启动位置(placement)、可选的自定义附加参数
+(Advanced),以及**可选的账号绑定**。
 model 与 reasoning effort 均存为自由字符串,`nil` 表示 runtime 默认;编辑器按 runtime
 展示 adapter 自带的建议列表(effort 如两家共有的 low/medium/high 及 Codex 的
 `minimal` / `xhigh` 等扩展档位),同时允许直接填写任意值。自定义值只作为**单一参数值**渲染进类型化参数——Claude Code 的
@@ -93,6 +96,13 @@ model 与 reasoning effort 均存为自由字符串,`nil` 表示 runtime 默认;
 不经过 shell 解释;未知档位由 CLI 启动时自行报错,在新 surface 内直接可见,Prowl 不做预校验。
 `.unrestricted` 保留但视觉上标记为危险,保存时需要显式确认;绝不从其他 profile 或来源
 pane 推断。
+
+编辑器含 **Advanced 面板**(与账号绑定同区):**自定义附加参数**字段,按 shell-words
+规则切分为字面 argv token(支持引号包裹含空格值),追加在 adapter 生成参数之后
+(last-wins,用户可覆盖预置值),永不经 shell 解释。编辑器底部实时显示**启动预览**:
+最终的完整启动形态,绑定 profile 含环境前缀(如
+`CODEX_HOME=~/.prowl/agent-profiles/<uuid> codex --yolo`)——launch spec 是纯函数,
+预览与实际启动共用同一渲染,兼作附加参数切分的自查。
 
 **初始播种(seeding)**:首次启用本功能时,为每个已安装的已验证 CLI 播种一个裸
 preset(显示名即 runtime 名,无 model/effort、standard 模式、New Tab、不绑定账号),
@@ -203,8 +213,9 @@ Prowl 不提供任何目录共享功能(V1 及以后均然)。希望在绑定 pr
    增加可选 reasoning effort,由各 adapter 自行完成 argv/config 映射与校验。为 adapter
    增加能力位:V1 实际使用 `supportsAccountIsolation`,为 handoff 与指令注入预留位置,
    取代散落的品牌硬编码判断。
-3. 把 profile 解析为单一 launch specification:profile UUID、类型化启动请求、argv、
-   placement,以及**仅账号绑定时非空**的环境 patch。扩展
+3. 把 profile 解析为单一 launch specification:profile UUID、类型化启动请求、argv
+   (adapter 生成 + 附加参数 token 追加,shell-words 切分器为带测试的纯函数)、
+   placement,以及**仅账号绑定时非空**的环境 patch。启动预览与实际启动共用该解析。扩展
    `supacode/Clients/Terminal/TerminalClient.swift` 与
    `supacode/Features/Terminal/Models/WorktreeTerminalState.swift` 的 surface 创建路径,
    使新 tab 与新 split 均经 `GhosttySurfaceView(environment:)` 接收 patch;不得把环境
@@ -263,7 +274,8 @@ agent 列表不变。
   必须产生空环境 patch。
 - Adapter 测试(`supacodeTests/AgentRuntimeAdapterTests.swift`):无 prompt 的交互式
   argv、`.headless` 的一次性执行 argv、model/effort 映射(含自定义 effort 值的安全
-  渲染)、标准与危险模式、shell 转义、能力位取值。
+  渲染)、标准与危险模式、shell 转义、能力位取值;shell-words 切分器(引号、转义、
+  空输入)、附加参数追加顺序、预览与实际渲染一致。
 - Settings 与 profile-home 测试:保存/重载、绑定 profile 的派生目录 owner-only 权限、
   home 初始化状态的被动判定(纯文件系统,不调 CLI)、绝不访问真实凭据;删除路径的
   包含校验(基目录外一律拒绝)、纯 preset 删除零文件操作、Trash 而非删除。
@@ -348,6 +360,9 @@ agent 列表不变。
   专属指令走 home 内原生文件(`CLAUDE.md` / `AGENTS.md`),注入需求消失、不再规划;
   明确环境 patch 为叠加语义(继承 login shell 环境,不清洗、不继承他 tab 会话状态);
   新增「后续方向」一节。
+- 2026-07-29 — 新增 Advanced 自定义附加参数与启动预览:附加参数为字面 argv token
+  (shell-words 切分、追加在预置参数后、永不经 shell 解释),相应收窄"自由格式 flag"
+  非目标;预览与实际启动共用 launch spec 渲染。
 - 2026-07-29 — Grill 环节定案:为已安装 CLI 一次性播种裸 preset;删除绑定 profile 走
   "确认 + 默认保留 + 可选 Trash",文件操作硬性限定在 UUID 派生且通过包含校验的路径
   (纯 preset 零文件操作,绝不触碰真实 agent home);Prowl 启动的 surface 在 Active
