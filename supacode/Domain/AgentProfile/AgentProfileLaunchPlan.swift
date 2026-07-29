@@ -25,20 +25,30 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   }
 }
 
+/// What the editor may honestly claim about a profile's execution mode.
+/// CLI flag surfaces evolve (`--sandbox danger-full-access`,
+/// `--ask-for-approval never`, arbitrary `-c` overrides), so any recognition
+/// list goes stale: instead of chasing it, unrecognized extra arguments
+/// downgrade the claim to "follows your command line" — the display never
+/// asserts Standard it cannot prove (docs-ai 053, review round 2).
+nonisolated enum AgentProfileEffectiveExecutionMode: Equatable, Sendable {
+  case standard
+  case unrestricted
+  case followsExtraArguments
+}
+
 nonisolated extension AgentProfile {
-  /// The execution mode the launch will actually have. Extra arguments are
-  /// respected as explicit user configuration — never blocked or stripped —
-  /// but the display must not claim Standard while the argv says otherwise
-  /// (docs-ai 053): a bypass flag the adapter's `observe` recognizes
+  /// Extra arguments are respected as explicit user configuration — never
+  /// blocked or stripped. A bypass flag the adapter's `observe` recognizes
   /// (`--yolo`, `--dangerously-*`, `--permission-mode bypassPermissions`)
-  /// makes the effective mode `.unrestricted`.
-  var effectiveExecutionMode: AgentExecutionMode {
+  /// upgrades the claim to `.unrestricted`; any other extra argument defers
+  /// the claim entirely.
+  var effectiveExecutionMode: AgentProfileEffectiveExecutionMode {
     if executionMode == .unrestricted { return .unrestricted }
-    let observed = AgentRuntimeAdapterRegistry.observe(
-      agent: runtime.agent,
-      arguments: ShellWordSplitter.split(extraArguments)
-    )
-    return observed.executionMode == .unrestricted ? .unrestricted : .standard
+    let tokens = ShellWordSplitter.split(extraArguments)
+    guard !tokens.isEmpty else { return .standard }
+    let observed = AgentRuntimeAdapterRegistry.observe(agent: runtime.agent, arguments: tokens)
+    return observed.executionMode == .unrestricted ? .unrestricted : .followsExtraArguments
   }
 }
 

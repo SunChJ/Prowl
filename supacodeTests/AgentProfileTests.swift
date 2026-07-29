@@ -194,22 +194,32 @@ struct AgentProfileTests {
     )
   }
 
-  @Test func effectiveExecutionModeRecognizesBypassFlagsInExtraArguments() {
+  @Test func effectiveExecutionModeNeverClaimsStandardItCannotProve() {
     var codex = profile(name: "Codex")
     #expect(codex.effectiveExecutionMode == .standard)
 
+    // Recognized bypass flags upgrade the claim to unrestricted.
     codex.extraArguments = "--search --yolo"
     #expect(codex.effectiveExecutionMode == .unrestricted)
-
     codex.extraArguments = "--dangerously-bypass-approvals-and-sandbox"
     #expect(codex.effectiveExecutionMode == .unrestricted)
+
+    // Unrecognized safety-relevant overrides must not read as Standard:
+    // the claim defers to the command line instead.
+    codex.extraArguments = "--sandbox danger-full-access"
+    #expect(codex.effectiveExecutionMode == .followsExtraArguments)
+    codex.extraArguments = "--ask-for-approval never"
+    #expect(codex.effectiveExecutionMode == .followsExtraArguments)
+    codex.extraArguments = "-c approval_policy=never"
+    #expect(codex.effectiveExecutionMode == .followsExtraArguments)
 
     var claude = profile(name: "Claude", runtime: .claude)
     claude.extraArguments = "--permission-mode bypassPermissions"
     #expect(claude.effectiveExecutionMode == .unrestricted)
 
+    // Harmless flags also defer — any extra argument voids the Standard claim.
     claude.extraArguments = "--verbose"
-    #expect(claude.effectiveExecutionMode == .standard)
+    #expect(claude.effectiveExecutionMode == .followsExtraArguments)
     claude.executionMode = .unrestricted
     #expect(claude.effectiveExecutionMode == .unrestricted)
   }

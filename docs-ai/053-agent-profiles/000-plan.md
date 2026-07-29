@@ -332,7 +332,10 @@ agent 列表不变。
 
 - 2026-07-30 — Review 修正(PR #620):(a) extra args 中的 bypass flag **尊重不拦截**,
   但 domain 提供 `effectiveExecutionMode`(复用 adapter `observe` 的识别),编辑器
-  据此显示 unrestricted 警示——显示永不谎报 Standard;(b) profile home 的包含校验
+  据此显示 unrestricted 警示——显示永不谎报 Standard;二轮追审后改为**三态**:
+  识别出 bypass → 红色 unrestricted;存在任何未识别的 extra args(含
+  `--sandbox` / `--ask-for-approval` / `-c` 覆盖)→ 中性"遵循命令行参数",不再
+  声称 Standard——识别清单不可穷尽,诚实的方式是不认识就不承诺;(b) profile home 的包含校验
   升级为物理校验:拒绝 symlink leaf,并以"解析后的父目录 + 叶名"对"解析后的 base"
   做 canonical containment(symlink 的 base 本身仍合法,如同步盘场景),
   provision/reveal/trash 共用此闸;(c) Settings 快照回写不再冲掉外部写入的

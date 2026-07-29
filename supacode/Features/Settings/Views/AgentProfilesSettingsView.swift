@@ -121,7 +121,10 @@ struct AgentProfilesSettingsView: View {
         Text("Standard").tag(AgentExecutionMode.standard)
         Text("Unrestricted").tag(AgentExecutionMode.unrestricted)
       }
-      if profile.effectiveExecutionMode == .unrestricted {
+      switch profile.effectiveExecutionMode {
+      case .standard:
+        EmptyView()
+      case .unrestricted:
         Text(
           profile.executionMode == .unrestricted
             ? "Runs without permission prompts or sandboxing."
@@ -129,6 +132,10 @@ struct AgentProfilesSettingsView: View {
         )
         .font(.caption)
         .foregroundStyle(.red)
+      case .followsExtraArguments:
+        Text("Effective execution mode follows your extra arguments.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
       Picker("Open In", selection: binding.placement) {
         Text("New Tab").tag(AgentProfilePlacement.tab)
