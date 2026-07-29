@@ -46,6 +46,8 @@ struct SettingsView: View {
             .tag(SettingsSection.github)
           Label("Commands", systemImage: "globe")
             .tag(SettingsSection.customCommands)
+          Label("Agents", systemImage: "sparkles")
+            .tag(SettingsSection.agents)
 
           Section("Repositories") {
             ForEach(repositories) { repository in
@@ -115,6 +117,20 @@ struct SettingsView: View {
             GlobalCustomCommandsView(store: globalCustomCommandsStore)
               .navigationTitle("Global Commands")
               .navigationSubtitle("Global terminal actions and toolbar buttons")
+          } else {
+            ProgressView()
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
+        }
+      case .agents:
+        SettingsDetailView {
+          if let agentProfilesStore = settingsStore.scope(
+            state: \.agentProfiles,
+            action: \.agentProfiles
+          ) {
+            AgentProfilesSettingsView(store: agentProfilesStore)
+              .navigationTitle("Agents")
+              .navigationSubtitle("Agent profiles and launch presets")
           } else {
             ProgressView()
               .frame(maxWidth: .infinity, maxHeight: .infinity)

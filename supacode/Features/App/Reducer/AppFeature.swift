@@ -383,6 +383,11 @@ struct AppFeature {
         case .customCommands:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = .init()
+          state.settings.agentProfiles = nil
+        case .agents:
+          state.settings.repositorySettings = nil
+          state.settings.globalCustomCommands = nil
+          state.settings.agentProfiles = .init()
         case .repository(let repositoryID):
           guard let repository = state.repositories.repositories[id: repositoryID] else {
             state.settings.repositorySettings = nil
@@ -405,9 +410,11 @@ struct AppFeature {
           repoSettingsState.globalPullRequestMergeStrategy = state.settings.pullRequestMergeStrategy
           state.settings.repositorySettings = repoSettingsState
           state.settings.globalCustomCommands = nil
+          state.settings.agentProfiles = nil
         case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
+          state.settings.agentProfiles = nil
         }
         return .none
 

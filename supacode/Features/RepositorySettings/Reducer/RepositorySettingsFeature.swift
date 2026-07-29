@@ -122,6 +122,7 @@ struct RepositorySettingsFeature {
     case dismissAppearanceImportError
     case resetAppearance
     case setGlobalCommandEnabled(UserCustomCommand.ID, Bool)
+    case setDefaultAgentProfileID(AgentProfile.ID?)
     case branchDataLoaded([String], defaultBaseRef: String)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -234,6 +235,14 @@ struct RepositorySettingsFeature {
           return .none
         }
         state.userSettings.setGlobalCommandEnabled(isEnabled, id: commandID)
+        let rootURL = state.rootURL
+        @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+        $userRepositorySettings.withLock { $0 = state.userSettings }
+        return .send(.delegate(.settingsChanged(rootURL)))
+
+      case .setDefaultAgentProfileID(let profileID):
+        guard state.userSettings.defaultAgentProfileID != profileID else { return .none }
+        state.userSettings.defaultAgentProfileID = profileID
         let rootURL = state.rootURL
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
         $userRepositorySettings.withLock { $0 = state.userSettings }
