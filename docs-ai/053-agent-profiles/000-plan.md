@@ -44,7 +44,7 @@ Profile 的本体是 **preset**(对已知 runtime 的一组命名预置配置);�
 - **默认形态(纯 preset)**:profile 运行在共享的默认 home,不设置任何环境变量;skills、
   全局指令、session 历史与 `--resume` 列表保持统一。
 - **可选账号绑定(opt-in)**:profile 显式绑定独立账号时,才派生私有 runtime home,用于
-  独立登录与独立用量;仅此时出现登录/状态管理控件。
+  独立登录与独立用量;仅此时出现 profile 文件管理控件。
 - Agents capsule 永远是菜单:列出推荐与已启用的 profile、不可用项及原因、管理入口;有
   运行中 agent 时附带现有 Active Agents 内容。
 - 以"指定 > 记忆 > 兜底"三层规则为每个 worktree 选出菜单里的 Recommended profile。
@@ -67,6 +67,8 @@ Profile 的本体是 **preset**(对已知 runtime 的一组命名预置配置);�
   (`CLAUDE.md` / `AGENTS.md`)覆盖,无需注入;纯 preset 的注入通道(Claude Code 有
   `--append-system-prompt`,Codex 交互式 TUI 无已验证等价物)不再规划,能力位仅作预留。
 - 不做 profile 导入/导出或 skills / 指令文件的可视化编辑器。
+- 不新增任何 profile 相关的 analytics 事件;profile 名称、UUID 与绑定状态一律不进入
+  PostHog / Sentry。
 
 ## 产品形态
 
@@ -82,23 +84,29 @@ Profile 指定与上次启动记忆存于 `UserRepositorySettings`(本地文件
 `~/.prowl/repo/<name>/prowl.onevcat.json`,同样不进仓库)。
 
 一个 profile 包含:稳定 UUID、显示名、启用状态、runtime、可选 model、可选 reasoning
-effort、既有的显式 execution mode、启动位置(placement),以及**可选的账号绑定**。reasoning effort 存为自由
-字符串,`nil` 表示 runtime 默认;编辑器按 runtime 展示 adapter 自带的已知档位建议
-(两家共有的 low/medium/high,及各自的扩展档位,如 Codex 的 `minimal` / `xhigh`),同时
-允许直接填写任意值。自定义值只作为**单一参数值**渲染进类型化参数——Claude Code 的
+effort、既有的显式 execution mode、启动位置(placement),以及**可选的账号绑定**。
+model 与 reasoning effort 均存为自由字符串,`nil` 表示 runtime 默认;编辑器按 runtime
+展示 adapter 自带的建议列表(effort 如两家共有的 low/medium/high 及 Codex 的
+`minimal` / `xhigh` 等扩展档位),同时允许直接填写任意值。自定义值只作为**单一参数值**渲染进类型化参数——Claude Code 的
 `--effort`、Codex 的 `model_reasoning_effort` config override——走既有的安全 argv 渲染,
 不经过 shell 解释;未知档位由 CLI 启动时自行报错,在新 surface 内直接可见,Prowl 不做预校验。
 `.unrestricted` 保留但视觉上标记为危险,保存时需要显式确认;绝不从其他 profile 或来源
 pane 推断。
 
+**初始播种(seeding)**:首次启用本功能时,为每个已安装的已验证 CLI 播种一个裸
+preset(显示名即 runtime 名,无 model/effort、standard 模式、New Tab、不绑定账号),
+行为等同用户手动敲 `claude` / `codex`。播种一次性(记录 flag),用户删除后不复活;
+两家 CLI 均未安装时,菜单显示灰色说明与 "Manage Agent Profiles…" 空态。
+
 **未绑定账号的 profile(默认)**:不派生目录、不设置环境变量、不显示登录控件;状态栏
 说明其使用系统默认登录。
 
-**绑定账号的 profile**:编辑器提供 **Sign In**、**Refresh status**、**Reveal Profile
-Files**。Sign In 新开一个已附加 profile 环境的终端 tab,运行该 runtime 的常规登录命令。
-状态探测以 CLI 输出而非退出码为准:两家 CLI 都可能在未登录时返回非零,Codex 可能经
-stderr 报告。home 不存在时直接判定"未登录",不得先调用 Codex。绑定开关旁必须写明隔离
-代价:该 profile 将拥有独立的 skills、全局指令与 session 历史。
+**绑定账号的 profile**:编辑器只提供 **Reveal Profile Files** 与一行被动状态(home
+尚未初始化 / 已初始化,纯文件系统检查,绝不调用 CLI)。没有 Sign In 按钮、没有登录
+状态探测:**首次启动即登录时刻**——未登录的绑定 profile 启动后,agent TUI 走自己的
+原生登录流程,该 surface 的环境已挂好,凭证自然落入 profile home;确认登录身份用
+agent 内的 `/status`。绑定开关旁必须写明隔离代价:该 profile 将拥有独立的 skills、
+全局指令与 session 历史。
 
 ### 启动与 Agents 菜单
 
@@ -115,8 +123,14 @@ custom command 既有的 `UserCustomSplitDirection`)。split 同样是全新 sur
 结构化启动规则完全一致;当该 worktree 尚无可分割的 surface 时,split 退化为新 tab。绝不
 向既有 shell 注入文本:Prowl 无法证明那个 shell 处于空闲、可安全接管的状态。
 
+Command Palette 提供第二入口:为每个已启用 profile 动态生成 "Launch Agent: <名称>"
+条目(当前 worktree 的推荐排前),派发与菜单**完全同一个** profile-launch action——
+palette 是入口而非第二条启动路径,placement、身份记录与环境 patch 全走同一条缝。
+
 Prowl 启动的 surface 在创建时记录 profile UUID;检测到但非 Prowl 启动的 agent 只显示
-"检测到 Codex"这类事实,绝不猜测其归属的 profile 或账号。
+"检测到 Codex"这类事实,绝不猜测其归属的 profile 或账号。身份的 UI 露出:有 profile
+记录的 surface 在 Active Agents 列表与 capsule 中显示 profile 显示名(必要时附 runtime
+图标消歧义),仅检测的维持 runtime 名;tab 标题不在本波范围内,维持既有逻辑。
 
 ### 推荐(Recommended)
 
@@ -129,7 +143,8 @@ Prowl 启动的 surface 在创建时记录 profile UUID;检测到但非 Prowl �
 3. **兜底**:从未在该 repo 启动过任何 profile 时,取有序 profile 列表中第一个已启用的。
 
 每一层只解析到存在且已启用的 profile;悬空(已删除)或被禁用的引用直接落到下一层,
-normalization 时清理悬空的 per-repo 指定。解析是只读的,不创建任何目录。推荐只决定
+normalization 时清理悬空的 per-repo 指定。runtime CLI 是否可用不参与解析:推荐位照常
+给出,CLI 缺失时灰显并写明原因——让问题可见,绝不静默改推其他 profile。解析是只读的,不创建任何目录。推荐只决定
 菜单排序——显式选择其他 profile 永远优先。profile 在启动时记录到新 surface 上,之后的
 指定或记忆变化绝不重新标记或修改活跃 pane。
 
@@ -148,12 +163,19 @@ home 对 Prowl 是不透明的:对应环境变量只附加到新终端 surface�
 常规环境(PATH、用户自行 export 的变量等),Prowl 只追加变量、不做环境清洗;其他 tab
 中手动 export 的会话状态不会传入。
 
-全新 home 意味着 agent 首次启动即未登录;用户在 Sign In tab 内完成 CLI 登录后,凭证
-落在该 home 中(Codex 为 `auth.json`,Claude 的凭证存储同样以 config dir 为界,#617
-实测互不串号)。`$CLAUDE_CONFIG_DIR/CLAUDE.md` 与 `$CODEX_HOME/AGENTS.md` 是两家 CLI
+全新 home 意味着 agent 首次启动即未登录;用户在首次启动的 surface 内完成 CLI 原生
+登录后,凭证落在该 home 中(Codex 为 `auth.json`,Claude 的凭证存储同样以 config dir
+为界,#617 实测互不串号)。`$CLAUDE_CONFIG_DIR/CLAUDE.md` 与 `$CODEX_HOME/AGENTS.md` 是两家 CLI
 全局指令文件的原生位置,搬迁后自动从新位置读取——绑定 profile 的专属指令与 skills
 直接放进 home 即可,无需任何注入机制。Prowl 不解析、不复制、不展示凭据文件;项目内的
 指令文件仍归项目所有。
+
+**删除绑定 profile** 弹出确认对话框,写明登录凭证与文件仍在磁盘上:默认只删 profile
+条目、保留目录;提供显式的 "Move Profile Files to Trash" 选项(NSWorkspace 移入废纸篓,
+可找回,绝不 `rm`)。硬性不变量:删除的文件操作只作用于从该 profile UUID 派生、且通过
+profile-home 基目录包含校验的路径——与启动时同一道闸;纯 preset 没有 home 引用,删除
+时执行零文件操作;任何指向基目录之外(含 `~/.claude` / `~/.codex` 真实 agent home)的
+路径直接拒绝。
 
 Prowl 不提供任何目录共享功能(V1 及以后均然)。希望在绑定 profile 与默认 home 之间
 共享 skills 等目录的高级用户,可经 "Reveal Profile Files" 自行创建 symlink;文档应
@@ -196,13 +218,14 @@ Prowl 不提供任何目录共享功能(V1 及以后均然)。希望在绑定 pr
    `CLAUDE_CONFIG_DIR` / `CODEX_HOME` 启动的 agent 维持现状(agent 本体可检测、
    session 身份不可得);读取 TUI 进程 env 反推 root 列为 follow-up。
 5. 新增小型 Settings reducer/view:`SettingsSection` 加 `agents` case 及对应 tab,
-   承载 profile 列表/编辑与账号绑定分支的状态/登录动作;在 Repository Settings 中加入
-   Default Agent Profile 选择器。文件操作全部藏在注入的 profile-home dependency 之后,
-   测试绝不触碰真实登录目录。
+   承载 profile 列表/编辑(绑定分支仅 Reveal Profile Files 与被动 home 状态,无任何
+   后台 CLI 调用);在 Repository Settings 中加入 Default Agent Profile 选择器。文件
+   操作全部藏在注入的 profile-home dependency 之后,测试绝不触碰真实登录目录。
 6. 扩展 `supacode/Features/Repositories/Views/AgentsToolbarButton.swift` 及其在
    `supacode/Features/Repositories/Views/WorktreeDetailView.swift` 中的接线:改为永远是
    菜单;检测态保留现有 Hand Off 动作,启动项经 `AppFeature` 派发单一 profile-launch
-   action。
+   action。`CommandPaletteFeature` 按已启用 profile 动态生成 Launch Agent 条目,复用
+   同一 action(参照既有 handoff 条目工厂的模式)。
 7. 实现完成后,更新对应的现状文档,并以实际 PR 与测试证据撰写 `001-action.md`。
 
 ## 从 #617 带入的经验
@@ -210,11 +233,11 @@ Prowl 不提供任何目录共享功能(V1 及以后均然)。希望在绑定 pr
 | 发现 | Profile 决策 |
 | --- | --- |
 | Per-surface 环境变量可隔离两份 CLI 登录。 | 环境变量只在新 surface 启动边界施加,且仅限账号绑定 profile。 |
-| `CODEX_HOME` 必须在 Codex 启动前存在。 | 启动或登录前先创建派生 home。 |
+| `CODEX_HOME` 必须在 Codex 启动前存在。 | 启动前先创建派生 home。 |
 | 搬迁后的 home 包含 settings 与 skills,不止认证文件。 | 隔离是全有或全无的账号轴代价,因此 preset 为默认、绑定为 opt-in。 |
 | 共享配置的 symlink 会在 CLI 重写文件时静默分叉。 | Prowl 不做任何 link;高级用户自行 symlink,文档警示被重写文件不可链接。 |
 | 账号/推荐变化不得影响活跃 pane。 | surface 创建时记录 profile ID;推荐解析只影响后续启动。 |
-| 认证状态输出对流与退出码敏感。 | 在可测试的 client 后解析两条流的已知输出。 |
+| 认证状态输出对流与退出码敏感。 | V1 不做状态探测;登录与身份确认交给 CLI TUI 原生流程。 |
 
 ## Handoff 边界
 
@@ -238,8 +261,10 @@ agent 列表不变。
   argv、`.headless` 的一次性执行 argv、model/effort 映射(含自定义 effort 值的安全
   渲染)、标准与危险模式、shell 转义、能力位取值。
 - Settings 与 profile-home 测试:保存/重载、绑定 profile 的派生目录 owner-only 权限、
-  home 缺失时的状态判定、stdout/stderr/非零退出码的登录状态解析、绝不访问真实凭据。
-- Reducer/终端测试:菜单各可用性状态、正确的 worktree/cwd/环境 patch、每次选择恰好新建
+  home 初始化状态的被动判定(纯文件系统,不调 CLI)、绝不访问真实凭据;删除路径的
+  包含校验(基目录外一律拒绝)、纯 preset 删除零文件操作、Trash 而非删除。
+- Reducer/终端测试:菜单各可用性状态、palette 条目生成与共享 action 派发、正确的
+  worktree/cwd/环境 patch、每次选择恰好新建
   一个 surface(tab 或按 placement 的 split,空 worktree 时 split 退化为 tab)、推荐
   变化后 surface 的 profile 身份保持稳定、纯 preset 启动不设任何环境变量。
 - Session 检测测试:`AgentSessionResolver` 以注入的 config root 在 profile home 布局下
@@ -284,6 +309,8 @@ agent 列表不变。
 - **更多 runtime 接入**:逐家 spike 验证(启动语义、账号隔离机制、effort/headless
   支持度)后,由各自 adapter 声明能力位接入;domain 与 UI 无需再改判断逻辑。
 - **手动自定义 home 的 session 检测**:读取 TUI 进程 env 反推有效 config root。
+- **`prowl` CLI 的 profile 感知**:等 profile 特性定型后再研究;profile 的 CLI 引用
+  方式(名称/UUID)与 handoff 迁移波次的结构化请求一起定,避免过早固化 CLI 契约。
 
 ## Amendments
 
@@ -317,3 +344,11 @@ agent 列表不变。
   专属指令走 home 内原生文件(`CLAUDE.md` / `AGENTS.md`),注入需求消失、不再规划;
   明确环境 patch 为叠加语义(继承 login shell 环境,不清洗、不继承他 tab 会话状态);
   新增「后续方向」一节。
+- 2026-07-29 — Grill 环节定案:为已安装 CLI 一次性播种裸 preset;删除绑定 profile 走
+  "确认 + 默认保留 + 可选 Trash",文件操作硬性限定在 UUID 派生且通过包含校验的路径
+  (纯 preset 零文件操作,绝不触碰真实 agent home);Prowl 启动的 surface 在 Active
+  Agents/capsule 显示 profile 名(tab 标题不动);删除 Sign In 与登录状态探测——首次
+  启动即登录时刻,编辑器仅保留 Reveal 与被动 home 状态;Command Palette 加共享同一
+  action 的 Launch Agent 条目;`prowl` CLI 的 profile 感知缓行;model 与 effort 同构
+  为自由字符串 + 建议列表;推荐解析不考虑 CLI 可用性(灰显示因,不静默改推);不新增
+  profile 相关 analytics。
