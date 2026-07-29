@@ -70,6 +70,7 @@ struct AppFeature {
     case setLeftSidebarVisibility(NavigationSplitViewVisibility)
     case runScript
     case runCustomCommand(EffectiveCustomCommand.Identifier)
+    case launchAgentProfile(AgentProfile.ID)
     case canvasFocusedWorktreeChanged(Worktree.ID?)
     case runScriptDraftChanged(String)
     case runScriptPromptPresented(Bool)
@@ -706,6 +707,9 @@ struct AppFeature {
         return .run { _ in
           await terminalClient.send(.runScript(worktree, script: script))
         }
+
+      case .launchAgentProfile(let profileID):
+        return launchAgentProfile(profileID, state: &state)
 
       case .runCustomCommand(let commandID):
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {

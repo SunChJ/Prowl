@@ -1,0 +1,124 @@
+import ComposableArchitecture
+import DependenciesTestSupport
+import Foundation
+import Sharing
+import Testing
+
+@testable import supacode
+
+@MainActor
+struct AppFeatureAgentProfileTests {
+  @Test(.dependencies) func launchSendsPlanAndRecordsPerRepoMemory() async throws {
+    let worktree = makeWorktree()
+    let repositories = makeRepositoriesState(worktree: worktree)
+    let profile = AgentProfile(name: "Codex · Work", runtime: .codex, model: "gpt-5.4")
+    let storage = SettingsTestStorage()
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+
+    let (store, repoSettings) = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var globalSettings
+      $globalSettings.withLock { $0.agentProfiles = [profile] }
+      @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repoSettings
+      let store = TestStore(
+        initialState: AppFeature.State(
+          repositories: repositories,
+          settings: SettingsFeature.State()
+        )
+      ) {
+        AppFeature()
+      } withDependencies: {
+        $0.terminalClient.send = { command in
+          sent.withValue { $0.append(command) }
+        }
+      }
+      return (store, $repoSettings)
+    }
+
+    await store.send(.launchAgentProfile(profile.id))
+    await store.finish()
+
+    let expectedPlan = try AgentProfileLaunchPlanner.plan(
+      for: profile,
+      homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory
+    )
+    #expect(sent.value == [.launchAgentProfile(worktree, plan: expectedPlan)])
+    #expect(repoSettings.wrappedValue.lastLaunchedAgentProfileID == profile.id)
+  }
+
+  @Test(.dependencies) func launchIgnoresDisabledOrUnknownProfiles() async {
+    let worktree = makeWorktree()
+    let repositories = makeRepositoriesState(worktree: worktree)
+    let disabled = AgentProfile(name: "Disabled", isEnabled: false, runtime: .claude)
+    let storage = SettingsTestStorage()
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+
+    let store = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var globalSettings
+      $globalSettings.withLock { $0.agentProfiles = [disabled] }
+      return TestStore(
+        initialState: AppFeature.State(
+          repositories: repositories,
+          settings: SettingsFeature.State()
+        )
+      ) {
+        AppFeature()
+      } withDependencies: {
+        $0.terminalClient.send = { command in
+          sent.withValue { $0.append(command) }
+        }
+      }
+    }
+
+    await store.send(.launchAgentProfile(disabled.id))
+    await store.send(.launchAgentProfile(UUID()))
+    #expect(sent.value.isEmpty)
+  }
+
+  @Test(.dependencies) func seedingRunsOnceAndOnlyForInstalledRuntimes() {
+    let storage = SettingsTestStorage()
+    withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      AgentProfileSeeder.seedIfNeeded { runtime in runtime == .codex }
+
+      @Shared(.userGlobalSettings) var settings
+      #expect(settings.didSeedAgentProfiles)
+      #expect(settings.agentProfiles.map(\.name) == ["Codex"])
+      #expect(settings.agentProfiles.first?.runtime == .codex)
+      #expect(settings.agentProfiles.first?.bindsDedicatedHome == false)
+
+      // Deleting the seed must not respawn it on the next launch.
+      $settings.withLock { $0.agentProfiles = [] }
+      AgentProfileSeeder.seedIfNeeded { _ in true }
+      #expect(settings.agentProfiles.isEmpty)
+    }
+  }
+
+  private func makeWorktree() -> Worktree {
+    Worktree(
+      id: "/tmp/repo/wt-1",
+      name: "wt-1",
+      detail: "detail",
+      workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
+      repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
+    )
+  }
+
+  private func makeRepositoriesState(worktree: Worktree) -> RepositoriesFeature.State {
+    let rootURL = worktree.repositoryRootURL
+    let repository = Repository(
+      id: rootURL.path(percentEncoded: false),
+      rootURL: rootURL,
+      name: rootURL.lastPathComponent,
+      worktrees: IdentifiedArray(uniqueElements: [worktree])
+    )
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = IdentifiedArray(uniqueElements: [repository])
+    repositoriesState.selection = .worktree(worktree.id)
+    return repositoriesState
+  }
+}

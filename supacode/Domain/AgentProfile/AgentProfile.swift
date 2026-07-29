@@ -15,6 +15,16 @@ nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiabl
     case .codex: .codex
     }
   }
+
+  /// The runtime's default home directory name under `$HOME`. Its existence
+  /// is the seeding installation heuristic: the directory exists iff the CLI
+  /// has ever run, while PATH lookups from a GUI app are unreliable.
+  var defaultHomeDirectoryName: String {
+    switch self {
+    case .claude: ".claude"
+    case .codex: ".codex"
+    }
+  }
 }
 
 nonisolated enum AgentProfilePlacement: String, Codable, CaseIterable, Identifiable, Sendable {

@@ -54,6 +54,7 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     UserDefaults.standard.register(defaults: [
       "ApplePressAndHoldEnabled": false
     ])
+    AgentProfileSeeder.seedIfNeeded()
     appStore?.send(.appLaunched)
   }
 
