@@ -98,6 +98,55 @@ struct AppFeatureAgentProfileTests {
     }
   }
 
+  @Test(.dependencies) func paletteBuildsLaunchItemsWithRecommendedFirst() {
+    let worktree = makeWorktree()
+    let repositories = makeRepositoriesState(worktree: worktree)
+    let storage = SettingsTestStorage()
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    } operation: {
+      let first = AgentProfile(name: "First", runtime: .codex)
+      let second = AgentProfile(name: "Second", runtime: .claude)
+      let disabled = AgentProfile(name: "Hidden", isEnabled: false, runtime: .claude)
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [first, second, disabled] }
+      @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repoSettings
+      $repoSettings.withLock { $0.defaultAgentProfileID = second.id }
+
+      let items = agentProfileLaunchItems(repositories)
+
+      #expect(items.map(\.title) == ["Launch Agent: Second", "Launch Agent: First"])
+      #expect(items.first?.kind == .launchAgentProfile(second.id))
+      #expect(items.first?.subtitle?.hasPrefix("Recommended") == true)
+      #expect(items.last?.subtitle?.hasPrefix("Recommended") == false)
+    }
+  }
+
+  @Test func launchedSurfaceEntryShowsProfileName() {
+    var entry = ActiveAgentEntry(
+      id: UUID(),
+      worktreeID: "/tmp/repo/wt-1",
+      worktreeName: "wt-1",
+      workingDirectory: nil,
+      tabID: TerminalTabID(),
+      paneTitle: "codex",
+      surfaceID: UUID(),
+      paneIndex: 1,
+      iconLookupToken: "codex",
+      agent: .codex,
+      session: nil,
+      rawState: .idle,
+      displayState: .idle,
+      lastChangedAt: Date()
+    )
+    #expect(entry.displayName == "codex")
+
+    entry.launchProfileName = "Codex · Work"
+    #expect(entry.displayName == "Codex · Work")
+  }
+
   private func makeWorktree() -> Worktree {
     Worktree(
       id: "/tmp/repo/wt-1",

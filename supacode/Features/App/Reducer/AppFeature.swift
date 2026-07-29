@@ -71,6 +71,7 @@ struct AppFeature {
     case runScript
     case runCustomCommand(EffectiveCustomCommand.Identifier)
     case launchAgentProfile(AgentProfile.ID)
+    case openAgentProfilesSettings
     case canvasFocusedWorktreeChanged(Worktree.ID?)
     case runScriptDraftChanged(String)
     case runScriptPromptPresented(Bool)
@@ -717,6 +718,14 @@ struct AppFeature {
 
       case .launchAgentProfile(let profileID):
         return launchAgentProfile(profileID, state: &state)
+
+      case .openAgentProfilesSettings:
+        return .merge(
+          .send(.settings(.setSelection(.agents))),
+          .run { _ in
+            await settingsWindowClient.show()
+          }
+        )
 
       case .runCustomCommand(let commandID):
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {

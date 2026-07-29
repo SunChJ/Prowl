@@ -73,6 +73,7 @@ struct CommandPaletteFeature {
     case openRepositorySettings(Repository.ID)
     case runCustomCommand(EffectiveCustomCommand.Identifier)
     case handOff
+    case launchAgentProfile(AgentProfile.ID)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -261,6 +262,7 @@ struct CommandPaletteFeature {
     }
     items.append(contentsOf: customCommandItems(customCommands))
     items.append(contentsOf: handoffCommandItems(repositories))
+    items.append(contentsOf: agentProfileLaunchItems(repositories))
     if let terminalWorktree = repositories.selectedTerminalWorktree {
       items.append(
         CommandPaletteItem(
@@ -526,6 +528,40 @@ private func customCommandItems(_ commands: [EffectiveCustomCommand]) -> [Comman
       category: .worktree,
       defaultSuggestion: false,
       keywords: ["custom", "command", "script"]
+    )
+  }
+}
+
+/// Launch rows for enabled agent profiles: the selected worktree's
+/// Recommended profile first, then list order. Dispatches the same single
+/// profile-launch action as the toolbar Agents menu (docs-ai 053) — the
+/// palette is an entry point, never a second launch path. Internal for tests.
+func agentProfileLaunchItems(_ repositories: RepositoriesFeature.State) -> [CommandPaletteItem] {
+  guard let worktree = repositories.selectedTerminalWorktree else { return [] }
+  @Shared(.userGlobalSettings) var globalSettings
+  let profiles = globalSettings.agentProfiles
+  let enabled = profiles.filter(\.isEnabled)
+  guard !enabled.isEmpty else { return [] }
+  @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repositorySettings
+  let recommendedID = AgentProfileRecommendation.recommendedProfile(
+    profiles: profiles,
+    designatedID: repositorySettings.defaultAgentProfileID,
+    lastLaunchedID: repositorySettings.lastLaunchedAgentProfileID
+  )?.id
+  let ordered = enabled.sorted { lhs, rhs in
+    (lhs.id == recommendedID ? 0 : 1) < (rhs.id == recommendedID ? 0 : 1)
+  }
+  return ordered.map { profile in
+    let runtimeName = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
+    let placement = profile.id == recommendedID ? "Recommended · " : ""
+    return CommandPaletteItem(
+      id: CommandPaletteItemID.launchAgentProfile(profile.id),
+      title: "Launch Agent: \(profile.name)",
+      subtitle: "\(placement)New \(runtimeName) in \(worktree.name)",
+      kind: .launchAgentProfile(profile.id),
+      category: .terminal,
+      defaultSuggestion: false,
+      keywords: ["launch", "agent", "profile", "start", profile.name]
     )
   }
 }

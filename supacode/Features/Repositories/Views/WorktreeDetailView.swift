@@ -207,7 +207,9 @@ struct WorktreeDetailView: View {
         store.send(.runCustomCommand(index))
       },
       onActivateUpdateButton: { store.send(.updates(.activateUpdateButton)) },
-      onHandOff: { store.send(.openHandoffHud) }
+      onHandOff: { store.send(.openHandoffHud) },
+      onLaunchProfile: { store.send(.launchAgentProfile($0)) },
+      onManageProfiles: { store.send(.openAgentProfilesSettings) }
     )
   }
 
@@ -357,6 +359,7 @@ struct WorktreeDetailView: View {
     return WorktreeToolbarState(
       title: title,
       agentsCapsule: agentsCapsuleState(repositories: input.repositories),
+      agentsLauncherItems: agentsLauncherItems(repositories: input.repositories),
       statusToast: input.repositories.statusToast,
       pullRequest: matchedPullRequest(
         for: input.selectedWorktree,
@@ -380,8 +383,8 @@ struct WorktreeDetailView: View {
   }
 
   /// The selected pane's detected agent, feeding the Agents capsule. nil
-  /// (no detected agent) renders the capsule disabled — reserved for the
-  /// future quick launcher (docs-ai 049).
+  /// (no detected agent) renders the capsule in its generic form; the
+  /// popover still hosts the profile launcher (docs-ai 053).
   private func agentsCapsuleState(repositories: RepositoriesFeature.State) -> AgentsCapsuleState? {
     guard let worktree = repositories.selectedTerminalWorktree,
       let state = terminalManager.stateIfExists(for: worktree.id),
@@ -393,18 +396,57 @@ struct WorktreeDetailView: View {
     let iconSource =
       paneState.iconLookupToken.flatMap(CommandIconMap.iconForFirstToken)
       ?? CommandIconMap.iconForFirstToken(agent.iconLookupToken)
-    // Same naming rule as the Active Agents rows: launch aliases such as
-    // `omp` show their own name, not the semantic agent's (`pi`).
-    let displayName = ActiveAgentEntry.displayName(
-      iconLookupToken: paneState.iconLookupToken ?? agent.iconLookupToken,
-      agent: agent
-    )
+    // Same naming rule as the Active Agents rows: the launch profile name
+    // recorded at surface creation wins for Prowl-launched panes; launch
+    // aliases such as `omp` show their own name, not the semantic agent's.
+    let displayName =
+      state.launchProfilesBySurface[surfaceID]?.name
+      ?? ActiveAgentEntry.displayName(
+        iconLookupToken: paneState.iconLookupToken ?? agent.iconLookupToken,
+        agent: agent
+      )
     return AgentsCapsuleState(
       displayName: displayName,
       iconSource: iconSource,
       infoLine: "Pass this task to another agent in a new tab. "
         + "\(displayName) writes its own briefing first."
     )
+  }
+
+  /// Launchable profile rows for the Agents popover: the current worktree's
+  /// Recommended profile first, then the remaining enabled profiles in list
+  /// order. Availability (CLI installed) is presentation-only — a missing
+  /// runtime grays the row with a reason instead of silently recommending
+  /// another profile (docs-ai 053).
+  private func agentsLauncherItems(repositories: RepositoriesFeature.State) -> [AgentsLauncherItem] {
+    @Shared(.userGlobalSettings) var globalSettings
+    let profiles = globalSettings.agentProfiles
+    guard !profiles.isEmpty else { return [] }
+    var recommendedID: AgentProfile.ID?
+    if let worktree = repositories.selectedTerminalWorktree {
+      @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repositorySettings
+      recommendedID =
+        AgentProfileRecommendation.recommendedProfile(
+          profiles: profiles,
+          designatedID: repositorySettings.defaultAgentProfileID,
+          lastLaunchedID: repositorySettings.lastLaunchedAgentProfileID
+        )?.id
+    }
+    let enabled = profiles.filter(\.isEnabled)
+    let ordered = enabled.sorted { lhs, rhs in
+      (lhs.id == recommendedID ? 0 : 1) < (rhs.id == recommendedID ? 0 : 1)
+    }
+    return ordered.map { profile in
+      let runtimeName = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
+      let installed = AgentProfileSeeder.defaultInstallationCheck(profile.runtime)
+      return AgentsLauncherItem(
+        id: profile.id,
+        name: profile.name,
+        runtimeName: runtimeName,
+        isRecommended: profile.id == recommendedID,
+        unavailableReason: installed ? nil : "\(runtimeName) is not installed"
+      )
+    }
   }
 
   private func selectedWorktreeSummaries(
@@ -830,6 +872,7 @@ struct WorktreeDetailView: View {
   struct WorktreeToolbarState {
     let title: DetailToolbarTitle
     let agentsCapsule: AgentsCapsuleState?
+    var agentsLauncherItems: [AgentsLauncherItem] = []
     let statusToast: RepositoriesFeature.StatusToast?
     let pullRequest: GithubPullRequest?
     let codeHost: CodeHost
@@ -864,6 +907,8 @@ struct WorktreeDetailView: View {
     let onRunCustomCommand: (EffectiveCustomCommand.Identifier) -> Void
     let onActivateUpdateButton: () -> Void
     let onHandOff: () -> Void
+    let onLaunchProfile: (AgentProfile.ID) -> Void
+    let onManageProfiles: () -> Void
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
@@ -875,7 +920,10 @@ struct WorktreeDetailView: View {
       ToolbarItem(placement: .navigation) {
         AgentsToolbarButton(
           capsule: toolbarState.agentsCapsule,
-          onHandOff: onHandOff
+          launcherItems: toolbarState.agentsLauncherItems,
+          onHandOff: onHandOff,
+          onLaunchProfile: onLaunchProfile,
+          onManageProfiles: onManageProfiles
         )
       }
       .sharedBackgroundVisibility(.hidden)

@@ -72,6 +72,9 @@ final class WorktreeTerminalState {
   var focusedSurfaceIdByTab: [TerminalTabID: UUID] = [:]
   struct SurfaceLaunchProfile: Equatable {
     let profileID: UUID
+    /// Display name recorded at launch. Deliberately frozen: later profile
+    /// renames or deletions never relabel a live pane.
+    let name: String
     /// Relocated runtime home for account-bound profiles; the session
     /// resolver uses it as the config root for this surface. Nil for pure
     /// presets (default home layout).
@@ -413,7 +416,11 @@ final class WorktreeTerminalState {
         return nil
       }
     }
-    let identity = SurfaceLaunchProfile(profileID: plan.profileID, dedicatedHome: plan.dedicatedHome)
+    let identity = SurfaceLaunchProfile(
+      profileID: plan.profileID,
+      name: plan.profileName,
+      dedicatedHome: plan.dedicatedHome
+    )
     if plan.placement == .split,
       let surfaceID = createSplitOnFocusedSurface(
         direction: plan.splitDirection,

@@ -309,7 +309,9 @@ private struct WorktreeToolbarPreview: View {
         onStopRunScript: {},
         onRunCustomCommand: { _ in },
         onActivateUpdateButton: {},
-        onHandOff: {}
+        onHandOff: {},
+        onLaunchProfile: { _ in },
+        onManageProfiles: {}
       )
     }
     .environment(commandKeyObserver)

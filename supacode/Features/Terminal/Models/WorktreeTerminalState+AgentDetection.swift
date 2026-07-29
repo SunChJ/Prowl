@@ -301,7 +301,8 @@ extension WorktreeTerminalState {
       session: state.session,
       rawState: state.fallbackState,
       displayState: state.displayState,
-      lastChangedAt: state.lastChangedAt
+      lastChangedAt: state.lastChangedAt,
+      launchProfileName: launchProfilesBySurface[surfaceID]?.name
     )
   }
 
