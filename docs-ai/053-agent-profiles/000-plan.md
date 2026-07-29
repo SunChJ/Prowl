@@ -360,6 +360,9 @@ agent 列表不变。
   专属指令走 home 内原生文件(`CLAUDE.md` / `AGENTS.md`),注入需求消失、不再规划;
   明确环境 patch 为叠加语义(继承 login shell 环境,不清洗、不继承他 tab 会话状态);
   新增「后续方向」一节。
+- 2026-07-29 — HOME path spike 完成([002-home-spike.md](002-home-spike.md)):账号
+  绑定的全部关键假设实测证实(home 预创建、rollout/transcript 跟随新根、指令文件与
+  skills 原生拾取、凭证落点、并行登录无串号、真实 home 零污染),无需修改计划。
 - 2026-07-29 — 新增 Advanced 自定义附加参数与启动预览:附加参数为字面 argv token
   (shell-words 切分、追加在预置参数后、永不经 shell 解释),相应收窄"自由格式 flag"
   非目标;预览与实际启动共用 launch spec 渲染。
