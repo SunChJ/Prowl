@@ -85,6 +85,43 @@ struct AgentProfilesFeatureTests {
     #expect(persisted.wrappedValue.agentProfiles.first?.executionMode == .unrestricted)
   }
 
+  @Test(.dependencies) func blankNameNeverPersistsOrDeletesTheProfile() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
+    let storage = SettingsTestStorage()
+    let (store, persisted) = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [profile] }
+      var initial = AgentProfilesFeature.State()
+      initial.settings = settings
+      initial.selectedProfileID = profile.id
+      let store = TestStore(initialState: initial) {
+        AgentProfilesFeature()
+      }
+      return (store, $settings)
+    }
+
+    // Clearing the Name field keeps the profile editable in state and keeps
+    // the last persisted name on disk — never a silent deletion.
+    var edited = store.state.settings
+    edited.agentProfiles[0].name = "   "
+    await store.send(.binding(.set(\.settings, edited))) {
+      $0.settings.agentProfiles[0].name = "   "
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(persisted.wrappedValue.agentProfiles.count == 1)
+    #expect(persisted.wrappedValue.agentProfiles.first?.name == "Codex")
+
+    // Typing the new name persists it normally.
+    edited.agentProfiles[0].name = "Codex · Deep"
+    await store.send(.binding(.set(\.settings, edited))) {
+      $0.settings.agentProfiles[0].name = "Codex · Deep"
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(persisted.wrappedValue.agentProfiles.first?.name == "Codex · Deep")
+  }
+
   @Test(.dependencies) func removingBoundProfileConfirmsAndCanTrashHome() async {
     var bound = AgentProfile(name: "Codex · Work", runtime: .codex)
     bound.bindsDedicatedHome = true
@@ -197,5 +234,48 @@ struct AgentProfilesFeatureTests {
       $0.userSettings.defaultAgentProfileID = nil
     }
     await store.receive(\.delegate.settingsChanged)
+  }
+
+  @Test(.dependencies) func repositorySettingsWritebacksPreserveExternalLaunchMemory() async {
+    let rootURL = URL(fileURLWithPath: "/tmp/repo-\(UUID().uuidString)")
+    let localStorage = RepositoryLocalSettingsTestStorage()
+    let launched = UUID()
+    let designated = UUID()
+    let (store, shared) = withDependencies {
+      $0.repositoryLocalSettingsStorage = localStorage.storage
+    } operation: {
+      let store = TestStore(
+        initialState: RepositorySettingsFeature.State(
+          rootURL: rootURL,
+          repositoryKind: .plain,
+          settings: .default,
+          userSettings: .default
+        )
+      ) {
+        RepositorySettingsFeature()
+      }
+      @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+      // A profile launch writes the memory while Settings stays open with a
+      // stale snapshot.
+      $userRepositorySettings.withLock { $0.lastLaunchedAgentProfileID = launched }
+      return (store, $userRepositorySettings)
+    }
+
+    await store.send(.setDefaultAgentProfileID(designated)) {
+      $0.userSettings.defaultAgentProfileID = designated
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(shared.wrappedValue.lastLaunchedAgentProfileID == launched)
+    #expect(shared.wrappedValue.defaultAgentProfileID == designated)
+
+    // The whole-struct binding writeback must also preserve (and refresh) it.
+    var user = store.state.userSettings
+    user.disabledGlobalCommandIDs = ["global-build"]
+    await store.send(.binding(.set(\.userSettings, user))) {
+      $0.userSettings.disabledGlobalCommandIDs = ["global-build"]
+      $0.userSettings.lastLaunchedAgentProfileID = launched
+    }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(shared.wrappedValue.lastLaunchedAgentProfileID == launched)
   }
 }

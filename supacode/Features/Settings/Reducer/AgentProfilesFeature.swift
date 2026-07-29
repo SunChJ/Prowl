@@ -76,7 +76,10 @@ struct AgentProfilesFeature {
           state.alert = Self.unrestrictedAlert(profileID: pendingID)
           return .none
         }
-        state.settings = state.settings.normalized()
+        // State deliberately stays as typed — normalizing here would fight
+        // the Name field (trim trailing spaces mid-word) and drop the profile
+        // outright the moment the field is cleared. Blank names are handled
+        // at the persistence boundary instead.
         refreshHomeStatus(&state)
         return persist(state.settings)
 
@@ -155,9 +158,32 @@ struct AgentProfilesFeature {
   private func persist(_ settings: UserGlobalSettings) -> Effect<Action> {
     .run { send in
       @Shared(.userGlobalSettings) var storedSettings
-      $storedSettings.withLock { $0 = settings }
-      await send(.delegate(.settingsChanged(settings)))
+      let sanitized = Self.sanitizedForPersistence(settings, persisted: storedSettings)
+      $storedSettings.withLock { $0 = sanitized }
+      await send(.delegate(.settingsChanged(sanitized)))
     }
+  }
+
+  /// A blank name must never reach disk: decode-time normalization drops
+  /// blank-named profiles, which would silently delete the profile (and
+  /// orphan a bound home) on the next load. An in-progress blank name keeps
+  /// its last persisted name — standard rename-revert semantics — while the
+  /// editor state keeps whatever the user is typing.
+  nonisolated static func sanitizedForPersistence(
+    _ edited: UserGlobalSettings,
+    persisted: UserGlobalSettings
+  ) -> UserGlobalSettings {
+    var settings = edited
+    settings.agentProfiles = settings.agentProfiles.map { profile in
+      var profile = profile
+      if profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        profile.name =
+          persisted.agentProfiles.first { $0.id == profile.id }?.name
+          ?? AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
+      }
+      return profile
+    }
+    return settings.normalized()
   }
 
   private func removeProfile(_ state: inout State, id: AgentProfile.ID) {
