@@ -211,14 +211,18 @@ struct ShortcutsSettingsView: View {
 
       if isRecording {
         HStack(spacing: 8) {
-          Text(
-            "Recording: press a key with modifiers (⌘ ⇧ ⌥ ⌃). Return and arrow keys are supported. Press Esc to cancel."
-          )
+          Text("Press a key with modifiers (⌘ ⇧ ⌥ ⌃).")
           Spacer(minLength: 0)
+          Button("Clear") {
+            clearShortcut(for: command.id)
+          }
+          .buttonStyle(.link)
+          .help("Clear shortcut")
           Button("Cancel") {
             stopRecording()
           }
           .buttonStyle(.link)
+          .help("Cancel recording")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -289,7 +293,7 @@ struct ShortcutsSettingsView: View {
     if isRecording {
       return "Recording…"
     }
-    return resolvedBinding?.display ?? "Unassigned"
+    return resolvedBinding?.display ?? ""
   }
 
   private func shortcutRecorderForegroundColor(resolvedBinding: Keybinding?, isRecording: Bool) -> Color {
@@ -446,6 +450,13 @@ struct ShortcutsSettingsView: View {
       return
     }
     recordingCommandID = commandID
+  }
+
+  private func clearShortcut(for commandID: String) {
+    store.send(.clearShortcutButtonTapped(commandID: commandID))
+    invalidMessageByCommandID[commandID] = nil
+    focusedConflictCommandID = nil
+    stopRecording()
   }
 
   private func stopRecording() {
