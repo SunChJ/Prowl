@@ -5,7 +5,6 @@ struct SettingsView: View {
   @Bindable var store: StoreOf<AppFeature>
   @Bindable var settingsStore: StoreOf<SettingsFeature>
   @Environment(\.dismiss) private var dismiss
-  @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
   init(store: StoreOf<AppFeature>) {
     self.store = store
@@ -18,42 +17,41 @@ struct SettingsView: View {
     let customTitles = store.repositories.repositoryCustomTitles
     let selection = settingsStore.selection ?? .general
 
-    NavigationSplitView(columnVisibility: $columnVisibility) {
-      VStack(spacing: 0) {
-        List(selection: $settingsStore.selection.sending(\.setSelection)) {
-          Label("General", systemImage: "gearshape")
-            .tag(SettingsSection.general)
-          Label("Notifications", systemImage: "bell")
-            .tag(SettingsSection.notifications)
-          Label("Shortcuts", systemImage: "keyboard")
-            .tag(SettingsSection.shortcuts)
-          Label("Worktree", systemImage: "archivebox")
-            .tag(SettingsSection.worktree)
-          Label("Updates", systemImage: "arrow.down.circle")
-            .tag(SettingsSection.updates)
-          Label("Advanced", systemImage: "gearshape.2")
-            .tag(SettingsSection.advanced)
-          Label("GitHub", systemImage: "arrow.triangle.branch")
-            .tag(SettingsSection.github)
-          Label("Commands", systemImage: "globe")
-            .tag(SettingsSection.customCommands)
-          Label("Agents", systemImage: "sparkles")
-            .tag(SettingsSection.agents)
+    NavigationSplitView(columnVisibility: .constant(.all)) {
+      List(selection: $settingsStore.selection.sending(\.setSelection)) {
+        Label("General", systemImage: "gearshape")
+          .tag(SettingsSection.general)
+        Label("Notifications", systemImage: "bell")
+          .tag(SettingsSection.notifications)
+        Label("Shortcuts", systemImage: "keyboard")
+          .tag(SettingsSection.shortcuts)
+        Label("Worktree", systemImage: "archivebox")
+          .tag(SettingsSection.worktree)
+        Label("Updates", systemImage: "arrow.down.circle")
+          .tag(SettingsSection.updates)
+        Label("Advanced", systemImage: "gearshape.2")
+          .tag(SettingsSection.advanced)
+        Label("GitHub", systemImage: "arrow.triangle.branch")
+          .tag(SettingsSection.github)
+        Label("Commands", systemImage: "globe")
+          .tag(SettingsSection.customCommands)
+        Label("Agents", systemImage: "sparkles")
+          .tag(SettingsSection.agents)
 
-          Section("Repositories") {
-            ForEach(repositories) { repository in
-              RepoDisplayName(
-                fallbackName: repository.name,
-                customTitle: customTitles[repository.id]
-              )
-              .tag(SettingsSection.repository(repository.id))
-            }
+        Section("Repositories") {
+          ForEach(repositories) { repository in
+            RepoDisplayName(
+              fallbackName: repository.name,
+              customTitle: customTitles[repository.id]
+            )
+            .tag(SettingsSection.repository(repository.id))
           }
         }
-        .listStyle(.sidebar)
-        .frame(minWidth: 220, maxHeight: .infinity)
-        .navigationSplitViewColumnWidth(220)
       }
+      .listStyle(.sidebar)
+      .frame(minWidth: 220, maxHeight: .infinity)
+      .navigationSplitViewColumnWidth(220)
+      .toolbar(removing: .sidebarToggle)
     } detail: {
       switch selection {
       case .general:
@@ -145,8 +143,9 @@ struct SettingsView: View {
       }
     }
     .navigationSplitViewStyle(.balanced)
+    .background(SettingsSidebarToggleHider())
     .alert($settingsStore.scope(state: \.alert, action: \.alert))
-    .frame(minWidth: 800, minHeight: 500)
+    .frame(minWidth: 800, minHeight: 600)
     .focusedSceneAction(\.closeSettingsWindowAction, enabled: true) {
       dismiss()
     }

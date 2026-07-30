@@ -56,6 +56,7 @@ struct ShortcutsSettingsView: View {
         }
         .disabled(store.keybindingUserOverrides.overrides.isEmpty)
       }
+      .padding(.horizontal, 16)
 
       HStack(spacing: 12) {
         Text("Command")
@@ -75,7 +76,7 @@ struct ShortcutsSettingsView: View {
       }
       .font(.caption.weight(.semibold))
       .foregroundStyle(.secondary)
-      .padding(.horizontal, 12)
+      .padding(.horizontal, 16)
 
       List {
         ForEach(visibleGroups) { group in

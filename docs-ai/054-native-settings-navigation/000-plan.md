@@ -26,8 +26,8 @@ split-view and navigation chrome.
 
 - Use a SwiftUI-owned singleton `Window` scene for Settings; no Settings-owned
   `NSWindow`, event monitor, custom titlebar, or manual Back button.
-- Keep top-level sections in `NavigationSplitView`, including the system
-  sidebar toggle and the expected traffic-light/titlebar layout.
+- Keep top-level sections in `NavigationSplitView`, with a persistent sidebar
+  and the expected traffic-light/titlebar layout.
 - Push Agent Profile editing with a real `NavigationStack`, giving macOS its
   standard compact Back control and title placement.
 - Keep navigation state in TCA, including a deterministic reset when the user
@@ -39,8 +39,7 @@ split-view and navigation chrome.
 
 - Redesigning individual Settings forms, profile fields, or persistence.
 - Changing the main-window reopening or terminal-window management paths.
-- Building custom replicas of the macOS titlebar, sidebar toggle, or Back
-  button.
+- Building custom replicas of the macOS titlebar or Back button.
 
 ## Design
 
@@ -59,11 +58,14 @@ window, so direct entries retain their intended section. Local view entries use
 the environment's `openWindow` action directly.
 
 The standard window toolbar remains `.automatic`. This deliberately leaves
-traffic lights, the sidebar toggle, navigation title, and Back placement to
-macOS instead of arranging any of them manually. A focused-scene close action
-lets the shared Close Window command use SwiftUI's `dismiss` for Settings, so
-Cmd-W continues to work even when the main-window terminal close actions are
-currently registered.
+traffic lights, navigation title, and Back placement to macOS instead of
+arranging any of them manually. The sidebar column uses SwiftUI's documented
+`.toolbar(removing: .sidebarToggle)` and a narrow AppKit fallback removes that
+same system item only when macOS 26 leaves it present in a standalone `Window`
+scene. The navigation and layout remain SwiftUI-owned. A focused-scene close
+action lets the shared Close Window command use SwiftUI's `dismiss` for
+Settings, so Cmd-W continues to work even when the main-window terminal close
+actions are currently registered.
 
 ### TCA-backed profile drill-in
 
@@ -97,4 +99,5 @@ editor delegates update or remove the matching profile in the parent state.
 - Cmd-comma opens/re-surfaces the one Settings window, and Cmd-W closes it.
 - Targeted TCA tests cover route push/pop, mutations through the path, and
   sidebar-reset behavior; the app builds and manual debug-window verification
-  captures the root, Agents, editor, sidebar toggle, and close/reopen paths.
+  captures the root, Agents, editor, persistent sidebar, and close/reopen
+  paths.

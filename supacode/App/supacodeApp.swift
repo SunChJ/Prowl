@@ -1207,7 +1207,7 @@ struct SupacodeApp: App {
         .environment(\.resolvedKeybindings, store.resolvedKeybindings)
         .preferredColorScheme(store.settings.appearanceMode.colorScheme)
     }
-    .defaultSize(width: 900, height: 600)
+    .defaultSize(width: 840, height: 680)
     .windowToolbarStyle(.automatic)
   }
 

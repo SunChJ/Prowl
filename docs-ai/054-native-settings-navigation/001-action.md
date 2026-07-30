@@ -10,9 +10,9 @@
 
 Settings is now a SwiftUI-owned singleton `Window` scene rather than a retained
 AppKit `NSWindow`. Its standard macOS toolbar chrome is composed by SwiftUI:
-the traffic lights sit in the sidebar field, the system sidebar toggle remains
-available, and a drilled-in Agent Profile editor receives the compact native
-Back control beside its title.
+the traffic lights sit in the sidebar field, the sidebar remains persistently
+visible, and a drilled-in Agent Profile editor receives the compact native Back
+control beside its title.
 
 The Agents page now has genuine navigation instead of a conditional content
 swap. The profile list is the root of a `NavigationStack`; selecting a profile
@@ -32,9 +32,13 @@ TCA-owned `StackState` path back to the list.
   `SidebarFooterView.swift` — route Cmd-comma/menu and the sidebar gear through
   the SwiftUI window action. A focused-scene close action preserves Cmd-W for
   Settings when terminal close commands are active in the main scene.
-- `supacode/Features/Settings/Views/SettingsView.swift` — uses the normal
-  `NavigationSplitView` sidebar toggle and leaves all toolbar placement to
-  SwiftUI/macOS.
+- `supacode/Features/Settings/Views/SettingsView.swift` — uses
+  `NavigationSplitView` with a persistent column binding and SwiftUI's default
+  sidebar-toggle removal.
+- `SettingsSidebarToggleHider` — a no-op-on-fixed-systems AppKit fallback for
+  the macOS 26 standalone-`Window` bug where the system sidebar item remains
+  after SwiftUI requests its removal. It removes no navigation or layout
+  responsibility from SwiftUI.
 - `AgentProfilesFeature` / `AgentProfilesSettingsView` — replace
   `@Presents editor` and a custom page swap with TCA `StackState`,
   `NavigationStack(path:)`, and `NavigationLink(state:)`.
@@ -52,12 +56,11 @@ TCA-owned `StackState` path back to the list.
 - In an isolated Debug Prowl instance, verified visually and through
   Accessibility:
   - Cmd-comma opens the singleton Settings window with native traffic lights,
-    sidebar toggle, and titlebar placement.
+    persistent sidebar, and titlebar placement.
   - Agents → Codex Default pushes the editor and shows the system Back button
     beside `Codex Default`; activating it returns to the Agents list.
   - Selecting General while the editor is visible returns to General rather
     than retaining stale Agent detail state.
-  - The sidebar toggle hides and restores the sidebar.
   - Cmd-W closes Settings from both its root and a drilled-in editor; Cmd-comma
     subsequently reopens it.
 
