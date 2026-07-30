@@ -475,6 +475,91 @@ struct SettingsFeatureTests {
     #expect(resolved.binding(for: commandID)?.source == .userOverride)
   }
 
+  @Test(.dependencies) func clearShortcutIgnoresFixedAndUnknownCommands() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.keybindingUserOverrides = .empty
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.clearShortcutButtonTapped(commandID: AppShortcuts.CommandID.quitApplication))
+    await store.send(.clearShortcutButtonTapped(commandID: "unknown_command"))
+    await store.finish()
+
+    #expect(store.state.keybindingUserOverrides == .empty)
+    #expect(settingsFile.global.keybindingUserOverrides == .empty)
+  }
+
+  @Test(.dependencies) func clearShortcutPreservesOtherOverridesAndIsIdempotent() async {
+    let commandID = AppShortcuts.CommandID.openSettings
+    let otherCommandID = AppShortcuts.CommandID.commandPalette
+    let otherOverride = KeybindingUserOverride(
+      binding: Keybinding(key: "k", modifiers: .init(command: true, shift: true))
+    )
+    var initialSettings = GlobalSettings.default
+    initialSettings.keybindingUserOverrides = KeybindingUserOverrideStore(
+      overrides: [
+        commandID: KeybindingUserOverride(
+          binding: Keybinding(key: ";", modifiers: .init(command: true))
+        ),
+        otherCommandID: otherOverride,
+      ]
+    )
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let clearedOverride = KeybindingUserOverride(binding: nil, isEnabled: false)
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.clearShortcutButtonTapped(commandID: commandID)) {
+      $0.keybindingUserOverrides.overrides[commandID] = clearedOverride
+    }
+    await store.receive(\.delegate.settingsChanged)
+    await store.send(.clearShortcutButtonTapped(commandID: commandID))
+    await store.finish()
+
+    #expect(settingsFile.global.keybindingUserOverrides.overrides[commandID] == clearedOverride)
+    #expect(settingsFile.global.keybindingUserOverrides.overrides[otherCommandID] == otherOverride)
+  }
+
+  @Test(.dependencies) func clearedShortcutDoesNotConflictWhenReassigned() async throws {
+    var initialSettings = GlobalSettings.default
+    initialSettings.keybindingUserOverrides = .empty
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let clearedCommandID = AppShortcuts.CommandID.openSettings
+    let reassignedCommandID = AppShortcuts.CommandID.commandPalette
+    let schema = KeybindingSchemaDocument.appResolverSchema()
+    let clearedBinding = schema.commands.first { $0.id == clearedCommandID }?.defaultBinding
+    let reassignedCommand = schema.commands.first { $0.id == reassignedCommandID }
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.clearShortcutButtonTapped(commandID: clearedCommandID)) {
+      $0.keybindingUserOverrides.overrides[clearedCommandID] = KeybindingUserOverride(
+        binding: nil,
+        isEnabled: false
+      )
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    let conflict = ShortcutConflictDetector.firstConflictCommandID(
+      commandID: reassignedCommandID,
+      binding: try #require(clearedBinding),
+      policy: try #require(reassignedCommand?.conflictPolicy),
+      schema: schema,
+      userOverrides: store.state.keybindingUserOverrides
+    )
+    #expect(conflict == nil)
+  }
+
   @Test(.dependencies) func autoShowActiveAgentsPanelPersistsChanges() async {
     var initialSettings = GlobalSettings.default
     initialSettings.autoShowActiveAgentsPanel = false
