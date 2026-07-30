@@ -128,6 +128,10 @@ struct SettingsView: View {
             state: \.agentProfiles,
             action: \.agentProfiles
           ) {
+            // The title stays constant across the drill-in: the editor page
+            // identifies itself in its own header, and swapping title
+            // modifiers with the pages destabilizes the hand-configured
+            // window toolbar.
             AgentProfilesSettingsView(store: agentProfilesStore)
               .navigationTitle("Agents")
               .navigationSubtitle("Agent profiles and launch presets")

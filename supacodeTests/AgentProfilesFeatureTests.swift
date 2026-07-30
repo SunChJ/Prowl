@@ -8,7 +8,7 @@ import Testing
 
 @MainActor
 struct AgentProfilesFeatureTests {
-  @Test(.dependencies) func taskLoadsSettingsAndSelectsFirstProfile() async {
+  @Test(.dependencies) func taskLoadsSettingsWithoutPushingAnEditor() async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()
     let store = withDependencies {
@@ -21,14 +21,15 @@ struct AgentProfilesFeatureTests {
       }
     }
 
+    // The root page is the list; a non-nil editor would push the drill-in.
     await store.send(.task)
     await store.receive(\.settingsLoaded) {
       $0.settings.agentProfiles = [profile]
-      $0.selectedProfileID = profile.id
     }
+    #expect(store.state.editor == nil)
   }
 
-  @Test(.dependencies) func addProfileAppendsSelectsAndPersists() async {
+  @Test(.dependencies) func addProfileAppendsOpensEditorAndPersists() async {
     let storage = SettingsTestStorage()
     let store = withDependencies {
       $0.settingsFileStorage = storage.storage
@@ -47,12 +48,32 @@ struct AgentProfilesFeatureTests {
     )
     await store.send(.addProfile(.claude)) {
       $0.settings.agentProfiles = [expected]
-      $0.selectedProfileID = expected.id
+      $0.editor = AgentProfileEditorFeature.State(profile: expected)
     }
     await store.receive(\.delegate.settingsChanged)
   }
 
-  @Test(.dependencies) func unrestrictedRequiresExplicitConfirmation() async {
+  @Test(.dependencies) func profileTappedPushesItsEditor() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
+    let storage = SettingsTestStorage()
+    let store = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock { $0.agentProfiles = [profile] }
+      var initial = AgentProfilesFeature.State()
+      initial.settings = settings
+      return TestStore(initialState: initial) {
+        AgentProfilesFeature()
+      }
+    }
+
+    await store.send(.profileTapped(profile.id)) {
+      $0.editor = AgentProfileEditorFeature.State(profile: profile)
+    }
+  }
+
+  @Test(.dependencies) func profileEditedDelegateUpdatesTheListAndSanitizesPersistence() async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()
     let (store, persisted) = withDependencies {
@@ -62,51 +83,18 @@ struct AgentProfilesFeatureTests {
       $settings.withLock { $0.agentProfiles = [profile] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.selectedProfileID = profile.id
+      initial.editor = AgentProfileEditorFeature.State(profile: profile)
       let store = TestStore(initialState: initial) {
         AgentProfilesFeature()
       }
       return (store, $settings)
     }
 
-    var edited = store.state.settings
-    edited.agentProfiles[0].executionMode = .unrestricted
-
-    // The binding write reverts and asks first.
-    await store.send(.binding(.set(\.settings, edited))) {
-      $0.alert = AgentProfilesFeature.unrestrictedAlert(profileID: profile.id)
-    }
-
-    await store.send(.alert(.presented(.confirmUnrestricted(profile.id)))) {
-      $0.alert = nil
-      $0.settings.agentProfiles[0].executionMode = .unrestricted
-    }
-    await store.receive(\.delegate.settingsChanged)
-    #expect(persisted.wrappedValue.agentProfiles.first?.executionMode == .unrestricted)
-  }
-
-  @Test(.dependencies) func blankNameNeverPersistsOrDeletesTheProfile() async {
-    let profile = AgentProfile(name: "Codex", runtime: .codex)
-    let storage = SettingsTestStorage()
-    let (store, persisted) = withDependencies {
-      $0.settingsFileStorage = storage.storage
-    } operation: {
-      @Shared(.userGlobalSettings) var settings
-      $settings.withLock { $0.agentProfiles = [profile] }
-      var initial = AgentProfilesFeature.State()
-      initial.settings = settings
-      initial.selectedProfileID = profile.id
-      let store = TestStore(initialState: initial) {
-        AgentProfilesFeature()
-      }
-      return (store, $settings)
-    }
-
-    // Clearing the Name field keeps the profile editable in state and keeps
-    // the last persisted name on disk — never a silent deletion.
-    var edited = store.state.settings
-    edited.agentProfiles[0].name = "   "
-    await store.send(.binding(.set(\.settings, edited))) {
+    // A blank in-progress name reaches the list state but never the disk —
+    // the persisted profile keeps its last non-blank name.
+    var edited = profile
+    edited.name = "   "
+    await store.send(.editor(.presented(.delegate(.profileEdited(edited))))) {
       $0.settings.agentProfiles[0].name = "   "
     }
     await store.receive(\.delegate.settingsChanged)
@@ -114,15 +102,15 @@ struct AgentProfilesFeatureTests {
     #expect(persisted.wrappedValue.agentProfiles.first?.name == "Codex")
 
     // Typing the new name persists it normally.
-    edited.agentProfiles[0].name = "Codex · Deep"
-    await store.send(.binding(.set(\.settings, edited))) {
+    edited.name = "Codex · Deep"
+    await store.send(.editor(.presented(.delegate(.profileEdited(edited))))) {
       $0.settings.agentProfiles[0].name = "Codex · Deep"
     }
     await store.receive(\.delegate.settingsChanged)
     #expect(persisted.wrappedValue.agentProfiles.first?.name == "Codex · Deep")
   }
 
-  @Test(.dependencies) func removingBoundProfileConfirmsAndCanTrashHome() async {
+  @Test(.dependencies) func editorRemovalDelegatePopsAndTrashesTheHome() async {
     var bound = AgentProfile(name: "Codex · Work", runtime: .codex)
     bound.bindsDedicatedHome = true
     let storage = SettingsTestStorage()
@@ -134,7 +122,7 @@ struct AgentProfilesFeatureTests {
       $settings.withLock { $0.agentProfiles = [bound] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.selectedProfileID = bound.id
+      initial.editor = AgentProfileEditorFeature.State(profile: bound)
       return TestStore(initialState: initial) {
         AgentProfilesFeature()
       } withDependencies: {
@@ -144,81 +132,70 @@ struct AgentProfilesFeatureTests {
       }
     }
 
-    await store.send(.removeSelectedTapped) {
-      $0.alert = AgentProfilesFeature.removalAlert(profile: bound)
-    }
-    await store.send(.alert(.presented(.removeTrashingFiles(bound.id)))) {
-      $0.alert = nil
+    // Removal pops the editor back to the list and trashes in the parent, so
+    // the dismissal cannot cancel the file operation.
+    await store.send(.editor(.presented(.delegate(.removeProfile(bound.id, trashFiles: true))))) {
       $0.settings.agentProfiles = []
-      $0.selectedProfileID = nil
+      $0.editor = nil
     }
     await store.receive(\.delegate.settingsChanged)
     await store.finish()
     #expect(trashed.value == [bound.id])
   }
 
-  @Test(.dependencies) func unboundProfileWithHomeOnDiskStillConfirmsRemoval() async {
-    // bind → launch (home created) → unbind → remove: the gate keys on the
-    // disk fact, so the credentials never get orphaned silently.
-    let unbound = AgentProfile(name: "Codex · Was Bound", runtime: .codex)
+  @Test(.dependencies) func editorRemovalDelegateCanKeepFilesOnDisk() async {
+    let preset = AgentProfile(name: "Claude", runtime: .claude)
     let storage = SettingsTestStorage()
     let trashed = LockIsolated<[AgentProfile.ID]>([])
     let store = withDependencies {
       $0.settingsFileStorage = storage.storage
     } operation: {
       @Shared(.userGlobalSettings) var settings
-      $settings.withLock { $0.agentProfiles = [unbound] }
+      $settings.withLock { $0.agentProfiles = [preset] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.selectedProfileID = unbound.id
+      initial.editor = AgentProfileEditorFeature.State(profile: preset)
       return TestStore(initialState: initial) {
         AgentProfilesFeature()
       } withDependencies: {
-        $0[AgentProfileHomeClient.self].homeExists = { _ in true }
         $0[AgentProfileHomeClient.self].trashHome = { id in
           trashed.withValue { $0.append(id) }
         }
       }
     }
 
-    await store.send(.removeSelectedTapped) {
-      $0.alert = AgentProfilesFeature.removalAlert(profile: unbound)
-    }
-    await store.send(.alert(.presented(.removeTrashingFiles(unbound.id)))) {
-      $0.alert = nil
+    await store.send(.editor(.presented(.delegate(.removeProfile(preset.id, trashFiles: false))))) {
       $0.settings.agentProfiles = []
-      $0.selectedProfileID = nil
+      $0.editor = nil
     }
     await store.receive(\.delegate.settingsChanged)
     await store.finish()
-    #expect(trashed.value == [unbound.id])
+    #expect(trashed.value.isEmpty)
   }
 
-  @Test(.dependencies) func revealRefreshesThePassiveHomeStatus() async {
-    var bound = AgentProfile(name: "Codex · Work", runtime: .codex)
-    bound.bindsDedicatedHome = true
+  @Test(.dependencies) func togglingEnabledPersistsFromTheList() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()
-    let homeOnDisk = LockIsolated(false)
-    let store = withDependencies {
+    let (store, persisted) = withDependencies {
       $0.settingsFileStorage = storage.storage
     } operation: {
       @Shared(.userGlobalSettings) var settings
-      $settings.withLock { $0.agentProfiles = [bound] }
+      $settings.withLock { $0.agentProfiles = [profile] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.selectedProfileID = bound.id
-      return TestStore(initialState: initial) {
+      let store = TestStore(initialState: initial) {
         AgentProfilesFeature()
-      } withDependencies: {
-        $0[AgentProfileHomeClient.self].homeExists = { _ in homeOnDisk.value }
-        $0[AgentProfileHomeClient.self].revealHome = { _ in homeOnDisk.setValue(true) }
       }
+      return (store, $settings)
     }
 
-    await store.send(.revealProfileFiles)
-    await store.receive(\.homeStatusRefreshed) {
-      $0.selectedHomeInitialized = true
+    var edited = store.state.settings
+    edited.agentProfiles[0].isEnabled = false
+    await store.send(.binding(.set(\.settings, edited))) {
+      $0.settings.agentProfiles[0].isEnabled = false
     }
+    await store.receive(\.delegate.settingsChanged)
+    #expect(persisted.wrappedValue.agentProfiles.first?.isEnabled == false)
   }
 
   @Test func launchConfigRootOnlyAppliesToTheLaunchedRuntime() {
@@ -233,29 +210,6 @@ struct AgentProfilesFeatureTests {
     // A different agent started manually in the same pane uses its default
     // home; handing it the profile home would break session attribution.
     #expect(identity.configRoot(forDetected: .claude) == nil)
-  }
-
-  @Test(.dependencies) func removingPurePresetSkipsConfirmationAndFileOperations() async {
-    let preset = AgentProfile(name: "Claude", runtime: .claude)
-    let storage = SettingsTestStorage()
-    let store = withDependencies {
-      $0.settingsFileStorage = storage.storage
-    } operation: {
-      @Shared(.userGlobalSettings) var settings
-      $settings.withLock { $0.agentProfiles = [preset] }
-      var initial = AgentProfilesFeature.State()
-      initial.settings = settings
-      initial.selectedProfileID = preset.id
-      return TestStore(initialState: initial) {
-        AgentProfilesFeature()
-      }
-    }
-
-    await store.send(.removeSelectedTapped) {
-      $0.settings.agentProfiles = []
-      $0.selectedProfileID = nil
-    }
-    await store.receive(\.delegate.settingsChanged)
   }
 
   @Test(.dependencies) func moveReordersFallbackPriority() async {
