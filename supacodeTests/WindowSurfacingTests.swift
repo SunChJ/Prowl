@@ -6,7 +6,7 @@ struct WindowSurfacingTests {
   @Test func mainWindowCandidateIgnoresUntaggedHelperWindows() {
     let snapshots = [
       MainWindowSurface.Snapshot(identifier: nil, isVisible: true),
-      MainWindowSurface.Snapshot(identifier: WindowID.settings, isVisible: true),
+      MainWindowSurface.Snapshot(identifier: "auxiliary", isVisible: true),
     ]
 
     #expect(MainWindowSurface.mainWindowIndex(in: snapshots) == nil)
@@ -42,7 +42,7 @@ struct WindowSurfacingTests {
   @Test func windowCountsSeparateMainAndVisibleWindows() {
     let snapshots = [
       MainWindowSurface.Snapshot(identifier: nil, isVisible: true),
-      MainWindowSurface.Snapshot(identifier: WindowID.settings, isVisible: true),
+      MainWindowSurface.Snapshot(identifier: "auxiliary", isVisible: true),
       MainWindowSurface.Snapshot(identifier: WindowID.main, isVisible: false),
       MainWindowSurface.Snapshot(identifier: WindowID.main, isVisible: true),
     ]

@@ -282,6 +282,8 @@ struct SettingsFeature {
         state.showNotificationDotOnDock = normalizedSettings.showNotificationDotOnDock
         state.externalDiffToolID = normalizedSettings.externalDiffToolID
         state.externalDiffCustomCommand = normalizedSettings.externalDiffCustomCommand
+        state.canvasDefaultLayout = normalizedSettings.canvasDefaultLayout
+        state.detectRepositoryIconsAutomatically = normalizedSettings.detectRepositoryIconsAutomatically
         state.syncGlobalDefaults(from: normalizedSettings)
         return .send(.delegate(.settingsChanged(normalizedSettings)))
 
@@ -345,6 +347,11 @@ struct SettingsFeature {
         }
 
       case .uninstallCLIButtonTapped:
+        // Uninstall is only reachable from the Settings UI, so its result
+        // must always alert — without this, a palette-triggered install
+        // (showAlert: false) leaves the flag stuck and a failed uninstall
+        // would report nothing at all.
+        state.cliInstallShowAlert = true
         let installPath = cliDefaultInstallPath
         return .run { [cliInstallClient] send in
           do {
@@ -428,12 +435,7 @@ struct SettingsFeature {
         state.selection = selection ?? .general
         return .none
 
-      case .alert(.dismiss):
-        state.alert = nil
-        return .none
-
       case .alert(.presented(.openSystemNotificationSettings)):
-        state.alert = nil
         return .run { _ in
           await systemNotificationClient.openSettings()
         }
@@ -463,6 +465,10 @@ struct SettingsFeature {
     .ifLet(\.agentProfiles, action: \.agentProfiles) {
       AgentProfilesFeature()
     }
+    // Without this, alert state is only cleared by the view's dismiss
+    // writeback: state set while the Settings window is closed (or closed
+    // while an alert is up) would wedge as permanently "presented".
+    .ifLet(\.$alert, action: \.alert)
   }
 
   private func persist(

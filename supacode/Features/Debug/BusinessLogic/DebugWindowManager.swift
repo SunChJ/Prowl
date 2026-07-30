@@ -4,11 +4,10 @@ import SwiftUI
 
 #if DEBUG
 
-  /// Manages the singleton Debug Window. Lifecycle mirrors
-  /// `SettingsWindowManager`: cache the `NSWindow`, deminiaturise +
-  /// front it on subsequent shows, never release on close so opening
-  /// is cheap. Configured once during app bootstrap with the root
-  /// store so the window can mirror the user's appearance setting.
+  /// Manages the singleton Debug Window. This debug-only auxiliary surface
+  /// caches its `NSWindow`, deminiaturises and fronts it on subsequent shows,
+  /// and is configured once during app bootstrap with the root store so it can
+  /// mirror the user's appearance setting.
   @MainActor
   final class DebugWindowManager {
     static let shared = DebugWindowManager()

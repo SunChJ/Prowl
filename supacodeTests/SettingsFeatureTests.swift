@@ -564,4 +564,67 @@ struct SettingsFeatureTests {
     await store.send(.clearTerminalLayoutSnapshotButtonTapped)
     await store.receive(\.delegate.terminalLayoutSnapshotCleared)
   }
+
+  @Test(.dependencies) func alertButtonActionClearsThePresentationInTheReducer() async {
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    await store.send(.showNotificationPermissionAlert(errorMessage: nil)) {
+      $0.alert = AlertState {
+        TextState("Prowl cannot send system notifications")
+      } actions: {
+        ButtonState(action: .openSystemNotificationSettings) {
+          TextState("Open System Settings")
+        }
+        ButtonState(role: .cancel, action: .dismiss) {
+          TextState("Cancel")
+        }
+      } message: {
+        TextState(
+          "Notification permission is turned off. Open System Settings to allow Prowl to send notifications."
+        )
+      }
+    }
+
+    // The presentation reducer must clear the ephemeral alert itself — if the
+    // clearing only happened through the view's dismiss writeback, alert
+    // state set while the Settings window is closed would wedge as
+    // permanently "presented".
+    await store.send(.alert(.presented(.dismiss))) {
+      $0.alert = nil
+    }
+  }
+
+  @Test(.dependencies) func uninstallAlwaysAlertsEvenAfterSilentInstall() async {
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    } withDependencies: {
+      $0.cliInstallClient.install = { _ in }
+      $0.cliInstallClient.uninstall = { _ in }
+      $0.cliInstallClient.installationStatus = { _ in .notInstalled }
+    }
+
+    // A palette-triggered install suppresses its own alert…
+    await store.send(.installCLIButtonTapped(showAlert: false)) {
+      $0.cliInstallShowAlert = false
+    }
+    await store.receive(\.cliInstallCompleted)
+    await store.receive(\.delegate.cliInstallCompleted)
+
+    // …but a later uninstall from Settings must still report its result.
+    await store.send(.uninstallCLIButtonTapped) {
+      $0.cliInstallShowAlert = true
+    }
+    await store.receive(\.cliInstallCompleted) {
+      $0.alert = AlertState {
+        TextState("Command Line Tool Uninstalled")
+      } actions: {
+        ButtonState(action: .dismiss) { TextState("OK") }
+      } message: {
+        TextState("The prowl command line tool has been removed.")
+      }
+    }
+    await store.receive(\.delegate.cliInstallCompleted)
+  }
 }

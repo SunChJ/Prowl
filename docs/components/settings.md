@@ -10,11 +10,20 @@
 ## Opening
 
 `⌘,` (`open_settings`), the app menu, or Command Palette → "Open Settings". The
-window is a sidebar of tabs plus a detail pane.
+window is a native macOS split window: the sidebar selects top-level sections,
+and its toolbar's sidebar control can hide or show that sidebar. Re-opening
+Settings brings the existing Settings window forward rather than creating
+another one. `⌘W` closes it.
 
-## Tabs
+Most sections are roots in the detail pane. A section can drill in without
+losing the sidebar; for example, **Agents** → a profile pushes its editor and
+macOS shows the standard Back control beside the editor title. Back returns to
+the Agents list, while selecting another sidebar item leaves the drill-in and
+opens that section's root.
 
-| Tab | Controls |
+## Sections
+
+| Section | Controls |
 |-----|----------|
 | **General** | Appearance (system/light/dark), default app for opening worktrees, diff tool, confirm-before-quit, default view mode, window chrome tint, automatic repository icon detection, toolbar buttons (Run / Open-in-editor), dim unfocused splits, Active Agents panel auto-show & terminal titles. |
 | **Notifications** | In-app alerts, notification sound picker (Never / system sounds / Prowl Classic), macOS system notifications, move-notified-to-top, command-finished notification + threshold, Dock badge & bounce. → [notifications](notifications.md) |
