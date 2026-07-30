@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import Testing
 
@@ -86,33 +85,17 @@ struct WindowCloseShortcutPolicyTests {
     #expect(shortcut?.key == "w")
     #expect(shortcut?.modifiers == .command)
   }
-}
 
-struct SettingsWindowShortcutPolicyTests {
-  @Test func commandWClosesSettingsWindow() {
-    #expect(
-      SettingsWindowKeyboardShortcutPolicy.isCloseWindowShortcut(
-        modifierFlags: .command,
-        charactersIgnoringModifiers: "w"
-      )
+  @Test func closeWindowClaimsCommandWForFocusedSettingsWindow() {
+    let shortcut = WindowCloseShortcutPolicy.closeWindowShortcut(
+      closeSurfaceShortcut: KeyboardShortcut("w"),
+      closeTabShortcut: KeyboardShortcut("w"),
+      hasTerminalCloseTarget: true,
+      shelfHasOpenBooks: true,
+      settingsWindowIsFocused: true
     )
-  }
 
-  @Test func modifiedCommandWDoesNotCloseSettingsWindow() {
-    #expect(
-      !SettingsWindowKeyboardShortcutPolicy.isCloseWindowShortcut(
-        modifierFlags: [.command, .shift],
-        charactersIgnoringModifiers: "w"
-      )
-    )
-  }
-
-  @Test func commandOtherKeyDoesNotCloseSettingsWindow() {
-    #expect(
-      !SettingsWindowKeyboardShortcutPolicy.isCloseWindowShortcut(
-        modifierFlags: .command,
-        charactersIgnoringModifiers: "q"
-      )
-    )
+    #expect(shortcut?.key == "w")
+    #expect(shortcut?.modifiers == .command)
   }
 }

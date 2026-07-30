@@ -105,3 +105,4 @@ agent-facing manual for that).
 | 051 | [repository-icon-detection](051-repository-icon-detection/000-plan.md) | 2026-07-25 | High-confidence local repository icon detection on add; deferred, reviewable Foundation Model recommendations |
 | 052 | [sidebar-context-menus](052-sidebar-context-menus/000-plan.md) | 2026-07-27 | Sidebar context menu overhaul: worktree terminal actions, header/workspace path actions, PR click-through |
 | 053 | [agent-profiles](053-agent-profiles/000-plan.md) | 2026-07-29 | Agent Profile V1: preset-first Claude Code/Codex launch profiles, opt-in account isolation, path routing, and future handoff seam |
+| 054 | [native-settings-navigation](054-native-settings-navigation/000-plan.md) | 2026-07-30 | SwiftUI-owned singleton Settings window, native sidebar/detail navigation, and Agent Profile drill-ins |

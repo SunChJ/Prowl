@@ -38,6 +38,14 @@ types into an existing shell. The new pane records its profile identity at
 creation: the Active Agents rows and the capsule show the profile's display
 name (frozen at launch — later renames don't relabel live panes).
 
+## Managing profiles
+
+Open **Settings → Agents** to see the ordered profile list. Click a profile to
+push its editor; the native Back control returns to the list while the Settings
+sidebar remains available. Adding a profile opens the same editor immediately.
+Changing another Settings sidebar section leaves the editor and opens that
+section's root.
+
 **Recommended** resolves in three tiers: the repo's **Default Agent Profile**
 (Repo Settings) → the last profile explicitly launched in this repo → the
 first enabled profile in the Settings list order. Each tier only matches an

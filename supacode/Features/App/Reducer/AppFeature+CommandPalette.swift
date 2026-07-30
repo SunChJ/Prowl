@@ -76,12 +76,7 @@ extension AppFeature {
       return .send(.updates(.checkForUpdates))
 
     case .openSettings:
-      return .merge(
-        .send(.settings(.setSelection(.general))),
-        .run { _ in
-          await settingsWindowClient.show()
-        }
-      )
+      return openSettingsEffect(selecting: .general)
 
     case .newWorktree:
       return .send(.repositories(.worktreeCreation(.createRandomWorktree)))

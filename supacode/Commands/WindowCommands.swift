@@ -6,9 +6,8 @@ struct WindowCommands: Commands {
   let terminalManager: WorktreeTerminalManager
   let ghosttyShortcuts: GhosttyShortcutManager
   let resolvedKeybindings: ResolvedKeybindingMap
-  @Bindable var settingsWindowManager: SettingsWindowManager
-  @Dependency(SettingsWindowClient.self) private var settingsWindowClient
   @Environment(\.openWindow) private var openWindow
+  @FocusedValue(\.closeSettingsWindowAction) private var closeSettingsWindowAction
   @FocusedValue(\.closeTabAction) private var closeTabAction
   @FocusedValue(\.closeSurfaceAction) private var closeSurfaceAction
   @FocusedValue(\.selectPreviousTerminalTabAction) private var selectPreviousTerminalTabAction
@@ -22,6 +21,7 @@ struct WindowCommands: Commands {
 
   var body: some Commands {
     let mainWindowOpenerRegistered = MainWindowOpener.shared.register(openWindow: openWindow)
+    let settingsOpenerRegistered = SettingsWindowOpener.shared.register(openWindow: openWindow)
     let closeSurfaceHotkey = ghosttyShortcuts.keyboardShortcut(for: "close_surface")
     let closeTabHotkey = ghosttyShortcuts.keyboardShortcut(for: "close_tab")
     let shelfHasOpenBooks =
@@ -30,12 +30,17 @@ struct WindowCommands: Commands {
       closeSurfaceShortcut: closeSurfaceHotkey,
       closeTabShortcut: closeTabHotkey,
       hasTerminalCloseTarget: closeTabAction != nil || closeSurfaceAction != nil,
-      shelfHasOpenBooks: shelfHasOpenBooks
+      shelfHasOpenBooks: shelfHasOpenBooks,
+      settingsWindowIsFocused: closeSettingsWindowAction != nil
     )
 
     CommandGroup(replacing: .saveItem) {
       Button("Close Window", systemImage: "xmark") {
-        NSApplication.shared.keyWindow?.performClose(nil)
+        if let closeSettingsWindowAction {
+          closeSettingsWindowAction()
+        } else {
+          NSApplication.shared.keyWindow?.performClose(nil)
+        }
       }
       .modifier(
         KeyboardShortcutModifier(
@@ -48,8 +53,6 @@ struct WindowCommands: Commands {
       repositories: store.repositories,
       terminalManager: terminalManager
     )
-    let isSettingsOpen = settingsWindowManager.isOpen
-
     CommandGroup(replacing: .windowArrangement) {
       Button("Select Previous Tab") {
         selectPreviousTerminalTabAction?()
@@ -143,12 +146,18 @@ struct WindowCommands: Commands {
       }
       .help("Show main window")
 
-      if isSettingsOpen {
-        Button("Settings") {
-          settingsWindowClient.show()
-        }
-        .help("Show Settings window")
+    }
+
+    CommandGroup(replacing: .appSettings) {
+      Button("Settings...") {
+        guard settingsOpenerRegistered else { return }
+        _ = SettingsWindowOpener.shared.openSettingsWindow()
       }
+      .modifier(
+        KeyboardShortcutModifier(
+          shortcut: resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.openSettings)
+        )
+      )
     }
   }
 }
@@ -158,8 +167,15 @@ enum WindowCloseShortcutPolicy {
     closeSurfaceShortcut: KeyboardShortcut?,
     closeTabShortcut: KeyboardShortcut?,
     hasTerminalCloseTarget: Bool,
-    shelfHasOpenBooks: Bool = false
+    shelfHasOpenBooks: Bool = false,
+    settingsWindowIsFocused: Bool = false
   ) -> KeyboardShortcut? {
+    // Cmd-W must always close the native singleton Settings window. Its
+    // focused scene action is independent of a terminal's retained close
+    // targets in the main window.
+    if settingsWindowIsFocused {
+      return KeyboardShortcut("w")
+    }
     // `shelfHasOpenBooks` keeps Cmd+W with the terminal layer through the brief
     // gap between closing a book's last tab and Shelf advancing to the next
     // book. Without it, `hasTerminalCloseTarget` momentarily flips false during
@@ -191,6 +207,17 @@ struct KeyboardShortcutModifier: ViewModifier {
 
 private struct SelectPreviousTerminalTabActionKey: FocusedValueKey {
   typealias Value = FocusedAction<Void>
+}
+
+private struct CloseSettingsWindowActionKey: FocusedValueKey {
+  typealias Value = FocusedAction<Void>
+}
+
+extension FocusedValues {
+  var closeSettingsWindowAction: FocusedAction<Void>? {
+    get { self[CloseSettingsWindowActionKey.self] }
+    set { self[CloseSettingsWindowActionKey.self] = newValue }
+  }
 }
 
 extension FocusedValues {

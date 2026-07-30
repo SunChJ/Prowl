@@ -6,7 +6,7 @@ struct SettingsWindowClient {
 
 extension SettingsWindowClient: DependencyKey {
   static let liveValue = SettingsWindowClient {
-    SettingsWindowManager.shared.show()
+    _ = SettingsWindowOpener.shared.openSettingsWindow()
   }
 
   static let testValue = SettingsWindowClient {}

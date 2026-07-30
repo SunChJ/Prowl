@@ -1,50 +1,21 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Settings → Agents → drill-in editor page for one profile. Presented by
-/// `AgentProfilesSettingsView` via `navigationDestination`; owns the alert
-/// presentation because its feature owns the alert state.
+/// Settings → Agents → native drill-in editor for one profile. The feature
+/// owns the alert presentation because its state lives with this destination.
 struct AgentProfileEditorView: View {
   @Bindable var store: StoreOf<AgentProfileEditorFeature>
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      header
-      Form {
-        profileSection
-        advancedSection
-        removalSection
-      }
-      .formStyle(.grouped)
+    Form {
+      profileSection
+      advancedSection
+      removalSection
     }
+    .formStyle(.grouped)
+    .navigationTitle(store.profile.name)
     .task { store.send(.task) }
     .alert($store.scope(state: \.alert, action: \.alert))
-  }
-
-  /// Page header: back capsule plus the profile identity. The window title
-  /// stays a constant "Agents", so the drill-in page names itself here.
-  private var header: some View {
-    HStack(spacing: 12) {
-      Button {
-        store.send(.backTapped)
-      } label: {
-        Label("Back", systemImage: "chevron.left")
-          .labelStyle(.iconOnly)
-      }
-      .buttonStyle(.glass)
-      .keyboardShortcut("[", modifiers: .command)
-      .help("Back to Agent Profiles (⌘[)")
-
-      VStack(alignment: .leading, spacing: 2) {
-        Text(store.profile.name)
-          .font(.title3.weight(.semibold))
-        Text(AgentRuntimeAdapterRegistry.displayName(for: store.profile.runtime.agent))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-    }
-    .padding(.leading, 4)
   }
 
   private var profileSection: some View {

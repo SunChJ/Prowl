@@ -162,4 +162,22 @@ struct AppFeatureSettingsSelectionTests {
       $0.settings.repositorySettings = nil
     }
   }
+
+  @Test func selectingAnotherSectionClearsAgentProfileEditorState() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
+    var state = AppFeature.State(settings: SettingsFeature.State())
+    state.settings.selection = .agents
+    var agentProfiles = AgentProfilesFeature.State()
+    agentProfiles.settings = UserGlobalSettings(customCommands: [], agentProfiles: [profile])
+    agentProfiles.path.append(AgentProfileEditorFeature.State(profile: profile))
+    state.settings.agentProfiles = agentProfiles
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    }
+
+    await store.send(.settings(.setSelection(.general))) {
+      $0.settings.selection = .general
+      $0.settings.agentProfiles = nil
+    }
+  }
 }

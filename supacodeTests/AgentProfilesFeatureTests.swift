@@ -21,12 +21,12 @@ struct AgentProfilesFeatureTests {
       }
     }
 
-    // The root page is the list; a non-nil editor would push the drill-in.
+    // The root page is the list; a non-empty path would push the drill-in.
     await store.send(.task)
     await store.receive(\.settingsLoaded) {
       $0.settings.agentProfiles = [profile]
     }
-    #expect(store.state.editor == nil)
+    #expect(store.state.path.isEmpty)
   }
 
   @Test(.dependencies) func addProfileAppendsOpensEditorAndPersists() async {
@@ -48,12 +48,12 @@ struct AgentProfilesFeatureTests {
     )
     await store.send(.addProfile(.claude)) {
       $0.settings.agentProfiles = [expected]
-      $0.editor = AgentProfileEditorFeature.State(profile: expected)
+      $0.path.append(AgentProfileEditorFeature.State(profile: expected))
     }
     await store.receive(\.delegate.settingsChanged)
   }
 
-  @Test(.dependencies) func profileTappedPushesItsEditor() async {
+  @Test(.dependencies) func systemBackPopsTheEditorPath() async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()
     let store = withDependencies {
@@ -68,8 +68,13 @@ struct AgentProfilesFeatureTests {
       }
     }
 
-    await store.send(.profileTapped(profile.id)) {
-      $0.editor = AgentProfileEditorFeature.State(profile: profile)
+    await store.send(
+      .path(.push(id: 0, state: AgentProfileEditorFeature.State(profile: profile)))
+    ) {
+      $0.path.append(AgentProfileEditorFeature.State(profile: profile))
+    }
+    await store.send(.path(.popFrom(id: 0))) {
+      $0.path.removeAll()
     }
   }
 
@@ -83,7 +88,7 @@ struct AgentProfilesFeatureTests {
       $settings.withLock { $0.agentProfiles = [profile] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.editor = AgentProfileEditorFeature.State(profile: profile)
+      initial.path.append(AgentProfileEditorFeature.State(profile: profile))
       let store = TestStore(initialState: initial) {
         AgentProfilesFeature()
       }
@@ -94,7 +99,9 @@ struct AgentProfilesFeatureTests {
     // the persisted profile keeps its last non-blank name.
     var edited = profile
     edited.name = "   "
-    await store.send(.editor(.presented(.delegate(.profileEdited(edited))))) {
+    await store.send(
+      .path(.element(id: 0, action: .delegate(.profileEdited(edited))))
+    ) {
       $0.settings.agentProfiles[0].name = "   "
     }
     await store.receive(\.delegate.settingsChanged)
@@ -103,7 +110,9 @@ struct AgentProfilesFeatureTests {
 
     // Typing the new name persists it normally.
     edited.name = "Codex · Deep"
-    await store.send(.editor(.presented(.delegate(.profileEdited(edited))))) {
+    await store.send(
+      .path(.element(id: 0, action: .delegate(.profileEdited(edited))))
+    ) {
       $0.settings.agentProfiles[0].name = "Codex · Deep"
     }
     await store.receive(\.delegate.settingsChanged)
@@ -122,7 +131,7 @@ struct AgentProfilesFeatureTests {
       $settings.withLock { $0.agentProfiles = [bound] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.editor = AgentProfileEditorFeature.State(profile: bound)
+      initial.path.append(AgentProfileEditorFeature.State(profile: bound))
       return TestStore(initialState: initial) {
         AgentProfilesFeature()
       } withDependencies: {
@@ -132,11 +141,13 @@ struct AgentProfilesFeatureTests {
       }
     }
 
-    // Removal pops the editor back to the list and trashes in the parent, so
+    // Removal pops the editor path back to the list and trashes in the parent, so
     // the dismissal cannot cancel the file operation.
-    await store.send(.editor(.presented(.delegate(.removeProfile(bound.id, trashFiles: true))))) {
+    await store.send(
+      .path(.element(id: 0, action: .delegate(.removeProfile(bound.id, trashFiles: true))))
+    ) {
       $0.settings.agentProfiles = []
-      $0.editor = nil
+      $0.path.removeAll()
     }
     await store.receive(\.delegate.settingsChanged)
     await store.finish()
@@ -154,7 +165,7 @@ struct AgentProfilesFeatureTests {
       $settings.withLock { $0.agentProfiles = [preset] }
       var initial = AgentProfilesFeature.State()
       initial.settings = settings
-      initial.editor = AgentProfileEditorFeature.State(profile: preset)
+      initial.path.append(AgentProfileEditorFeature.State(profile: preset))
       return TestStore(initialState: initial) {
         AgentProfilesFeature()
       } withDependencies: {
@@ -164,9 +175,11 @@ struct AgentProfilesFeatureTests {
       }
     }
 
-    await store.send(.editor(.presented(.delegate(.removeProfile(preset.id, trashFiles: false))))) {
+    await store.send(
+      .path(.element(id: 0, action: .delegate(.removeProfile(preset.id, trashFiles: false))))
+    ) {
       $0.settings.agentProfiles = []
-      $0.editor = nil
+      $0.path.removeAll()
     }
     await store.receive(\.delegate.settingsChanged)
     await store.finish()

@@ -6,14 +6,14 @@ import SwiftUI
 /// Settings → Agents: the global agent profile list (docs-ai 053). List order
 /// is the recommendation fallback order; edits persist to
 /// `UserGlobalSettings` the same way global custom commands do. Editing one
-/// profile is a drill-in `AgentProfileEditorFeature` presented tree-style, so
-/// editor-scoped presentation state lives with the pushed page.
+/// profile is a native drill-in `AgentProfileEditorFeature` represented by a
+/// stack path.
 @Reducer
 struct AgentProfilesFeature {
   @ObservableState
   struct State: Equatable {
     var settings: UserGlobalSettings = .default
-    @Presents var editor: AgentProfileEditorFeature.State?
+    var path = StackState<AgentProfileEditorFeature.State>()
   }
 
   enum Action: BindableAction {
@@ -22,8 +22,7 @@ struct AgentProfilesFeature {
     case binding(BindingAction<State>)
     case addProfile(AgentProfileRuntime)
     case moveProfiles(IndexSet, Int)
-    case profileTapped(AgentProfile.ID)
-    case editor(PresentationAction<AgentProfileEditorFeature.Action>)
+    case path(StackActionOf<AgentProfileEditorFeature>)
     case delegate(Delegate)
   }
 
@@ -62,31 +61,24 @@ struct AgentProfilesFeature {
         )
         state.settings.agentProfiles.append(profile)
         state.settings = state.settings.normalized()
-        state.editor = AgentProfileEditorFeature.State(profile: profile)
+        state.path.append(AgentProfileEditorFeature.State(profile: profile))
         return persist(state.settings)
 
       case .moveProfiles(let source, let destination):
         state.settings.agentProfiles.move(fromOffsets: source, toOffset: destination)
         return persist(state.settings)
 
-      case .profileTapped(let id):
-        guard let profile = state.settings.agentProfiles.first(where: { $0.id == id }) else {
-          return .none
-        }
-        state.editor = AgentProfileEditorFeature.State(profile: profile)
-        return .none
-
-      case .editor(.presented(.delegate(.profileEdited(let profile)))):
+      case .path(.element(id: _, action: .delegate(.profileEdited(let profile)))):
         guard let index = state.settings.agentProfiles.firstIndex(where: { $0.id == profile.id })
         else { return .none }
         state.settings.agentProfiles[index] = profile
         return persist(state.settings)
 
-      case .editor(.presented(.delegate(.removeProfile(let profileID, let trashFiles)))):
+      case .path(.element(id: _, action: .delegate(.removeProfile(let profileID, let trashFiles)))):
         state.settings.agentProfiles.removeAll { $0.id == profileID }
-        // Dismissing pops the drill-in editor back to the list; the trash
-        // effect runs here so the dismissal cannot cancel it.
-        state.editor = nil
+        // Dismissing returns the split view to the Agents root before the
+        // trash effect runs, so it cannot be cancelled with the destination.
+        state.path.removeAll()
         guard trashFiles else { return persist(state.settings) }
         let client = homeClient
         return .merge(
@@ -100,21 +92,21 @@ struct AgentProfilesFeature {
           }
         )
 
-      case .editor:
+      case .path:
         return .none
 
       case .delegate:
         return .none
       }
     }
-    .ifLet(\.$editor, action: \.editor) {
+    .forEach(\.path, action: \.path) {
       AgentProfileEditorFeature()
     }
   }
 
   private func persist(_ settings: UserGlobalSettings) -> Effect<Action> {
     // The write happens synchronously in the reducer: this pane's state is
-    // nil'd on every Settings sidebar switch, and `ifLet` cancels in-flight
+    // removed on every Settings sidebar switch, and `forEach` cancels in-flight
     // child effects — a persist living inside `.run` could be cancelled and
     // silently drop the edit (or resurrect a removed profile).
     @Shared(.userGlobalSettings) var storedSettings

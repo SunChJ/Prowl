@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarFooterView: View {
   let store: StoreOf<RepositoriesFeature>
   @Environment(\.surfaceBottomChromeBackgroundOpacity) private var surfaceBottomChromeBackgroundOpacity
+  @Environment(\.openWindow) private var openWindow
   @Environment(\.openURL) private var openURL
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
   @Environment(AskAgentHelpPresenter.self) private var askAgentHelp
@@ -84,10 +85,12 @@ struct SidebarFooterView: View {
           commandID: AppShortcuts.CommandID.archivedWorktrees,
           in: resolvedKeybindings
         ))
-      Button("Settings", systemImage: "gearshape") {
-        SettingsWindowManager.shared.show()
+      Button {
+        openWindow(id: WindowID.settings)
+      } label: {
+        Image(systemName: "gearshape")
+          .accessibilityLabel("Settings")
       }
-      .labelStyle(.iconOnly)
       .help(
         AppShortcuts.helpText(
           title: "Settings",

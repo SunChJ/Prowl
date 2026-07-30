@@ -1,31 +1,25 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Settings → Agents: the profile list, with a drill-in editor page per
-/// profile (System Settings style). The drill-in is a state-driven content
-/// swap, not a nested `NavigationStack`: a stack inside the split view's
-/// detail column drops the first programmatic push, blocks sidebar-driven
-/// detail switches while pushed, and reconfigures the titlebar layout.
+/// Settings → Agents: the profile list, with a native drill-in editor page per
+/// profile. `NavigationStack` is driven by TCA's `StackState`, so the system
+/// Back control writes its pop directly to the reducer-owned route.
 /// List order is the recommendation fallback order.
 struct AgentProfilesSettingsView: View {
   @Bindable var store: StoreOf<AgentProfilesFeature>
 
   var body: some View {
-    Group {
-      if let editorStore = store.scope(state: \.editor, action: \.editor.presented) {
-        AgentProfileEditorView(store: editorStore)
-          .transition(.push(from: .trailing))
-      } else {
-        Form {
-          profileListSection
-        }
-        .formStyle(.grouped)
-        .transition(.push(from: .leading))
+    NavigationStack(path: $store.scope(state: \.path, action: \.path)) {
+      Form {
+        profileListSection
       }
+      .formStyle(.grouped)
+      .navigationTitle("Agents")
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .task { store.send(.task) }
+    } destination: { editorStore in
+      AgentProfileEditorView(store: editorStore)
     }
-    .animation(.default, value: store.editor == nil)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .task { store.send(.task) }
   }
 
   private var profileListSection: some View {
@@ -71,28 +65,9 @@ struct AgentProfilesSettingsView: View {
           .toggleStyle(.checkbox)
           .help("Show this profile in the Agents menu")
       }
-      Button {
-        store.send(.profileTapped(profile.id))
-      } label: {
-        HStack(spacing: 8) {
-          Text(profile.name)
-          if profile.bindsDedicatedHome {
-            Image(systemName: "person.crop.circle.badge.checkmark")
-              .foregroundStyle(.secondary)
-              .accessibilityLabel("Dedicated account")
-              .help("Uses a dedicated home with its own account")
-          }
-          Spacer()
-          Text(AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent))
-            .foregroundStyle(.secondary)
-          Image(systemName: "chevron.right")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.tertiary)
-            .accessibilityHidden(true)
-        }
-        .contentShape(Rectangle())
+      NavigationLink(state: AgentProfileEditorFeature.State(profile: profile)) {
+        profileLabel(profile)
       }
-      .buttonStyle(.plain)
       .help("Edit this profile")
     }
     .contextMenu {
@@ -100,6 +75,21 @@ struct AgentProfilesSettingsView: View {
         .disabled(index(of: profile.id) == 0)
       Button("Move Down") { move(profile.id, by: 1) }
         .disabled(index(of: profile.id) == store.settings.agentProfiles.count - 1)
+    }
+  }
+
+  private func profileLabel(_ profile: AgentProfile) -> some View {
+    HStack(spacing: 8) {
+      Text(profile.name)
+      if profile.bindsDedicatedHome {
+        Image(systemName: "person.crop.circle.badge.checkmark")
+          .foregroundStyle(.secondary)
+          .accessibilityLabel("Dedicated account")
+          .help("Uses a dedicated home with its own account")
+      }
+      Spacer()
+      Text(AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent))
+        .foregroundStyle(.secondary)
     }
   }
 

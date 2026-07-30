@@ -267,11 +267,6 @@ struct SupacodeApp: App {
     appDelegate.appStore = appStore
     appDelegate.terminalManager = terminalManager
     appDelegate.cliSocketServer = cliServer
-    SettingsWindowManager.shared.configure(
-      store: appStore,
-      ghosttyShortcuts: shortcuts,
-      commandKeyObserver: keyObserver
-    )
     #if DEBUG
       DebugWindowManager.shared.configure(store: appStore)
     #endif
@@ -1111,6 +1106,7 @@ struct SupacodeApp: App {
           }
       }
       .registersMainWindowOpener()
+      .registersSettingsWindowOpener()
       .onAppear {
         WindowLifecycleDiagnostics.logWithWindows("mainWindow content onAppear")
         WindowLifecycleDiagnostics.noteMainWindowAppeared()
@@ -1140,8 +1136,7 @@ struct SupacodeApp: App {
           store: store,
           terminalManager: terminalManager,
           ghosttyShortcuts: ghosttyShortcuts,
-          resolvedKeybindings: store.resolvedKeybindings,
-          settingsWindowManager: SettingsWindowManager.shared
+          resolvedKeybindings: store.resolvedKeybindings
         )
       }
       CommandGroup(after: .textEditing) {
@@ -1161,16 +1156,6 @@ struct SupacodeApp: App {
         store: store.scope(state: \.updates, action: \.updates),
         resolvedKeybindings: store.resolvedKeybindings
       )
-      CommandGroup(replacing: .appSettings) {
-        Button("Settings...") {
-          SettingsWindowManager.shared.show()
-        }
-        .modifier(
-          KeyboardShortcutModifier(
-            shortcut: store.resolvedKeybindings.keyboardShortcut(for: AppShortcuts.CommandID.openSettings)
-          )
-        )
-      }
       CommandGroup(after: .appSettings) {
         Button("Install Command Line Tool") {
           store.send(.settings(.installCLIButtonTapped(showAlert: false)))
@@ -1215,6 +1200,15 @@ struct SupacodeApp: App {
         .help(helpText(title: "Quit Prowl", commandID: AppShortcuts.CommandID.quitApplication))
       }
     }
+    Window("Settings", id: WindowID.settings) {
+      SettingsView(store: store)
+        .environment(ghosttyShortcuts)
+        .environment(commandKeyObserver)
+        .environment(\.resolvedKeybindings, store.resolvedKeybindings)
+        .preferredColorScheme(store.settings.appearanceMode.colorScheme)
+    }
+    .defaultSize(width: 900, height: 600)
+    .windowToolbarStyle(.automatic)
   }
 
   private func syncGhosttyManagedShortcuts(with resolvedKeybindings: ResolvedKeybindingMap) {

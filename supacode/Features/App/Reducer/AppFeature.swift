@@ -362,12 +362,7 @@ struct AppFeature {
           return .none
         }
         let selection = SettingsSection.repository(repositoryID)
-        return .merge(
-          .send(.settings(.setSelection(selection))),
-          .run { _ in
-            await settingsWindowClient.show()
-          }
-        )
+        return openSettingsEffect(selecting: selection)
 
       case .repositories(.delegate(.showDiff(let worktreeID))):
         guard let worktree = state.repositories.worktree(for: worktreeID) else {
@@ -720,12 +715,7 @@ struct AppFeature {
         return launchAgentProfile(profileID, state: &state)
 
       case .openAgentProfilesSettings:
-        return .merge(
-          .send(.settings(.setSelection(.agents))),
-          .run { _ in
-            await settingsWindowClient.show()
-          }
-        )
+        return openSettingsEffect(selecting: .agents)
 
       case .runCustomCommand(let commandID):
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {

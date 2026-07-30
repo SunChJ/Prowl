@@ -26,7 +26,6 @@ struct AgentProfileEditorFeature {
   enum Action: BindableAction {
     case task
     case binding(BindingAction<State>)
-    case backTapped
     case removeTapped
     case revealProfileFiles
     case homeStatusRefreshed(Bool)
@@ -49,7 +48,6 @@ struct AgentProfileEditorFeature {
   }
 
   @Dependency(AgentProfileHomeClient.self) var homeClient
-  @Dependency(\.dismiss) var dismiss
 
   var body: some Reducer<State, Action> {
     BindingReducer()
@@ -69,9 +67,6 @@ struct AgentProfileEditorFeature {
         }
         refreshHomeStatus(&state)
         return .send(.delegate(.profileEdited(state.profile)))
-
-      case .backTapped:
-        return .run { _ in await dismiss() }
 
       case .removeTapped:
         // The confirmation gate keys on the *disk fact*, not the current
