@@ -448,6 +448,33 @@ struct SettingsFeatureTests {
     #expect(settingsFile.global.keybindingUserOverrides == overrides)
   }
 
+  @Test(.dependencies) func clearShortcutPersistsDisabledOverrideAndFansOut() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.keybindingUserOverrides = .empty
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let commandID = AppShortcuts.CommandID.openSettings
+    let clearedOverride = KeybindingUserOverride(binding: nil, isEnabled: false)
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.clearShortcutButtonTapped(commandID: commandID)) {
+      $0.keybindingUserOverrides.overrides[commandID] = clearedOverride
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.keybindingUserOverrides.overrides[commandID] == clearedOverride)
+
+    let resolved = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: settingsFile.global.keybindingUserOverrides
+    )
+    #expect(resolved.binding(for: commandID)?.binding == nil)
+    #expect(resolved.binding(for: commandID)?.source == .userOverride)
+  }
+
   @Test(.dependencies) func autoShowActiveAgentsPanelPersistsChanges() async {
     var initialSettings = GlobalSettings.default
     initialSettings.autoShowActiveAgentsPanel = false
