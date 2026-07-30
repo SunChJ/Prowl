@@ -130,6 +130,9 @@ their own hotkey — see [`components/custom-actions.md`](../components/custom-a
 - **App actions** (scope `configurableAppAction`) are remappable in
   **Settings → Shortcuts**. Overrides are stored in
   `~/.prowl/settings.json` under `keybindingUserOverrides`.
+- While recording a remappable shortcut, choose **Clear** to leave the action
+  unassigned. The empty shortcut field can be recorded again, or **Reset** can
+  restore the default binding.
 - **`quit_application`** is fixed (`systemFixedAppAction`) — it can't be remapped.
 - **Canvas/local actions** (`localInteraction`, e.g. Arrange/Organize/Expand,
   Rename Branch) are remappable and conflict-checked against all remappable actions.
