@@ -27,8 +27,12 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   let rawState: AgentRawState
   let displayState: AgentDisplayState
   let lastChangedAt: Date
+  /// Profile display name recorded at launch for Prowl-launched surfaces
+  /// (docs-ai 053). Detected-but-not-launched agents stay honest: nil, so
+  /// the row never guesses a profile attribution.
+  var launchProfileName: String?
   var displayName: String {
-    Self.displayName(iconLookupToken: iconLookupToken, agent: agent)
+    launchProfileName ?? Self.displayName(iconLookupToken: iconLookupToken, agent: agent)
   }
 
   /// The user-facing agent name: the launch command token (e.g. `omp`) when it

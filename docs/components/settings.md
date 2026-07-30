@@ -24,14 +24,16 @@ window is a sidebar of tabs plus a detail pane.
 | **Advanced** | Analytics, crash reports, restore terminal layout on launch (experimental) + clear saved layout, and the **Install Command Line Tool** (`prowl` CLI) action. |
 | **GitHub** | Enable GitHub integration (uses the `gh` CLI). → [github-pull-requests](github-pull-requests.md) |
 | **Commands** | Global Custom Commands. Enabled commands appear in the window toolbar; each repo can independently hide a Global command. → [custom-actions](custom-actions.md) |
-| **Repositories / Repo Settings** | Per-repository: setup/archive/run scripts, **Custom Commands**, Global-command visibility, default base ref & directory, copy-files overrides, open-with app, custom title, icon & color, PR merge strategy, line-diff & PR-state fetching. Reached from the sidebar context menu → "Repo Settings". → [custom-actions](custom-actions.md), [repositories-and-worktrees](repositories-and-worktrees.md) |
+| **Agents** | Agent Profiles: named launch presets for Claude Code/Codex (model, effort, execution mode, tab/split placement, extra arguments, opt-in dedicated home for a separate account) with a live launch preview. List order is the recommendation fallback. → [agent-profiles](agent-profiles.md) |
+| **Repositories / Repo Settings** | Per-repository: setup/archive/run scripts, **Custom Commands**, Global-command visibility, **Default Agent Profile**, default base ref & directory, copy-files overrides, open-with app, custom title, icon & color, PR merge strategy, line-diff & PR-state fetching. Reached from the sidebar context menu → "Repo Settings". → [custom-actions](custom-actions.md), [repositories-and-worktrees](repositories-and-worktrees.md) |
 
 ## Where settings live on disk
 
 - **Global:** `~/.prowl/settings.json`
-- **Global custom commands:** `~/.prowl/global.onevcat.json`
+- **Global custom commands + agent profiles:** `~/.prowl/global.onevcat.json`
 - **Per-repo:** `~/.prowl/repo/<repo-name>/prowl.json`
-- **Per-repo custom commands:** `~/.prowl/repo/<repo-name>/prowl.onevcat.json`
+- **Per-repo custom commands + agent profile default/memory:** `~/.prowl/repo/<repo-name>/prowl.onevcat.json`
+- **Dedicated agent profile homes:** `~/.prowl/agent-profiles/<uuid>/`
 
 Legacy `~/.supacode` is migrated to `~/.prowl` on first launch.
 

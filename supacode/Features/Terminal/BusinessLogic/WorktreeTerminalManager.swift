@@ -90,6 +90,8 @@ final class WorktreeTerminalManager {
           customCommandIcon: customCommandIcon
         )
       }
+    case .launchAgentProfile(let worktree, let plan):
+      state(for: worktree).launchAgentProfile(plan)
     case .createTabInDirectory(let worktree, let directory):
       Task {
         createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)

@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// What the Agents capsule shows for the selected pane's detected agent.
-/// nil means no agent: the capsule renders its generic, disabled form
-/// (reserved for the future quick launcher — docs-ai 049).
+/// nil means no detected agent: the capsule renders its generic form and the
+/// popover becomes the profile launcher (docs-ai 053).
 struct AgentsCapsuleState: Equatable {
   let displayName: String
   /// Resolved branded icon; nil falls back to a generic symbol. Resolved by
@@ -14,17 +14,32 @@ struct AgentsCapsuleState: Equatable {
   let infoLine: String
 }
 
+/// One launchable agent profile row in the Agents popover (docs-ai 053).
+struct AgentsLauncherItem: Equatable, Identifiable {
+  let id: AgentProfile.ID
+  let name: String
+  let runtimeName: String
+  let isRecommended: Bool
+  /// Why the row is disabled ("Claude Code is not installed"); nil = launchable.
+  let unavailableReason: String?
+}
+
 /// Toolbar entry point for agent-scoped actions, left of the branch title.
 /// The capsule identifies the selected pane's agent (the hand-off source);
-/// clicking it opens a popover that hosts the agent actions — hand-off
-/// today, more later (docs-ai 049). Live status stays with the terminal,
-/// the Active Agents panel, and the central status toast — the capsule
-/// deliberately carries no state indicator. A `Menu` cannot host this
-/// control: macOS toolbars flatten custom menu labels to their text,
-/// dropping the badge, so the popover is the durable container here.
+/// clicking it opens a popover that hosts the agent actions — hand-off when
+/// an agent is detected, plus the profile launcher and the manage entry
+/// (docs-ai 049/053). The popover is always available: the launcher must not
+/// require a detected agent. Live status stays with the terminal, the Active
+/// Agents panel, and the central status toast — the capsule deliberately
+/// carries no state indicator. A `Menu` cannot host this control: macOS
+/// toolbars flatten custom menu labels to their text, dropping the badge, so
+/// the popover is the durable container here.
 struct AgentsToolbarButton: View {
   let capsule: AgentsCapsuleState?
+  let launcherItems: [AgentsLauncherItem]
   let onHandOff: () -> Void
+  let onLaunchProfile: (AgentProfile.ID) -> Void
+  let onManageProfiles: () -> Void
   @State private var isPopoverPresented = false
   @State private var isHovered = false
 
@@ -47,26 +62,31 @@ struct AgentsToolbarButton: View {
     // fill layered under `glassEffect` gets swallowed by the material
     // compositing, and `.interactive()` only adds press feedback on macOS.
     .glassEffect(
-      isHovered && capsule != nil
+      isHovered
         ? .regular.tint(.primary.opacity(0.12)).interactive()
         : .regular.interactive(),
       in: Capsule()
     )
-    .opacity(capsule == nil ? 0.45 : 1)
-    .disabled(capsule == nil)
     .onHover { isHovered = $0 }
     .help(helpText)
     .accessibilityLabel(accessibilityText)
     .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
-      if let capsule {
-        AgentsPopoverContent(
-          capsule: capsule,
-          onHandOff: {
-            isPopoverPresented = false
-            onHandOff()
-          }
-        )
-      }
+      AgentsPopoverContent(
+        capsule: capsule,
+        launcherItems: launcherItems,
+        onHandOff: {
+          isPopoverPresented = false
+          onHandOff()
+        },
+        onLaunchProfile: { id in
+          isPopoverPresented = false
+          onLaunchProfile(id)
+        },
+        onManageProfiles: {
+          isPopoverPresented = false
+          onManageProfiles()
+        }
+      )
     }
   }
 
@@ -102,31 +122,57 @@ struct AgentsToolbarButton: View {
 
   private var helpText: String {
     guard let capsule else {
-      return "No agent detected in the selected pane"
+      return "Launch an agent profile in this worktree"
     }
     return "Agent actions for \(capsule.displayName)"
   }
 
   private var accessibilityText: String {
-    guard let capsule else { return "Agents (no agent detected)" }
+    guard let capsule else { return "Agents" }
     return "Agents: \(capsule.displayName)"
   }
 }
 
 /// The agent-actions popover. Each action is one full row — title with a
-/// plain-language explanation underneath, highlighted together on hover —
-/// so future actions slot in as additional rows.
+/// plain-language explanation underneath, highlighted together on hover.
+/// Hand-off leads when an agent is detected; the launcher rows follow with
+/// the recommended profile first, and the manage entry closes the list.
 private struct AgentsPopoverContent: View {
-  let capsule: AgentsCapsuleState
+  let capsule: AgentsCapsuleState?
+  let launcherItems: [AgentsLauncherItem]
   let onHandOff: () -> Void
+  let onLaunchProfile: (AgentProfile.ID) -> Void
+  let onManageProfiles: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
+      if let capsule {
+        AgentsPopoverRow(
+          title: "Hand Off…",
+          subtitle: capsule.infoLine,
+          systemImage: "arrow.left.arrow.right",
+          action: onHandOff
+        )
+        if !launcherItems.isEmpty {
+          Divider().padding(.vertical, 4)
+        }
+      }
+      ForEach(launcherItems) { item in
+        AgentsPopoverRow(
+          title: item.isRecommended ? "Launch \(item.name) ★" : "Launch \(item.name)",
+          subtitle: item.unavailableReason
+            ?? "New agent in this worktree · \(item.runtimeName)",
+          systemImage: "play.circle",
+          isEnabled: item.unavailableReason == nil,
+          action: { onLaunchProfile(item.id) }
+        )
+      }
+      Divider().padding(.vertical, 4)
       AgentsPopoverRow(
-        title: "Hand Off…",
-        subtitle: capsule.infoLine,
-        systemImage: "arrow.left.arrow.right",
-        action: onHandOff
+        title: "Manage Agent Profiles…",
+        subtitle: "Add presets, models, and accounts in Settings",
+        systemImage: "slider.horizontal.3",
+        action: onManageProfiles
       )
     }
     .padding(6)
@@ -138,6 +184,7 @@ private struct AgentsPopoverRow: View {
   let title: String
   let subtitle: String
   let systemImage: String
+  var isEnabled: Bool = true
   let action: () -> Void
   @State private var isHovered = false
 
@@ -162,9 +209,11 @@ private struct AgentsPopoverRow: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
+    .disabled(!isEnabled)
+    .opacity(isEnabled ? 1 : 0.5)
     .background(
       RoundedRectangle(cornerRadius: 6)
-        .fill(isHovered ? Color.accentColor.opacity(0.2) : Color.clear)
+        .fill(isHovered && isEnabled ? Color.accentColor.opacity(0.2) : Color.clear)
     )
     .onHover { isHovered = $0 }
   }

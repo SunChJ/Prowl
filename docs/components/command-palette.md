@@ -51,6 +51,10 @@ selected worktree has a pull request).
   agent to write its briefing and run the hand-off itself, with fork and
   context-only fallbacks available while you wait. Same flow as the toolbar
   Agents capsule. See [handoff](handoff.md).
+- **Agent profiles** (when a terminal worktree is selected): a
+  **Launch Agent: <name>** row per enabled profile, the current worktree's
+  Recommended profile first — the same launch action as the toolbar Agents
+  menu. See [agent-profiles](agent-profiles.md).
 - **Debug** (Debug builds only): toast/update/dock simulations.
 
 ## Behavior notes

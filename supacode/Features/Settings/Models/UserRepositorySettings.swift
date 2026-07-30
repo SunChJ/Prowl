@@ -3,20 +3,33 @@ import Foundation
 nonisolated struct UserRepositorySettings: Codable, Equatable, Sendable {
   var customCommands: [UserCustomCommand]
   var disabledGlobalCommandIDs: Set<UserCustomCommand.ID>
+  /// Explicit per-repo Default Agent Profile designation (docs-ai 053).
+  var defaultAgentProfileID: UUID?
+  /// Per-repo launch memory: the last explicitly launched profile. One tier
+  /// below the designation in the Recommended resolution. Dangling references
+  /// are skipped at resolution time, not scrubbed here: this store cannot see
+  /// the global profile list.
+  var lastLaunchedAgentProfileID: UUID?
 
   static let `default` = UserRepositorySettings(customCommands: [])
 
   private enum CodingKeys: String, CodingKey {
     case customCommands
     case disabledGlobalCommandIDs
+    case defaultAgentProfileID
+    case lastLaunchedAgentProfileID
   }
 
   init(
     customCommands: [UserCustomCommand],
-    disabledGlobalCommandIDs: Set<UserCustomCommand.ID> = []
+    disabledGlobalCommandIDs: Set<UserCustomCommand.ID> = [],
+    defaultAgentProfileID: UUID? = nil,
+    lastLaunchedAgentProfileID: UUID? = nil
   ) {
     self.customCommands = Self.normalizedCommands(customCommands)
     self.disabledGlobalCommandIDs = disabledGlobalCommandIDs
+    self.defaultAgentProfileID = defaultAgentProfileID
+    self.lastLaunchedAgentProfileID = lastLaunchedAgentProfileID
   }
 
   init(from decoder: Decoder) throws {
@@ -25,18 +38,25 @@ nonisolated struct UserRepositorySettings: Codable, Equatable, Sendable {
     customCommands = Self.normalizedCommands(commands)
     disabledGlobalCommandIDs =
       try container.decodeIfPresent(Set<UserCustomCommand.ID>.self, forKey: .disabledGlobalCommandIDs) ?? []
+    defaultAgentProfileID = try container.decodeIfPresent(UUID.self, forKey: .defaultAgentProfileID)
+    lastLaunchedAgentProfileID =
+      try container.decodeIfPresent(UUID.self, forKey: .lastLaunchedAgentProfileID)
   }
 
   func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(customCommands, forKey: .customCommands)
     try container.encode(disabledGlobalCommandIDs.sorted(), forKey: .disabledGlobalCommandIDs)
+    try container.encodeIfPresent(defaultAgentProfileID, forKey: .defaultAgentProfileID)
+    try container.encodeIfPresent(lastLaunchedAgentProfileID, forKey: .lastLaunchedAgentProfileID)
   }
 
   func normalized() -> UserRepositorySettings {
     UserRepositorySettings(
       customCommands: customCommands,
-      disabledGlobalCommandIDs: disabledGlobalCommandIDs
+      disabledGlobalCommandIDs: disabledGlobalCommandIDs,
+      defaultAgentProfileID: defaultAgentProfileID,
+      lastLaunchedAgentProfileID: lastLaunchedAgentProfileID
     )
   }
 

@@ -70,7 +70,33 @@ final class WorktreeTerminalState {
   var trees: [TerminalTabID: SplitTree<GhosttySurfaceView>] = [:]
   var surfaces: [UUID: GhosttySurfaceView] = [:]
   var focusedSurfaceIdByTab: [TerminalTabID: UUID] = [:]
+  struct SurfaceLaunchProfile: Equatable {
+    let profileID: UUID
+    /// Display name recorded at launch. Deliberately frozen: later profile
+    /// renames or deletions never relabel a live pane.
+    let name: String
+    /// The runtime this profile launched. The config root only applies to
+    /// detections of the same runtime: after the launched agent exits, a
+    /// manually started *different* agent in the same pane uses its default
+    /// home, and handing it the profile home would break its session
+    /// attribution.
+    let runtime: AgentProfileRuntime
+    /// Relocated runtime home for account-bound profiles; the session
+    /// resolver uses it as the config root for this surface. Nil for pure
+    /// presets (default home layout).
+    let dedicatedHome: URL?
+
+    func configRoot(forDetected agent: DetectedAgent) -> URL? {
+      runtime.agent == agent ? dedicatedHome : nil
+    }
+  }
+
   var surfaceAgentStates: [UUID: PaneAgentState] = [:]
+  /// Launch identity recorded at surface creation for Prowl-launched agent
+  /// profiles (docs-ai 053). Never rewritten: recommendation or designation
+  /// edits must not relabel a live pane. Detected-but-not-launched agents
+  /// have no entry here.
+  var launchProfilesBySurface: [UUID: SurfaceLaunchProfile] = [:]
   var agentDetectionSchedules: [UUID: AgentDetectionSchedule] = [:]
   var agentDetectionTasks: [UUID: Task<Void, Never>] = [:]
   var agentDetectionPresenceBySurface: [UUID: AgentDetectionPresence] = [:]
@@ -383,6 +409,57 @@ final class WorktreeTerminalState {
     return tabId
   }
 
+  /// Launches an agent profile per its compiled plan (docs-ai 053): provisions
+  /// the dedicated home when bound, creates the placement surface with the
+  /// environment patch, and records the profile identity on the new surface.
+  /// Split placement degrades to a new tab when nothing is splittable.
+  @discardableResult
+  func launchAgentProfile(_ plan: AgentProfileLaunchPlan) -> UUID? {
+    if let home = plan.dedicatedHome {
+      do {
+        try AgentProfileHomeProvisioner.provision(
+          home: home,
+          base: SupacodePaths.agentProfileHomesDirectory
+        )
+      } catch {
+        terminalStateLogger.warning("Agent profile home provisioning failed: \(error)")
+        return nil
+      }
+    }
+    let identity = SurfaceLaunchProfile(
+      profileID: plan.profileID,
+      name: plan.profileName,
+      runtime: plan.runtime,
+      dedicatedHome: plan.dedicatedHome
+    )
+    if plan.placement == .split,
+      let surfaceID = createSplitOnFocusedSurface(
+        direction: plan.splitDirection,
+        initialInput: plan.terminalInput,
+        additionalEnvironment: plan.environment
+      )
+    {
+      launchProfilesBySurface[surfaceID] = identity
+      return surfaceID
+    }
+    let tabId = createTab(
+      TabCreation(
+        title: plan.profileName,
+        icon: "terminal",
+        isTitleLocked: false,
+        initialInput: runScriptInput(plan.terminalInput),
+        focusing: true,
+        inheritingFromSurfaceId: currentFocusedSurfaceId(),
+        context: GHOSTTY_SURFACE_CONTEXT_TAB,
+        workingDirectoryOverride: nil,
+        additionalEnvironment: plan.environment
+      )
+    )
+    guard let tabId, let surfaceID = trees[tabId]?.root?.leftmostLeaf().id else { return nil }
+    launchProfilesBySurface[surfaceID] = identity
+    return surfaceID
+  }
+
   @discardableResult
   func focusOrCreateTab(
     boundToDirectory directory: URL,
@@ -457,6 +534,7 @@ final class WorktreeTerminalState {
     let inheritingFromSurfaceId: UUID?
     let context: ghostty_surface_context_e
     let workingDirectoryOverride: URL?
+    var additionalEnvironment: [String: String] = [:]
   }
 
   private func createTab(_ creation: TabCreation) -> TerminalTabID? {
@@ -471,7 +549,8 @@ final class WorktreeTerminalState {
       inheritingFromSurfaceId: creation.inheritingFromSurfaceId,
       initialInput: creation.initialInput,
       workingDirectoryOverride: creation.workingDirectoryOverride,
-      context: creation.context
+      context: creation.context,
+      additionalEnvironment: creation.additionalEnvironment
     )
     _ = registerTargetHandle(for: tabId)
     for surface in tree.leaves() {

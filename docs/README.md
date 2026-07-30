@@ -51,6 +51,7 @@ its keyboard shortcuts, detailed behavior, settings, and gotchas.
 | [`components/command-palette.md`](components/command-palette.md) | `⌘P` searchable command launcher; every action category it exposes. |
 | [`components/active-agents.md`](components/active-agents.md) | The Active Agents panel: a live list of every running agent and its status, with one-click jump-to-agent. |
 | [`components/agent-detection.md`](components/agent-detection.md) | How Prowl knows an agent is Working / Blocked / Idle / Done, which agents it recognizes, and how the status indicator works. |
+| [`components/agent-profiles.md`](components/agent-profiles.md) | Agent Profiles: named launch presets for Claude Code/Codex (model, effort, mode, placement), the Agents launcher menu, recommended-profile resolution, and opt-in dedicated homes for separate accounts. |
 | [`components/notifications.md`](components/notifications.md) | Agent-finished reminders, command-finished notifications, the bell/unread indicators, and Dock badge/bounce. |
 | [`components/diff-view.md`](components/diff-view.md) | Show Diff (`⌘⇧Y`) for working-tree changes vs HEAD, plus Outgoing Changes for pull-request branch diffs. |
 | [`components/github-pull-requests.md`](components/github-pull-requests.md) | GitHub PR integration via `gh`: PR status, CI checks, merge/close/re-run actions from the command palette. |

@@ -122,6 +122,7 @@ struct RepositorySettingsFeature {
     case dismissAppearanceImportError
     case resetAppearance
     case setGlobalCommandEnabled(UserCustomCommand.ID, Bool)
+    case setDefaultAgentProfileID(AgentProfile.ID?)
     case branchDataLoaded([String], defaultBaseRef: String)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -235,8 +236,19 @@ struct RepositorySettingsFeature {
         }
         state.userSettings.setGlobalCommandEnabled(isEnabled, id: commandID)
         let rootURL = state.rootURL
+        // Targeted write: `state.userSettings` is a load-time snapshot, and
+        // `lastLaunchedAgentProfileID` is written externally by profile
+        // launches — a whole-struct writeback would clobber it.
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
-        $userRepositorySettings.withLock { $0 = state.userSettings }
+        $userRepositorySettings.withLock { $0.setGlobalCommandEnabled(isEnabled, id: commandID) }
+        return .send(.delegate(.settingsChanged(rootURL)))
+
+      case .setDefaultAgentProfileID(let profileID):
+        guard state.userSettings.defaultAgentProfileID != profileID else { return .none }
+        state.userSettings.defaultAgentProfileID = profileID
+        let rootURL = state.rootURL
+        @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
+        $userRepositorySettings.withLock { $0.defaultAgentProfileID = profileID }
         return .send(.delegate(.settingsChanged(rootURL)))
 
       case .appearanceLoaded(let appearance):
@@ -379,6 +391,11 @@ struct RepositorySettingsFeature {
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
         $repositorySettings.withLock { $0 = normalizedSettings }
+        // `state.userSettings` is a load-time snapshot; preserve the
+        // externally-written launch memory instead of clobbering it with the
+        // stale copy (profile launches update it while Settings stays open).
+        let lastLaunched = userRepositorySettings.lastLaunchedAgentProfileID
+        state.userSettings.lastLaunchedAgentProfileID = lastLaunched
         $userRepositorySettings.withLock { $0 = state.userSettings }
         return .send(.delegate(.settingsChanged(rootURL)))
 

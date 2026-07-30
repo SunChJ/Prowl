@@ -104,3 +104,4 @@ agent-facing manual for that).
 | 050 | [sidebar-expand-active-and-worktree-tab-badges](050-sidebar-expand-active-and-worktree-tab-badges/000-plan.md) | 2026-07-25 | Sidebar Expand Active third state + per-worktree tab count badges |
 | 051 | [repository-icon-detection](051-repository-icon-detection/000-plan.md) | 2026-07-25 | High-confidence local repository icon detection on add; deferred, reviewable Foundation Model recommendations |
 | 052 | [sidebar-context-menus](052-sidebar-context-menus/000-plan.md) | 2026-07-27 | Sidebar context menu overhaul: worktree terminal actions, header/workspace path actions, PR click-through |
+| 053 | [agent-profiles](053-agent-profiles/000-plan.md) | 2026-07-29 | Agent Profile V1: preset-first Claude Code/Codex launch profiles, opt-in account isolation, path routing, and future handoff seam |

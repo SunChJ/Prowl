@@ -257,6 +257,30 @@ struct RepositorySettingsView: View {
         }
       }
       Section {
+        Picker(
+          "Default Agent Profile",
+          selection: Binding(
+            get: { store.userSettings.defaultAgentProfileID },
+            set: { store.send(.setDefaultAgentProfileID($0)) }
+          )
+        ) {
+          Text("None").tag(AgentProfile.ID?.none)
+          ForEach(globalSettings.agentProfiles.filter(\.isEnabled)) { profile in
+            Text(profile.name).tag(AgentProfile.ID?.some(profile.id))
+          }
+        }
+      } header: {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Agents")
+          Text(
+            "Recommended first in the Agents menu for this repository. "
+              + "Without a designation, the last profile launched here is recommended."
+          )
+          .foregroundStyle(.secondary)
+        }
+      }
+
+      Section {
         ScriptEnvironmentRow(
           name: "PROWL_WORKTREE_PATH",
           description: "Path to the active worktree."

@@ -70,6 +70,8 @@ struct AppFeature {
     case setLeftSidebarVisibility(NavigationSplitViewVisibility)
     case runScript
     case runCustomCommand(EffectiveCustomCommand.Identifier)
+    case launchAgentProfile(AgentProfile.ID)
+    case openAgentProfilesSettings
     case canvasFocusedWorktreeChanged(Worktree.ID?)
     case runScriptDraftChanged(String)
     case runScriptPromptPresented(Bool)
@@ -382,6 +384,11 @@ struct AppFeature {
         case .customCommands:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = .init()
+          state.settings.agentProfiles = nil
+        case .agents:
+          state.settings.repositorySettings = nil
+          state.settings.globalCustomCommands = nil
+          state.settings.agentProfiles = .init()
         case .repository(let repositoryID):
           guard let repository = state.repositories.repositories[id: repositoryID] else {
             state.settings.repositorySettings = nil
@@ -404,9 +411,11 @@ struct AppFeature {
           repoSettingsState.globalPullRequestMergeStrategy = state.settings.pullRequestMergeStrategy
           state.settings.repositorySettings = repoSettingsState
           state.settings.globalCustomCommands = nil
+          state.settings.agentProfiles = nil
         case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
+          state.settings.agentProfiles = nil
         }
         return .none
 
@@ -706,6 +715,17 @@ struct AppFeature {
         return .run { _ in
           await terminalClient.send(.runScript(worktree, script: script))
         }
+
+      case .launchAgentProfile(let profileID):
+        return launchAgentProfile(profileID, state: &state)
+
+      case .openAgentProfilesSettings:
+        return .merge(
+          .send(.settings(.setSelection(.agents))),
+          .run { _ in
+            await settingsWindowClient.show()
+          }
+        )
 
       case .runCustomCommand(let commandID):
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {

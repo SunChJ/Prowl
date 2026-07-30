@@ -42,6 +42,10 @@ enum CommandPaletteItemID {
 
   static let handOff = "handoff.open"
 
+  static func launchAgentProfile(_ id: AgentProfile.ID) -> String {
+    "agent-profile.launch.\(id.uuidString)"
+  }
+
   static var globalIDs: [CommandPaletteItem.ID] {
     [
       globalCheckForUpdates,
@@ -165,6 +169,8 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
     return .runCustomCommand(id)
   case .handOff:
     return .handOff
+  case .launchAgentProfile(let profileID):
+    return .launchAgentProfile(profileID)
   case .openPullRequest,
     .openRepositoryOnCodeHost,
     .markPullRequestReady,
@@ -346,7 +352,8 @@ func pullRequestDelegateAction(
     .deleteWorktree,
     .openRepositorySettings,
     .runCustomCommand,
-    .handOff:
+    .handOff,
+    .launchAgentProfile:
     return nil
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

@@ -167,7 +167,11 @@ same agent family. Full flag/payload reference: [cli](cli.md#prowl-handoff).
 A capsule button left of the branch title identifies the selected pane's
 detected agent. Clicking it opens a popover whose hand-off row explains the
 action — "Pass this task to another agent in a new tab; <agent> writes its own
-briefing first" — and opens a centered HUD. The Command Palette (`⌘P`) offers
+briefing first" — and opens a centered HUD. The popover is always available:
+below the hand-off row it lists launchable
+[agent profiles](agent-profiles.md) (Recommended first) and a
+"Manage Agent Profiles…" entry, so the capsule doubles as the launcher even
+when no agent is detected. The Command Palette (`⌘P`) offers
 the same flow as a single **Hand Off…** row; so does right-clicking a row in
 the [Active Agents panel](active-agents.md), which targets the row's own pane.
 

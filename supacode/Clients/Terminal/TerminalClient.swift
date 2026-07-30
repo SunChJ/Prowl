@@ -46,6 +46,7 @@ struct TerminalClient {
       customCommandName: String? = nil,
       customCommandIcon: String? = nil
     )
+    case launchAgentProfile(Worktree, plan: AgentProfileLaunchPlan)
     case createTabInDirectory(Worktree, directory: URL)
     case focusOrCreateTabInDirectory(Worktree, directory: URL, title: String?)
     case ensureInitialTab(Worktree, runSetupScriptIfNew: Bool, focusing: Bool)

@@ -62,6 +62,7 @@ struct SettingsFeature {
     var selection: SettingsSection? = .general
     var repositorySettings: RepositorySettingsFeature.State?
     var globalCustomCommands: GlobalCustomCommandsFeature.State?
+    var agentProfiles: AgentProfilesFeature.State?
     @Presents var alert: AlertState<Alert>?
 
     init(settings: GlobalSettings = .default) {
@@ -183,6 +184,7 @@ struct SettingsFeature {
     case showNotificationPermissionAlert(errorMessage: String?)
     case repositorySettings(RepositorySettingsFeature.Action)
     case globalCustomCommands(GlobalCustomCommandsFeature.Action)
+    case agentProfiles(AgentProfilesFeature.Action)
     case alert(PresentationAction<Alert>)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -445,6 +447,9 @@ struct SettingsFeature {
       case .globalCustomCommands:
         return .none
 
+      case .agentProfiles:
+        return .none
+
       case .delegate:
         return .none
       }
@@ -454,6 +459,9 @@ struct SettingsFeature {
     }
     .ifLet(\.globalCustomCommands, action: \.globalCustomCommands) {
       GlobalCustomCommandsFeature()
+    }
+    .ifLet(\.agentProfiles, action: \.agentProfiles) {
+      AgentProfilesFeature()
     }
   }
 

@@ -147,6 +147,7 @@ actor AgentSessionResolver {
     identified: IdentifiedAgentProcess,
     workingDirectory: URL?,
     activeText: String,
+    configRoot: URL? = nil,
     now: Date = Date()
   ) -> AgentSessionResolution {
     let process = identified.process
@@ -173,6 +174,7 @@ actor AgentSessionResolver {
       processStartedAt: startedAt,
       workingDirectory: workingDirectory,
       activeText: activeText,
+      configRoot: configRoot,
       now: now
     )
     var session = resolved
@@ -213,17 +215,32 @@ actor AgentSessionResolver {
     }
   }
 
+  /// Selects the path parser for this surface: the rooted variant when a
+  /// relocated config root is in play (docs-ai 053), the default markers
+  /// otherwise.
+  nonisolated static func pathParser(
+    profile: AgentSessionProfile,
+    configRoot: URL?
+  ) -> @Sendable (String) -> AgentSession? {
+    if let configRoot, let rooted = profile.rootedParsePath {
+      return { rooted($0, configRoot) }
+    }
+    return profile.parsePath
+  }
+
   private func resolveUncached(
     identified: IdentifiedAgentProcess,
     processStartedAt: Date,
     workingDirectory: URL?,
     activeText: String,
+    configRoot: URL? = nil,
     now: Date
   ) -> (session: AgentSession?, usedWideScan: Bool) {
     let profile = AgentSessionProfile.profile(for: identified.agent)
+    let parsePath = Self.pathParser(profile: profile, configRoot: configRoot)
 
     let openSessions = ProcessDetection.openFilePaths(pid: identified.process.pid)
-      .compactMap { profile.parsePath($0) }
+      .compactMap { parsePath($0) }
       .compactMap { session -> AgentSession? in
         guard let path = session.transcriptPath,
           let fullID = Self.sessionIDFromHeader(at: path, keys: profile.headerSessionIDKeys)
@@ -242,7 +259,11 @@ actor AgentSessionResolver {
       return (resolved, false)
     }
 
-    if let session = profile.pidKeyedSession?(homeDirectory, identified.process.pid, processStartedAt) {
+    // pid-keyed artifacts live in the default home; a relocated config root
+    // has no equivalent (no bound-capable runtime defines one).
+    if configRoot == nil,
+      let session = profile.pidKeyedSession?(homeDirectory, identified.process.pid, processStartedAt)
+    {
       return (session, false)
     }
 
@@ -270,6 +291,7 @@ actor AgentSessionResolver {
       profile: profile,
       processStartedAt: processStartedAt,
       workingDirectory: workingDirectory,
+      configRoot: configRoot,
       now: now
     )
     if let matched = AgentSessionFingerprintMatcher.bestMatch(activeText: activeText, candidates: candidates) {
@@ -294,16 +316,28 @@ actor AgentSessionResolver {
     profile: AgentSessionProfile,
     processStartedAt: Date,
     workingDirectory: URL?,
+    configRoot: URL? = nil,
     now: Date,
     visitLimit: Int = 20_000
   ) -> (candidates: [AgentSessionCandidate], usedWideScan: Bool) {
     let cwdVariants = workingDirectoryVariants(workingDirectory)
     let threshold = processStartedAt.addingTimeInterval(-2)
-    let stored = cwdVariants.flatMap { profile.storeCandidates?(homeDirectory, $0, threshold) ?? [] }
+    // Under a relocated config root the rooted layout is used exclusively:
+    // scanning the default home would misattribute another account's
+    // sessions. Store-backed agents cannot be account-bound.
+    let stored =
+      configRoot == nil
+      ? cwdVariants.flatMap { profile.storeCandidates?(homeDirectory, $0, threshold) ?? [] }
+      : []
     var primaryRoots: [URL] = []
     for cwd in cwdVariants {
-      for root in profile.candidateRoots(homeDirectory, cwd, processStartedAt, now)
-      where !primaryRoots.contains(root) {
+      let roots =
+        if let configRoot {
+          profile.rootedCandidateRoots?(configRoot, cwd, processStartedAt, now) ?? []
+        } else {
+          profile.candidateRoots(homeDirectory, cwd, processStartedAt, now)
+        }
+      for root in roots where !primaryRoots.contains(root) {
         primaryRoots.append(root)
       }
     }
@@ -312,6 +346,7 @@ actor AgentSessionResolver {
         in: primaryRoots,
         profile: profile,
         processStartedAt: processStartedAt,
+        configRoot: configRoot,
         visitLimit: visitLimit
       )
     else {
@@ -322,12 +357,18 @@ actor AgentSessionResolver {
     }
     let combined = primary + stored.uniquedBySessionID()
     guard combined.isEmpty else { return (combined, false) }
-    let fallbackRoots = profile.fallbackRoots(homeDirectory, workingDirectory)
+    let fallbackRoots =
+      if let configRoot {
+        profile.rootedFallbackRoots?(configRoot, workingDirectory) ?? []
+      } else {
+        profile.fallbackRoots(homeDirectory, workingDirectory)
+      }
     guard !fallbackRoots.isEmpty else { return ([], false) }
     let fallback = scanCandidates(
       in: fallbackRoots,
       profile: profile,
       processStartedAt: processStartedAt,
+      configRoot: configRoot,
       visitLimit: visitLimit
     )
     return (fallback ?? [], true)
@@ -348,6 +389,7 @@ actor AgentSessionResolver {
     in roots: [URL],
     profile: AgentSessionProfile,
     processStartedAt: Date,
+    configRoot: URL? = nil,
     visitLimit: Int = 20_000
   ) -> [AgentSessionCandidate]? {
     var collected: [AgentSessionCandidate] = []
@@ -360,7 +402,8 @@ actor AgentSessionResolver {
         )
       else { return nil }
       for item in files {
-        guard let candidate = enrichedCandidate(for: item, profile: profile) else { continue }
+        guard let candidate = enrichedCandidate(for: item, profile: profile, configRoot: configRoot)
+        else { continue }
         collected.append(candidate)
       }
     }
@@ -369,9 +412,10 @@ actor AgentSessionResolver {
 
   private func enrichedCandidate(
     for item: (url: URL, modifiedAt: Date),
-    profile: AgentSessionProfile
+    profile: AgentSessionProfile,
+    configRoot: URL?
   ) -> AgentSessionCandidate? {
-    guard let session = profile.parsePath(item.url.path) else { return nil }
+    guard let session = Self.pathParser(profile: profile, configRoot: configRoot)(item.url.path) else { return nil }
     if let fullID = Self.sessionIDFromHeader(at: item.url, keys: profile.headerSessionIDKeys) {
       return AgentSessionCandidate(
         session: AgentSession(id: fullID, transcriptPath: item.url, source: .recentFile),

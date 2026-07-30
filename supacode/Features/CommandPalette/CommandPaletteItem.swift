@@ -1,3 +1,5 @@
+import Foundation
+
 struct CommandPaletteSuggestions: Equatable {
   static let maxItems = 8
 
@@ -84,6 +86,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case openRepositorySettings(Repository.ID)
     case runCustomCommand(EffectiveCustomCommand.Identifier, systemImage: String)
     case handOff
+    case launchAgentProfile(AgentProfile.ID)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -171,7 +174,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .deleteWorktree,
       .openRepositorySettings,
       .runCustomCommand,
-      .handOff:
+      .handOff,
+      .launchAgentProfile:
       return nil
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

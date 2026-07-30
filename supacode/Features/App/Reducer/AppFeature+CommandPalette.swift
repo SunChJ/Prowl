@@ -268,6 +268,9 @@ extension AppFeature {
     case .runCustomCommand(let id):
       return .send(.runCustomCommand(id))
 
+    case .launchAgentProfile(let profileID):
+      return .send(.launchAgentProfile(profileID))
+
     case .ghosttyCommand(let action):
       guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
         return .none

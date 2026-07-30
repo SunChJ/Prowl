@@ -470,7 +470,7 @@ struct HandoffCommandHandlerTests {
     #expect(launchedRequest?.agent == .claude)
     #expect(launchedRequest?.configuration.model == nil)
     #expect(launchedRequest?.configuration.executionMode == .unrestricted)
-    #expect(launchedRequest?.prompt.contains(".prowl/handoff/current.md") == true)
+    #expect(launchedRequest?.intent.promptText?.contains(".prowl/handoff/current.md") == true)
 
     // Log records the transition; the completion observer fired for the HUD.
     let log = try String(contentsOf: store.logURL, encoding: .utf8)
@@ -512,7 +512,7 @@ struct HandoffCommandHandlerTests {
     #expect(!store.hasCurrentArtifact)
     #expect(payload.archivedPath != nil)
     // The kickoff prompt points at context + archive, not current.md.
-    let prompt = try #require(launchedRequest?.prompt)
+    let prompt = try #require(launchedRequest?.intent.promptText)
     #expect(!prompt.contains("current.md"))
     #expect(prompt.contains(".prowl/handoff/context.md"))
     let log = try String(contentsOf: store.logURL, encoding: .utf8)

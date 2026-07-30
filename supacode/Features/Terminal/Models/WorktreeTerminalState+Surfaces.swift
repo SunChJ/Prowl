@@ -65,7 +65,8 @@ extension WorktreeTerminalState {
     inheritingFromSurfaceId: UUID? = nil,
     initialInput: String? = nil,
     workingDirectoryOverride: URL? = nil,
-    context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_TAB
+    context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_TAB,
+    additionalEnvironment: [String: String] = [:]
   ) -> SplitTree<GhosttySurfaceView> {
     guard tabManager.tabs.contains(where: { $0.id == tabId }) else {
       return SplitTree()
@@ -78,7 +79,8 @@ extension WorktreeTerminalState {
       initialInput: initialInput,
       inheritingFromSurfaceId: inheritingFromSurfaceId,
       workingDirectoryOverride: workingDirectoryOverride,
-      context: context
+      context: context,
+      additionalEnvironment: additionalEnvironment
     )
     let tree = SplitTree(view: surface)
     trees[tabId] = tree
@@ -91,7 +93,8 @@ extension WorktreeTerminalState {
   @discardableResult
   func createSplitOnFocusedSurface(
     direction: UserCustomSplitDirection,
-    initialInput: String
+    initialInput: String,
+    additionalEnvironment: [String: String] = [:]
   ) -> UUID? {
     guard let tabId = tabManager.selectedTabId,
       let parentSurfaceId = focusedSurfaceIdByTab[tabId],
@@ -104,7 +107,8 @@ extension WorktreeTerminalState {
       tabId: tabId,
       initialInput: runScriptInput(initialInput),
       inheritingFromSurfaceId: parentSurfaceId,
-      context: GHOSTTY_SURFACE_CONTEXT_SPLIT
+      context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+      additionalEnvironment: additionalEnvironment
     )
     do {
       let newTree = try tree.inserting(
@@ -313,6 +317,7 @@ extension WorktreeTerminalState {
       surface.closeSurface()
     }
     surfaces.removeAll()
+    launchProfilesBySurface.removeAll()
     trees.removeAll()
     focusedSurfaceIdByTab.removeAll()
     cleanupAllAgentDetectionState()
@@ -330,7 +335,8 @@ extension WorktreeTerminalState {
     initialInput: String?,
     inheritingFromSurfaceId: UUID?,
     workingDirectoryOverride: URL? = nil,
-    context: ghostty_surface_context_e
+    context: ghostty_surface_context_e,
+    additionalEnvironment: [String: String] = [:]
   ) -> GhosttySurfaceView {
     let inherited = inheritedSurfaceConfig(fromSurfaceId: inheritingFromSurfaceId, context: context)
     let resolvedFontSize = Self.resolvedFontSizeForNewSurface(
@@ -344,7 +350,7 @@ extension WorktreeTerminalState {
       initialInput: initialInput,
       fontSize: resolvedFontSize,
       context: context,
-      environment: worktree.scriptEnvironment
+      environment: worktree.scriptEnvironment.merging(additionalEnvironment) { _, patched in patched }
     )
     // Sending a no-op font size action marks the Ghostty surface as
     // "font_size_adjusted", which prevents config reloads (triggered by
@@ -611,6 +617,7 @@ extension WorktreeTerminalState {
   func forgetSurface(_ surfaceID: UUID) {
     unregisterTargetHandle(for: surfaceID)
     surfaces.removeValue(forKey: surfaceID)
+    launchProfilesBySurface.removeValue(forKey: surfaceID)
     surfaceRunningStartedAtById.removeValue(forKey: surfaceID)
     autoCloseSurfaceIds.remove(surfaceID)
     pendingCustomCommands.removeValue(forKey: surfaceID)

@@ -40,6 +40,18 @@ extension RepositoriesFeature.State {
     return Self.plainFolderWorktree(for: selectedRepository)
   }
 
+  /// The single answer to "which worktree does a worktree-scoped action
+  /// target right now": the selected terminal worktree in Normal mode, else
+  /// the explicitly supplied target (the focused Canvas card, the palette's
+  /// action-target ID) resolved through the full terminal-target path,
+  /// including synthesized plain-folder worktrees. Entry points that generate
+  /// UI for an action and the action's own execution MUST both resolve
+  /// through here — three review findings came from hand-rolled halves of
+  /// this logic drifting apart (docs-ai 053).
+  func actionTargetTerminalWorktree(explicitTargetID: Worktree.ID?) -> Worktree? {
+    selectedTerminalWorktree ?? explicitTargetID.flatMap { terminalWorktree(for: $0) }
+  }
+
   /// Resolves a terminal target ID to its runnable worktree: a real worktree,
   /// or the synthesized worktree representing a runnable plain-folder
   /// repository (whose repository ID doubles as its terminal target ID).
