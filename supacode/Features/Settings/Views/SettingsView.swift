@@ -5,6 +5,7 @@ struct SettingsView: View {
   @Bindable var store: StoreOf<AppFeature>
   @Bindable var settingsStore: StoreOf<SettingsFeature>
   @Environment(\.dismiss) private var dismiss
+  @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
   init(store: StoreOf<AppFeature>) {
     self.store = store
@@ -17,7 +18,7 @@ struct SettingsView: View {
     let customTitles = store.repositories.repositoryCustomTitles
     let selection = settingsStore.selection ?? .general
 
-    NavigationSplitView(columnVisibility: .constant(.all)) {
+    NavigationSplitView(columnVisibility: $columnVisibility) {
       List(selection: $settingsStore.selection.sending(\.setSelection)) {
         Label("General", systemImage: "gearshape")
           .tag(SettingsSection.general)
@@ -51,7 +52,6 @@ struct SettingsView: View {
       .listStyle(.sidebar)
       .frame(minWidth: 220, maxHeight: .infinity)
       .navigationSplitViewColumnWidth(220)
-      .toolbar(removing: .sidebarToggle)
     } detail: {
       switch selection {
       case .general:
@@ -143,7 +143,6 @@ struct SettingsView: View {
       }
     }
     .navigationSplitViewStyle(.balanced)
-    .background(SettingsSidebarToggleHider())
     .alert($settingsStore.scope(state: \.alert, action: \.alert))
     .frame(minWidth: 800, minHeight: 600)
     .focusedSceneAction(\.closeSettingsWindowAction, enabled: true) {

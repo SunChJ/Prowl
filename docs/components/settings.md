@@ -11,9 +11,9 @@
 
 `⌘,` (`open_settings`), the app menu, or Command Palette → "Open Settings". The
 window is a native macOS split window: the sidebar selects top-level sections,
-and remains visible while Settings is open. Re-opening Settings brings the
-existing Settings window forward rather than creating another one. `⌘W` closes
-it.
+and its toolbar's sidebar control can hide or show that sidebar. Re-opening
+Settings brings the existing Settings window forward rather than creating
+another one. `⌘W` closes it.
 
 Most sections are roots in the detail pane. A section can drill in without
 losing the sidebar; for example, **Agents** → a profile pushes its editor and
