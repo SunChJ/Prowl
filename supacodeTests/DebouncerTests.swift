@@ -141,7 +141,12 @@ struct KeyedDebouncerTests {
 
 @MainActor
 private func advance(_ clock: TestClock<Duration>, by duration: Duration) async {
-  await Task.yield()
   await clock.advance(by: duration)
-  await Task.yield()
+  // Deadlines are anchored at `schedule` time, so a debounce task that starts
+  // after the advance still resumes immediately — but it needs a few executor
+  // hops to run its continuation on a loaded machine. A short yield burst
+  // keeps that deterministic without real-time sleeping.
+  for _ in 0..<10 {
+    await Task.yield()
+  }
 }
