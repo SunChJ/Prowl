@@ -60,6 +60,17 @@ final class WorktreeTerminalManager {
     createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)
   }
 
+  /// The launch outcome is reported as an event either way: the reducer
+  /// records the per-repo launch memory only on success and surfaces the
+  /// failure as a toast (docs-ai 053/005).
+  private func launchAgentProfile(_ plan: AgentProfileLaunchPlan, in worktree: Worktree) {
+    if state(for: worktree).launchAgentProfile(plan) != nil {
+      emit(.agentProfileLaunched(worktreeID: worktree.id, profileID: plan.profileID))
+    } else {
+      emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
+    }
+  }
+
   private func handleTabCommand(_ command: TerminalClient.Command) -> Bool {
     switch command {
     case .createTab(let worktree, let runSetupScriptIfNew):
@@ -91,7 +102,7 @@ final class WorktreeTerminalManager {
         )
       }
     case .launchAgentProfile(let worktree, let plan):
-      state(for: worktree).launchAgentProfile(plan)
+      launchAgentProfile(plan, in: worktree)
     case .createTabInDirectory(let worktree, let directory):
       Task {
         createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)

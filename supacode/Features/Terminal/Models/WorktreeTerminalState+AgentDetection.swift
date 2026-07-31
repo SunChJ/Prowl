@@ -302,8 +302,18 @@ extension WorktreeTerminalState {
       rawState: state.fallbackState,
       displayState: state.displayState,
       lastChangedAt: state.lastChangedAt,
-      launchProfileName: launchProfilesBySurface[surfaceID]?.name
+      launchProfileName: launchProfileName(surfaceID: surfaceID, detected: agent)
     )
+  }
+
+  /// Runtime-gated like `SurfaceLaunchProfile.configRoot(forDetected:)`: after
+  /// the launched agent exits, a manually started *different* agent in the
+  /// same pane must not wear the old profile's name (docs-ai 053/005).
+  func launchProfileName(surfaceID: UUID, detected agent: DetectedAgent) -> String? {
+    guard let profile = launchProfilesBySurface[surfaceID], profile.runtime.agent == agent else {
+      return nil
+    }
+    return profile.name
   }
 
   func activeAgentWorkingDirectory(surfaceID: UUID) -> URL? {

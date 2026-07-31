@@ -28,16 +28,22 @@ respawn.
 
 - **Toolbar Agents capsule** — always opens a popover. With a detected agent it
   leads with Hand Off; launch rows follow, the current worktree's
-  **Recommended** profile first. Rows for runtimes that are not installed are
-  grayed with the reason. "Manage Agent Profiles…" opens Settings → Agents.
+  **Recommended** profile first. Rows for runtimes that look uninstalled are
+  dimmed with a warning ("… may not be installed") but stay clickable — the
+  heuristic has false negatives, so it never blocks a launch. "Manage Agent
+  Profiles…" opens Settings → Agents.
 - **Command Palette** (`⌘P`) — "Launch Agent: <name>" rows dispatch the exact
-  same action.
+  same action, and carry the same availability warning in their subtitle.
 
 A launch creates a **new** tab (or split, per placement) in the current
 worktree, running the agent interactively with no initial prompt. Prowl never
 types into an existing shell. The new pane records its profile identity at
 creation: the Active Agents rows and the capsule show the profile's display
-name (frozen at launch — later renames don't relabel live panes).
+name (frozen at launch — later renames don't relabel live panes; a *different*
+agent started manually in the same pane shows its own name, not the profile's).
+A launch that fails before its surface exists (e.g. home provisioning) shows a
+warning toast, and only a successful launch updates the per-repo "last
+launched" memory behind the Recommended resolution.
 
 ## Managing profiles
 
@@ -66,16 +72,19 @@ existing, enabled profile.
 ## Environment variables
 
 The **Environment Variables** table (Advanced, below Extra Arguments) adds
-per-profile environment overrides to the launched process, on top of the
+per-profile environment overrides to the launched surface — they are applied
+at spawn, so the new pane's shell and everything started in it (the agent, its
+subprocesses, later manual commands in that pane) see them, on top of the
 shell's normal environment — e.g. `OPENAI_BASE_URL` + `OPENAI_API_KEY` to get
 a "Codex but using DeepSeek" profile. Rules:
 
 - Names must be valid POSIX names (`[A-Za-z_][A-Za-z0-9_]*`). An empty value
   legitimately sets the variable to the empty string.
 - Reserved names are ignored at launch and flagged inline: anything starting
-  with `PROWL_`, plus the account-home variables (`CLAUDE_CONFIG_DIR`,
-  `CODEX_HOME`) — a custom home must go through **Use Dedicated Home**, which
-  always wins over a same-named row.
+  with `PROWL_`, `HOME` (relocating it would move every runtime's default home
+  past Prowl's provisioning and deletion safeguards), plus the account-home
+  variables (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) — a custom home must go
+  through **Use Dedicated Home**, which always wins over a same-named row.
 - Later duplicate names win (shell-export semantics).
 - Values are stored in plaintext in `~/.prowl/global.onevcat.json` (kept
   owner-only, `0600`). The Launch Preview masks secret-looking values
@@ -129,8 +138,10 @@ effort, execution mode, placement).
   (resume and handoff artifacts resolve against the profile's config root).
   An agent you start manually with your own `CLAUDE_CONFIG_DIR`/`CODEX_HOME`
   is still detected, but without session identity.
-- Availability graying uses a heuristic: the runtime's default home
-  (`~/.claude` / `~/.codex`) exists iff the CLI has ever run.
+- Availability warnings use a heuristic: the runtime's default home
+  (`~/.claude` / `~/.codex`) exists iff the CLI has ever run. It can be wrong
+  in both directions (installed but never run; binary removed but home kept),
+  which is why it dims rows instead of disabling them.
 - Prowl provides no directory sharing between a bound home and the default
   one. Symlinking read-mostly directories (e.g. `skills/`) yourself works, but
   never link files the CLI rewrites (`settings.json`, `config.toml`,

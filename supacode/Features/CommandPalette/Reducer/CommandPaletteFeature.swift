@@ -545,7 +545,8 @@ private func customCommandItems(_ commands: [EffectiveCustomCommand]) -> [Comman
 /// Canvas card otherwise. Internal for tests.
 func agentProfileLaunchItems(
   _ repositories: RepositoriesFeature.State,
-  actionTargetWorktreeID: Worktree.ID? = nil
+  actionTargetWorktreeID: Worktree.ID? = nil,
+  isRuntimeInstalled: (AgentProfileRuntime) -> Bool = AgentProfileAvailability.isRuntimeInstalled
 ) -> [CommandPaletteItem] {
   guard
     let worktree = repositories.actionTargetTerminalWorktree(
@@ -568,10 +569,17 @@ func agentProfileLaunchItems(
   return ordered.map { profile in
     let runtimeName = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
     let placement = profile.id == recommendedID ? "Recommended · " : ""
+    // Same soft availability judgment as the Agents popover — surfaced in the
+    // subtitle, never blocking activation (docs-ai 053/005).
+    let warning = AgentProfileAvailability.launchWarning(
+      for: profile,
+      isRuntimeInstalled: isRuntimeInstalled
+    )
+    let detail = warning.map { "\($0) · \(worktree.name)" } ?? "New \(runtimeName) in \(worktree.name)"
     return CommandPaletteItem(
       id: CommandPaletteItemID.launchAgentProfile(profile.id),
       title: "Launch Agent: \(profile.name)",
-      subtitle: "\(placement)New \(runtimeName) in \(worktree.name)",
+      subtitle: "\(placement)\(detail)",
       kind: .launchAgentProfile(profile.id),
       category: .terminal,
       defaultSuggestion: false,
