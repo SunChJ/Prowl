@@ -19,6 +19,7 @@ struct AgentsLauncherItem: Equatable, Identifiable {
   let id: AgentProfile.ID
   let name: String
   let runtimeName: String
+  let iconSource: AgentProfileIconSource
   let isRecommended: Bool
   /// Why the row is disabled ("Claude Code is not installed"); nil = launchable.
   let unavailableReason: String?
@@ -163,6 +164,7 @@ private struct AgentsPopoverContent: View {
           subtitle: item.unavailableReason
             ?? "New agent in this worktree · \(item.runtimeName)",
           systemImage: "play.circle",
+          iconSource: item.iconSource,
           isEnabled: item.unavailableReason == nil,
           action: { onLaunchProfile(item.id) }
         )
@@ -184,6 +186,7 @@ private struct AgentsPopoverRow: View {
   let title: String
   let subtitle: String
   let systemImage: String
+  var iconSource: AgentProfileIconSource?
   var isEnabled: Bool = true
   let action: () -> Void
   @State private var isHovered = false
@@ -191,10 +194,16 @@ private struct AgentsPopoverRow: View {
   var body: some View {
     Button(action: action) {
       HStack(alignment: .top, spacing: 8) {
-        Image(systemName: systemImage)
-          .frame(width: 16)
-          .padding(.top, 2)
-          .accessibilityHidden(true)
+        if let iconSource {
+          AgentProfileIconImage(source: iconSource, pointSize: 16)
+            .frame(width: 16)
+            .padding(.top, 2)
+        } else {
+          Image(systemName: systemImage)
+            .frame(width: 16)
+            .accessibilityHidden(true)
+            .padding(.top, 2)
+        }
         VStack(alignment: .leading, spacing: 2) {
           Text(title)
           Text(subtitle)

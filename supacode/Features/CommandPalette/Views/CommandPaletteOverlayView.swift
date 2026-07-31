@@ -664,7 +664,11 @@ private struct CommandPaletteRowView: View {
   var body: some View {
     Button(action: activate) {
       HStack(spacing: 8) {
-        if let leadingIcon {
+        if let iconSource = row.agentProfileIconSource {
+          AgentProfileIconImage(source: iconSource, pointSize: 15)
+            .foregroundStyle(emphasis ? .primary : .secondary)
+            .frame(width: 16, height: 16, alignment: .center)
+        } else if let leadingIcon {
           Image(systemName: leadingIcon)
             .foregroundStyle(emphasis ? .primary : .secondary)
             .font(.subheadline.weight(.medium))

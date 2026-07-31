@@ -48,7 +48,7 @@ struct RepositoryAppearancePickerView: View {
     .sheet(isPresented: $store.isSymbolPickerPresented) {
       TabIconPickerView(
         initialIcon: currentSymbolName,
-        defaultIcon: "folder.fill",
+        defaultIcon: TabIconSource(systemSymbol: "folder.fill"),
         title: "Repository Icon",
         subtitle:
           "Pick a preset or enter any SF Symbol name. SVG and SF Symbol icons are tinted "

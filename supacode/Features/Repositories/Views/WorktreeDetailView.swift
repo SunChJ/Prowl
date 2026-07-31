@@ -443,6 +443,7 @@ struct WorktreeDetailView: View {
         id: profile.id,
         name: profile.name,
         runtimeName: runtimeName,
+        iconSource: profile.iconSource,
         isRecommended: profile.id == recommendedID,
         unavailableReason: installed ? nil : "\(runtimeName) is not installed"
       )

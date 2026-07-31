@@ -266,7 +266,13 @@ struct RepositorySettingsView: View {
         ) {
           Text("None").tag(AgentProfile.ID?.none)
           ForEach(globalSettings.agentProfiles.filter(\.isEnabled)) { profile in
-            Text(profile.name).tag(AgentProfile.ID?.some(profile.id))
+            Label {
+              Text(profile.name)
+            } icon: {
+              AgentProfileIconImage(source: profile.iconSource, pointSize: 14)
+                .frame(width: 14, height: 14)
+            }
+            .tag(AgentProfile.ID?.some(profile.id))
           }
         }
       } header: {

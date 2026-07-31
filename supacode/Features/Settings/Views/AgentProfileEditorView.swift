@@ -5,9 +5,12 @@ import SwiftUI
 /// owns the alert presentation because its state lives with this destination.
 struct AgentProfileEditorView: View {
   @Bindable var store: StoreOf<AgentProfileEditorFeature>
+  @State private var isIconPickerPresented = false
+  @State private var isHoveringIconTile = false
 
   var body: some View {
     Form {
+      launchPreviewSection
       profileSection
       advancedSection
       removalSection
@@ -16,22 +19,49 @@ struct AgentProfileEditorView: View {
     .navigationTitle(store.profile.name)
     .task { store.send(.task) }
     .alert($store.scope(state: \.alert, action: \.alert))
+    .sheet(isPresented: $isIconPickerPresented) {
+      TabIconPickerView(
+        initialIcon: store.profile.icon,
+        defaultIcon: AgentProfileIconResolver.source(for: store.profile.iconSource),
+        title: "Agent Icon",
+        subtitle: "Pick a preset or enter any SF Symbol name. Clearing restores the runtime brand icon.",
+        resetHelp: "Restore the runtime brand icon",
+        onApply: { icon in
+          store.send(.setIcon(icon))
+          isIconPickerPresented = false
+        },
+        onCancel: { isIconPickerPresented = false }
+      )
+    }
   }
 
   private var profileSection: some View {
     Section("Profile") {
       TextField("Name", text: $store.profile.name)
-      Picker("Agent", selection: $store.profile.runtime) {
+      Picker(
+        "Agent",
+        selection: Binding(
+          get: { store.profile.runtime },
+          set: { store.send(.runtimeChanged($0)) }
+        )
+      ) {
         ForEach(AgentProfileRuntime.allCases) { runtime in
           Text(AgentRuntimeAdapterRegistry.displayName(for: runtime.agent)).tag(runtime)
         }
       }
-      optionalTextRow(
+      iconRow
+      suggestedTextRow(
         title: "Model",
         prompt: "Runtime default",
-        text: $store.profile.model
+        text: $store.profile.model,
+        suggestions: modelSuggestions
       )
-      effortRow
+      suggestedTextRow(
+        title: "Reasoning Effort",
+        prompt: "Runtime default",
+        text: $store.profile.reasoningEffort,
+        suggestions: effortSuggestions
+      )
       Picker("Execution Mode", selection: $store.profile.executionMode) {
         Text("Standard").tag(AgentExecutionMode.standard)
         Text("Unrestricted").tag(AgentExecutionMode.unrestricted)
@@ -95,7 +125,6 @@ struct AgentProfileEditorView: View {
         }
         .help("Open the profile's home folder in Finder")
       }
-      launchPreview
     }
   }
 
@@ -110,31 +139,11 @@ struct AgentProfileEditorView: View {
     }
   }
 
-  private var effortRow: some View {
-    HStack {
-      optionalTextRow(
-        title: "Reasoning Effort",
-        prompt: "Runtime default",
-        text: $store.profile.reasoningEffort
-      )
-      Menu {
-        ForEach(effortSuggestions, id: \.self) { suggestion in
-          Button(suggestion) { $store.profile.reasoningEffort.wrappedValue = suggestion }
-        }
-        Button("Runtime Default") { $store.profile.reasoningEffort.wrappedValue = nil }
-      } label: {
-        Image(systemName: "chevron.up.chevron.down")
-          .accessibilityLabel("Effort suggestions")
-      }
-      .menuStyle(.borderlessButton)
-      .fixedSize()
-      .help("Pick a known effort level, or type any value")
-    }
-  }
-
-  private var launchPreview: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text("Launch Preview")
+  private var launchPreviewSection: some View {
+    Section("Launch Preview") {
+      Text("Prowl will execute this exact command.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
       Text(previewText)
         .font(.callout.monospaced())
         .foregroundStyle(.secondary)
@@ -143,21 +152,116 @@ struct AgentProfileEditorView: View {
     }
   }
 
+  private var iconRow: some View {
+    HStack(alignment: .center, spacing: 12) {
+      iconMenu
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Icon")
+          .font(.headline)
+        Text(
+          store.profile.icon == nil
+            ? "\(AgentRuntimeAdapterRegistry.displayName(for: store.profile.runtime.agent)) brand icon"
+            : "Custom SF Symbol"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      }
+      Spacer(minLength: 0)
+    }
+  }
+
+  private var iconMenu: some View {
+    Menu {
+      Button("Choose Symbol…") {
+        isIconPickerPresented = true
+      }
+      if store.profile.icon != nil {
+        Divider()
+        Button("Clear Icon", role: .destructive) {
+          store.send(.setIcon(nil))
+        }
+      }
+    } label: {
+      iconPreviewTile
+    }
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .overlay {
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHoveringIconTile ? 0.65 : 0), lineWidth: 1.5)
+    }
+    .onHover { isHoveringIconTile = $0 }
+    .pointerStyle(.link)
+    .animation(.easeOut(duration: 0.12), value: isHoveringIconTile)
+    .help("Click the icon preview to choose an SF Symbol")
+  }
+
+  private var iconPreviewTile: some View {
+    AgentProfileIconImage(source: store.profile.iconSource, pointSize: 22)
+      .frame(width: 40, height: 40)
+      .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
+      .contentShape(.rect(cornerRadius: 8))
+      .accessibilityLabel("Agent icon picker")
+  }
+
   private func optionalTextRow(
     title: String,
     prompt: String,
     text: Binding<String?>
   ) -> some View {
-    TextField(
-      title,
-      text: Binding(
-        get: { text.wrappedValue ?? "" },
-        set: { value in
-          let trimmed = value.trimmingCharacters(in: .whitespaces)
-          text.wrappedValue = trimmed.isEmpty ? nil : value
+    LabeledContent(title) {
+      TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
+        .accessibilityLabel(title)
+    }
+  }
+
+  private func suggestedTextRow(
+    title: String,
+    prompt: String,
+    text: Binding<String?>,
+    suggestions: [String]
+  ) -> some View {
+    let selection = suggestionSelection(for: text, suggestions: suggestions)
+    return LabeledContent(title) {
+      HStack(spacing: 4) {
+        TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
+          .accessibilityLabel(title)
+        Picker("", selection: selection) {
+          Text("Runtime Default").tag(AgentProfileSuggestionSelection.runtimeDefault)
+          ForEach(suggestions, id: \.self) { suggestion in
+            Text(suggestion).tag(AgentProfileSuggestionSelection.suggestion(suggestion))
+          }
+          if case .custom = selection.wrappedValue {
+            Text("Custom Value").tag(selection.wrappedValue)
+          }
         }
-      ),
-      prompt: Text(prompt)
+        .labelsHidden()
+        .frame(width: 28)
+        .padding(.trailing, 4)
+        .accessibilityLabel("\(title) suggestions")
+        .help("Pick a known value, or type any value.")
+      }
+    }
+  }
+
+  private func optionalTextBinding(for text: Binding<String?>) -> Binding<String> {
+    Binding(
+      get: { text.wrappedValue ?? "" },
+      set: { value in
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        text.wrappedValue = trimmed.isEmpty ? nil : value
+      }
+    )
+  }
+
+  private func suggestionSelection(
+    for text: Binding<String?>,
+    suggestions: [String]
+  ) -> Binding<AgentProfileSuggestionSelection> {
+    Binding(
+      get: { AgentProfileSuggestionSelection(value: text.wrappedValue, suggestions: suggestions) },
+      set: { text.wrappedValue = $0.value }
     )
   }
 
@@ -172,5 +276,9 @@ struct AgentProfileEditorView: View {
   private var effortSuggestions: [String] {
     AgentRuntimeAdapterRegistry.adapter(for: store.profile.runtime.agent)?.reasoningEffortSuggestions
       ?? []
+  }
+
+  private var modelSuggestions: [String] {
+    AgentRuntimeAdapterRegistry.adapter(for: store.profile.runtime.agent)?.modelSuggestions ?? []
   }
 }

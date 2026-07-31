@@ -3,9 +3,10 @@ import SwiftUI
 
 struct TabIconPickerView: View {
   let initialIcon: String?
-  let defaultIcon: String
+  let defaultIcon: TabIconSource
   let title: String
   let subtitle: String
+  let resetHelp: String
   let presets: [String]
   /// Optional host-provided section rendered between the header and
   /// the symbol field — the repository picker injects its
@@ -22,9 +23,10 @@ struct TabIconPickerView: View {
 
   init(
     initialIcon: String?,
-    defaultIcon: String,
+    defaultIcon: TabIconSource,
     title: String = "Tab Icon",
     subtitle: String = "Pick a preset or enter any SF Symbol name available in your system.",
+    resetHelp: String = "Restore the default icon for this tab",
     presets: [String] = TabIconPickerView.symbolPresets,
     suggestionsSection: ((Binding<String>) -> AnyView)? = nil,
     onApply: @escaping (String?) -> Void,
@@ -34,6 +36,7 @@ struct TabIconPickerView: View {
     self.defaultIcon = defaultIcon
     self.title = title
     self.subtitle = subtitle
+    self.resetHelp = resetHelp
     self.presets = presets
     self.suggestionsSection = suggestionsSection
     self.onApply = onApply
@@ -56,8 +59,7 @@ struct TabIconPickerView: View {
       }
 
       HStack(spacing: 10) {
-        Image(systemName: previewSymbol)
-          .imageScale(.large)
+        TabIconImage(rawName: previewIcon.storageString, pointSize: 20)
           .foregroundStyle(isPreviewValid ? Color.primary : Color.secondary)
           .frame(width: 32, height: 32)
           .background(
@@ -107,7 +109,7 @@ struct TabIconPickerView: View {
         Button("Reset to Default") {
           onApply(nil)
         }
-        .help("Restore the default icon for this tab")
+        .help(resetHelp)
         Spacer()
         Button("Cancel", role: .cancel) {
           onCancel()
@@ -131,8 +133,8 @@ struct TabIconPickerView: View {
     symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  private var previewSymbol: String {
-    isPreviewValid ? trimmedName : defaultIcon
+  private var previewIcon: TabIconSource {
+    isPreviewValid ? TabIconSource(systemSymbol: trimmedName) : defaultIcon
   }
 
   private var isPreviewValid: Bool {
@@ -216,7 +218,7 @@ struct TabIconPickerView: View {
   #Preview("Default icon") {
     TabIconPickerView(
       initialIcon: nil,
-      defaultIcon: "terminal",
+      defaultIcon: TabIconSource(systemSymbol: "terminal"),
       onApply: { _ in },
       onCancel: {}
     )
@@ -225,7 +227,7 @@ struct TabIconPickerView: View {
   #Preview("With override") {
     TabIconPickerView(
       initialIcon: "sparkles",
-      defaultIcon: "terminal",
+      defaultIcon: TabIconSource(systemSymbol: "terminal"),
       onApply: { _ in },
       onCancel: {}
     )

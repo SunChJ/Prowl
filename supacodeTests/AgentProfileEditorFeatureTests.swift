@@ -22,6 +22,62 @@ struct AgentProfileEditorFeatureTests {
     await store.receive(\.delegate.profileEdited)
   }
 
+  @Test(.dependencies) func changingRuntimeClearsRuntimeSpecificConfiguration() async {
+    var profile = AgentProfile(name: "Codex", runtime: .codex)
+    profile.model = "gpt-5.6-sol"
+    profile.reasoningEffort = "xhigh"
+    profile.extraArguments = "--search"
+    profile.executionMode = .unrestricted
+    profile.icon = "wand.and.stars"
+    profile.placement = .split
+    profile.splitDirection = .left
+    profile.bindsDedicatedHome = true
+    let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
+      AgentProfileEditorFeature()
+    }
+
+    await store.send(.runtimeChanged(.claude)) {
+      $0.profile.runtime = .claude
+      $0.profile.model = nil
+      $0.profile.reasoningEffort = nil
+      $0.profile.extraArguments = ""
+      $0.profile.executionMode = .standard
+      $0.profile.icon = "wand.and.stars"
+      $0.profile.placement = .split
+      $0.profile.splitDirection = .left
+      $0.profile.bindsDedicatedHome = true
+    }
+    await store.receive(\.delegate.profileEdited)
+  }
+
+  @Test func suggestionSelectionDistinguishesCustomValuesFromRuntimeDefault() {
+    let suggestions = ["low", "medium", "high"]
+
+    #expect(AgentProfileSuggestionSelection(value: nil, suggestions: suggestions) == .runtimeDefault)
+    #expect(AgentProfileSuggestionSelection(value: "medium", suggestions: suggestions) == .suggestion("medium"))
+    #expect(
+      AgentProfileSuggestionSelection(value: "gateway-specific", suggestions: suggestions)
+        == .custom("gateway-specific"))
+    #expect(AgentProfileSuggestionSelection.custom("gateway-specific").value == "gateway-specific")
+  }
+
+  @Test(.dependencies) func settingProfileIconDelegatesTheEditedProfile() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
+    let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
+      AgentProfileEditorFeature()
+    }
+
+    await store.send(.setIcon("wand.and.stars")) {
+      $0.profile.icon = "wand.and.stars"
+    }
+    await store.receive(\.delegate.profileEdited)
+
+    await store.send(.setIcon(nil)) {
+      $0.profile.icon = nil
+    }
+    await store.receive(\.delegate.profileEdited)
+  }
+
   @Test(.dependencies) func unrestrictedRequiresExplicitConfirmation() async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()
@@ -60,7 +116,7 @@ struct AgentProfileEditorFeatureTests {
     }
 
     await store.send(.removeTapped) {
-      $0.alert = AgentProfileEditorFeature.removalAlert(profile: bound)
+      $0.alert = AgentProfileEditorFeature.removalAlert(profile: bound, hasProfileHome: true)
     }
     await store.send(.alert(.presented(.removeTrashingFiles))) {
       $0.alert = nil
@@ -79,7 +135,7 @@ struct AgentProfileEditorFeatureTests {
     }
 
     await store.send(.removeTapped) {
-      $0.alert = AgentProfileEditorFeature.removalAlert(profile: unbound)
+      $0.alert = AgentProfileEditorFeature.removalAlert(profile: unbound, hasProfileHome: true)
     }
     await store.send(.alert(.presented(.removeKeepingFiles))) {
       $0.alert = nil
@@ -87,14 +143,18 @@ struct AgentProfileEditorFeatureTests {
     await store.receive(\.delegate.removeProfile)
   }
 
-  @Test(.dependencies) func removingPurePresetSkipsConfirmation() async {
+  @Test(.dependencies) func removingPurePresetRequiresConfirmation() async {
     let preset = AgentProfile(name: "Claude", runtime: .claude)
     let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: preset)) {
       AgentProfileEditorFeature()
     }
 
-    // No confirmation and no file operations for a preset with no home.
-    await store.send(.removeTapped)
+    await store.send(.removeTapped) {
+      $0.alert = AgentProfileEditorFeature.removalAlert(profile: preset, hasProfileHome: false)
+    }
+    await store.send(.alert(.presented(.removeKeepingFiles))) {
+      $0.alert = nil
+    }
     await store.receive(\.delegate.removeProfile)
   }
 

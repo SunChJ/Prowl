@@ -25,6 +25,8 @@ struct AgentProfileEditorFeature {
 
   enum Action: BindableAction {
     case task
+    case runtimeChanged(AgentProfileRuntime)
+    case setIcon(String?)
     case binding(BindingAction<State>)
     case removeTapped
     case revealProfileFiles
@@ -57,6 +59,23 @@ struct AgentProfileEditorFeature {
         refreshHomeStatus(&state)
         return .none
 
+      case .runtimeChanged(let runtime):
+        guard state.profile.runtime != runtime else { return .none }
+        // Model, effort, literal CLI arguments, and unrestricted approval
+        // belong to the selected runtime. The target CLI requires its own
+        // explicit confirmation before it can bypass safeguards.
+        state.profile.runtime = runtime
+        state.profile.model = nil
+        state.profile.reasoningEffort = nil
+        state.profile.extraArguments = ""
+        state.profile.executionMode = .standard
+        refreshHomeStatus(&state)
+        return .send(.delegate(.profileEdited(state.profile)))
+
+      case .setIcon(let icon):
+        guard state.profile.icon != icon else { return .none }
+        state.profile.icon = icon
+        return .send(.delegate(.profileEdited(state.profile)))
       case .binding:
         // `.unrestricted` is never applied silently: the change reverts until
         // the user explicitly confirms it (docs-ai 053).
@@ -69,16 +88,10 @@ struct AgentProfileEditorFeature {
         return .send(.delegate(.profileEdited(state.profile)))
 
       case .removeTapped:
-        // The confirmation gate keys on the *disk fact*, not the current
-        // binding intent: a profile that was bound, launched (home created),
-        // then unbound still owns credentials on disk — deleting it silently
-        // would orphan them with no UI path back.
-        guard state.profile.bindsDedicatedHome || homeClient.homeExists(state.profile.id) else {
-          // Pure presets with no home on disk: removal performs zero file
-          // operations by construction.
-          return .send(.delegate(.removeProfile(state.profile.id, trashFiles: false)))
-        }
-        state.alert = Self.removalAlert(profile: state.profile)
+        // A previously bound profile can still own credentials on disk after
+        // being unbound, so its removal must preserve the trash choice.
+        let hasProfileHome = state.profile.bindsDedicatedHome || homeClient.homeExists(state.profile.id)
+        state.alert = Self.removalAlert(profile: state.profile, hasProfileHome: hasProfileHome)
         return .none
 
       case .revealProfileFiles:
@@ -155,23 +168,26 @@ struct AgentProfileEditorFeature {
     }
   }
 
-  static func removalAlert(profile: AgentProfile) -> AlertState<Alert> {
+  static func removalAlert(profile: AgentProfile, hasProfileHome: Bool) -> AlertState<Alert> {
     AlertState {
       TextState("Remove “\(profile.name)”?")
     } actions: {
-      ButtonState(action: .removeKeepingFiles) {
+      ButtonState(role: .destructive, action: .removeKeepingFiles) {
         TextState("Remove Profile")
       }
-      ButtonState(role: .destructive, action: .removeTrashingFiles) {
-        TextState("Remove and Trash Files")
+      if hasProfileHome {
+        ButtonState(role: .destructive, action: .removeTrashingFiles) {
+          TextState("Remove and Trash Files")
+        }
       }
       ButtonState(role: .cancel) {
         TextState("Cancel")
       }
     } message: {
       TextState(
-        "This profile has its own home with login credentials and files. "
-          + "“Remove Profile” keeps them on disk; “Remove and Trash Files” moves the folder to the Trash."
+        hasProfileHome
+          ? "“Remove Profile” keeps the profile folder on disk; “Remove and Trash Files” moves it to the Trash."
+          : "This removes the profile from Prowl. No files will be deleted."
       )
     }
   }

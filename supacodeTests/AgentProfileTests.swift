@@ -42,11 +42,32 @@ struct AgentProfileTests {
     #expect(decoded.isEnabled)
     #expect(decoded.model == nil)
     #expect(decoded.reasoningEffort == nil)
+    #expect(decoded.icon == nil)
     #expect(decoded.executionMode == .standard)
     #expect(decoded.placement == .tab)
     #expect(decoded.splitDirection == .right)
     #expect(decoded.extraArguments.isEmpty)
     #expect(!decoded.bindsDedicatedHome)
+  }
+
+  @Test func encodingRoundTripPreservesProfileIcon() throws {
+    let profile = AgentProfile(name: "Codex · Work", runtime: .codex, icon: "wand.and.stars")
+
+    let decoded = try JSONDecoder().decode(AgentProfile.self, from: JSONEncoder().encode(profile))
+
+    #expect(decoded.icon == "wand.and.stars")
+  }
+
+  @Test func profileIconUsesCustomSymbolThenRuntimeBrandFallback() throws {
+    let custom = AgentProfile(name: "Codex · Work", runtime: .codex, icon: "wand.and.stars")
+    #expect(
+      AgentProfileIconResolver.source(for: custom.iconSource)
+        == TabIconSource(systemSymbol: "wand.and.stars")
+    )
+
+    let fallback = AgentProfile(name: "Claude Code", runtime: .claude)
+    let expected = try #require(CommandIconMap.iconForFirstToken(fallback.runtime.agent.iconLookupToken))
+    #expect(AgentProfileIconResolver.source(for: fallback.iconSource) == expected)
   }
 
   // MARK: - Recommendation

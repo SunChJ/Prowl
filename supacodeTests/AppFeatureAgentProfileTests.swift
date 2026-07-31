@@ -108,7 +108,7 @@ struct AppFeatureAgentProfileTests {
       $0.repositoryLocalSettingsStorage = localStorage.storage
     } operation: {
       let first = AgentProfile(name: "First", runtime: .codex)
-      let second = AgentProfile(name: "Second", runtime: .claude)
+      let second = AgentProfile(name: "Second", runtime: .claude, icon: "wand.and.stars")
       let disabled = AgentProfile(name: "Hidden", isEnabled: false, runtime: .claude)
       @Shared(.userGlobalSettings) var settings
       $settings.withLock { $0.agentProfiles = [first, second, disabled] }
@@ -121,6 +121,8 @@ struct AppFeatureAgentProfileTests {
       #expect(items.first?.kind == .launchAgentProfile(second.id))
       #expect(items.first?.subtitle?.hasPrefix("Recommended") == true)
       #expect(items.last?.subtitle?.hasPrefix("Recommended") == false)
+      #expect(items.first?.agentProfileIconSource == second.iconSource)
+      #expect(items.last?.agentProfileIconSource == first.iconSource)
     }
   }
 
