@@ -13,9 +13,9 @@ For the UI grouping of these into tabs, see [`components/settings.md`](../compon
 | Scope | Path |
 |-------|------|
 | Global settings | `~/.prowl/settings.json` |
-| Global custom commands | `~/.prowl/global.onevcat.json` |
+| Global custom commands + agent profiles | `~/.prowl/global.onevcat.json` |
 | Per-repository settings | `~/.prowl/repo/<repo-name>/prowl.json` |
-| Per-repository custom commands | `~/.prowl/repo/<repo-name>/prowl.onevcat.json` |
+| Per-repository custom commands + agent-profile memory | `~/.prowl/repo/<repo-name>/prowl.onevcat.json` |
 
 JSON is pretty-printed with sorted keys. Legacy `~/.supacode` is migrated to
 `~/.prowl` on first launch.
@@ -100,6 +100,13 @@ removes it from every command surface and hotkey dispatch.
 store `disabledGlobalCommandIDs`: an absent ID means enabled for that repository, while
 an included ID hides that Global command there. Local commands are ordered before Global
 commands; matching titles do not hide either command.
+
+**Agent Profiles** share these files: `global.onevcat.json` also stores the
+`agentProfiles` array and the one-shot `didSeedAgentProfiles` flag, and each
+repository's `prowl.onevcat.json` stores `defaultAgentProfileID` (the explicit
+per-repo Default Agent Profile) and `lastLaunchedAgentProfileID` (launch
+memory for the Recommended resolution). See
+[`components/agent-profiles.md`](../components/agent-profiles.md).
 
 ## Notes for agents
 
