@@ -39,6 +39,24 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.launchProfileName(surfaceID: UUID(), detected: .codex) == nil)
   }
 
+  @Test func launchIdentityClearsWhenTheLaunchedAgentExits() {
+    let state = makeState()
+    let surfaceID = UUID()
+    state.launchProfilesBySurface[surfaceID] = WorktreeTerminalState.SurfaceLaunchProfile(
+      profileID: UUID(),
+      name: "Codex · Work",
+      runtime: .codex,
+      dedicatedHome: nil
+    )
+    state.surfaceAgentStates[surfaceID] = PaneAgentState(detectedAgent: .codex)
+
+    state.removeAgentEntryIfNeeded(surfaceID: surfaceID)
+
+    // The identity lives exactly as long as the launched agent: a manually
+    // started agent afterwards is the user's own (docs-ai 053/006).
+    #expect(state.launchProfilesBySurface[surfaceID] == nil)
+  }
+
   private func makeState() -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),
@@ -58,9 +76,10 @@ struct WorktreeTerminalStateAgentProfileTests {
       profileName: "Codex · Bound",
       runtime: .codex,
       invocation: AgentInvocation(executable: "codex", arguments: []),
+      commandEnvironmentTokens: [],
       placement: .tab,
       splitDirection: .right,
-      environment: [:],
+      surfaceEnvironment: [:],
       dedicatedHome: dedicatedHome
     )
   }

@@ -331,6 +331,13 @@ agent 列表不变。
 
 ## Amendments
 
+- Updated 2026-07-31: **环境补丁语义从 surface-scoped 改为 launch-scoped** — onevcat
+  定位出"Agents 启动 → agent 退出 → 手动 codex 继承 profile env"的串号链,环境补丁
+  改为随 `env` 前缀只作用于 launched 进程(home 内联、override 值经 `PROWL_ENV_*`
+  carrier 引用,不进 history),launch identity 随 launched 进程退出而清除;本文
+  「账号绑定与 runtime home」节的 surface 附加语义由此作废 — see
+  [006-launch-scoped-environment.md](006-launch-scoped-environment.md).
+
 - Updated 2026-07-31: V1 综合审计(双评审交叉核对)与首轮边界补强 — see
   [005-v1-audit.md](005-v1-audit.md)。修复:`HOME` 入 env 保留名单、launch 结果
   事件化(记忆后置 + 失败 toast)、profile 名按 runtime 门控、可用性判定共享且

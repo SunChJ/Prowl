@@ -39,8 +39,10 @@ A launch creates a **new** tab (or split, per placement) in the current
 worktree, running the agent interactively with no initial prompt. Prowl never
 types into an existing shell. The new pane records its profile identity at
 creation: the Active Agents rows and the capsule show the profile's display
-name (frozen at launch — later renames don't relabel live panes; a *different*
-agent started manually in the same pane shows its own name, not the profile's).
+name (frozen at launch — later renames don't relabel live panes). The identity
+lives exactly as long as the launched agent: once it exits, any agent started
+manually in that pane shows its own name and runs with your default
+environment and account.
 A launch that fails before its surface exists (e.g. home provisioning) shows a
 warning toast, and only a successful launch updates the per-repo "last
 launched" memory behind the Recommended resolution.
@@ -72,11 +74,15 @@ existing, enabled profile.
 ## Environment variables
 
 The **Environment Variables** table (Advanced, below Extra Arguments) adds
-per-profile environment overrides to the launched surface — they are applied
-at spawn, so the new pane's shell and everything started in it (the agent, its
-subprocesses, later manual commands in that pane) see them, on top of the
-shell's normal environment — e.g. `OPENAI_BASE_URL` + `OPENAI_API_KEY` to get
-a "Codex but using DeepSeek" profile. Rules:
+per-profile environment overrides — e.g. `OPENAI_BASE_URL` + `OPENAI_API_KEY`
+to get a "Codex but using DeepSeek" profile. The whole patch is
+**launch-scoped**: it applies to the launched agent process (and its
+subprocesses) only. The pane's shell keeps your normal environment, so after
+the agent exits, a manual `codex` / `claude` — or any other command — in that
+pane runs with your own account and environment. Mechanically, the launch
+command carries `env NAME="$PROWL_ENV_NAME" …` references while the values
+ride in hidden `PROWL_ENV_*` surface variables, so no override value ever
+appears in the typed command, shell history, or scrollback. Rules:
 
 - Names must be valid POSIX names (`[A-Za-z_][A-Za-z0-9_]*`). An empty value
   legitimately sets the variable to the empty string.
@@ -87,21 +93,26 @@ a "Codex but using DeepSeek" profile. Rules:
   through **Use Dedicated Home**, which always wins over a same-named row.
 - Later duplicate names win (shell-export semantics).
 - Values are stored in plaintext in `~/.prowl/global.onevcat.json` (kept
-  owner-only, `0600`). The Launch Preview masks secret-looking values
-  (names containing `KEY`/`TOKEN`/`SECRET`/`PASSWORD`).
-- Overrides apply to profile launches only; resumed or restored panes do not
-  re-apply them (same limitation as dedicated homes).
+  owner-only, `0600`); the Launch Preview shows only the `$PROWL_ENV_*`
+  references, never the values.
+- Launch-scoped by design: manual launches, resumed sessions, and restored
+  panes intentionally run with your default environment. Re-launch through
+  the Agents menu to get the profile's environment again.
 
 ## Dedicated home (separate account)
 
 Toggling **Use Dedicated Home** (Advanced) gives the profile its own runtime
-home under `~/.prowl/agent-profiles/<uuid>/`, attached to the new surface via
-`CLAUDE_CONFIG_DIR` / `CODEX_HOME`. That relocates the runtime's *entire*
-home: separate login and usage, but also separate skills, global instructions
+home under `~/.prowl/agent-profiles/<uuid>/`, attached to the launched agent
+via a `CLAUDE_CONFIG_DIR` / `CODEX_HOME` assignment on the launch command
+(launch-scoped, like overrides). That relocates the runtime's *entire* home:
+separate login and usage, but also separate skills, global instructions
 (`CLAUDE.md` / `AGENTS.md`), and session history. The first launch is the
 sign-in moment — the agent's own TUI walks through login and the credentials
 land inside the profile home. Prowl never reads or copies them; use **Reveal
-Profile Files** to manage skills and instruction files there yourself.
+Profile Files** to manage skills and instruction files there yourself. After
+the launched agent exits, a manually started agent in the same pane uses your
+default home and account — re-enter the profile's account by launching from
+the Agents menu again.
 
 Removing any profile asks first. Pure presets have no file operations. A bound
 profile offers **Remove Profile** to keep its folder on disk and **Remove and
@@ -134,10 +145,12 @@ effort, execution mode, placement).
 
 ## Gotchas for agents
 
-- Session detection follows the relocated home for Prowl-launched bound panes
-  (resume and handoff artifacts resolve against the profile's config root).
-  An agent you start manually with your own `CLAUDE_CONFIG_DIR`/`CODEX_HOME`
-  is still detected, but without session identity.
+- Session detection follows the relocated home while the launched bound agent
+  is running (resume and handoff artifacts resolve against the profile's
+  config root); once it exits, the pane's config root reverts with the
+  identity. An agent you start manually with your own
+  `CLAUDE_CONFIG_DIR`/`CODEX_HOME` is still detected, but without session
+  identity.
 - Availability is judged in two tiers. Ground truth is a background
   login-shell probe (`command -v`, the same PATH resolution a launch uses):
   once it answers, "not found" warns "… is not on your shell's PATH" and

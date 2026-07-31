@@ -152,7 +152,9 @@ nonisolated struct AgentInvocation: Equatable, Sendable {
     ([executable] + arguments).map(Self.shellQuote).joined(separator: " ")
   }
 
-  private static func shellQuote(_ argument: String) -> String {
+  /// The single reviewed quoting rule for anything typed into a pane's shell;
+  /// the profile launch planner reuses it for inlined `env` assignments.
+  static func shellQuote(_ argument: String) -> String {
     "'" + argument.replacing("'", with: "'\"'\"'") + "'"
   }
 }
