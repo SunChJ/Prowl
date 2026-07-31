@@ -8,6 +8,7 @@ struct AgentProfileEditorView: View {
 
   var body: some View {
     Form {
+      launchPreviewSection
       profileSection
       advancedSection
       removalSection
@@ -26,12 +27,18 @@ struct AgentProfileEditorView: View {
           Text(AgentRuntimeAdapterRegistry.displayName(for: runtime.agent)).tag(runtime)
         }
       }
-      optionalTextRow(
+      suggestedTextRow(
         title: "Model",
         prompt: "Runtime default",
-        text: $store.profile.model
+        text: $store.profile.model,
+        suggestions: modelSuggestions
       )
-      effortRow
+      suggestedTextRow(
+        title: "Reasoning Effort",
+        prompt: "Runtime default",
+        text: $store.profile.reasoningEffort,
+        suggestions: effortSuggestions
+      )
       Picker("Execution Mode", selection: $store.profile.executionMode) {
         Text("Standard").tag(AgentExecutionMode.standard)
         Text("Unrestricted").tag(AgentExecutionMode.unrestricted)
@@ -95,7 +102,6 @@ struct AgentProfileEditorView: View {
         }
         .help("Open the profile's home folder in Finder")
       }
-      launchPreview
     }
   }
 
@@ -110,31 +116,11 @@ struct AgentProfileEditorView: View {
     }
   }
 
-  private var effortRow: some View {
-    HStack {
-      optionalTextRow(
-        title: "Reasoning Effort",
-        prompt: "Runtime default",
-        text: $store.profile.reasoningEffort
-      )
-      Menu {
-        ForEach(effortSuggestions, id: \.self) { suggestion in
-          Button(suggestion) { $store.profile.reasoningEffort.wrappedValue = suggestion }
-        }
-        Button("Runtime Default") { $store.profile.reasoningEffort.wrappedValue = nil }
-      } label: {
-        Image(systemName: "chevron.up.chevron.down")
-          .accessibilityLabel("Effort suggestions")
-      }
-      .menuStyle(.borderlessButton)
-      .fixedSize()
-      .help("Pick a known effort level, or type any value")
-    }
-  }
-
-  private var launchPreview: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text("Launch Preview")
+  private var launchPreviewSection: some View {
+    Section("Launch Preview") {
+      Text("Prowl will execute this exact command.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
       Text(previewText)
         .font(.callout.monospaced())
         .foregroundStyle(.secondary)
@@ -148,16 +134,55 @@ struct AgentProfileEditorView: View {
     prompt: String,
     text: Binding<String?>
   ) -> some View {
-    TextField(
-      title,
-      text: Binding(
-        get: { text.wrappedValue ?? "" },
-        set: { value in
-          let trimmed = value.trimmingCharacters(in: .whitespaces)
-          text.wrappedValue = trimmed.isEmpty ? nil : value
+    LabeledContent(title) {
+      TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
+    }
+  }
+
+  private func suggestedTextRow(
+    title: String,
+    prompt: String,
+    text: Binding<String?>,
+    suggestions: [String]
+  ) -> some View {
+    LabeledContent(title) {
+      HStack(spacing: 4) {
+        TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
+        Picker("", selection: suggestionIndex(for: text, suggestions: suggestions)) {
+          Text("Runtime Default").tag(0)
+          ForEach(suggestions.indices, id: \.self) { index in
+            Text(suggestions[index]).tag(index + 1)
+          }
         }
-      ),
-      prompt: Text(prompt)
+        .labelsHidden()
+        .frame(width: 28)
+        .accessibilityLabel("\(title) suggestions")
+        .help("Pick a known value, or type any value.")
+      }
+    }
+  }
+
+  private func optionalTextBinding(for text: Binding<String?>) -> Binding<String> {
+    Binding(
+      get: { text.wrappedValue ?? "" },
+      set: { value in
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        text.wrappedValue = trimmed.isEmpty ? nil : value
+      }
+    )
+  }
+
+  private func suggestionIndex(for text: Binding<String?>, suggestions: [String]) -> Binding<Int> {
+    Binding(
+      get: {
+        guard let value = text.wrappedValue, let index = suggestions.firstIndex(of: value) else {
+          return 0
+        }
+        return index + 1
+      },
+      set: { index in
+        text.wrappedValue = index == 0 ? nil : suggestions[index - 1]
+      }
     )
   }
 
@@ -172,5 +197,9 @@ struct AgentProfileEditorView: View {
   private var effortSuggestions: [String] {
     AgentRuntimeAdapterRegistry.adapter(for: store.profile.runtime.agent)?.reasoningEffortSuggestions
       ?? []
+  }
+
+  private var modelSuggestions: [String] {
+    AgentRuntimeAdapterRegistry.adapter(for: store.profile.runtime.agent)?.modelSuggestions ?? []
   }
 }

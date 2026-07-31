@@ -13,6 +13,9 @@ nonisolated protocol AgentRuntimeAdapter: Sendable {
   /// free-form value stays accepted as a literal argument; an unknown value
   /// fails at CLI startup, visibly in the new surface.
   var reasoningEffortSuggestions: [String] { get }
+  /// Known model values offered as editor suggestions. Custom values still pass
+  /// through as literal model arguments, so provider-specific deployments work.
+  var modelSuggestions: [String] { get }
 
   func observe(arguments: [String]) -> AgentLaunchObservation
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation
@@ -26,6 +29,7 @@ nonisolated protocol AgentRuntimeAdapter: Sendable {
 
 nonisolated extension AgentRuntimeAdapter {
   var supportsAccountIsolation: Bool { accountHomeEnvironmentVariable != nil }
+  var modelSuggestions: [String] { [] }
 }
 
 nonisolated enum AgentExecutionMode: String, Codable, Equatable, Sendable {
@@ -224,6 +228,7 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Codex"
   let accountHomeEnvironmentVariable: String? = "CODEX_HOME"
   let reasoningEffortSuggestions = ["minimal", "low", "medium", "high", "xhigh"]
+  let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let explicitlyBypassesSandbox =
@@ -285,6 +290,7 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Claude Code"
   let accountHomeEnvironmentVariable: String? = "CLAUDE_CONFIG_DIR"
   let reasoningEffortSuggestions = ["low", "medium", "high"]
+  let modelSuggestions = ["fable", "opus", "sonnet", "haiku", "opusplan"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let explicitlyBypassesPermissions =

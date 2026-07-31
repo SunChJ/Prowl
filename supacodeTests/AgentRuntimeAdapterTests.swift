@@ -99,6 +99,14 @@ struct AgentRuntimeAdapterTests {
     #expect(claude?.reasoningEffortSuggestions.contains("high") == true)
   }
 
+  @Test func modelSuggestionsMatchEachRuntime() {
+    let codex = AgentRuntimeAdapterRegistry.adapter(for: .codex)
+    #expect(codex?.modelSuggestions == ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"])
+
+    let claude = AgentRuntimeAdapterRegistry.adapter(for: .claude)
+    #expect(claude?.modelSuggestions == ["fable", "opus", "sonnet", "haiku", "opusplan"])
+  }
+
   @Test func launchConfigurationDecodesLegacyPayloadWithoutNewFields() throws {
     let legacy = Data(#"{"model":"gpt-5.4","executionMode":"standard"}"#.utf8)
     let configuration = try JSONDecoder().decode(AgentLaunchConfiguration.self, from: legacy)

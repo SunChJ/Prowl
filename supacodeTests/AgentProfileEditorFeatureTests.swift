@@ -60,7 +60,7 @@ struct AgentProfileEditorFeatureTests {
     }
 
     await store.send(.removeTapped) {
-      $0.alert = AgentProfileEditorFeature.removalAlert(profile: bound)
+      $0.alert = AgentProfileEditorFeature.removalAlert(profile: bound, hasProfileHome: true)
     }
     await store.send(.alert(.presented(.removeTrashingFiles))) {
       $0.alert = nil
@@ -79,7 +79,7 @@ struct AgentProfileEditorFeatureTests {
     }
 
     await store.send(.removeTapped) {
-      $0.alert = AgentProfileEditorFeature.removalAlert(profile: unbound)
+      $0.alert = AgentProfileEditorFeature.removalAlert(profile: unbound, hasProfileHome: true)
     }
     await store.send(.alert(.presented(.removeKeepingFiles))) {
       $0.alert = nil
@@ -87,14 +87,18 @@ struct AgentProfileEditorFeatureTests {
     await store.receive(\.delegate.removeProfile)
   }
 
-  @Test(.dependencies) func removingPurePresetSkipsConfirmation() async {
+  @Test(.dependencies) func removingPurePresetRequiresConfirmation() async {
     let preset = AgentProfile(name: "Claude", runtime: .claude)
     let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: preset)) {
       AgentProfileEditorFeature()
     }
 
-    // No confirmation and no file operations for a preset with no home.
-    await store.send(.removeTapped)
+    await store.send(.removeTapped) {
+      $0.alert = AgentProfileEditorFeature.removalAlert(profile: preset, hasProfileHome: false)
+    }
+    await store.send(.alert(.presented(.removeKeepingFiles))) {
+      $0.alert = nil
+    }
     await store.receive(\.delegate.removeProfile)
   }
 
