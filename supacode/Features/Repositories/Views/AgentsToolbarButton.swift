@@ -38,6 +38,14 @@ struct AgentsLauncherItem: Equatable, Identifiable {
 /// carries no state indicator. A `Menu` cannot host this control: macOS
 /// toolbars flatten custom menu labels to their text, dropping the badge, so
 /// the popover is the durable container here.
+///
+/// The button carries no background of its own: it sits in a shared-glass
+/// toolbar group next to `AgentsQuickLaunchButton`, which renders the pair
+/// as one system split control — the same look as the trailing Open In +
+/// chevron pair. The branch title stays out of that capsule by opting out of
+/// the group background itself (see the toolbar site): a fixed
+/// `ToolbarSpacer` cannot split the navigation group, even with an explicit
+/// `.navigation` placement.
 struct AgentsToolbarButton: View {
   let capsule: AgentsCapsuleState?
   let launcherItems: [AgentsLauncherItem]
@@ -45,33 +53,13 @@ struct AgentsToolbarButton: View {
   let onLaunchProfile: (AgentProfile.ID) -> Void
   let onManageProfiles: () -> Void
   @State private var isPopoverPresented = false
-  @State private var isHovered = false
 
   var body: some View {
     Button {
       isPopoverPresented.toggle()
     } label: {
       label
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .contentShape(Capsule())
     }
-    // The item opts out of the navigation group's shared background
-    // (`sharedBackgroundVisibility(.hidden)`) to stay separate from the
-    // branch title, and draws its own glass capsule. `.plain` + an explicit
-    // glass background keeps the horizontal padding as tight as the other
-    // toolbar buttons; `.buttonStyle(.glass)` pads noticeably wider.
-    .buttonStyle(.plain)
-    // Hover feedback must live in the glass material itself: a translucent
-    // fill layered under `glassEffect` gets swallowed by the material
-    // compositing, and `.interactive()` only adds press feedback on macOS.
-    .glassEffect(
-      isHovered
-        ? .regular.tint(.primary.opacity(0.12)).interactive()
-        : .regular.interactive(),
-      in: Capsule()
-    )
-    .onHover { isHovered = $0 }
     .help(helpText)
     .accessibilityLabel(accessibilityText)
     .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
@@ -134,6 +122,29 @@ struct AgentsToolbarButton: View {
   private var accessibilityText: String {
     guard let capsule else { return "Agents" }
     return "Agents: \(capsule.displayName)"
+  }
+}
+
+/// Quick-launch half of the Agents split control: one click starts the
+/// Recommended profile — the launcher list's leading row (docs-ai 053) — so
+/// the segment and the popover always agree on what it launches. Lives as its
+/// own toolbar item in the Agents shared-glass group, which is what produces
+/// the system split-button look (and per-segment hover) next to
+/// `AgentsToolbarButton`.
+struct AgentsQuickLaunchButton: View {
+  let item: AgentsLauncherItem
+  let onLaunch: (AgentProfile.ID) -> Void
+
+  var body: some View {
+    Button {
+      onLaunch(item.id)
+    } label: {
+      Image(systemName: "play.circle")
+        .font(.title3.weight(.medium))
+        .foregroundStyle(.secondary)
+    }
+    .help("Launch \(item.name) in this worktree")
+    .accessibilityLabel("Launch \(item.name)")
   }
 }
 
@@ -219,12 +230,10 @@ private struct AgentsPopoverRow: View {
         if let iconSource {
           AgentProfileIconImage(source: iconSource, pointSize: 16)
             .frame(width: 16)
-            .padding(.top, 2)
         } else {
           Image(systemName: systemImage)
             .frame(width: 16)
             .accessibilityHidden(true)
-            .padding(.top, 2)
         }
         VStack(alignment: .leading, spacing: 2) {
           HStack(alignment: .firstTextBaseline, spacing: 8) {

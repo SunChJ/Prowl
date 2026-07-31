@@ -32,7 +32,9 @@ respawn.
   row shows the profile name with the runtime name trailing. Rows for runtimes
   that look unavailable are dimmed with a warning but stay clickable —
   availability signals can be wrong, so they never block a launch. "Manage
-  Agent Profiles…" opens Settings → Agents.
+  Agent Profiles…" opens Settings → Agents. When launch rows exist the capsule
+  carries a trailing **quick-launch segment** (a `play.circle` split button):
+  one click launches the Recommended profile directly, skipping the popover.
 - **Command Palette** (`⌘P`) — "Launch Agent: <name>" rows dispatch the exact
   same action, and carry the same availability warning in their subtitle.
 

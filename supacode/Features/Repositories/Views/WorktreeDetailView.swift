@@ -914,12 +914,14 @@ struct WorktreeDetailView: View {
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
-      // `.sharedBackgroundVisibility(.hidden)` keeps the capsule out of the
-      // navigation group's shared glass background — adjacent items in the
-      // same placement would otherwise merge with the branch title into one
-      // capsule-shaped control (a fixed ToolbarSpacer does not split the
-      // navigation group).
-      ToolbarItem(placement: .navigation) {
+      // The Agents button and its quick-launch segment share the navigation
+      // group's glass background, which renders them as one system split
+      // control (like the trailing Open In + chevron pair). Nothing can split
+      // that group — a fixed ToolbarSpacer is ignored even with an explicit
+      // `.navigation` placement (re-verified 2026-08; docs-ai 049) — so the
+      // branch title opts out via `.sharedBackgroundVisibility(.hidden)` and
+      // draws its own glass capsule instead.
+      ToolbarItemGroup(placement: .navigation) {
         AgentsToolbarButton(
           capsule: toolbarState.agentsCapsule,
           launcherItems: toolbarState.agentsLauncherItems,
@@ -927,8 +929,10 @@ struct WorktreeDetailView: View {
           onLaunchProfile: onLaunchProfile,
           onManageProfiles: onManageProfiles
         )
+        if let quickLaunchItem = toolbarState.agentsLauncherItems.first {
+          AgentsQuickLaunchButton(item: quickLaunchItem, onLaunch: onLaunchProfile)
+        }
       }
-      .sharedBackgroundVisibility(.hidden)
 
       ToolbarItem(placement: .navigation) {
         WorktreeDetailTitleView(
@@ -938,6 +942,7 @@ struct WorktreeDetailView: View {
           onConsumeExternalRenamePrompt: onConsumeExternalRenamePrompt
         )
       }
+      .sharedBackgroundVisibility(.hidden)
 
       ToolbarItem(placement: .principal) {
         ToolbarStatusView(
