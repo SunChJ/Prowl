@@ -26,9 +26,10 @@ final class Debouncer {
   /// Schedules `action` to run after the interval, replacing any pending action.
   func schedule(_ action: @escaping @MainActor () async -> Void) {
     task?.cancel()
-    task = Task { [interval, clock] in
+    let sleep = clock.anchoredSleep(for: interval)
+    task = Task {
       do {
-        try await clock.sleep(for: interval)
+        try await sleep()
       } catch {
         return
       }
@@ -41,6 +42,18 @@ final class Debouncer {
   func cancel() {
     task?.cancel()
     task = nil
+  }
+}
+
+/// Captures the debounce deadline synchronously at `schedule` time instead of
+/// when the spawned task first runs. Under scheduler load the task can start
+/// measurably late, which would silently stretch the window — and, with a
+/// `TestClock`, let the test advance past a deadline that was never armed,
+/// hanging the sleep forever (the CI-only `DebouncerTests` flake).
+extension Clock where Duration == Swift.Duration {
+  fileprivate func anchoredSleep(for interval: Duration) -> @Sendable () async throws -> Void {
+    let deadline = now.advanced(by: interval)
+    return { try await self.sleep(until: deadline, tolerance: nil) }
   }
 }
 
@@ -61,10 +74,10 @@ final class KeyedDebouncer<Key: Hashable & Sendable> {
   /// interval), replacing any action already pending for the same key.
   func schedule(_ key: Key, after interval: Duration? = nil, _ action: @escaping @MainActor () async -> Void) {
     tasks[key]?.cancel()
-    let interval = interval ?? self.interval
-    tasks[key] = Task { [clock] in
+    let sleep = clock.anchoredSleep(for: interval ?? self.interval)
+    tasks[key] = Task {
       do {
-        try await clock.sleep(for: interval)
+        try await sleep()
       } catch {
         return
       }
