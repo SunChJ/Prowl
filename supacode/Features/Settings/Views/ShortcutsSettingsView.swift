@@ -174,11 +174,12 @@ struct ShortcutsSettingsView: View {
           .frame(minWidth: ShortcutTableLayout.commandColumnMinWidth, maxWidth: .infinity, alignment: .leading)
           .layoutPriority(1)
 
-        sourceChip(source)
+        sourceChip(source, resolvedBinding: resolvedBinding)
           .frame(width: ShortcutTableLayout.statusColumnWidth, alignment: .leading)
 
         shortcutRecorderField(
           commandID: command.id,
+          commandTitle: command.title,
           resolvedBinding: resolvedBinding,
           isRecording: isRecording,
           isHovering: isHoveringRecorder
@@ -211,14 +212,18 @@ struct ShortcutsSettingsView: View {
 
       if isRecording {
         HStack(spacing: 8) {
-          Text(
-            "Recording: press a key with modifiers (⌘ ⇧ ⌥ ⌃). Return and arrow keys are supported. Press Esc to cancel."
-          )
+          Text("Press a key with modifiers (⌘ ⇧ ⌥ ⌃).")
           Spacer(minLength: 0)
+          Button("Clear") {
+            clearShortcut(for: command.id)
+          }
+          .buttonStyle(.link)
+          .help("Clear shortcut")
           Button("Cancel") {
             stopRecording()
           }
           .buttonStyle(.link)
+          .help("Cancel recording")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -241,6 +246,7 @@ struct ShortcutsSettingsView: View {
 
   private func shortcutRecorderField(
     commandID: String,
+    commandTitle: String,
     resolvedBinding: Keybinding?,
     isRecording: Bool,
     isHovering: Bool
@@ -275,6 +281,8 @@ struct ShortcutsSettingsView: View {
       }
     }
     .buttonStyle(.plain)
+    .accessibilityLabel("Shortcut for \(commandTitle)")
+    .accessibilityValue(isRecording ? "Recording" : (resolvedBinding?.display ?? "No shortcut assigned"))
     .onHover { hovering in
       if hovering {
         hoveredRecorderCommandID = commandID
@@ -289,7 +297,7 @@ struct ShortcutsSettingsView: View {
     if isRecording {
       return "Recording…"
     }
-    return resolvedBinding?.display ?? "Unassigned"
+    return resolvedBinding?.display ?? ""
   }
 
   private func shortcutRecorderForegroundColor(resolvedBinding: Keybinding?, isRecording: Bool) -> Color {
@@ -309,7 +317,7 @@ struct ShortcutsSettingsView: View {
     return Color(nsColor: .separatorColor)
   }
 
-  private func sourceChip(_ source: KeybindingSource) -> some View {
+  private func sourceChip(_ source: KeybindingSource, resolvedBinding: Keybinding?) -> some View {
     let isDefault = source == .appDefault
     guard !isDefault else {
       return AnyView(
@@ -319,8 +327,9 @@ struct ShortcutsSettingsView: View {
       )
     }
 
+    let title = resolvedBinding == nil ? "Disabled" : "Defined"
     return AnyView(
-      Text("Defined")
+      Text(title)
         .font(.caption2.monospaced())
         .lineLimit(1)
         .minimumScaleFactor(0.8)
@@ -446,6 +455,13 @@ struct ShortcutsSettingsView: View {
       return
     }
     recordingCommandID = commandID
+  }
+
+  private func clearShortcut(for commandID: String) {
+    store.send(.clearShortcutButtonTapped(commandID: commandID))
+    invalidMessageByCommandID[commandID] = nil
+    focusedConflictCommandID = nil
+    stopRecording()
   }
 
   private func stopRecording() {

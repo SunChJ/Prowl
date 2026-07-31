@@ -174,6 +174,7 @@ struct SettingsFeature {
     case setSystemNotificationsEnabled(Bool)
     case setCommandFinishedNotificationThreshold(String)
     case setTerminalFontSize(Float32?)
+    case clearShortcutButtonTapped(commandID: String)
     case clearTerminalLayoutSnapshotButtonTapped
     case installCLIButtonTapped(showAlert: Bool = true)
     case uninstallCLIButtonTapped
@@ -324,6 +325,23 @@ struct SettingsFeature {
           persist(state, captureAnalytics: false, emitSettingsChanged: false),
           .send(.delegate(.terminalFontSizeChanged(fontSize)))
         )
+
+      case .clearShortcutButtonTapped(let commandID):
+        guard
+          let command = KeybindingSchemaDocument.appDefaultsV1.commands.first(where: { $0.id == commandID }),
+          command.allowUserOverride
+        else {
+          return .none
+        }
+
+        let clearedOverride = KeybindingUserOverride(binding: nil, isEnabled: false)
+        guard state.keybindingUserOverrides.overrides[commandID] != clearedOverride else {
+          return .none
+        }
+
+        state.keybindingUserOverrides.overrides[commandID] = clearedOverride
+        state.syncGlobalDefaults(from: state.globalSettings)
+        return persist(state)
 
       case .clearTerminalLayoutSnapshotButtonTapped:
         return .run { send in
