@@ -55,7 +55,8 @@ Profile 的本体是 **preset**(对已知 runtime 的一组命名预置配置);�
 - 不改动现有 Hand Off UI、`prowl handoff` 契约或继承配置行为。
 - 不把 API key、OAuth token、`auth.json` 内容放进 Prowl JSON、日志、分析或 SwiftUI 状态;
   V1 只使用 CLI 自管认证。裸 API key 输入(需 Keychain 引用 + agent-only 启动边界)整体
-  推迟。
+  推迟。(2026-07-31 显式放宽:env overrides 的值可含 API key、明文存储,配套 0600 与
+  预览脱敏,见 [004](004-environment-overrides.md)。)
 - 不接受任意可执行文件路径或 shell 片段。自定义附加参数(Advanced)是**字面 argv
   token**:按 shell-words 规则切分后逐个追加,永不经过 shell 解释(无变量展开、命令
   替换或重定向)。
@@ -329,6 +330,11 @@ agent 列表不变。
   方式(名称/UUID)与 handoff 迁移波次的结构化请求一起定,避免过早固化 CLI 契约。
 
 ## Amendments
+
+- Updated 2026-07-31: V1 综合审计(双评审交叉核对)与首轮边界补强 — see
+  [005-v1-audit.md](005-v1-audit.md)。修复:`HOME` 入 env 保留名单、launch 结果
+  事件化(记忆后置 + 失败 toast)、profile 名按 runtime 门控、可用性判定共享且
+  不阻断、settings 权限加载迁移与 0600 temp。
 
 - Updated 2026-07-31: 新增用户可配置的 per-profile 环境变量覆盖(base url / api key
   临时改写,如 "Codex but using DeepSeek")— see
