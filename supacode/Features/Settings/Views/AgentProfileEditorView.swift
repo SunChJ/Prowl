@@ -113,8 +113,11 @@ struct AgentProfileEditorView: View {
         )
       )
       environmentOverridesHeader
-      ForEach($store.profile.environmentOverrides) { $override in
-        environmentOverrideRow($override)
+      ForEach(store.profile.environmentOverrides) { override in
+        environmentOverrideRow(
+          environmentOverrideBinding(for: override),
+          id: override.id
+        )
       }
       Toggle("Use Dedicated Home", isOn: $store.profile.bindsDedicatedHome)
         .help("Keep a separate login, usage, and configuration for this profile")
@@ -164,7 +167,8 @@ struct AgentProfileEditorView: View {
   }
 
   private func environmentOverrideRow(
-    _ override: Binding<AgentProfileEnvironmentOverride>
+    _ override: Binding<AgentProfileEnvironmentOverride>,
+    id: AgentProfileEnvironmentOverride.ID
   ) -> some View {
     HStack(spacing: 8) {
       TextField("NAME", text: override.name)
@@ -181,7 +185,7 @@ struct AgentProfileEditorView: View {
           .accessibilityLabel(issueDescription(issue))
       }
       Button {
-        store.send(.removeEnvironmentOverride(override.wrappedValue.id))
+        store.send(.removeEnvironmentOverride(id))
       } label: {
         Label("Remove Variable", systemImage: "minus.circle")
           .labelStyle(.iconOnly)
@@ -189,6 +193,22 @@ struct AgentProfileEditorView: View {
       .buttonStyle(.plain)
       .help("Remove this environment variable")
     }
+  }
+
+  private func environmentOverrideBinding(
+    for override: AgentProfileEnvironmentOverride
+  ) -> Binding<AgentProfileEnvironmentOverride> {
+    Binding(
+      get: {
+        store.profile.environmentOverrides.first { $0.id == override.id } ?? override
+      },
+      set: { updatedOverride in
+        var overrides = store.profile.environmentOverrides
+        guard let index = overrides.firstIndex(where: { $0.id == override.id }) else { return }
+        overrides[index] = updatedOverride
+        $store.profile.environmentOverrides.wrappedValue = overrides
+      }
+    )
   }
 
   private func issueDescription(_ issue: AgentProfileEnvironmentPolicy.RowIssue) -> String {
