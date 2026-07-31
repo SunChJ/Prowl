@@ -227,8 +227,8 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   let agent: DetectedAgent = .codex
   let displayName = "Codex"
   let accountHomeEnvironmentVariable: String? = "CODEX_HOME"
-  let reasoningEffortSuggestions = ["minimal", "low", "medium", "high", "xhigh"]
-  let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"]
+  let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
+  let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let explicitlyBypassesSandbox =
@@ -289,8 +289,13 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   let agent: DetectedAgent = .claude
   let displayName = "Claude Code"
   let accountHomeEnvironmentVariable: String? = "CLAUDE_CONFIG_DIR"
-  let reasoningEffortSuggestions = ["low", "medium", "high"]
-  let modelSuggestions = ["fable", "opus", "sonnet", "haiku", "opusplan"]
+  let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
+  let modelSuggestions = [
+    "claude-fable-5",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5-20251001",
+  ]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let explicitlyBypassesPermissions =
