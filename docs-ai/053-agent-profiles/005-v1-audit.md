@@ -93,6 +93,13 @@ UUID 派生 home 的双重包含闸、单一 launch action、三层推荐、root
 5. settings 文件权限:加载时迁移 0600;写入改为 0600 temp + rename,消除
    默认权限窗口。
 6. 测试:上述各项 + provision 失败中止(不建 tab、不记身份)。
+7. (同日追加)**login-shell executable probe**(follow-up 3 的探测部分提前落地):
+   `AgentRuntimeAvailabilityProbe` 经 `ShellClient.runLogin` 在用户 login shell 内
+   `command -v`,与启动共用同一条 PATH 解析,结果按 session 缓存于
+   `@Shared(.inMemory)`;阳性终局、阴性/未知在每次打开 Agents popover 时后台重测。
+   判定两级:probe 已应答即 ground truth("not on your shell's PATH"),未应答回退
+   home 启发式("may not be installed")。播种保持 home 启发式(信号语义是"用户在用
+   这家",而非"二进制存在")。launcher query 的 resolved-option 统一仍留在 follow-up。
 
 ## 遗留 follow-up(按优先级)
 

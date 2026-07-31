@@ -8,13 +8,25 @@ import Foundation
 /// (installed but never run, or a dedicated-home-only login) would otherwise
 /// lock out a perfectly launchable profile.
 nonisolated enum AgentProfileAvailability {
+  /// Two-tier judgment. The login-shell probe is ground truth once it has
+  /// answered — it resolves the executable exactly the way a launch will, in
+  /// both directions (installed-but-never-run stops warning; uninstalled with
+  /// a leftover home starts warning). Until it answers, the home-directory
+  /// heuristic fills in.
   static func launchWarning(
     for profile: AgentProfile,
+    probedAvailable: Bool?,
     isRuntimeInstalled: (AgentProfileRuntime) -> Bool = isRuntimeInstalled
   ) -> String? {
-    guard !isRuntimeInstalled(profile.runtime) else { return nil }
     let name = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
-    return "\(name) may not be installed"
+    switch probedAvailable {
+    case true?:
+      return nil
+    case false?:
+      return "\(name) is not on your shell's PATH"
+    case nil:
+      return isRuntimeInstalled(profile.runtime) ? nil : "\(name) may not be installed"
+    }
   }
 
   /// The runtime's default home exists iff the CLI has ever run; PATH lookups

@@ -151,7 +151,7 @@ struct AppFeatureAgentProfileTests {
       @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repoSettings
       $repoSettings.withLock { $0.defaultAgentProfileID = second.id }
 
-      let items = agentProfileLaunchItems(repositories, isRuntimeInstalled: { _ in true })
+      let items = agentProfileLaunchItems(repositories, launchWarning: { _ in nil })
 
       #expect(items.map(\.title) == ["Launch Agent: Second", "Launch Agent: First"])
       #expect(items.first?.kind == .launchAgentProfile(second.id))
@@ -175,7 +175,7 @@ struct AppFeatureAgentProfileTests {
       @Shared(.userGlobalSettings) var settings
       $settings.withLock { $0.agentProfiles = [profile] }
 
-      let items = agentProfileLaunchItems(repositories, isRuntimeInstalled: { _ in false })
+      let items = agentProfileLaunchItems(repositories, launchWarning: { _ in "Codex may not be installed" })
 
       // The soft heuristic surfaces as a subtitle warning; the row stays a
       // normal, activatable launch item (docs-ai 053/005).
@@ -201,11 +201,11 @@ struct AppFeatureAgentProfileTests {
       @Shared(.userGlobalSettings) var settings
       $settings.withLock { $0.agentProfiles = [profile] }
 
-      #expect(agentProfileLaunchItems(repositories, isRuntimeInstalled: { _ in true }).isEmpty)
+      #expect(agentProfileLaunchItems(repositories, launchWarning: { _ in nil }).isEmpty)
       let items = agentProfileLaunchItems(
         repositories,
         actionTargetWorktreeID: worktree.id,
-        isRuntimeInstalled: { _ in true }
+        launchWarning: { _ in nil }
       )
       #expect(items.map(\.title) == ["Launch Agent: Codex"])
       #expect(items.first?.subtitle?.contains(worktree.name) == true)
@@ -271,7 +271,7 @@ struct AppFeatureAgentProfileTests {
       let items = agentProfileLaunchItems(
         repositories,
         actionTargetWorktreeID: plain.id,
-        isRuntimeInstalled: { _ in true }
+        launchWarning: { _ in nil }
       )
       #expect(items.map(\.title) == ["Launch Agent: Codex"])
       #expect(items.first?.subtitle?.contains("plain-folder") == true)

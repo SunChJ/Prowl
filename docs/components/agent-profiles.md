@@ -28,10 +28,10 @@ respawn.
 
 - **Toolbar Agents capsule** — always opens a popover. With a detected agent it
   leads with Hand Off; launch rows follow, the current worktree's
-  **Recommended** profile first. Rows for runtimes that look uninstalled are
-  dimmed with a warning ("… may not be installed") but stay clickable — the
-  heuristic has false negatives, so it never blocks a launch. "Manage Agent
-  Profiles…" opens Settings → Agents.
+  **Recommended** profile first. Rows for runtimes that look unavailable are
+  dimmed with a warning but stay clickable — availability signals can be
+  wrong, so they never block a launch. "Manage Agent Profiles…" opens
+  Settings → Agents.
 - **Command Palette** (`⌘P`) — "Launch Agent: <name>" rows dispatch the exact
   same action, and carry the same availability warning in their subtitle.
 
@@ -138,10 +138,15 @@ effort, execution mode, placement).
   (resume and handoff artifacts resolve against the profile's config root).
   An agent you start manually with your own `CLAUDE_CONFIG_DIR`/`CODEX_HOME`
   is still detected, but without session identity.
-- Availability warnings use a heuristic: the runtime's default home
-  (`~/.claude` / `~/.codex`) exists iff the CLI has ever run. It can be wrong
-  in both directions (installed but never run; binary removed but home kept),
-  which is why it dims rows instead of disabling them.
+- Availability is judged in two tiers. Ground truth is a background
+  login-shell probe (`command -v`, the same PATH resolution a launch uses):
+  once it answers, "not found" warns "… is not on your shell's PATH" and
+  "found" clears any warning. Until it answers, the fallback heuristic — the
+  runtime's default home (`~/.claude` / `~/.codex`) exists iff the CLI has
+  ever run — warns "… may not be installed". A positive probe is cached for
+  the session; negatives re-probe each time the Agents popover opens, so
+  installing a CLI mid-session clears its warning without a relaunch. Both
+  signals only dim rows, never disable them.
 - Prowl provides no directory sharing between a bound home and the default
   one. Symlinking read-mostly directories (e.g. `skills/`) yourself works, but
   never link files the CLI rewrites (`settings.json`, `config.toml`,

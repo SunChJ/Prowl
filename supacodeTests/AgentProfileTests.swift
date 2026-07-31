@@ -326,6 +326,34 @@ struct AgentProfileTests {
     )
   }
 
+  @Test func launchWarningPrefersTheProbeAnswerOverTheHomeHeuristic() {
+    let codex = profile(name: "Codex")
+
+    // Probe answered: ground truth in both directions, home is irrelevant.
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: true, isRuntimeInstalled: { _ in false }
+      ) == nil
+    )
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: false, isRuntimeInstalled: { _ in true }
+      ) == "Codex is not on your shell's PATH"
+    )
+
+    // Probe unanswered: the home-directory heuristic fills in.
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: nil, isRuntimeInstalled: { _ in true }
+      ) == nil
+    )
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: nil, isRuntimeInstalled: { _ in false }
+      ) == "Codex may not be installed"
+    )
+  }
+
   @Test func containmentRejectsBaseItselfAndOutsidePaths() {
     let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
     #expect(!AgentProfileLaunchPlanner.isContained(base, in: base))
