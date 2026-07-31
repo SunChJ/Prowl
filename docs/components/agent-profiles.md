@@ -27,11 +27,12 @@ respawn.
 ## Launching
 
 - **Toolbar Agents capsule** — always opens a popover. With a detected agent it
-  leads with Hand Off; launch rows follow, the current worktree's
-  **Recommended** profile first. Rows for runtimes that look unavailable are
-  dimmed with a warning but stay clickable — availability signals can be
-  wrong, so they never block a launch. "Manage Agent Profiles…" opens
-  Settings → Agents.
+  leads with Hand Off; launch rows follow under a "New agent in this worktree"
+  section header, the current worktree's **Recommended** profile first. Each
+  row shows the profile name with the runtime name trailing. Rows for runtimes
+  that look unavailable are dimmed with a warning but stay clickable —
+  availability signals can be wrong, so they never block a launch. "Manage
+  Agent Profiles…" opens Settings → Agents.
 - **Command Palette** (`⌘P`) — "Launch Agent: <name>" rows dispatch the exact
   same action, and carry the same availability warning in their subtitle.
 

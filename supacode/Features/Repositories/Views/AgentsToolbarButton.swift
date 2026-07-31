@@ -137,10 +137,10 @@ struct AgentsToolbarButton: View {
   }
 }
 
-/// The agent-actions popover. Each action is one full row — title with a
-/// plain-language explanation underneath, highlighted together on hover.
-/// Hand-off leads when an agent is detected; the launcher rows follow with
-/// the recommended profile first, and the manage entry closes the list.
+/// The agent-actions popover. Hand-off leads when an agent is detected; the
+/// launcher rows follow under one "New agent in this worktree" section header
+/// (recommended profile first) so the shared purpose is stated once instead
+/// of repeated per row, and the manage entry closes the list.
 private struct AgentsPopoverContent: View {
   let capsule: AgentsCapsuleState?
   let launcherItems: [AgentsLauncherItem]
@@ -161,16 +161,24 @@ private struct AgentsPopoverContent: View {
           Divider().padding(.vertical, 4)
         }
       }
-      ForEach(launcherItems) { item in
-        AgentsPopoverRow(
-          title: item.isRecommended ? "Launch \(item.name) ★" : "Launch \(item.name)",
-          subtitle: item.availabilityWarning.map { "\($0) · \(item.runtimeName)" }
-            ?? "New agent in this worktree · \(item.runtimeName)",
-          systemImage: "play.circle",
-          iconSource: item.iconSource,
-          isDimmed: item.availabilityWarning != nil,
-          action: { onLaunchProfile(item.id) }
-        )
+      if !launcherItems.isEmpty {
+        Text("New agent in this worktree")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 8)
+          .padding(.top, 4)
+          .padding(.bottom, 2)
+        ForEach(launcherItems) { item in
+          AgentsPopoverRow(
+            title: item.isRecommended ? "\(item.name) ★" : item.name,
+            subtitle: item.availabilityWarning,
+            systemImage: "play.circle",
+            iconSource: item.iconSource,
+            trailingText: item.runtimeName,
+            isDimmed: item.availabilityWarning != nil,
+            action: { onLaunchProfile(item.id) }
+          )
+        }
       }
       Divider().padding(.vertical, 4)
       AgentsPopoverRow(
@@ -190,9 +198,15 @@ private struct AgentsPopoverContent: View {
 
 private struct AgentsPopoverRow: View {
   let title: String
-  let subtitle: String
+  /// Second line under the title; nil keeps the row single-line. Launcher
+  /// rows reserve it for availability warnings — their shared purpose lives
+  /// in the section header above them.
+  let subtitle: String?
   let systemImage: String
   var iconSource: AgentProfileIconSource?
+  /// Small trailing annotation on the title line (the runtime's display name
+  /// on launcher rows, so same-runtime profiles stay distinguishable).
+  var trailingText: String?
   /// Dimmed rows carry an availability warning but stay fully clickable — the
   /// warning heuristic must never block a launch (docs-ai 053/005).
   var isDimmed: Bool = false
@@ -213,13 +227,23 @@ private struct AgentsPopoverRow: View {
             .padding(.top, 2)
         }
         VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-          Text(subtitle)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            if let trailingText {
+              Text(trailingText)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            }
+          }
+          if let subtitle {
+            Text(subtitle)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         }
-        Spacer(minLength: 0)
       }
       .padding(.horizontal, 8)
       .padding(.vertical, 6)
