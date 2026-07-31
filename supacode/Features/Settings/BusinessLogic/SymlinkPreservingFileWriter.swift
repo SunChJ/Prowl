@@ -28,6 +28,13 @@ nonisolated enum SymlinkPreservingFileWriter {
     // The atomic temp+rename happens in the target's directory, so a symlink at
     // `url` is written through and preserved instead of replaced.
     try data.write(to: target, options: [.atomic])
+    // Settings may carry secrets (agent profile env overrides can hold API
+    // keys, docs-ai 053/004); keep every settings file owner-only instead of
+    // the default 0644.
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: target.path(percentEncoded: false)
+    )
   }
 
   /// macOS resolves at most MAXSYMLINKS (32) links before ELOOP, so a deeper

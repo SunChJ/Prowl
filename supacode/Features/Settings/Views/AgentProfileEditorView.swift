@@ -112,6 +112,10 @@ struct AgentProfileEditorView: View {
           set: { $store.profile.extraArguments.wrappedValue = $0 ?? "" }
         )
       )
+      environmentOverridesHeader
+      ForEach($store.profile.environmentOverrides) { $override in
+        environmentOverrideRow($override)
+      }
       Toggle("Use Dedicated Home", isOn: $store.profile.bindsDedicatedHome)
         .help("Keep a separate login, usage, and configuration for this profile")
       if store.profile.bindsDedicatedHome {
@@ -145,9 +149,62 @@ struct AgentProfileEditorView: View {
     }
   }
 
+  private var environmentOverridesHeader: some View {
+    LabeledContent {
+      Button {
+        store.send(.addEnvironmentOverride)
+      } label: {
+        Label("Add Variable", systemImage: "plus")
+      }
+      .help("Add an environment variable override for this profile's launches")
+    } label: {
+      Text("Environment Variables")
+      Text("Applied to the launched process, on top of the shell's environment.")
+    }
+  }
+
+  private func environmentOverrideRow(
+    _ override: Binding<AgentProfileEnvironmentOverride>
+  ) -> some View {
+    HStack(spacing: 8) {
+      TextField("NAME", text: override.name)
+        .font(.body.monospaced())
+        .frame(width: 180)
+        .accessibilityLabel("Variable name")
+      TextField("value", text: override.value)
+        .font(.body.monospaced())
+        .accessibilityLabel("Variable value")
+      if let issue = AgentProfileEnvironmentPolicy.issue(for: override.wrappedValue) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(.yellow)
+          .help(issueDescription(issue))
+          .accessibilityLabel(issueDescription(issue))
+      }
+      Button {
+        store.send(.removeEnvironmentOverride(override.wrappedValue.id))
+      } label: {
+        Label("Remove Variable", systemImage: "minus.circle")
+          .labelStyle(.iconOnly)
+      }
+      .buttonStyle(.plain)
+      .help("Remove this environment variable")
+    }
+  }
+
+  private func issueDescription(_ issue: AgentProfileEnvironmentPolicy.RowIssue) -> String {
+    switch issue {
+    case .invalidName:
+      "Not a valid environment variable name — this row is ignored at launch."
+    case .reservedName:
+      "Reserved by Prowl — this row is ignored at launch."
+    case .invalidValue:
+      "The value contains an unsupported character — this row is ignored at launch."
+    }
+  }
+
   private var launchPreviewSection: some View {
     Section("Launch Preview") {
-      Text("Prowl will execute this exact command.")
+      Text("Prowl will execute this command. Secret-looking values are hidden here.")
         .font(.caption)
         .foregroundStyle(.secondary)
       Text(previewText)

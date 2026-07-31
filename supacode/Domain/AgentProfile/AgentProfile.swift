@@ -27,6 +27,24 @@ nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiabl
   }
 }
 
+/// One user-configured environment variable override, applied to the launched
+/// process (docs-ai 053/004). An ordered row list rather than a dictionary:
+/// the editor table needs stable row identity while a name is being typed, and
+/// must tolerate in-progress rows — validity is judged at plan time, not here.
+nonisolated struct AgentProfileEnvironmentOverride: Codable, Equatable, Sendable, Identifiable {
+  var id: UUID
+  var name: String
+  var value: String
+
+  init(id: UUID = UUID(), name: String = "", value: String = "") {
+    self.id = id
+    self.name = name
+    self.value = value
+  }
+
+  var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+}
+
 nonisolated enum AgentProfilePlacement: String, Codable, CaseIterable, Identifiable, Sendable {
   case tab
   case split
@@ -50,6 +68,7 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
   var placement: AgentProfilePlacement
   var splitDirection: UserCustomSplitDirection
   var extraArguments: String
+  var environmentOverrides: [AgentProfileEnvironmentOverride]
   var bindsDedicatedHome: Bool
 
   init(
@@ -64,6 +83,7 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
     placement: AgentProfilePlacement = .tab,
     splitDirection: UserCustomSplitDirection = .right,
     extraArguments: String = "",
+    environmentOverrides: [AgentProfileEnvironmentOverride] = [],
     bindsDedicatedHome: Bool = false
   ) {
     self.id = id
@@ -77,12 +97,13 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
     self.placement = placement
     self.splitDirection = splitDirection
     self.extraArguments = extraArguments
+    self.environmentOverrides = environmentOverrides
     self.bindsDedicatedHome = bindsDedicatedHome
   }
 
   private enum CodingKeys: String, CodingKey {
     case id, name, isEnabled, runtime, icon, model, reasoningEffort, executionMode
-    case placement, splitDirection, extraArguments, bindsDedicatedHome
+    case placement, splitDirection, extraArguments, environmentOverrides, bindsDedicatedHome
   }
 
   init(from decoder: Decoder) throws {
@@ -100,6 +121,10 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
     splitDirection =
       try container.decodeIfPresent(UserCustomSplitDirection.self, forKey: .splitDirection) ?? .right
     extraArguments = try container.decodeIfPresent(String.self, forKey: .extraArguments) ?? ""
+    environmentOverrides =
+      try container.decodeIfPresent(
+        [AgentProfileEnvironmentOverride].self, forKey: .environmentOverrides
+      ) ?? []
     bindsDedicatedHome = try container.decodeIfPresent(Bool.self, forKey: .bindsDedicatedHome) ?? false
   }
 

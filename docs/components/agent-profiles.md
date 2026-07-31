@@ -63,6 +63,26 @@ agent.
 first enabled profile in the Settings list order. Each tier only matches an
 existing, enabled profile.
 
+## Environment variables
+
+The **Environment Variables** table (Advanced, below Extra Arguments) adds
+per-profile environment overrides to the launched process, on top of the
+shell's normal environment — e.g. `OPENAI_BASE_URL` + `OPENAI_API_KEY` to get
+a "Codex but using DeepSeek" profile. Rules:
+
+- Names must be valid POSIX names (`[A-Za-z_][A-Za-z0-9_]*`). An empty value
+  legitimately sets the variable to the empty string.
+- Reserved names are ignored at launch and flagged inline: anything starting
+  with `PROWL_`, plus the account-home variables (`CLAUDE_CONFIG_DIR`,
+  `CODEX_HOME`) — a custom home must go through **Use Dedicated Home**, which
+  always wins over a same-named row.
+- Later duplicate names win (shell-export semantics).
+- Values are stored in plaintext in `~/.prowl/global.onevcat.json` (kept
+  owner-only, `0600`). The Launch Preview masks secret-looking values
+  (names containing `KEY`/`TOKEN`/`SECRET`/`PASSWORD`).
+- Overrides apply to profile launches only; resumed or restored panes do not
+  re-apply them (same limitation as dedicated homes).
+
 ## Dedicated home (separate account)
 
 Toggling **Use Dedicated Home** (Advanced) gives the profile its own runtime

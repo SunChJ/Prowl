@@ -47,7 +47,19 @@ struct AgentProfileTests {
     #expect(decoded.placement == .tab)
     #expect(decoded.splitDirection == .right)
     #expect(decoded.extraArguments.isEmpty)
+    #expect(decoded.environmentOverrides.isEmpty)
     #expect(!decoded.bindsDedicatedHome)
+  }
+
+  @Test func encodingRoundTripPreservesEnvironmentOverrides() throws {
+    var profile = profile(name: "Codex · DeepSeek")
+    profile.environmentOverrides = [
+      AgentProfileEnvironmentOverride(name: "OPENAI_BASE_URL", value: "https://api.deepseek.com/v1")
+    ]
+
+    let decoded = try JSONDecoder().decode(AgentProfile.self, from: JSONEncoder().encode(profile))
+
+    #expect(decoded.environmentOverrides == profile.environmentOverrides)
   }
 
   @Test func encodingRoundTripPreservesProfileIcon() throws {
@@ -182,7 +194,7 @@ struct AgentProfileTests {
       AgentProfileLaunchPlanner.pathString(home) == "/base/agent-profiles/\(bound.id.uuidString)"
     )
     #expect(plan.environment == ["CODEX_HOME": "/base/agent-profiles/\(bound.id.uuidString)"])
-    #expect(plan.previewText.hasPrefix("CODEX_HOME=/base/agent-profiles/"))
+    #expect(plan.previewText.hasPrefix("CODEX_HOME='/base/agent-profiles/"))
     #expect(AgentProfileLaunchPlanner.isContained(home, in: base))
   }
 
@@ -196,6 +208,113 @@ struct AgentProfileTests {
     )
 
     #expect(plan.environment.keys.contains("CLAUDE_CONFIG_DIR"))
+  }
+
+  // MARK: - Environment overrides
+
+  @Test func planAppliesOverridesWithTrimmedNamesAndLastDuplicateWins() throws {
+    var preset = profile(name: "Codex · DeepSeek")
+    preset.environmentOverrides = [
+      AgentProfileEnvironmentOverride(name: "  OPENAI_BASE_URL ", value: "https://api.deepseek.com/v1"),
+      AgentProfileEnvironmentOverride(name: "OPENAI_BASE_URL", value: "https://api.deepseek.com/beta"),
+      AgentProfileEnvironmentOverride(name: "EMPTY_VALUE", value: ""),
+    ]
+
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: preset,
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(
+      plan.environment == [
+        "OPENAI_BASE_URL": "https://api.deepseek.com/beta",
+        "EMPTY_VALUE": "",
+      ]
+    )
+  }
+
+  @Test func planDropsInvalidReservedAndInProgressOverrideRows() throws {
+    var preset = profile(name: "Codex · Broken rows")
+    preset.environmentOverrides = [
+      AgentProfileEnvironmentOverride(name: "   ", value: "in-progress row"),
+      AgentProfileEnvironmentOverride(name: "9LEADING_DIGIT", value: "x"),
+      AgentProfileEnvironmentOverride(name: "BAD-NAME", value: "x"),
+      AgentProfileEnvironmentOverride(name: "PROWL_WORKTREE_PATH", value: "/forged"),
+      AgentProfileEnvironmentOverride(name: "CODEX_HOME", value: "/elsewhere"),
+      AgentProfileEnvironmentOverride(name: "CLAUDE_CONFIG_DIR", value: "/elsewhere"),
+      AgentProfileEnvironmentOverride(name: "NUL_VALUE", value: "trunc\0ated"),
+    ]
+
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: preset,
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.environment.isEmpty)
+  }
+
+  @Test func dedicatedHomeBindingBeatsSameNamedUserOverride() throws {
+    var bound = profile(name: "Codex · Work")
+    bound.bindsDedicatedHome = true
+    bound.environmentOverrides = [
+      AgentProfileEnvironmentOverride(name: "CODEX_HOME", value: "/attacker/home")
+    ]
+    let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
+
+    let plan = try AgentProfileLaunchPlanner.plan(for: bound, homeBaseDirectory: base)
+
+    #expect(plan.environment == ["CODEX_HOME": "/base/agent-profiles/\(bound.id.uuidString)"])
+  }
+
+  @Test func previewQuotesOverrideValuesAndMasksSecretLookingNames() throws {
+    var preset = profile(name: "Codex · DeepSeek")
+    preset.environmentOverrides = [
+      AgentProfileEnvironmentOverride(name: "OPENAI_BASE_URL", value: "https://a.example/v1 beta"),
+      AgentProfileEnvironmentOverride(name: "OPENAI_API_KEY", value: "sk-secret-123"),
+    ]
+
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: preset,
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.previewText.contains("OPENAI_BASE_URL='https://a.example/v1 beta'"))
+    #expect(plan.previewText.contains("OPENAI_API_KEY=•••"))
+    #expect(!plan.previewText.contains("sk-secret-123"))
+    #expect(plan.environment["OPENAI_API_KEY"] == "sk-secret-123")
+  }
+
+  @Test func environmentPolicyReportsRowIssuesForEditorDiagnostics() {
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "OPENAI_BASE_URL", value: "x")
+      ) == nil
+    )
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "", value: "typing…")
+      ) == nil
+    )
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "BAD NAME", value: "x")
+      ) == .invalidName
+    )
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "PROWL_ROOT_PATH", value: "x")
+      ) == .reservedName
+    )
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "CLAUDE_CONFIG_DIR", value: "x")
+      ) == .reservedName
+    )
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "OK", value: "bad\0value")
+      ) == .invalidValue
+    )
   }
 
   @Test func containmentRejectsBaseItselfAndOutsidePaths() {
