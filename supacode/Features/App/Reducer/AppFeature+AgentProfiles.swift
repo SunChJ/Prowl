@@ -5,8 +5,10 @@ import Sharing
 extension AppFeature {
   /// The single profile-launch path (docs-ai 053): every entry point (Agents
   /// menu, Command Palette) dispatches here, so placement, identity recording,
-  /// and the environment patch always agree. Launching also records the
-  /// per-repo launch memory that backs the Recommended resolution.
+  /// and the environment patch always agree. The per-repo launch memory that
+  /// backs the Recommended resolution is recorded on the terminal's
+  /// `agentProfileLaunched` event — never here, so a launch that fails to
+  /// create a surface cannot shift the recommendation (docs-ai 053/005).
   func launchAgentProfile(_ profileID: AgentProfile.ID, state: inout State) -> Effect<Action> {
     @Shared(.userGlobalSettings) var userGlobalSettings
     guard
@@ -23,11 +25,8 @@ extension AppFeature {
       )
     } catch {
       appLogger.warning("Agent profile launch planning failed: \(error)")
-      return .none
+      return .send(.repositories(.showToast(.warning("Couldn't launch “\(profile.name)”"))))
     }
-
-    @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var userRepositorySettings
-    $userRepositorySettings.withLock { $0.lastLaunchedAgentProfileID = profile.id }
 
     return .run { _ in
       await terminalClient.send(.launchAgentProfile(worktree, plan: plan))
@@ -41,7 +40,7 @@ extension AppFeature {
 @MainActor
 enum AgentProfileSeeder {
   static func seedIfNeeded(
-    isRuntimeInstalled: (AgentProfileRuntime) -> Bool = defaultInstallationCheck
+    isRuntimeInstalled: (AgentProfileRuntime) -> Bool = AgentProfileAvailability.isRuntimeInstalled
   ) {
     @Shared(.userGlobalSettings) var settings
     guard !settings.didSeedAgentProfiles else { return }
@@ -58,9 +57,4 @@ enum AgentProfileSeeder {
     }
   }
 
-  nonisolated static func defaultInstallationCheck(_ runtime: AgentProfileRuntime) -> Bool {
-    let home = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: runtime.defaultHomeDirectoryName, directoryHint: .isDirectory)
-    return FileManager.default.fileExists(atPath: home.path(percentEncoded: false))
-  }
 }

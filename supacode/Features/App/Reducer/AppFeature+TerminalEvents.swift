@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import Sharing
 
 extension AppFeature {
   func reduceTerminalEvent(
@@ -154,6 +155,17 @@ extension AppFeature {
 
     case .agentEntryRemoved(let id):
       return .send(.repositories(.activeAgents(.agentEntryRemoved(id))))
+
+    case .agentProfileLaunched(let worktreeID, let profileID):
+      // Launch memory is recorded only once a surface actually exists, so a
+      // failed provision or surface creation never shifts Recommended.
+      guard let worktree = state.repositories.terminalWorktree(for: worktreeID) else { return .none }
+      @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var userRepositorySettings
+      $userRepositorySettings.withLock { $0.lastLaunchedAgentProfileID = profileID }
+      return .none
+
+    case .agentProfileLaunchFailed(_, let profileName):
+      return .send(.repositories(.showToast(.warning("Couldn't launch “\(profileName)”"))))
 
     default:
       return nil

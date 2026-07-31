@@ -55,6 +55,7 @@ command-palette / active-agents / handoff 与 `docs/README.md` 索引。
 
 1. **model 建议列表未实现**:model 为纯自由文本,只有 effort 有 adapter 建议列表。
    原因:没有可靠的已验证 model 目录,硬编码会立即过时;后续可与 effort 同构补上。
+   (2026-07-31 追记:已按同构方式补上,adapter 现声明 `modelSuggestions`;本偏差关闭。)
 2. **resume 携带环境补丁推迟到 handoff 波次**:检测层的 config root 已实现,但
    `AgentResumeRequest` 未增加环境字段——填充它需要 handoff 的结构化请求改造
    (正是计划明确推迟的双路径工程)。当前从绑定 pane 发起 handoff 时,briefing

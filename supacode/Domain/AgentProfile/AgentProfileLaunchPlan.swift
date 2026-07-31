@@ -8,37 +8,31 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   let profileName: String
   let runtime: AgentProfileRuntime
   let invocation: AgentInvocation
+  /// `env(1)` assignment tokens typed ahead of the invocation. The whole
+  /// environment patch is launch-scoped (docs-ai 053/006): it exists for the
+  /// launched agent process only — the pane's shell keeps the user's normal
+  /// environment, so a manual `codex`/`claude` after the agent exits runs
+  /// with the user's own account. Home paths are inlined (not secret);
+  /// override values are referenced as `"$PROWL_ENV_<NAME>"` so no user
+  /// value ever appears in the typed command, shell history, or scrollback.
+  let commandEnvironmentTokens: [String]
   let placement: AgentProfilePlacement
   let splitDirection: UserCustomSplitDirection
-  /// Environment patch for the new surface. Non-empty only for account-bound
-  /// profiles; additive over the shell's normal environment, never a scrub.
-  let environment: [String: String]
+  /// Carrier variables for the reference tokens, injected at surface spawn:
+  /// `PROWL_ENV_<NAME>` → verbatim value. The namespace is Prowl-reserved, so
+  /// nothing but the launch command reads them, and the real variable names
+  /// never exist in the pane's shell.
+  let surfaceEnvironment: [String: String]
   /// Dedicated home to provision before launch; nil for pure presets.
   let dedicatedHome: URL?
 
-  var terminalInput: String { invocation.terminalInput }
-
-  /// Human-readable launch preview: env prefix plus the exact rendered
-  /// invocation. The prefix is an equivalent shell rendering — the real patch
-  /// goes through Ghostty's spawn env array, never a shell — so values are
-  /// quoted for faithfulness and secret-looking values are masked rather than
-  /// displayed (docs-ai 053/004).
-  var previewText: String {
-    let prefix = environment.sorted { $0.key < $1.key }.map { pair in
-      "\(pair.key)=\(Self.previewValue(name: pair.key, value: pair.value))"
-    }
-    return (prefix + [invocation.terminalInput]).joined(separator: " ")
+  /// The exact line typed into the new pane; doubles as the launch preview.
+  var terminalInput: String {
+    guard !commandEnvironmentTokens.isEmpty else { return invocation.terminalInput }
+    return (["env"] + commandEnvironmentTokens + [invocation.terminalInput]).joined(separator: " ")
   }
 
-  private static let secretNameFragments = ["KEY", "TOKEN", "SECRET", "PASSWORD"]
-
-  private static func previewValue(name: String, value: String) -> String {
-    let upper = name.uppercased()
-    if secretNameFragments.contains(where: { upper.contains($0) }) {
-      return "•••"
-    }
-    return "'" + value.replacing("'", with: "'\"'\"'") + "'"
-  }
+  var previewText: String { terminalInput }
 }
 
 /// Which env variable names a profile override may set, shared by the planner
@@ -72,8 +66,12 @@ nonisolated enum AgentProfileEnvironmentPolicy {
     }
   }
 
+  /// `HOME` is reserved for the same reason as the account-home variables:
+  /// relocating it moves every runtime's *default* home (`$HOME/.claude`,
+  /// `$HOME/.codex`), bypassing home provisioning, deletion protection, and
+  /// rooted session detection without ever flipping the binding toggle.
   static func isReserved(_ name: String) -> Bool {
-    name.hasPrefix("PROWL_") || reservedNames.contains(name)
+    name.hasPrefix("PROWL_") || name == "HOME" || reservedNames.contains(name)
   }
 
   /// A NUL would be silently truncated at the C-string boundary; refuse the
@@ -91,6 +89,14 @@ nonisolated enum AgentProfileEnvironmentPolicy {
     if isReserved(name) { return .reservedName }
     if !isValidValue(override.value) { return .invalidValue }
     return nil
+  }
+
+  /// Carrier variable in the surface environment holding an override's value.
+  /// The `PROWL_` namespace is already reserved, so user rows can't collide
+  /// with a carrier, and the validated POSIX name keeps the reference token
+  /// (`NAME="$PROWL_ENV_NAME"`) free of any user-authored shell text.
+  static func carrierName(for name: String) -> String {
+    "PROWL_ENV_\(name)"
   }
 
   /// The applied subset: trimmed names, invalid/reserved rows dropped, later
@@ -172,10 +178,12 @@ nonisolated enum AgentProfileLaunchPlanner {
       AgentStartRequest(agent: profile.runtime.agent, intent: .interactive, configuration: configuration)
     )
 
-    // User overrides first; the dedicated-home variable is written after, so
-    // an account binding always beats a same-named user row — the account
-    // isolation reasoning must stay provable (docs-ai 053/004).
-    var environment = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
+    // The whole patch renders as launch-scoped `env` tokens (docs-ai
+    // 053/006). The home token leads: it is the launch's identity, and the
+    // reserved-name policy already guarantees no user row can carry the same
+    // name — the account isolation reasoning stays provable.
+    var tokens: [String] = []
+    var surfaceEnvironment: [String: String] = [:]
     var dedicatedHome: URL?
     if profile.bindsDedicatedHome {
       guard let variable = adapter.accountHomeEnvironmentVariable else {
@@ -185,8 +193,16 @@ nonisolated enum AgentProfileLaunchPlanner {
       guard isContained(home, in: homeBaseDirectory) else {
         throw AgentProfileLaunchPlanError.homeEscapesBase(home)
       }
-      environment[variable] = pathString(home)
+      // Inlined literal: the UUID-derived path is not a secret, and seeing it
+      // in the preview documents which home the launch binds.
+      tokens.append("\(variable)=\(AgentInvocation.shellQuote(pathString(home)))")
       dedicatedHome = home
+    }
+    let overrides = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
+    for name in overrides.keys.sorted() {
+      let carrier = AgentProfileEnvironmentPolicy.carrierName(for: name)
+      tokens.append("\(name)=\"$\(carrier)\"")
+      surfaceEnvironment[carrier] = overrides[name]
     }
 
     return AgentProfileLaunchPlan(
@@ -194,9 +210,10 @@ nonisolated enum AgentProfileLaunchPlanner {
       profileName: profile.name,
       runtime: profile.runtime,
       invocation: invocation,
+      commandEnvironmentTokens: tokens,
       placement: profile.placement,
       splitDirection: profile.splitDirection,
-      environment: environment,
+      surfaceEnvironment: surfaceEnvironment,
       dedicatedHome: dedicatedHome
     )
   }

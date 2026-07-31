@@ -169,7 +169,8 @@ struct AgentProfileTests {
       homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
     )
 
-    #expect(plan.environment.isEmpty)
+    #expect(plan.surfaceEnvironment.isEmpty)
+    #expect(plan.commandEnvironmentTokens.isEmpty)
     #expect(plan.dedicatedHome == nil)
     #expect(plan.invocation.executable == "codex")
     #expect(
@@ -193,8 +194,13 @@ struct AgentProfileTests {
     #expect(
       AgentProfileLaunchPlanner.pathString(home) == "/base/agent-profiles/\(bound.id.uuidString)"
     )
-    #expect(plan.environment == ["CODEX_HOME": "/base/agent-profiles/\(bound.id.uuidString)"])
-    #expect(plan.previewText.hasPrefix("CODEX_HOME='/base/agent-profiles/"))
+    // The home rides the launch command, not the pane's shell environment: a
+    // manual launch after the agent exits uses the default account.
+    #expect(
+      plan.commandEnvironmentTokens == ["CODEX_HOME='/base/agent-profiles/\(bound.id.uuidString)'"]
+    )
+    #expect(plan.surfaceEnvironment.isEmpty)
+    #expect(plan.previewText.hasPrefix("env CODEX_HOME='/base/agent-profiles/"))
     #expect(AgentProfileLaunchPlanner.isContained(home, in: base))
   }
 
@@ -207,7 +213,7 @@ struct AgentProfileTests {
       homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
     )
 
-    #expect(plan.environment.keys.contains("CLAUDE_CONFIG_DIR"))
+    #expect(plan.commandEnvironmentTokens.first?.hasPrefix("CLAUDE_CONFIG_DIR=") == true)
   }
 
   // MARK: - Environment overrides
@@ -225,12 +231,20 @@ struct AgentProfileTests {
       homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
     )
 
+    // Values ride in namespaced carriers; the command only references them.
     #expect(
-      plan.environment == [
-        "OPENAI_BASE_URL": "https://api.deepseek.com/beta",
-        "EMPTY_VALUE": "",
+      plan.surfaceEnvironment == [
+        "PROWL_ENV_OPENAI_BASE_URL": "https://api.deepseek.com/beta",
+        "PROWL_ENV_EMPTY_VALUE": "",
       ]
     )
+    #expect(
+      plan.commandEnvironmentTokens == [
+        "EMPTY_VALUE=\"$PROWL_ENV_EMPTY_VALUE\"",
+        "OPENAI_BASE_URL=\"$PROWL_ENV_OPENAI_BASE_URL\"",
+      ]
+    )
+    #expect(plan.terminalInput.hasPrefix("env EMPTY_VALUE="))
   }
 
   @Test func planDropsInvalidReservedAndInProgressOverrideRows() throws {
@@ -242,6 +256,7 @@ struct AgentProfileTests {
       AgentProfileEnvironmentOverride(name: "PROWL_WORKTREE_PATH", value: "/forged"),
       AgentProfileEnvironmentOverride(name: "CODEX_HOME", value: "/elsewhere"),
       AgentProfileEnvironmentOverride(name: "CLAUDE_CONFIG_DIR", value: "/elsewhere"),
+      AgentProfileEnvironmentOverride(name: "HOME", value: "/relocated"),
       AgentProfileEnvironmentOverride(name: "NUL_VALUE", value: "trunc\0ated"),
     ]
 
@@ -250,7 +265,8 @@ struct AgentProfileTests {
       homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
     )
 
-    #expect(plan.environment.isEmpty)
+    #expect(plan.surfaceEnvironment.isEmpty)
+    #expect(plan.commandEnvironmentTokens.isEmpty)
   }
 
   @Test func dedicatedHomeBindingBeatsSameNamedUserOverride() throws {
@@ -263,10 +279,15 @@ struct AgentProfileTests {
 
     let plan = try AgentProfileLaunchPlanner.plan(for: bound, homeBaseDirectory: base)
 
-    #expect(plan.environment == ["CODEX_HOME": "/base/agent-profiles/\(bound.id.uuidString)"])
+    // The reserved-name policy drops the user row, so the launch command
+    // carries exactly one CODEX_HOME assignment — the derived home.
+    #expect(
+      plan.commandEnvironmentTokens == ["CODEX_HOME='/base/agent-profiles/\(bound.id.uuidString)'"]
+    )
+    #expect(plan.surfaceEnvironment.isEmpty)
   }
 
-  @Test func previewQuotesOverrideValuesAndMasksSecretLookingNames() throws {
+  @Test func commandAndPreviewCarryReferencesButNeverOverrideValues() throws {
     var preset = profile(name: "Codex · DeepSeek")
     preset.environmentOverrides = [
       AgentProfileEnvironmentOverride(name: "OPENAI_BASE_URL", value: "https://a.example/v1 beta"),
@@ -278,10 +299,14 @@ struct AgentProfileTests {
       homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
     )
 
-    #expect(plan.previewText.contains("OPENAI_BASE_URL='https://a.example/v1 beta'"))
-    #expect(plan.previewText.contains("OPENAI_API_KEY=•••"))
+    // The typed command (== preview) references the carriers; the values ride
+    // the spawn environment only — never shell history or scrollback.
+    #expect(plan.previewText == plan.terminalInput)
+    #expect(plan.previewText.contains("OPENAI_API_KEY=\"$PROWL_ENV_OPENAI_API_KEY\""))
+    #expect(plan.previewText.contains("OPENAI_BASE_URL=\"$PROWL_ENV_OPENAI_BASE_URL\""))
     #expect(!plan.previewText.contains("sk-secret-123"))
-    #expect(plan.environment["OPENAI_API_KEY"] == "sk-secret-123")
+    #expect(!plan.previewText.contains("a.example"))
+    #expect(plan.surfaceEnvironment["PROWL_ENV_OPENAI_API_KEY"] == "sk-secret-123")
   }
 
   @Test func environmentPolicyReportsRowIssuesForEditorDiagnostics() {
@@ -310,10 +335,46 @@ struct AgentProfileTests {
         for: AgentProfileEnvironmentOverride(name: "CLAUDE_CONFIG_DIR", value: "x")
       ) == .reservedName
     )
+    // Relocating `HOME` would move every runtime's default home past the
+    // dedicated-home safeguards, so it is reserved alongside the account-home
+    // variables (docs-ai 053/005).
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "HOME", value: "/relocated")
+      ) == .reservedName
+    )
     #expect(
       AgentProfileEnvironmentPolicy.issue(
         for: AgentProfileEnvironmentOverride(name: "OK", value: "bad\0value")
       ) == .invalidValue
+    )
+  }
+
+  @Test func launchWarningPrefersTheProbeAnswerOverTheHomeHeuristic() {
+    let codex = profile(name: "Codex")
+
+    // Probe answered: ground truth in both directions, home is irrelevant.
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: true, isRuntimeInstalled: { _ in false }
+      ) == nil
+    )
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: false, isRuntimeInstalled: { _ in true }
+      ) == "Codex is not on your shell's PATH"
+    )
+
+    // Probe unanswered: the home-directory heuristic fills in.
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: nil, isRuntimeInstalled: { _ in true }
+      ) == nil
+    )
+    #expect(
+      AgentProfileAvailability.launchWarning(
+        for: codex, probedAvailable: nil, isRuntimeInstalled: { _ in false }
+      ) == "Codex may not be installed"
     )
   }
 

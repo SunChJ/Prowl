@@ -436,7 +436,7 @@ final class WorktreeTerminalState {
       let surfaceID = createSplitOnFocusedSurface(
         direction: plan.splitDirection,
         initialInput: plan.terminalInput,
-        additionalEnvironment: plan.environment
+        additionalEnvironment: plan.surfaceEnvironment
       )
     {
       launchProfilesBySurface[surfaceID] = identity
@@ -452,7 +452,7 @@ final class WorktreeTerminalState {
         inheritingFromSurfaceId: currentFocusedSurfaceId(),
         context: GHOSTTY_SURFACE_CONTEXT_TAB,
         workingDirectoryOverride: nil,
-        additionalEnvironment: plan.environment
+        additionalEnvironment: plan.surfaceEnvironment
       )
     )
     guard let tabId, let surfaceID = trees[tabId]?.root?.leftmostLeaf().id else { return nil }

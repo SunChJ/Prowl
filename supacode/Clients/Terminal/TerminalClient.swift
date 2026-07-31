@@ -83,6 +83,11 @@ struct TerminalClient {
     case taskStatusChanged(worktreeID: Worktree.ID, status: WorktreeTaskStatus)
     case agentEntryChanged(ActiveAgentEntry)
     case agentEntryRemoved(ActiveAgentEntry.ID)
+    /// A profile launch created its surface. The reducer records the per-repo
+    /// launch memory on this event — not at dispatch — so a failed launch
+    /// never shifts the Recommended resolution (docs-ai 053/005).
+    case agentProfileLaunched(worktreeID: Worktree.ID, profileID: AgentProfile.ID)
+    case agentProfileLaunchFailed(worktreeID: Worktree.ID, profileName: String)
     case runScriptStatusChanged(worktreeID: Worktree.ID, isRunning: Bool)
     case commandPaletteToggleRequested(worktreeID: Worktree.ID)
     case setupScriptConsumed(worktreeID: Worktree.ID)

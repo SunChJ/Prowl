@@ -55,6 +55,7 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
       "ApplePressAndHoldEnabled": false
     ])
     AgentProfileSeeder.seedIfNeeded()
+    Task { await AgentRuntimeAvailabilityProbe.refresh() }
     appStore?.send(.appLaunched)
   }
 

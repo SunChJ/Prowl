@@ -159,7 +159,7 @@ struct AgentProfileEditorView: View {
       .help("Add an environment variable override for this profile's launches")
     } label: {
       Text("Environment Variables")
-      Text("Applied to the launched process, on top of the shell's environment.")
+      Text("Applied only to the launched agent — the pane's shell keeps your normal environment.")
     }
   }
 
@@ -204,9 +204,12 @@ struct AgentProfileEditorView: View {
 
   private var launchPreviewSection: some View {
     Section("Launch Preview") {
-      Text("Prowl will execute this command. Secret-looking values are hidden here.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
+      Text(
+        "Prowl types this command into the new pane. "
+          + "Override values travel in hidden PROWL_ENV variables, never in the command text."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
       Text(previewText)
         .font(.callout.monospaced())
         .foregroundStyle(.secondary)

@@ -7,6 +7,11 @@ nonisolated enum SymlinkPreservingFileWriterError: Error, Equatable {
   /// The chain exceeds the kernel's symlink-resolution limit, so the loader
   /// could never follow it; refuse rather than write a file it can't read back.
   case symbolicLinkChainTooDeep(URL)
+  /// The owner-only temporary file could not be created in the target's
+  /// directory, so there is nothing safe to rename into place.
+  case temporaryFileCreationFailed(URL)
+  /// `rename(2)` of the temporary file onto the target failed with this errno.
+  case renameFailed(URL, code: Int32)
 }
 
 /// Atomic file writes that survive a symlinked destination. When the target is a
@@ -21,20 +26,50 @@ nonisolated enum SymlinkPreservingFileWriter {
   /// the write rather than fabricating a phantom tree there).
   static func write(_ data: Data, to url: URL) throws {
     let target = try resolvedTarget(for: url)
-    try FileManager.default.createDirectory(
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(
       at: url.deletingLastPathComponent(),
       withIntermediateDirectories: true
     )
-    // The atomic temp+rename happens in the target's directory, so a symlink at
-    // `url` is written through and preserved instead of replaced.
-    try data.write(to: target, options: [.atomic])
     // Settings may carry secrets (agent profile env overrides can hold API
-    // keys, docs-ai 053/004); keep every settings file owner-only instead of
-    // the default 0644.
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o600],
-      ofItemAtPath: target.path(percentEncoded: false)
-    )
+    // keys, docs-ai 053/004): the temporary file is born 0600, and the
+    // same-directory rename(2) both replaces the target atomically — through a
+    // symlink at `url`, preserving the link — and carries those owner-only
+    // permissions with it, so the content is never readable by other users,
+    // not even between write and rename.
+    let temporary =
+      target
+      .deletingLastPathComponent()
+      .appending(path: ".\(target.lastPathComponent).tmp-\(UUID().uuidString)", directoryHint: .notDirectory)
+    let temporaryPath = temporary.path(percentEncoded: false)
+    guard
+      fileManager.createFile(
+        atPath: temporaryPath,
+        contents: data,
+        attributes: [.posixPermissions: 0o600]
+      )
+    else {
+      throw SymlinkPreservingFileWriterError.temporaryFileCreationFailed(target)
+    }
+    guard rename(temporaryPath, target.path(percentEncoded: false)) == 0 else {
+      let code = errno
+      try? fileManager.removeItem(at: temporary)
+      throw SymlinkPreservingFileWriterError.renameFailed(target, code: code)
+    }
+  }
+
+  /// Best-effort owner-only migration for files written before saves enforced
+  /// 0600 (docs-ai 053/004). Runs on load so a legacy 0644 settings file stops
+  /// being world-readable the first time it is touched, not on its next save.
+  static func restrictToOwnerOnly(_ url: URL) {
+    guard let target = try? resolvedTarget(for: url) else { return }
+    let path = target.path(percentEncoded: false)
+    let fileManager = FileManager.default
+    guard
+      let permissions = (try? fileManager.attributesOfItem(atPath: path))?[.posixPermissions] as? Int,
+      permissions != 0o600
+    else { return }
+    try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
   }
 
   /// macOS resolves at most MAXSYMLINKS (32) links before ELOOP, so a deeper

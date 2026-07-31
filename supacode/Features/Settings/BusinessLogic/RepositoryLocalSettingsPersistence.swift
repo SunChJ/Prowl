@@ -9,7 +9,13 @@ nonisolated struct RepositoryLocalSettingsStorage: Sendable {
 nonisolated enum RepositoryLocalSettingsStorageKey: DependencyKey {
   static var liveValue: RepositoryLocalSettingsStorage {
     RepositoryLocalSettingsStorage(
-      load: { try Data(contentsOf: $0) },
+      load: { url in
+        let data = try Data(contentsOf: url)
+        // Files written before saves enforced 0600 migrate on first read
+        // (docs-ai 053/005), not on their next save.
+        SymlinkPreservingFileWriter.restrictToOwnerOnly(url)
+        return data
+      },
       // Per-repo settings live under `~/.prowl/repo/<name>/` (not inside the
       // cloned repo), so they are user-owned config a dotfiles user may symlink
       // — follow the link on write to preserve it (#478). Upstream keeps a

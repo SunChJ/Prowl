@@ -21,8 +21,11 @@ struct AgentsLauncherItem: Equatable, Identifiable {
   let runtimeName: String
   let iconSource: AgentProfileIconSource
   let isRecommended: Bool
-  /// Why the row is disabled ("Claude Code is not installed"); nil = launchable.
-  let unavailableReason: String?
+  /// Soft availability warning ("Claude Code may not be installed"); nil = no
+  /// concern. A warning dims the row but never disables it — the heuristic has
+  /// false negatives (installed but never run, dedicated-home-only logins),
+  /// and a wrong launch fails visibly in the new surface (docs-ai 053/005).
+  let availabilityWarning: String?
 }
 
 /// Toolbar entry point for agent-scoped actions, left of the branch title.
@@ -161,11 +164,11 @@ private struct AgentsPopoverContent: View {
       ForEach(launcherItems) { item in
         AgentsPopoverRow(
           title: item.isRecommended ? "Launch \(item.name) ★" : "Launch \(item.name)",
-          subtitle: item.unavailableReason
+          subtitle: item.availabilityWarning.map { "\($0) · \(item.runtimeName)" }
             ?? "New agent in this worktree · \(item.runtimeName)",
           systemImage: "play.circle",
           iconSource: item.iconSource,
-          isEnabled: item.unavailableReason == nil,
+          isDimmed: item.availabilityWarning != nil,
           action: { onLaunchProfile(item.id) }
         )
       }
@@ -179,6 +182,9 @@ private struct AgentsPopoverContent: View {
     }
     .padding(6)
     .frame(width: 280, alignment: .leading)
+    // Runtimes still warned about (or unanswered) re-probe on every open, so
+    // a CLI installed mid-session clears its warning without a relaunch.
+    .task { await AgentRuntimeAvailabilityProbe.refresh() }
   }
 }
 
@@ -187,7 +193,9 @@ private struct AgentsPopoverRow: View {
   let subtitle: String
   let systemImage: String
   var iconSource: AgentProfileIconSource?
-  var isEnabled: Bool = true
+  /// Dimmed rows carry an availability warning but stay fully clickable — the
+  /// warning heuristic must never block a launch (docs-ai 053/005).
+  var isDimmed: Bool = false
   let action: () -> Void
   @State private var isHovered = false
 
@@ -218,11 +226,10 @@ private struct AgentsPopoverRow: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .disabled(!isEnabled)
-    .opacity(isEnabled ? 1 : 0.5)
+    .opacity(isDimmed ? 0.5 : 1)
     .background(
       RoundedRectangle(cornerRadius: 6)
-        .fill(isHovered && isEnabled ? Color.accentColor.opacity(0.2) : Color.clear)
+        .fill(isHovered ? Color.accentColor.opacity(0.2) : Color.clear)
     )
     .onHover { isHovered = $0 }
   }

@@ -228,6 +228,11 @@ extension WorktreeTerminalState {
     surfaceAgentStates[surfaceID] = PaneAgentState(lastChangedAt: Date())
     lastWorkingAtBySurface.removeValue(forKey: surfaceID)
     lastEmittedAgentEntriesBySurface.removeValue(forKey: surfaceID)
+    // The launch identity lives exactly as long as the launched agent
+    // (docs-ai 053/006): once the pane is a bare shell again, a manually
+    // started agent is the user's own — default home, default account — and
+    // must not wear the profile's name or config root.
+    launchProfilesBySurface.removeValue(forKey: surfaceID)
     onAgentEntryRemoved?(surfaceID)
     if let tabId = tabId(containing: surfaceID) {
       updateTabAgentBusyState(for: tabId)
@@ -302,8 +307,18 @@ extension WorktreeTerminalState {
       rawState: state.fallbackState,
       displayState: state.displayState,
       lastChangedAt: state.lastChangedAt,
-      launchProfileName: launchProfilesBySurface[surfaceID]?.name
+      launchProfileName: launchProfileName(surfaceID: surfaceID, detected: agent)
     )
+  }
+
+  /// Runtime-gated like `SurfaceLaunchProfile.configRoot(forDetected:)`: after
+  /// the launched agent exits, a manually started *different* agent in the
+  /// same pane must not wear the old profile's name (docs-ai 053/005).
+  func launchProfileName(surfaceID: UUID, detected agent: DetectedAgent) -> String? {
+    guard let profile = launchProfilesBySurface[surfaceID], profile.runtime.agent == agent else {
+      return nil
+    }
+    return profile.name
   }
 
   func activeAgentWorkingDirectory(surfaceID: UUID) -> URL? {

@@ -399,8 +399,11 @@ struct WorktreeDetailView: View {
     // Same naming rule as the Active Agents rows: the launch profile name
     // recorded at surface creation wins for Prowl-launched panes; launch
     // aliases such as `omp` show their own name, not the semantic agent's.
+    // Runtime-gated like `configRoot`: a *different* agent started manually
+    // in the same pane must not wear the old profile's name (docs-ai 053/005).
+    let launchProfile = state.launchProfilesBySurface[surfaceID]
     let displayName =
-      state.launchProfilesBySurface[surfaceID]?.name
+      (launchProfile?.runtime.agent == agent ? launchProfile?.name : nil)
       ?? ActiveAgentEntry.displayName(
         iconLookupToken: paneState.iconLookupToken ?? agent.iconLookupToken,
         agent: agent
@@ -437,15 +440,13 @@ struct WorktreeDetailView: View {
       (lhs.id == recommendedID ? 0 : 1) < (rhs.id == recommendedID ? 0 : 1)
     }
     return ordered.map { profile in
-      let runtimeName = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
-      let installed = AgentProfileSeeder.defaultInstallationCheck(profile.runtime)
-      return AgentsLauncherItem(
+      AgentsLauncherItem(
         id: profile.id,
         name: profile.name,
-        runtimeName: runtimeName,
+        runtimeName: AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent),
         iconSource: profile.iconSource,
         isRecommended: profile.id == recommendedID,
-        unavailableReason: installed ? nil : "\(runtimeName) is not installed"
+        availabilityWarning: AgentProfileAvailability.launchWarning(for: profile)
       )
     }
   }
