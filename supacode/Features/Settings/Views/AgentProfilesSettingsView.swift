@@ -68,7 +68,6 @@ struct AgentProfilesSettingsView: View {
       NavigationLink(state: AgentProfileEditorFeature.State(profile: profile)) {
         profileLabel(profile)
       }
-      .help("Edit this profile")
     }
     .contextMenu {
       Button("Move Up") { move(profile.id, by: -1) }
@@ -78,11 +77,16 @@ struct AgentProfilesSettingsView: View {
     }
   }
 
+  // `.help` on the NavigationLink itself would shadow the badge's own tooltip,
+  // so the edit hint is scoped to the regions around the badge instead.
   private func profileLabel(_ profile: AgentProfile) -> some View {
     HStack(spacing: 8) {
-      AgentProfileIconImage(source: profile.iconSource, pointSize: 16)
-        .frame(width: 16, height: 16)
-      Text(profile.name)
+      HStack(spacing: 8) {
+        AgentProfileIconImage(source: profile.iconSource, pointSize: 16)
+          .frame(width: 16, height: 16)
+        Text(profile.name)
+      }
+      .help("Edit this profile")
       if profile.bindsDedicatedHome {
         Image(systemName: "person.crop.circle.badge.checkmark")
           .foregroundStyle(.secondary)
@@ -92,6 +96,7 @@ struct AgentProfilesSettingsView: View {
       Spacer()
       Text(AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent))
         .foregroundStyle(.secondary)
+        .help("Edit this profile")
     }
   }
 
