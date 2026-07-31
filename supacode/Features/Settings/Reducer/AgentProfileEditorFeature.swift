@@ -27,6 +27,8 @@ struct AgentProfileEditorFeature {
     case task
     case runtimeChanged(AgentProfileRuntime)
     case setIcon(String?)
+    case addEnvironmentOverride
+    case removeEnvironmentOverride(AgentProfileEnvironmentOverride.ID)
     case binding(BindingAction<State>)
     case removeTapped
     case revealProfileFiles
@@ -50,6 +52,7 @@ struct AgentProfileEditorFeature {
   }
 
   @Dependency(AgentProfileHomeClient.self) var homeClient
+  @Dependency(\.uuid) var uuid
 
   var body: some Reducer<State, Action> {
     BindingReducer()
@@ -61,13 +64,15 @@ struct AgentProfileEditorFeature {
 
       case .runtimeChanged(let runtime):
         guard state.profile.runtime != runtime else { return .none }
-        // Model, effort, literal CLI arguments, and unrestricted approval
-        // belong to the selected runtime. The target CLI requires its own
-        // explicit confirmation before it can bypass safeguards.
+        // Model, effort, literal CLI arguments, environment overrides, and
+        // unrestricted approval belong to the selected runtime. The target CLI
+        // requires its own explicit confirmation before it can bypass
+        // safeguards.
         state.profile.runtime = runtime
         state.profile.model = nil
         state.profile.reasoningEffort = nil
         state.profile.extraArguments = ""
+        state.profile.environmentOverrides = []
         state.profile.executionMode = .standard
         refreshHomeStatus(&state)
         return .send(.delegate(.profileEdited(state.profile)))
@@ -75,6 +80,14 @@ struct AgentProfileEditorFeature {
       case .setIcon(let icon):
         guard state.profile.icon != icon else { return .none }
         state.profile.icon = icon
+        return .send(.delegate(.profileEdited(state.profile)))
+
+      case .addEnvironmentOverride:
+        state.profile.environmentOverrides.append(AgentProfileEnvironmentOverride(id: uuid()))
+        return .send(.delegate(.profileEdited(state.profile)))
+
+      case .removeEnvironmentOverride(let id):
+        state.profile.environmentOverrides.removeAll { $0.id == id }
         return .send(.delegate(.profileEdited(state.profile)))
       case .binding:
         // `.unrestricted` is never applied silently: the change reverts until

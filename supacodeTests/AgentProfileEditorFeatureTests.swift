@@ -27,6 +27,9 @@ struct AgentProfileEditorFeatureTests {
     profile.model = "gpt-5.6-sol"
     profile.reasoningEffort = "xhigh"
     profile.extraArguments = "--search"
+    profile.environmentOverrides = [
+      AgentProfileEnvironmentOverride(name: "OPENAI_BASE_URL", value: "https://api.deepseek.com/v1")
+    ]
     profile.executionMode = .unrestricted
     profile.icon = "wand.and.stars"
     profile.placement = .split
@@ -41,6 +44,7 @@ struct AgentProfileEditorFeatureTests {
       $0.profile.model = nil
       $0.profile.reasoningEffort = nil
       $0.profile.extraArguments = ""
+      $0.profile.environmentOverrides = []
       $0.profile.executionMode = .standard
       $0.profile.icon = "wand.and.stars"
       $0.profile.placement = .split
@@ -74,6 +78,26 @@ struct AgentProfileEditorFeatureTests {
 
     await store.send(.setIcon(nil)) {
       $0.profile.icon = nil
+    }
+    await store.receive(\.delegate.profileEdited)
+  }
+
+  @Test(.dependencies) func addingAndRemovingEnvironmentOverrideRowsDelegates() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
+    let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
+      AgentProfileEditorFeature()
+    } withDependencies: {
+      $0.uuid = .incrementing
+    }
+
+    let rowID = UUID(0)
+    await store.send(.addEnvironmentOverride) {
+      $0.profile.environmentOverrides = [AgentProfileEnvironmentOverride(id: rowID)]
+    }
+    await store.receive(\.delegate.profileEdited)
+
+    await store.send(.removeEnvironmentOverride(rowID)) {
+      $0.profile.environmentOverrides = []
     }
     await store.receive(\.delegate.profileEdited)
   }

@@ -29,6 +29,17 @@ struct SymlinkPreservingFileWriterTests {
     #expect(!isSymlink(url))
   }
 
+  @Test func writesOwnerOnlyPermissions() throws {
+    let dir = try makeTempDir()
+    defer { try? fileManager.removeItem(at: dir) }
+    let url = dir.appending(path: "settings.json", directoryHint: .notDirectory)
+
+    try SymlinkPreservingFileWriter.write(Data("{}".utf8), to: url)
+
+    let attributes = try fileManager.attributesOfItem(atPath: url.path(percentEncoded: false))
+    #expect(attributes[.posixPermissions] as? Int == 0o600)
+  }
+
   @Test func createsMissingParentDirectories() throws {
     let dir = try makeTempDir()
     defer { try? fileManager.removeItem(at: dir) }

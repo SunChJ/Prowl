@@ -330,6 +330,10 @@ agent 列表不变。
 
 ## Amendments
 
+- Updated 2026-07-31: 新增用户可配置的 per-profile 环境变量覆盖(base url / api key
+  临时改写,如 "Codex but using DeepSeek")— see
+  [004-environment-overrides.md](004-environment-overrides.md).
+
 - Updated 2026-07-31: profile launcher 图标的持久化、fallback 与 surface 范围决策 — see
   [003-profile-icons.md](003-profile-icons.md).
 

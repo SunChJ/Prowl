@@ -19,10 +19,102 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   var terminalInput: String { invocation.terminalInput }
 
   /// Human-readable launch preview: env prefix plus the exact rendered
-  /// invocation. Shares the launch rendering so the preview can never lie.
+  /// invocation. The prefix is an equivalent shell rendering — the real patch
+  /// goes through Ghostty's spawn env array, never a shell — so values are
+  /// quoted for faithfulness and secret-looking values are masked rather than
+  /// displayed (docs-ai 053/004).
   var previewText: String {
-    let prefix = environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+    let prefix = environment.sorted { $0.key < $1.key }.map { pair in
+      "\(pair.key)=\(Self.previewValue(name: pair.key, value: pair.value))"
+    }
     return (prefix + [invocation.terminalInput]).joined(separator: " ")
+  }
+
+  private static let secretNameFragments = ["KEY", "TOKEN", "SECRET", "PASSWORD"]
+
+  private static func previewValue(name: String, value: String) -> String {
+    let upper = name.uppercased()
+    if secretNameFragments.contains(where: { upper.contains($0) }) {
+      return "•••"
+    }
+    return "'" + value.replacing("'", with: "'\"'\"'") + "'"
+  }
+}
+
+/// Which env variable names a profile override may set, shared by the planner
+/// (filtering) and the editor (inline row diagnostics) so they can never
+/// disagree (docs-ai 053/004).
+nonisolated enum AgentProfileEnvironmentPolicy {
+  enum RowIssue: Equatable, Sendable {
+    case invalidName
+    case reservedName
+    case invalidValue
+  }
+
+  /// Account-home variables come from the adapters, not a hardcoded list; the
+  /// `PROWL_` prefix protects the worktree/root facts Prowl injects itself.
+  /// Letting an override set `CODEX_HOME` on an unbound profile would bypass
+  /// home provisioning, deletion protection, and rooted session detection —
+  /// custom homes are a separate capability, not an env-table backdoor.
+  static var reservedNames: Set<String> {
+    Set(
+      AgentProfileRuntime.allCases.compactMap {
+        AgentRuntimeAdapterRegistry.adapter(for: $0.agent)?.accountHomeEnvironmentVariable
+      }
+    )
+  }
+
+  static func isValidName(_ name: String) -> Bool {
+    guard let first = name.utf8.first else { return false }
+    guard first == UInt8(ascii: "_") || isASCIILetter(first) else { return false }
+    return name.utf8.dropFirst().allSatisfy {
+      $0 == UInt8(ascii: "_") || isASCIILetter($0) || isASCIIDigit($0)
+    }
+  }
+
+  static func isReserved(_ name: String) -> Bool {
+    name.hasPrefix("PROWL_") || reservedNames.contains(name)
+  }
+
+  /// A NUL would be silently truncated at the C-string boundary; refuse the
+  /// row instead of launching with a value the user never wrote.
+  static func isValidValue(_ value: String) -> Bool {
+    !value.contains("\0")
+  }
+
+  /// nil for a row the planner will apply; blank names are in-progress rows,
+  /// reported as nil issue too — they are ignored without being an error.
+  static func issue(for override: AgentProfileEnvironmentOverride) -> RowIssue? {
+    let name = override.trimmedName
+    guard !name.isEmpty else { return nil }
+    if !isValidName(name) { return .invalidName }
+    if isReserved(name) { return .reservedName }
+    if !isValidValue(override.value) { return .invalidValue }
+    return nil
+  }
+
+  /// The applied subset: trimmed names, invalid/reserved rows dropped, later
+  /// duplicates win (shell-export semantics). Values stay verbatim — an empty
+  /// value legitimately sets the variable to the empty string.
+  static func effectiveOverrides(
+    _ overrides: [AgentProfileEnvironmentOverride]
+  ) -> [String: String] {
+    var environment: [String: String] = [:]
+    for override in overrides {
+      let name = override.trimmedName
+      guard !name.isEmpty, issue(for: override) == nil else { continue }
+      environment[name] = override.value
+    }
+    return environment
+  }
+
+  private static func isASCIILetter(_ byte: UInt8) -> Bool {
+    (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte)
+      || (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(byte)
+  }
+
+  private static func isASCIIDigit(_ byte: UInt8) -> Bool {
+    (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
   }
 }
 
@@ -80,7 +172,10 @@ nonisolated enum AgentProfileLaunchPlanner {
       AgentStartRequest(agent: profile.runtime.agent, intent: .interactive, configuration: configuration)
     )
 
-    var environment: [String: String] = [:]
+    // User overrides first; the dedicated-home variable is written after, so
+    // an account binding always beats a same-named user row — the account
+    // isolation reasoning must stay provable (docs-ai 053/004).
+    var environment = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
     var dedicatedHome: URL?
     if profile.bindsDedicatedHome {
       guard let variable = adapter.accountHomeEnvironmentVariable else {
