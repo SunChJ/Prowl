@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026.8.1](https://github.com/onevcat/Prowl/releases/tag/v2026.8.1)
+
+This release introduces Agent Profiles — reusable presets for launching coding agents — along with related launcher and Settings improvements.
+
+### New
+
+- Agent Profiles: create named launch presets for Claude Code and Codex with a chosen model, reasoning effort, execution mode, tab/split placement, extra arguments, and per-profile environment variable overrides (for example, pointing a profile at a different API endpoint). Manage them in Settings → Agents, each with its own custom icon and an optional isolated account/home.
+- Launch a profile from the toolbar Agents menu, its new one-click quick-launch segment (instantly launches your Recommended profile), or the Command Palette's "Launch Agent" rows.
+- Clear a recorded keyboard shortcut with the new Clear button shown while remapping — the shortcut stays unset until you press Reset.
+
+### Improved
+
+- Settings now uses native macOS navigation chrome (sidebar and back button) throughout.
+- The Agents popover groups launcher rows under one header and dims agents whose CLI isn't found on your PATH, showing why and rechecking automatically when you reopen it.
+- A profile's environment variables and dedicated account now apply only to the agent it launches — manually running `codex` or `claude` in the same tab no longer inherits them.
+
+### Fixed
+
+- Fixed a crash when adding or removing rows in a profile's Environment Variables table.
+- Fixed several brand icons (Claude Code, Cursor, GitHub Copilot, and others) rendering as a tiny dot in the Default Agent Profile picker.
+
 ## [2026.7.29](https://github.com/onevcat/Prowl/releases/tag/v2026.7.29)
 
 Prowl 2026.7.29 adds automatic repository icon detection and an on-device icon suggestion tool, along with a reworked sidebar context-menu system.
