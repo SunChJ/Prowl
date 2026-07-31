@@ -22,9 +22,10 @@ struct AgentProfileEditorView: View {
     .sheet(isPresented: $isIconPickerPresented) {
       TabIconPickerView(
         initialIcon: store.profile.icon,
-        defaultIcon: "sparkles",
+        defaultIcon: AgentProfileIconResolver.source(for: store.profile.iconSource),
         title: "Agent Icon",
         subtitle: "Pick a preset or enter any SF Symbol name. Clearing restores the runtime brand icon.",
+        resetHelp: "Restore the runtime brand icon",
         onApply: { icon in
           store.send(.setIcon(icon))
           isIconPickerPresented = false

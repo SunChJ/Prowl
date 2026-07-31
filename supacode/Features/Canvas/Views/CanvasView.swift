@@ -442,7 +442,7 @@ struct CanvasView: View {
     let currentIcon = state.tabManager.tabs.first(where: { $0.id == tabId })?.icon
     return TabIconPickerView(
       initialIcon: currentIcon,
-      defaultIcon: state.defaultIcon(for: tabId),
+      defaultIcon: TabIconSource(systemSymbol: state.defaultIcon(for: tabId)),
       onApply: { newIcon in
         state.applyIconChange(tabId, icon: newIcon)
         state.dismissIconPicker()
