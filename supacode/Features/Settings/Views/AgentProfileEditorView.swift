@@ -159,7 +159,7 @@ struct AgentProfileEditorView: View {
       .help("Add an environment variable override for this profile's launches")
     } label: {
       Text("Environment Variables")
-      Text("Applied to the launched process, on top of the shell's environment.")
+      Text("Applied to the new terminal surface — its shell and everything started in it.")
     }
   }
 

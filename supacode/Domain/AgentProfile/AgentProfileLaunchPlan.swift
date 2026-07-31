@@ -10,8 +10,10 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   let invocation: AgentInvocation
   let placement: AgentProfilePlacement
   let splitDirection: UserCustomSplitDirection
-  /// Environment patch for the new surface. Non-empty only for account-bound
-  /// profiles; additive over the shell's normal environment, never a scrub.
+  /// Environment patch for the new surface: the profile's user overrides
+  /// plus, for account-bound profiles, the dedicated-home variable. Applied at
+  /// surface spawn, so the shell and everything started in it see it; additive
+  /// over the shell's normal environment, never a scrub.
   let environment: [String: String]
   /// Dedicated home to provision before launch; nil for pure presets.
   let dedicatedHome: URL?
@@ -72,8 +74,12 @@ nonisolated enum AgentProfileEnvironmentPolicy {
     }
   }
 
+  /// `HOME` is reserved for the same reason as the account-home variables:
+  /// relocating it moves every runtime's *default* home (`$HOME/.claude`,
+  /// `$HOME/.codex`), bypassing home provisioning, deletion protection, and
+  /// rooted session detection without ever flipping the binding toggle.
   static func isReserved(_ name: String) -> Bool {
-    name.hasPrefix("PROWL_") || reservedNames.contains(name)
+    name.hasPrefix("PROWL_") || name == "HOME" || reservedNames.contains(name)
   }
 
   /// A NUL would be silently truncated at the C-string boundary; refuse the

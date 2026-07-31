@@ -194,4 +194,48 @@ struct SymlinkPreservingFileWriterTests {
     #expect(try Data(contentsOf: url) == payload)
     #expect(!isSymlink(url))
   }
+
+  @Test func writeLeavesNoTemporaryFilesBehind() throws {
+    let dir = try makeTempDir()
+    defer { try? fileManager.removeItem(at: dir) }
+    let url = dir.appending(path: "settings.json", directoryHint: .notDirectory)
+
+    try SymlinkPreservingFileWriter.write(Data("{}".utf8), to: url)
+
+    let contents = try fileManager.contentsOfDirectory(atPath: dir.path(percentEncoded: false))
+    #expect(contents == ["settings.json"])
+  }
+
+  @Test func overwritingLegacyPermissionsEndsOwnerOnly() throws {
+    let dir = try makeTempDir()
+    defer { try? fileManager.removeItem(at: dir) }
+    let url = dir.appending(path: "settings.json", directoryHint: .notDirectory)
+    try Data("old".utf8).write(to: url)
+    try fileManager.setAttributes(
+      [.posixPermissions: 0o644], ofItemAtPath: url.path(percentEncoded: false)
+    )
+
+    try SymlinkPreservingFileWriter.write(Data("new".utf8), to: url)
+
+    let attributes = try fileManager.attributesOfItem(atPath: url.path(percentEncoded: false))
+    #expect(attributes[.posixPermissions] as? Int == 0o600)
+  }
+
+  @Test func restrictToOwnerOnlyMigratesLegacyFileThroughSymlink() throws {
+    let dir = try makeTempDir()
+    defer { try? fileManager.removeItem(at: dir) }
+    let target = dir.appending(path: "target.json", directoryHint: .notDirectory)
+    let link = dir.appending(path: "settings.json", directoryHint: .notDirectory)
+    try Data("{}".utf8).write(to: target)
+    try fileManager.setAttributes(
+      [.posixPermissions: 0o644], ofItemAtPath: target.path(percentEncoded: false)
+    )
+    try fileManager.createSymbolicLink(at: link, withDestinationURL: target)
+
+    SymlinkPreservingFileWriter.restrictToOwnerOnly(link)
+
+    let attributes = try fileManager.attributesOfItem(atPath: target.path(percentEncoded: false))
+    #expect(attributes[.posixPermissions] as? Int == 0o600)
+    #expect(isSymlink(link))
+  }
 }

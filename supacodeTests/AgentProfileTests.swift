@@ -242,6 +242,7 @@ struct AgentProfileTests {
       AgentProfileEnvironmentOverride(name: "PROWL_WORKTREE_PATH", value: "/forged"),
       AgentProfileEnvironmentOverride(name: "CODEX_HOME", value: "/elsewhere"),
       AgentProfileEnvironmentOverride(name: "CLAUDE_CONFIG_DIR", value: "/elsewhere"),
+      AgentProfileEnvironmentOverride(name: "HOME", value: "/relocated"),
       AgentProfileEnvironmentOverride(name: "NUL_VALUE", value: "trunc\0ated"),
     ]
 
@@ -308,6 +309,14 @@ struct AgentProfileTests {
     #expect(
       AgentProfileEnvironmentPolicy.issue(
         for: AgentProfileEnvironmentOverride(name: "CLAUDE_CONFIG_DIR", value: "x")
+      ) == .reservedName
+    )
+    // Relocating `HOME` would move every runtime's default home past the
+    // dedicated-home safeguards, so it is reserved alongside the account-home
+    // variables (docs-ai 053/005).
+    #expect(
+      AgentProfileEnvironmentPolicy.issue(
+        for: AgentProfileEnvironmentOverride(name: "HOME", value: "/relocated")
       ) == .reservedName
     )
     #expect(

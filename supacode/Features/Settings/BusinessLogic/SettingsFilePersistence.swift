@@ -10,7 +10,13 @@ nonisolated struct SettingsFileStorage: Sendable {
 nonisolated enum SettingsFileStorageKey: DependencyKey {
   static var liveValue: SettingsFileStorage {
     SettingsFileStorage(
-      load: { try Data(contentsOf: $0) },
+      load: { url in
+        let data = try Data(contentsOf: url)
+        // Files written before saves enforced 0600 migrate on first read
+        // (docs-ai 053/005), not on their next save.
+        SymlinkPreservingFileWriter.restrictToOwnerOnly(url)
+        return data
+      },
       // Follows a symlinked destination to its real file so a user who links
       // `~/.prowl/settings.json` (and the repository-entries / appearances
       // files that share this closure) into a dotfiles repo keeps the link
