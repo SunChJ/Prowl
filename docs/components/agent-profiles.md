@@ -11,11 +11,12 @@
 
 ## What a profile is
 
-A profile is a named preset for one runtime: display name, optional model and
-reasoning effort (both accept free text with per-runtime suggestions), execution
-mode (Standard / Unrestricted), and a launch placement (New Tab or New Split
-with a direction). By default a profile is **argv-only**: launching it is
-exactly like typing `claude`/`codex` with those flags yourself — same login,
+A profile is a named preset for one runtime: display name, optional custom SF
+Symbol icon, optional model and reasoning effort (both accept free text with
+per-runtime suggestions), execution mode (Standard / Unrestricted), and a
+launch placement (New Tab or New Split with a direction). By default a profile
+is **argv-only**: launching it is exactly like typing `claude`/`codex` with
+those flags yourself — same login,
 same skills, same session history. The same runtime can have any number of
 profiles.
 
@@ -45,6 +46,12 @@ push its editor; the native Back control returns to the list while the Settings
 sidebar remains available. Adding a profile opens the same editor immediately.
 Changing another Settings sidebar section leaves the editor and opens that
 section's root.
+
+The editor's **Icon** preview opens an SF Symbol picker. A custom symbol appears
+where Prowl presents the launch preset: the Settings list, repository Default
+Agent Profile picker, toolbar Agents popover, and Command Palette. Clearing it
+restores the runtime's Claude Code / Codex brand icon. Live panes and Active
+Agents retain the icon of the process Prowl actually detects.
 
 Changing a profile's **Agent** resets its Model, Reasoning Effort, and Extra
 Arguments to the new runtime defaults. Those values are runtime-specific; add

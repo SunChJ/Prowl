@@ -575,7 +575,8 @@ func agentProfileLaunchItems(
       kind: .launchAgentProfile(profile.id),
       category: .terminal,
       defaultSuggestion: false,
-      keywords: ["launch", "agent", "profile", "start", profile.name]
+      keywords: ["launch", "agent", "profile", "start", profile.name],
+      agentProfileIconSource: profile.iconSource
     )
   }
 }

@@ -21,6 +21,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
   let category: Category
   let keywords: [String]
   let defaultSuggestion: Bool
+  let agentProfileIconSource: AgentProfileIconSource?
 
   init(
     id: String,
@@ -30,7 +31,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
     category: Category,
     defaultSuggestion: Bool,
     keywords: [String] = [],
-    priorityTier: Int = defaultPriorityTier
+    priorityTier: Int = defaultPriorityTier,
+    agentProfileIconSource: AgentProfileIconSource? = nil
   ) {
     self.id = id
     self.title = title
@@ -40,6 +42,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     self.defaultSuggestion = defaultSuggestion
     self.keywords = keywords
     self.priorityTier = priorityTier
+    self.agentProfileIconSource = agentProfileIconSource
   }
 
   enum Kind: Equatable {

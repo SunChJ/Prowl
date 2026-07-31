@@ -40,6 +40,23 @@ struct AgentProfileEditorFeatureTests {
     await store.receive(\.delegate.profileEdited)
   }
 
+  @Test(.dependencies) func settingProfileIconDelegatesTheEditedProfile() async {
+    let profile = AgentProfile(name: "Codex", runtime: .codex)
+    let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
+      AgentProfileEditorFeature()
+    }
+
+    await store.send(.setIcon("wand.and.stars")) {
+      $0.profile.icon = "wand.and.stars"
+    }
+    await store.receive(\.delegate.profileEdited)
+
+    await store.send(.setIcon(nil)) {
+      $0.profile.icon = nil
+    }
+    await store.receive(\.delegate.profileEdited)
+  }
+
   @Test(.dependencies) func unrestrictedRequiresExplicitConfirmation() async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()

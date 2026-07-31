@@ -80,6 +80,8 @@ struct AgentProfilesSettingsView: View {
 
   private func profileLabel(_ profile: AgentProfile) -> some View {
     HStack(spacing: 8) {
+      AgentProfileIconImage(source: profile.iconSource, pointSize: 16)
+        .frame(width: 16, height: 16)
       Text(profile.name)
       if profile.bindsDedicatedHome {
         Image(systemName: "person.crop.circle.badge.checkmark")

@@ -330,6 +330,9 @@ agent 列表不变。
 
 ## Amendments
 
+- Updated 2026-07-31: profile launcher 图标的持久化、fallback 与 surface 范围决策 — see
+  [003-profile-icons.md](003-profile-icons.md).
+
 - 2026-07-30 — Review 四轮(P2):palette 的 Launch Agent 条目工厂改用与 launch
   action 相同的 action-target 解析(selectedTerminalWorktree ?? Canvas 聚焦卡),
   Canvas 模式下条目不再缺席;补 Canvas 聚焦卡回归测试。

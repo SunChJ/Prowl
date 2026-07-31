@@ -5,6 +5,8 @@ import SwiftUI
 /// owns the alert presentation because its state lives with this destination.
 struct AgentProfileEditorView: View {
   @Bindable var store: StoreOf<AgentProfileEditorFeature>
+  @State private var isIconPickerPresented = false
+  @State private var isHoveringIconTile = false
 
   var body: some View {
     Form {
@@ -17,6 +19,19 @@ struct AgentProfileEditorView: View {
     .navigationTitle(store.profile.name)
     .task { store.send(.task) }
     .alert($store.scope(state: \.alert, action: \.alert))
+    .sheet(isPresented: $isIconPickerPresented) {
+      TabIconPickerView(
+        initialIcon: store.profile.icon,
+        defaultIcon: "sparkles",
+        title: "Agent Icon",
+        subtitle: "Pick a preset or enter any SF Symbol name. Clearing restores the runtime brand icon.",
+        onApply: { icon in
+          store.send(.setIcon(icon))
+          isIconPickerPresented = false
+        },
+        onCancel: { isIconPickerPresented = false }
+      )
+    }
   }
 
   private var profileSection: some View {
@@ -33,6 +48,7 @@ struct AgentProfileEditorView: View {
           Text(AgentRuntimeAdapterRegistry.displayName(for: runtime.agent)).tag(runtime)
         }
       }
+      iconRow
       suggestedTextRow(
         title: "Model",
         prompt: "Runtime default",
@@ -133,6 +149,59 @@ struct AgentProfileEditorView: View {
         .textSelection(.enabled)
         .lineLimit(nil)
     }
+  }
+
+  private var iconRow: some View {
+    HStack(alignment: .center, spacing: 12) {
+      iconMenu
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Icon")
+          .font(.headline)
+        Text(
+          store.profile.icon == nil
+            ? "\(AgentRuntimeAdapterRegistry.displayName(for: store.profile.runtime.agent)) brand icon"
+            : "Custom SF Symbol"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      }
+      Spacer(minLength: 0)
+    }
+  }
+
+  private var iconMenu: some View {
+    Menu {
+      Button("Choose Symbol…") {
+        isIconPickerPresented = true
+      }
+      if store.profile.icon != nil {
+        Divider()
+        Button("Clear Icon", role: .destructive) {
+          store.send(.setIcon(nil))
+        }
+      }
+    } label: {
+      iconPreviewTile
+    }
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .overlay {
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHoveringIconTile ? 0.65 : 0), lineWidth: 1.5)
+    }
+    .onHover { isHoveringIconTile = $0 }
+    .pointerStyle(.link)
+    .animation(.easeOut(duration: 0.12), value: isHoveringIconTile)
+    .help("Click the icon preview to choose an SF Symbol")
+  }
+
+  private var iconPreviewTile: some View {
+    AgentProfileIconImage(source: store.profile.iconSource, pointSize: 22)
+      .frame(width: 40, height: 40)
+      .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
+      .contentShape(.rect(cornerRadius: 8))
+      .accessibilityLabel("Agent icon picker")
   }
 
   private func optionalTextRow(

@@ -42,6 +42,8 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
   var name: String
   var isEnabled: Bool
   var runtime: AgentProfileRuntime
+  /// User-selected SF Symbol override; nil uses the runtime brand icon.
+  var icon: String?
   var model: String?
   var reasoningEffort: String?
   var executionMode: AgentExecutionMode
@@ -55,6 +57,7 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
     name: String,
     isEnabled: Bool = true,
     runtime: AgentProfileRuntime,
+    icon: String? = nil,
     model: String? = nil,
     reasoningEffort: String? = nil,
     executionMode: AgentExecutionMode = .standard,
@@ -67,6 +70,7 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
     self.name = name
     self.isEnabled = isEnabled
     self.runtime = runtime
+    self.icon = icon
     self.model = model
     self.reasoningEffort = reasoningEffort
     self.executionMode = executionMode
@@ -77,7 +81,7 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
   }
 
   private enum CodingKeys: String, CodingKey {
-    case id, name, isEnabled, runtime, model, reasoningEffort, executionMode
+    case id, name, isEnabled, runtime, icon, model, reasoningEffort, executionMode
     case placement, splitDirection, extraArguments, bindsDedicatedHome
   }
 
@@ -87,6 +91,7 @@ nonisolated struct AgentProfile: Codable, Equatable, Sendable, Identifiable {
     name = try container.decode(String.self, forKey: .name)
     isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
     runtime = try container.decode(AgentProfileRuntime.self, forKey: .runtime)
+    icon = try container.decodeIfPresent(String.self, forKey: .icon)
     model = try container.decodeIfPresent(String.self, forKey: .model)
     reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
     executionMode =

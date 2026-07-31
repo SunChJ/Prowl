@@ -26,6 +26,7 @@ struct AgentProfileEditorFeature {
   enum Action: BindableAction {
     case task
     case runtimeChanged(AgentProfileRuntime)
+    case setIcon(String?)
     case binding(BindingAction<State>)
     case removeTapped
     case revealProfileFiles
@@ -69,6 +70,10 @@ struct AgentProfileEditorFeature {
         refreshHomeStatus(&state)
         return .send(.delegate(.profileEdited(state.profile)))
 
+      case .setIcon(let icon):
+        guard state.profile.icon != icon else { return .none }
+        state.profile.icon = icon
+        return .send(.delegate(.profileEdited(state.profile)))
       case .binding:
         // `.unrestricted` is never applied silently: the change reverts until
         // the user explicitly confirms it (docs-ai 053).
