@@ -13,6 +13,14 @@ struct WorktreeDetailTitleView: View {
 
   var body: some View {
     titleButton
+      // The item opts out of the navigation group's shared glass background
+      // (`sharedBackgroundVisibility(.hidden)` at the toolbar site) so the
+      // Agents pair can render as one system split control in that group,
+      // and draws its own capsule instead. Hover feedback must live in the
+      // glass material itself: translucent fills layered under `glassEffect`
+      // are swallowed by material compositing (docs-ai 049).
+      .buttonStyle(.plain)
+      .glassEffect(titleGlass, in: Capsule())
       .onHover { hovering in
         isHovered = hovering
       }
@@ -68,6 +76,15 @@ struct WorktreeDetailTitleView: View {
     isPresented = true
   }
 
+  /// Interactive glass (press feedback, hover tint) only when the title is a
+  /// real rename button; the folder/workspace variant stays a static pill.
+  private var titleGlass: Glass {
+    guard title.supportsRename else { return .regular }
+    return isHovered
+      ? .regular.tint(.primary.opacity(0.12)).interactive()
+      : .regular.interactive()
+  }
+
   private var labelContent: some View {
     HStack(spacing: 6) {
       Image(systemName: (title.supportsRename && isHovered) ? "pencil" : title.systemImage)
@@ -77,6 +94,9 @@ struct WorktreeDetailTitleView: View {
       Text(title.text)
     }
     .font(.title3.weight(.medium))
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .contentShape(Capsule())
   }
 }
 
