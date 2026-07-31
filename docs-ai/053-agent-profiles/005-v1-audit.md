@@ -5,7 +5,7 @@
 | **日期** | 2026-07-31 |
 | **基线** | `main` == `origin/main`,`b698a23f`(含 PR #632 env overrides) |
 | **来源** | 两份独立评审(Claude Code 全链路调研 × 并行 agent 审计)的交叉核对与仲裁 |
-| **修复** | 本轮边界补强见文末「本次修复」(PR 见分支 `agent-profile-boundary-hardening`) |
+| **修复** | 本轮边界补强见文末「本次修复」([PR #634](https://github.com/onevcat/Prowl/pull/634)) |
 
 ## 综合结论
 
