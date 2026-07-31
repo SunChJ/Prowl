@@ -1,7 +1,7 @@
 # 053 修订:Profile 自定义环境变量(Environment Overrides)
 
 - 日期:2026-07-31
-- 状态:计划(实现前);实现结果回填至本文档末尾
+- 状态:已实现(PR #632);实现结果见文末
 - 关联:[000-plan.md](000-plan.md)(launch plan 管道)、[001-action.md](001-action.md)
   (resume 环境补丁的既有推迟)
 
@@ -115,3 +115,32 @@ Advanced section 内、Extra Arguments 之下:紧凑两列表格——表头(Nam
   空 name 过滤、preview 引用。
 - `make check` + `make build-app`;手动:override `OPENAI_BASE_URL` 的 profile,
   预览显示带引号前缀,启动后 pane 内 `echo $OPENAI_BASE_URL` 命中。
+
+## 实现结果(2026-07-31,PR #632)
+
+按本文档实现,无实质偏差。落点:
+
+- `AgentProfile.swift`:`AgentProfileEnvironmentOverride` 行类型(id/name/value)
+  + `environmentOverrides` 字段,`decodeIfPresent ?? []` 零迁移。
+- `AgentProfileLaunchPlan.swift`:`AgentProfileEnvironmentPolicy`(名校验/保留名/
+  NUL 值/`effectiveOverrides`)由 planner 与编辑器共享;planner 先施加用户行、
+  后写 dedicated-home 变量;`previewText` 渲染 `NAME='value'` 并对
+  KEY/TOKEN/SECRET/PASSWORD 样名字掩码。保留名单从 adapter 的
+  `accountHomeEnvironmentVariable` 推导,未硬编码。
+- `AgentProfileEditorFeature.swift`:`addEnvironmentOverride` /
+  `removeEnvironmentOverride(id:)` 专用 action(UUID 走 `@Dependency(\.uuid)`);
+  `runtimeChanged` 一并清空 overrides。
+- `AgentProfileEditorView.swift`:Advanced 内 Extra Arguments 下方的行编辑表格
+  (Add Variable 表头行 + 每行双 monospaced TextField + 行内 warning 图标 +
+  删除按钮);Launch Preview 文案改为不再承诺 env 前缀逐字执行。
+- `SymlinkPreservingFileWriter.swift`:所有 settings 写入统一 `0600`(经共享
+  writer,同时覆盖 `settings.json`/`global.onevcat.json`/repo entries/appearances)。
+
+测试证据:相关 5 个测试类 68 个测试全绿(新增合并语义、精度、脱敏、权限、
+增删行、runtime 清空用例);`make check` 与 `make build-app` 零错误零警告。
+
+实现注记(非偏差):
+
+- chmod 发生在 atomic 写入之后,每次保存存在极短的默认权限窗口;单用户场景
+  可接受,如需严格可改为先建 0600 temp 再 rename,列为可选精化。
+- 手动放宽 settings 文件权限会在下一次保存时被改回 0600(每次写入强制)。
