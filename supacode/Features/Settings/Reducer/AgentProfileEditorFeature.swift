@@ -25,6 +25,7 @@ struct AgentProfileEditorFeature {
 
   enum Action: BindableAction {
     case task
+    case runtimeChanged(AgentProfileRuntime)
     case binding(BindingAction<State>)
     case removeTapped
     case revealProfileFiles
@@ -56,6 +57,17 @@ struct AgentProfileEditorFeature {
       case .task:
         refreshHomeStatus(&state)
         return .none
+
+      case .runtimeChanged(let runtime):
+        guard state.profile.runtime != runtime else { return .none }
+        // Model, effort, and literal CLI arguments belong to the selected
+        // runtime. Keep only cross-runtime profile settings on a switch.
+        state.profile.runtime = runtime
+        state.profile.model = nil
+        state.profile.reasoningEffort = nil
+        state.profile.extraArguments = ""
+        refreshHomeStatus(&state)
+        return .send(.delegate(.profileEdited(state.profile)))
 
       case .binding:
         // `.unrestricted` is never applied silently: the change reverts until

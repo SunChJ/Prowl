@@ -22,6 +22,24 @@ struct AgentProfileEditorFeatureTests {
     await store.receive(\.delegate.profileEdited)
   }
 
+  @Test(.dependencies) func changingRuntimeClearsRuntimeSpecificConfiguration() async {
+    var profile = AgentProfile(name: "Codex", runtime: .codex)
+    profile.model = "gpt-5.6-sol"
+    profile.reasoningEffort = "xhigh"
+    profile.extraArguments = "--search"
+    let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
+      AgentProfileEditorFeature()
+    }
+
+    await store.send(.runtimeChanged(.claude)) {
+      $0.profile.runtime = .claude
+      $0.profile.model = nil
+      $0.profile.reasoningEffort = nil
+      $0.profile.extraArguments = ""
+    }
+    await store.receive(\.delegate.profileEdited)
+  }
+
   @Test(.dependencies) func unrestrictedRequiresExplicitConfirmation() async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     let storage = SettingsTestStorage()

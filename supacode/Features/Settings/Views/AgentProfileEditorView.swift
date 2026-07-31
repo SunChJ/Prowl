@@ -22,7 +22,13 @@ struct AgentProfileEditorView: View {
   private var profileSection: some View {
     Section("Profile") {
       TextField("Name", text: $store.profile.name)
-      Picker("Agent", selection: $store.profile.runtime) {
+      Picker(
+        "Agent",
+        selection: Binding(
+          get: { store.profile.runtime },
+          set: { store.send(.runtimeChanged($0)) }
+        )
+      ) {
         ForEach(AgentProfileRuntime.allCases) { runtime in
           Text(AgentRuntimeAdapterRegistry.displayName(for: runtime.agent)).tag(runtime)
         }

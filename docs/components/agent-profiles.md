@@ -46,6 +46,10 @@ sidebar remains available. Adding a profile opens the same editor immediately.
 Changing another Settings sidebar section leaves the editor and opens that
 section's root.
 
+Changing a profile's **Agent** resets its Model, Reasoning Effort, and Extra
+Arguments to the new runtime defaults. Those values are runtime-specific; add
+new values after choosing the destination agent.
+
 **Recommended** resolves in three tiers: the repo's **Default Agent Profile**
 (Repo Settings) → the last profile explicitly launched in this repo → the
 first enabled profile in the Settings list order. Each tier only matches an
