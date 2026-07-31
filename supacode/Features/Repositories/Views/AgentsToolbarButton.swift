@@ -38,6 +38,14 @@ struct AgentsLauncherItem: Equatable, Identifiable {
 /// carries no state indicator. A `Menu` cannot host this control: macOS
 /// toolbars flatten custom menu labels to their text, dropping the badge, so
 /// the popover is the durable container here.
+///
+/// When launcher profiles exist, the capsule grows a trailing quick-launch
+/// segment (mirroring the Open In split button on the far side): one click
+/// starts the Recommended profile — the popover list's leader — without
+/// opening the popover. Both segments share a single glass capsule; the
+/// system split look can't be reused here because it requires separate
+/// toolbar items in one shared-background group, and this control already
+/// opts out of that group to stay clear of the branch title.
 struct AgentsToolbarButton: View {
   let capsule: AgentsCapsuleState?
   let launcherItems: [AgentsLauncherItem]
@@ -46,25 +54,77 @@ struct AgentsToolbarButton: View {
   let onManageProfiles: () -> Void
   @State private var isPopoverPresented = false
   @State private var isHovered = false
+  @State private var isQuickLaunchHovered = false
+
+  /// The popover list's leading row (Recommended first, docs-ai 053), so the
+  /// segment and the popover always agree on what one click launches.
+  private var quickLaunchItem: AgentsLauncherItem? { launcherItems.first }
 
   var body: some View {
-    Button {
-      isPopoverPresented.toggle()
-    } label: {
-      label
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .contentShape(Capsule())
+    HStack(spacing: 0) {
+      Button {
+        isPopoverPresented.toggle()
+      } label: {
+        label
+          .padding(.leading, 10)
+          .padding(.trailing, quickLaunchItem == nil ? 10 : 8)
+          .padding(.vertical, 8)
+          .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .help(helpText)
+      .accessibilityLabel(accessibilityText)
+      .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+        AgentsPopoverContent(
+          capsule: capsule,
+          launcherItems: launcherItems,
+          onHandOff: {
+            isPopoverPresented = false
+            onHandOff()
+          },
+          onLaunchProfile: { id in
+            isPopoverPresented = false
+            onLaunchProfile(id)
+          },
+          onManageProfiles: {
+            isPopoverPresented = false
+            onManageProfiles()
+          }
+        )
+      }
+      if let quickLaunchItem {
+        Rectangle()
+          .fill(.separator)
+          .frame(width: 1)
+          .padding(.vertical, 8)
+        Button {
+          onLaunchProfile(quickLaunchItem.id)
+        } label: {
+          Image(systemName: "play.circle")
+            .font(.title3.weight(.medium))
+            .foregroundStyle(isQuickLaunchHovered ? .primary : .secondary)
+            .padding(.leading, 8)
+            .padding(.trailing, 10)
+            .padding(.vertical, 8)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { isQuickLaunchHovered = $0 }
+        .help("Launch \(quickLaunchItem.name) in this worktree")
+        .accessibilityLabel("Launch \(quickLaunchItem.name)")
+      }
     }
     // The item opts out of the navigation group's shared background
     // (`sharedBackgroundVisibility(.hidden)`) to stay separate from the
     // branch title, and draws its own glass capsule. `.plain` + an explicit
     // glass background keeps the horizontal padding as tight as the other
     // toolbar buttons; `.buttonStyle(.glass)` pads noticeably wider.
-    .buttonStyle(.plain)
+    //
     // Hover feedback must live in the glass material itself: a translucent
     // fill layered under `glassEffect` gets swallowed by the material
     // compositing, and `.interactive()` only adds press feedback on macOS.
+    // The material tints as one pill; the quick-launch segment signals its
+    // own hover by promoting its symbol from secondary to primary.
     .glassEffect(
       isHovered
         ? .regular.tint(.primary.opacity(0.12)).interactive()
@@ -72,26 +132,6 @@ struct AgentsToolbarButton: View {
       in: Capsule()
     )
     .onHover { isHovered = $0 }
-    .help(helpText)
-    .accessibilityLabel(accessibilityText)
-    .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
-      AgentsPopoverContent(
-        capsule: capsule,
-        launcherItems: launcherItems,
-        onHandOff: {
-          isPopoverPresented = false
-          onHandOff()
-        },
-        onLaunchProfile: { id in
-          isPopoverPresented = false
-          onLaunchProfile(id)
-        },
-        onManageProfiles: {
-          isPopoverPresented = false
-          onManageProfiles()
-        }
-      )
-    }
   }
 
   /// Mirrors `WorktreeDetailTitleView`'s label metrics (title3 medium,
