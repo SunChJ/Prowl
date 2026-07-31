@@ -53,9 +53,10 @@ Agent Profile picker, toolbar Agents popover, and Command Palette. Clearing it
 restores the runtime's Claude Code / Codex brand icon. Live panes and Active
 Agents retain the icon of the process Prowl actually detects.
 
-Changing a profile's **Agent** resets its Model, Reasoning Effort, and Extra
-Arguments to the new runtime defaults. Those values are runtime-specific; add
-new values after choosing the destination agent.
+Changing a profile's **Agent** resets its Model, Reasoning Effort, Extra
+Arguments, and confirmed Unrestricted mode to the new runtime defaults. Those
+values are runtime-specific; add new values after choosing the destination
+agent.
 
 **Recommended** resolves in three tiers: the repo's **Default Agent Profile**
 (Repo Settings) → the last profile explicitly launched in this repo → the

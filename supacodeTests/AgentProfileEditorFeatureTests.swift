@@ -27,6 +27,11 @@ struct AgentProfileEditorFeatureTests {
     profile.model = "gpt-5.6-sol"
     profile.reasoningEffort = "xhigh"
     profile.extraArguments = "--search"
+    profile.executionMode = .unrestricted
+    profile.icon = "wand.and.stars"
+    profile.placement = .split
+    profile.splitDirection = .left
+    profile.bindsDedicatedHome = true
     let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
       AgentProfileEditorFeature()
     }
@@ -36,8 +41,24 @@ struct AgentProfileEditorFeatureTests {
       $0.profile.model = nil
       $0.profile.reasoningEffort = nil
       $0.profile.extraArguments = ""
+      $0.profile.executionMode = .standard
+      $0.profile.icon = "wand.and.stars"
+      $0.profile.placement = .split
+      $0.profile.splitDirection = .left
+      $0.profile.bindsDedicatedHome = true
     }
     await store.receive(\.delegate.profileEdited)
+  }
+
+  @Test func suggestionSelectionDistinguishesCustomValuesFromRuntimeDefault() {
+    let suggestions = ["low", "medium", "high"]
+
+    #expect(AgentProfileSuggestionSelection(value: nil, suggestions: suggestions) == .runtimeDefault)
+    #expect(AgentProfileSuggestionSelection(value: "medium", suggestions: suggestions) == .suggestion("medium"))
+    #expect(
+      AgentProfileSuggestionSelection(value: "gateway-specific", suggestions: suggestions)
+        == .custom("gateway-specific"))
+    #expect(AgentProfileSuggestionSelection.custom("gateway-specific").value == "gateway-specific")
   }
 
   @Test(.dependencies) func settingProfileIconDelegatesTheEditedProfile() async {

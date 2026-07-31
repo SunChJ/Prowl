@@ -211,6 +211,7 @@ struct AgentProfileEditorView: View {
   ) -> some View {
     LabeledContent(title) {
       TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
+        .accessibilityLabel(title)
     }
   }
 
@@ -220,13 +221,18 @@ struct AgentProfileEditorView: View {
     text: Binding<String?>,
     suggestions: [String]
   ) -> some View {
-    LabeledContent(title) {
+    let selection = suggestionSelection(for: text, suggestions: suggestions)
+    return LabeledContent(title) {
       HStack(spacing: 4) {
         TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
-        Picker("", selection: suggestionIndex(for: text, suggestions: suggestions)) {
-          Text("Runtime Default").tag(0)
-          ForEach(suggestions.indices, id: \.self) { index in
-            Text(suggestions[index]).tag(index + 1)
+          .accessibilityLabel(title)
+        Picker("", selection: selection) {
+          Text("Runtime Default").tag(AgentProfileSuggestionSelection.runtimeDefault)
+          ForEach(suggestions, id: \.self) { suggestion in
+            Text(suggestion).tag(AgentProfileSuggestionSelection.suggestion(suggestion))
+          }
+          if case .custom = selection.wrappedValue {
+            Text("Custom Value").tag(selection.wrappedValue)
           }
         }
         .labelsHidden()
@@ -248,17 +254,13 @@ struct AgentProfileEditorView: View {
     )
   }
 
-  private func suggestionIndex(for text: Binding<String?>, suggestions: [String]) -> Binding<Int> {
+  private func suggestionSelection(
+    for text: Binding<String?>,
+    suggestions: [String]
+  ) -> Binding<AgentProfileSuggestionSelection> {
     Binding(
-      get: {
-        guard let value = text.wrappedValue, let index = suggestions.firstIndex(of: value) else {
-          return 0
-        }
-        return index + 1
-      },
-      set: { index in
-        text.wrappedValue = index == 0 ? nil : suggestions[index - 1]
-      }
+      get: { AgentProfileSuggestionSelection(value: text.wrappedValue, suggestions: suggestions) },
+      set: { text.wrappedValue = $0.value }
     )
   }
 

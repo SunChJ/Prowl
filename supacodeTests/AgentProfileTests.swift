@@ -50,6 +50,14 @@ struct AgentProfileTests {
     #expect(!decoded.bindsDedicatedHome)
   }
 
+  @Test func encodingRoundTripPreservesProfileIcon() throws {
+    let profile = AgentProfile(name: "Codex · Work", runtime: .codex, icon: "wand.and.stars")
+
+    let decoded = try JSONDecoder().decode(AgentProfile.self, from: JSONEncoder().encode(profile))
+
+    #expect(decoded.icon == "wand.and.stars")
+  }
+
   @Test func profileIconUsesCustomSymbolThenRuntimeBrandFallback() throws {
     let custom = AgentProfile(name: "Codex · Work", runtime: .codex, icon: "wand.and.stars")
     #expect(

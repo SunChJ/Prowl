@@ -61,12 +61,14 @@ struct AgentProfileEditorFeature {
 
       case .runtimeChanged(let runtime):
         guard state.profile.runtime != runtime else { return .none }
-        // Model, effort, and literal CLI arguments belong to the selected
-        // runtime. Keep only cross-runtime profile settings on a switch.
+        // Model, effort, literal CLI arguments, and unrestricted approval
+        // belong to the selected runtime. The target CLI requires its own
+        // explicit confirmation before it can bypass safeguards.
         state.profile.runtime = runtime
         state.profile.model = nil
         state.profile.reasoningEffort = nil
         state.profile.extraArguments = ""
+        state.profile.executionMode = .standard
         refreshHomeStatus(&state)
         return .send(.delegate(.profileEdited(state.profile)))
 

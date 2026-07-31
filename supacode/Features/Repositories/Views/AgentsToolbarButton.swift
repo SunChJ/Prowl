@@ -197,10 +197,12 @@ private struct AgentsPopoverRow: View {
         if let iconSource {
           AgentProfileIconImage(source: iconSource, pointSize: 16)
             .frame(width: 16)
+            .padding(.top, 2)
         } else {
           Image(systemName: systemImage)
             .frame(width: 16)
             .accessibilityHidden(true)
+            .padding(.top, 2)
         }
         VStack(alignment: .leading, spacing: 2) {
           Text(title)
