@@ -10,8 +10,9 @@ struct AgentProfileEditorView: View {
 
   var body: some View {
     Form {
-      launchPreviewSection
       profileSection
+      launchPreviewSection
+      detailsSection
       advancedSection
       removalSection
     }
@@ -50,6 +51,11 @@ struct AgentProfileEditorView: View {
         }
       }
       iconRow
+    }
+  }
+
+  private var detailsSection: some View {
+    Section("Details") {
       suggestedTextRow(
         title: "Model",
         prompt: "Runtime default",

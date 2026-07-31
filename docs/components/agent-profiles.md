@@ -89,9 +89,11 @@ when the picker says Standard; any other extra argument (including
 `--sandbox`/`--ask-for-approval`/`-c` overrides) shows a neutral "effective
 execution mode follows your extra arguments" note instead of claiming
 Standard — the semantics belong to your command line.
-The editor's first section is **Launch Preview**. It shows the exact rendered
-invocation — including the env prefix for bound profiles — using the same
-rendering as the real launch.
+The editor opens with a **Profile** section (name, agent, icon), followed by
+**Launch Preview** — the exact rendered invocation, including the env prefix
+for bound profiles, using the same rendering as the real launch — then a
+**Details** section with the remaining launch options (model, reasoning
+effort, execution mode, placement).
 
 ## Where things live on disk
 
