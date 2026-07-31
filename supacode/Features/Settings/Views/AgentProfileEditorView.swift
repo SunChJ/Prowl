@@ -148,7 +148,6 @@ struct AgentProfileEditorView: View {
     LabeledContent(title) {
       HStack(spacing: 4) {
         TextField("", text: optionalTextBinding(for: text), prompt: Text(prompt))
-          .padding(.trailing, 4)
         Picker("", selection: suggestionIndex(for: text, suggestions: suggestions)) {
           Text("Runtime Default").tag(0)
           ForEach(suggestions.indices, id: \.self) { index in
@@ -157,6 +156,7 @@ struct AgentProfileEditorView: View {
         }
         .labelsHidden()
         .frame(width: 28)
+        .padding(.trailing, 4)
         .accessibilityLabel("\(title) suggestions")
         .help("Pick a known value, or type any value.")
       }
