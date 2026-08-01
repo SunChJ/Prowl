@@ -48,14 +48,18 @@ permanently lengthened the inner loop.
   directory still wins. Keys compare whole components rather than raw string prefixes, which
   keeps `/tmp/repo` from matching a sibling `/tmp/repo2`.
 - `WorktreeDirectoryIndexCache` memoizes the index against the `(id, directory)` pairs it was
-  built from. Render passes that change only branch names, colors, or icons reuse it.
+  built from. Render passes that change only branch names, colors, or icons reuse it. Because
+  canonical paths also depend on filesystem state, an unchanged repository set revalidates its
+  normalized directories at most once per second and rebuilds if a symlink target changed.
 
 `SidebarListView.activeAgentRowDisplays` now resolves the index once for the whole batch.
 `resolveWorktreeID` is kept as the public entry point and delegates to the cache.
 
 Per sidebar render the cost drops from `agents × worktrees × 3` calls to `normalizeURL` — two
-filesystem round-trips each — to zero filesystem calls while the repository set is unchanged,
-and `worktrees + 1` on the render after it changes.
+filesystem round-trips each — to one queried-directory normalization per agent. Candidate
+directories are normalized when the repository set changes and, while it stays stable, no more
+than once per second for canonical-path validation. This bounds external symlink-target staleness
+without restoring filesystem work to every render pass.
 
 Resolution semantics are unchanged, including the pre-existing asymmetry where a
 non-existent path skips symlink resolution while an existing one does not. The 13 sidebar
@@ -63,15 +67,15 @@ tests in `supacodeTests/RepositorySectionViewTests.swift` pass unmodified.
 
 ## Refs
 
-Commit `ddb203e6` on branch `perf/sidebar-worktree-resolution`. PR pending — the branch was
-held for local verification before opening one.
+PR #648, implementation commit `246373b6`.
 
 ## Current state
 
-`supacode/Domain/WorktreeDirectoryIndex.swift` owns the resolution. Eight tests in
+`supacode/Domain/WorktreeDirectoryIndex.swift` owns the resolution. Ten tests in
 `supacodeTests/WorktreeDirectoryIndexTests.swift` cover nested resolution, deepest-match
 preference, the sibling-prefix trap, plain-folder repositories, unmatched paths, the empty
-index, `..` normalization, and both cache paths.
+index, `..` normalization, repository-set invalidation, branch-only reuse, and live symlink
+retargeting after the bounded revalidation interval.
 
 `make build-app` reported 0 errors and 0 warnings, `make test` reported 1943 passing tests
 and 0 failures, and `make check` (swift-format strict lint plus SwiftLint) was clean.
@@ -90,7 +94,9 @@ Process CPU fell from 94–134% to 29–70%. The workloads were not identical �
 sessions before versus 23 surfaces and 8 sessions after — so the percentages are indicative
 rather than a controlled comparison; the disappearance of `resolveWorktreeID` from the profile
 is not. The only residual frames are 24 samples (0.3%) in `WorktreeDirectoryIndex.worktreeID`,
-which is the by-design single normalization of the queried directory per lookup.
+which is the by-design single normalization of the queried directory per lookup. This profile
+predates the once-per-second canonical revalidation added during review; that bounded validation
+cost has not been independently sampled.
 
 ## Recurrence note
 

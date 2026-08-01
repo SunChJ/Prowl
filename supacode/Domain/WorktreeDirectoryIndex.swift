@@ -28,8 +28,18 @@ nonisolated struct WorktreeDirectoryIndex: Equatable {
     }
   }
 
+  fileprivate init(normalizedDirectories: [(id: Worktree.ID, directory: URL)]) {
+    for entry in normalizedDirectories {
+      insertNormalized(id: entry.id, directory: entry.directory)
+    }
+  }
+
   private mutating func insert(id: Worktree.ID, directory: URL) {
-    let components = PathPolicy.normalizeURL(directory).pathComponents
+    insertNormalized(id: id, directory: PathPolicy.normalizeURL(directory))
+  }
+
+  private mutating func insertNormalized(id: Worktree.ID, directory: URL) {
+    let components = directory.pathComponents
     let key = Self.key(for: components)
     // The first entry registered for a directory wins. This preserves the previous behavior when a
     // plain-folder repository root and its main worktree resolve to the same path.
@@ -64,25 +74,46 @@ nonisolated struct WorktreeDirectoryIndex: Equatable {
 /// Memoizes the index across SwiftUI render passes.
 ///
 /// `SidebarListView.body` re-runs on every agent output tick, and rebuilding the index each time
-/// would put one filesystem round-trip per worktree back on the main thread. The index is a pure
-/// function of the repository set, so a cached copy stays valid until that set changes.
+/// would put one filesystem round-trip per worktree back on the main thread. Repository changes
+/// rebuild immediately; otherwise canonical paths are revalidated at a bounded cadence so a live
+/// symlink retarget cannot leave the index stale until restart.
 @MainActor
 enum WorktreeDirectoryIndexCache {
-  private static var cachedSignature: [Entry] = []
+  private static let canonicalRevalidationInterval: Duration = .seconds(1)
+  private static var cachedSignature: [Entry]?
+  private static var cachedCanonicalSignature: [Entry] = []
   private static var cachedIndex = WorktreeDirectoryIndex()
+  private static var nextCanonicalRevalidation: ContinuousClock.Instant?
 
   private struct Entry: Equatable {
     let id: Worktree.ID
     let directory: URL
   }
 
-  static func index(for repositories: IdentifiedArrayOf<Repository>) -> WorktreeDirectoryIndex {
+  static func index(
+    for repositories: IdentifiedArrayOf<Repository>,
+    now: ContinuousClock.Instant = ContinuousClock.now
+  ) -> WorktreeDirectoryIndex {
     let signature = signature(for: repositories)
-    guard signature == cachedSignature else {
-      cachedSignature = signature
-      cachedIndex = WorktreeDirectoryIndex(repositories: repositories)
+    let repositorySetChanged = signature != cachedSignature
+    let canonicalRevalidationIsDue = nextCanonicalRevalidation.map { now >= $0 } ?? true
+    guard repositorySetChanged || canonicalRevalidationIsDue else {
       return cachedIndex
     }
+
+    let canonicalSignature = signature.map { entry in
+      Entry(id: entry.id, directory: PathPolicy.normalizeURL(entry.directory))
+    }
+    cachedSignature = signature
+    nextCanonicalRevalidation = now.advanced(by: canonicalRevalidationInterval)
+    guard canonicalSignature != cachedCanonicalSignature else {
+      return cachedIndex
+    }
+
+    cachedCanonicalSignature = canonicalSignature
+    cachedIndex = WorktreeDirectoryIndex(
+      normalizedDirectories: canonicalSignature.map { (id: $0.id, directory: $0.directory) }
+    )
     return cachedIndex
   }
 
@@ -105,7 +136,9 @@ enum WorktreeDirectoryIndexCache {
 
   /// Drops the memo so a test starts from a known state.
   static func reset() {
-    cachedSignature = []
+    cachedSignature = nil
+    cachedCanonicalSignature = []
     cachedIndex = WorktreeDirectoryIndex()
+    nextCanonicalRevalidation = nil
   }
 }

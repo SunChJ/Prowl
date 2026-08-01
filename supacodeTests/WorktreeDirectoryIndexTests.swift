@@ -116,6 +116,38 @@ struct WorktreeDirectoryIndexTests {
     #expect(first == second)
   }
 
+  @Test func cacheRevalidatesCanonicalPathsAfterInterval() throws {
+    WorktreeDirectoryIndexCache.reset()
+    let tempRoot = FileManager.default.temporaryDirectory
+      .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let firstTarget = tempRoot.appending(path: "first", directoryHint: .isDirectory)
+    let secondTarget = tempRoot.appending(path: "second", directoryHint: .isDirectory)
+    let symlink = tempRoot.appending(path: "current", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+    try FileManager.default.createDirectory(at: firstTarget, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondTarget, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: firstTarget)
+
+    let repository = makeRepository(
+      id: symlink.path(percentEncoded: false),
+      kind: .plain,
+      worktrees: []
+    )
+    let start = ContinuousClock.now
+    let first = WorktreeDirectoryIndexCache.index(for: [repository], now: start)
+    #expect(first.worktreeID(forWorkingDirectory: firstTarget) == repository.id)
+
+    try FileManager.default.removeItem(at: symlink)
+    try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: secondTarget)
+
+    let revalidated = WorktreeDirectoryIndexCache.index(
+      for: [repository],
+      now: start.advanced(by: .seconds(1))
+    )
+    #expect(revalidated.worktreeID(forWorkingDirectory: secondTarget) == repository.id)
+    #expect(revalidated.worktreeID(forWorkingDirectory: firstTarget) == nil)
+  }
+
   // MARK: - Helpers
 
   private func makeWorktree(repoRoot: String, path: String, branch: String) -> Worktree {
