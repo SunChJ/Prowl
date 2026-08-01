@@ -116,6 +116,14 @@ Reducer ← .terminalEvent(Event) ← AsyncStream<Event>
 - SwiftLint runs in strict mode; never disable lint rules without permission
 - Custom SwiftLint rule: `store_state_mutation_in_views` — do not mutate `store.*` directly in view files; send actions instead
 - Before creating a PR, run `make check`. Use `make format` only for intentional full-tree formatting cleanup.
+- If `make check` fails with `swift-format: command not found`, the Xcode toolchain is not on `PATH`. The Makefile invokes `swift-format` unqualified, and the binary ships inside Xcode rather than in a standard bin directory. Prepend it for the invocation:
+
+  ```bash
+  export PATH="$(dirname "$(xcrun --find swift-format)"):$PATH"
+  make check
+  ```
+
+  `make lint` is unaffected — it already runs SwiftLint through `mise exec`.
 
 ## UX Standards
 

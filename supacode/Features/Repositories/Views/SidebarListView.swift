@@ -585,12 +585,16 @@ struct SidebarListView: View {
     repositories: IdentifiedArrayOf<Repository>,
     metadata: ActiveAgentWorktreeMetadata
   ) -> [ActiveAgentEntry.ID: ActiveAgentRowDisplay] {
+    // Built (or reused) once for the whole batch: resolving each row against every worktree
+    // individually put a filesystem round-trip per row/worktree pair on the main thread.
+    let directoryIndex = WorktreeDirectoryIndexCache.index(for: repositories)
     var displays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay] = [:]
     for entry in entries {
       displays[entry.id] = activeAgentRowDisplay(
         for: entry,
         repositories: repositories,
-        metadata: metadata
+        metadata: metadata,
+        directoryIndex: directoryIndex
       )
     }
     return displays
@@ -602,13 +606,17 @@ struct SidebarListView: View {
   /// 2. `workingDirectory` is known but outside every repo → derive a name from its last path
   ///    component (same logic as adding a repository).
   /// 3. `workingDirectory` is unknown → fall back to the surface's owning worktree (legacy behavior).
+  /// `directoryIndex` is supplied by `activeAgentRowDisplays` so a batch shares one index; passing
+  /// `nil` builds a throwaway one for a single lookup.
   static func activeAgentRowDisplay(
     for entry: ActiveAgentEntry,
     repositories: IdentifiedArrayOf<Repository>,
-    metadata: ActiveAgentWorktreeMetadata
+    metadata: ActiveAgentWorktreeMetadata,
+    directoryIndex: WorktreeDirectoryIndex? = nil
   ) -> ActiveAgentRowDisplay {
     if let workingDirectory = entry.workingDirectory {
-      if let key = resolveWorktreeID(forWorkingDirectory: workingDirectory, in: repositories) {
+      let index = directoryIndex ?? WorktreeDirectoryIndex(repositories: repositories)
+      if let key = index.worktreeID(forWorkingDirectory: workingDirectory) {
         let fallbackName = workingDirectory.lastPathComponent
         return ActiveAgentRowDisplay(
           repositoryName: metadata.repositoryNamesByWorktreeID[key] ?? fallbackName,
@@ -641,24 +649,8 @@ struct SidebarListView: View {
     forWorkingDirectory workingDirectory: URL,
     in repositories: IdentifiedArrayOf<Repository>
   ) -> Worktree.ID? {
-    var best: (id: Worktree.ID, depth: Int)?
-    func consider(id: Worktree.ID, directory: URL) {
-      guard PathPolicy.contains(workingDirectory, in: directory) else { return }
-      let depth = PathPolicy.normalizeURL(directory).pathComponents.count
-      if let current = best, current.depth >= depth { return }
-      best = (id, depth)
-    }
-    for repository in repositories {
-      if repository.capabilities.supportsRunnableFolderActions,
-        !repository.capabilities.supportsWorktrees
-      {
-        consider(id: repository.id, directory: repository.rootURL)
-      }
-      for worktree in repository.worktrees {
-        consider(id: worktree.id, directory: worktree.workingDirectory)
-      }
-    }
-    return best?.id
+    WorktreeDirectoryIndexCache.index(for: repositories)
+      .worktreeID(forWorkingDirectory: workingDirectory)
   }
 
   /// Directory of the surface's owning worktree, used when the agent hasn't
