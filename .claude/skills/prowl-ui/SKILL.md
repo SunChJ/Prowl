@@ -1,6 +1,6 @@
 ---
 name: prowl-ui
-description: Explicitly inspect and operate the native Prowl Debug UI with agent-ctrl on macOS. Use only when the user asks to verify or drive Prowl UI behavior, especially Settings, sheets, menus, popovers, view switching, repository selection, and Active Agents. Do not invoke automatically after implementation, and use prowl-cli instead for tabs, panes, terminal content, command routing, or agent sessions.
+description: Explicitly inspect, operate, and iteratively improve the native Prowl Debug UI verification surface with agent-ctrl on macOS. Use only when the user asks to verify or drive Prowl UI behavior, especially Settings, sheets, menus, popovers, view switching, repository selection, and Active Agents. When a run exposes a high-confidence Prowl accessibility metadata gap, make a narrow repair and report the before-and-after evidence; report lower-confidence or backend limitations without speculative changes. Do not invoke automatically after implementation, and use prowl-cli instead for tabs, panes, terminal content, command routing, or agent sessions.
 ---
 
 # Prowl UI
@@ -101,12 +101,10 @@ agent-ctrl scroll --ref "$ref" --session "$session" -- 0 -600
 
 ### View Modes
 
-The top-level `Default`, `Canvas`, and `Shelf` controls are buttons. `Canvas` has distinctive semantic descendants such as
-`Canvas navigation help`, `Arrange`, `Organize`, and `Tile`, so assert those after switching.
-
-SwiftUI currently does not expose a selected AX state for `Default` or `Shelf`. Their button press and visual highlight are
-not enough for a semantic `PASS`. Prove a mode through distinctive content or behavior when available; otherwise declare a
-visual assertion and use a pinned screenshot, or report the semantic assertion as `INCONCLUSIVE`.
+The top-level `Default`, `Canvas`, and `Shelf` controls are buttons with identifiers `sidebar-view-mode-default`,
+`sidebar-view-mode-canvas`, and `sidebar-view-mode-shelf`. The active button exposes selected state. After switching, assert
+that exactly one of the three is selected and that it is the requested mode. `Canvas` also has distinctive descendants such
+as `Canvas navigation help`, `Arrange`, `Organize`, and `Tile`; use those as secondary evidence when relevant.
 
 ### Active Agents
 
@@ -136,8 +134,8 @@ Never hardcode repository names, worktree labels, refs, or screen coordinates.
 ### Toolbar, Popovers, and Menus
 
 The Agents toolbar menu has accessibility identifier `agents-toolbar-menu`; the adjacent quick-launch control uses
-`agents-toolbar-quick-launch`. Opening Agents produces a nested dialog with `Manage Agent Profiles…`; it may not appear as
-a sibling in `window-list`. Do not activate a profile merely to test the popover.
+`agents-toolbar-quick-launch`. Opening Agents produces a named container with identifier `agents-toolbar-popover` inside a
+nested dialog; it may not appear as a sibling in `window-list`. Do not activate a profile merely to test the popover.
 
 Menus can appear more than once in the AX tree even though only one menu is visible. Treat duplicate menu-item nodes as one
 surface. Close a menu with its toggle when that changes state; otherwise use one safe outside click and verify the expected
@@ -171,9 +169,9 @@ of treating a focus failure as proof that the window is inaccessible.
 
 ## Sheets and Editable Controls
 
-`Add...` opens the in-window `Add to Prowl` dialog. `Browse…` opens an `NSOpenPanel` sheet that remains embedded in the
-main window's AX tree; it may not appear as another entry in `window-list`. Inspect the pinned tree for `dialog`, `Cancel`,
-and `Open` before searching for a sibling window.
+`Add...` opens a named container with identifier `add-to-prowl-popover` inside the in-window `Add to Prowl` dialog.
+`Browse…` opens an `NSOpenPanel` sheet that remains embedded in the main window's AX tree; it may not appear as another
+entry in `window-list`. Inspect the pinned tree for `dialog`, `Cancel`, and `Open` before searching for a sibling window.
 
 Prefer `fill` on a fresh editable ref for safe text-entry checks. Keyboard `press` can fail with `AXRaise` on sheets or
 Settings. Native search fields can temporarily replace the snapshot root with a suggestions menu and may never become
@@ -182,6 +180,52 @@ structurally stable, so wait for a concrete control or value instead of relying 
 Never add a repository, clone, launch an agent profile, archive a worktree, run a command, or persist a setting unless the
 scenario explicitly requires that mutation and defines cleanup. Opening and cancelling a surface is sufficient for generic
 control verification.
+
+## Evolve the Verification Surface
+
+Treat friction during a real run as feedback to classify after first restoring the scenario to a known state. Distinguish:
+
+1. A Prowl accessibility metadata gap.
+2. An `agent-ctrl` discovery, scoping, or delivery limitation.
+3. A macOS permission, focus, timing, or framework limitation.
+
+Treat an explicit invocation of this skill as permission for a narrow Prowl-local accessibility metadata repair unless the
+parent request is read-only or explicitly forbids edits. Do not infer permission for functional UI changes, dependency
+installation, commits, pushes, or external reports.
+
+Make a Prowl repair autonomously only when all of these are true:
+
+- Fresh snapshots from the exact Debug PID reproduce the missing or incorrect semantic state.
+- The source makes the intended label, value, selection, role, or control identity unambiguous.
+- The fix is limited to stable `accessibilityIdentifier`, label, value, trait, action, or container metadata.
+- The fix does not change layout, control type, focus behavior, window lifecycle, persisted data, or the user-visible action.
+- The same scenario can prove the improvement directly after a rebuild and relaunch.
+
+Use stable, nonlocalized identifiers based on product meaning, not display text, indexes, repository names, refs, or runtime
+data. Keep VoiceOver semantics truthful: do not mark a semitransient popover as modal, add selected state to a momentary
+button, or collapse useful children merely to make an automation tree smaller.
+
+For a high-confidence gap:
+
+1. Preserve the before snapshot or exact failed assertion.
+2. Make the smallest metadata-only source change.
+3. Build and relaunch the isolated Debug app.
+4. Repeat the same interaction and capture after evidence.
+5. Re-check VoiceOver-oriented structure as well as `agent-ctrl` output.
+6. Update this skill only when the new behavior or workaround is durable, Prowl-specific, and verified. Edit the relevant
+   rule instead of appending a chronological field note, then validate the skill.
+
+If ownership or semantics remain uncertain, do not patch. Finish the requested verification, reduce the affected assertion
+to `INCONCLUSIVE` when necessary, and report the evidence plus the smallest recommended Prowl or upstream experiment.
+
+Always add a concise `UI Evolution` section to the final report:
+
+- `Friction` — what was difficult, or `None`.
+- `Ownership` — `Prowl`, `agent-ctrl`, `macOS`, or `Unclear`.
+- `Confidence` — `High`, `Medium`, or `Low`, with the decisive evidence.
+- `Change` — source and skill edits made, or `None`.
+- `Before / After` — direct semantic evidence when a repair was made.
+- `Follow-up` — unresolved recommendation, or `None`.
 
 ## Evidence and Outcome
 
