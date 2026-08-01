@@ -10,6 +10,18 @@ extension Reducer where State: Equatable {
   }
 }
 
+/// When set, `LogActionsReducer` labels every action and logs it to the unified
+/// log, plus prints a `CustomDump` state diff. Off by default: the label
+/// reflection (`debugCaseOutput`) together with a full app-state snapshot and a
+/// deep `==` compare run on *every* action, which stack sampling measured as a
+/// steady main-thread cost under heavy action throughput. Enable per launch with
+/// `PROWL_LOG_TCA_ACTIONS=1` (Xcode scheme env var, or `open` with the variable
+/// exported) to trace the stream via `make log-stream`.
+#if DEBUG
+  private let tcaActionLoggingEnabled =
+    ProcessInfo.processInfo.environment["PROWL_LOG_TCA_ACTIONS"] == "1"
+#endif
+
 struct LogActionsReducer<Base: Reducer>: Reducer where Base.State: Equatable {
   let base: Base
 
@@ -17,8 +29,14 @@ struct LogActionsReducer<Base: Reducer>: Reducer where Base.State: Equatable {
 
   func reduce(into state: inout Base.State, action: Base.Action) -> Effect<Base.Action> {
     #if DEBUG
+      guard tcaActionLoggingEnabled else {
+        return base.reduce(into: &state, action: action)
+      }
       let actionLabel = debugCaseOutput(action)
-      logger.debug("Action: \(actionLabel)")
+      // `notice`, not `debug`: in DEBUG `SupaLogger.debug` prints to a stdout
+      // that a Finder/launchd-launched app discards, so `make log-stream` would
+      // never see it. `notice` routes to the unified log in all configs.
+      logger.notice("Action: \(actionLabel)")
       let previousState = state
       let effects = base.reduce(into: &state, action: action)
       if previousState != state, let diff = CustomDump.diff(previousState, state) {
