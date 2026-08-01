@@ -1,46 +1,70 @@
 ---
 name: self-verify-prowl
-description: Bootstrap-verify Prowl changes by launching a debug app with a dedicated PROWL_CLI_SOCKET and driving it from the current Prowl session. Use after implementing Prowl app, terminal, Active Agents, or CLI changes when Codex should validate behavior end-to-end in a separate Prowl instance, including opening worktrees, creating tabs, running commands or agent sessions, reading panes, and falling back to a single-window screenshot of the debug app when the prowl CLI is insufficient.
+description: Explicitly verify Prowl changes end to end in a separate Prowl Debug instance with a dedicated PROWL_CLI_SOCKET. Use only when the user explicitly requests self-verify-prowl or asks to run end-to-end verification against Prowl Debug. Do not invoke automatically after ordinary implementation work, and do not use it as a replacement for tests, make check, or make build-app.
 ---
 
 # Self Verify Prowl
 
-## Overview
+## Invocation Contract
 
-Use this skill to validate a Prowl change from inside Prowl itself: start a freshly built debug app, point it at a temporary CLI socket, and use `prowl` from the current session to drive that separate app instance.
+Run this skill only after an explicit user request. A request to implement, fix, test, or build Prowl does not by itself
+authorize this workflow.
 
-Prefer `prowl` CLI operations because they are scriptable and leave useful evidence. When CLI coverage is not enough, fall back to a single-window screenshot of the debug app as a secondary check.
+This skill is an opt-in end-to-end layer on top of focused tests, `make check`, and `make build-app`. It launches a real
+GUI app, reads shared user data, and is slower and less deterministic than those checks.
 
-## When To Use
+Use one of these final outcomes for every scenario:
 
-Use this after changes that affect:
+- `PASS` — every stated assertion has direct evidence.
+- `FAIL` — the observed result contradicts an assertion.
+- `SKIPPED` — a declared capability or permission is unavailable, so no action was attempted.
+- `INCONCLUSIVE` — the action ran, but the available evidence cannot prove or disprove the assertion.
 
-- Prowl app behavior that needs a real running GUI instance.
-- Terminal tabs, panes, focus, worktrees, or command routing.
-- Active Agents detection or roster presentation.
-- `ProwlCLI/`, CLI payloads, socket transport, or CLI docs.
-- Workflows where one Prowl-hosted agent should verify another Prowl instance.
+Never turn missing evidence into `PASS`.
 
-Do not use this as a replacement for unit tests, `make check`, `make build-app`, or CLI integration tests. It is an end-to-end manual validation layer on top of those checks.
+## Define the Scenario First
 
-## First Step — Read the prowl-cli Skill
+Before building or launching, write a small verification contract:
 
-**Before writing any `prowl` command, load and read the `prowl-cli` skill.** This is not optional. `prowl-cli` is the authoritative reference for JSON field names, targeting rules, quoting, argument semantics, error codes, and common pitfalls. This skill covers the self-verify workflow; `prowl-cli` covers how to use `prowl` correctly. Do not guess field names — get them from `prowl-cli`.
+1. Setup — the worktree, initial tab or window, and required state.
+2. Action — the exact CLI command or UI interaction.
+3. Assertions — observable terminal text, JSON fields, accessibility state, or pixel-level result.
+4. Evidence source — `prowl`, an accessibility-capable desktop tool, a PID-scoped screenshot, or a targeted log marker.
+5. Cleanup — temporary tabs, panes, processes, sockets, and artifacts.
 
-Concretely: invoke the `prowl-cli` skill (or read its SKILL.md) before proceeding to the Launch step. If you skip this, you will likely use wrong JSON paths, miss quoting rules, or hit avoidable pitfalls.
+Keep scenarios narrow. “The app launched” or “the UI looks correct” is not a sufficient assertion.
+
+## Choose the Control Surface
+
+Use the smallest surface that can prove the assertion:
+
+1. Use `prowl` for worktrees, tabs, panes, terminal contents, command routing, task state, and agent sessions.
+2. Use a semantic macOS accessibility tool for UI labels, roles, enabled or selected state, navigation, sheets, menus,
+   popovers, and buttons. Load that tool's own skill before using it.
+3. Use a PID-scoped screenshot only for geometry, clipping, visual hierarchy, or other pixel-level assertions.
+4. Use targeted `SupaLogger` markers only when neither public CLI state nor accessibility state exposes the behavior.
+
+A screenshot alone does not prove that a control is enabled, selected, actionable, or wired to the intended behavior.
+AppleScript coordinate loops are not an acceptable fallback. If no suitable control surface exists, report `SKIPPED` or
+`INCONCLUSIVE` instead of retrying blindly.
+
+Before writing any `prowl` command, load and read the `prowl-cli` skill. It is authoritative for JSON fields, selectors,
+quoting, argument semantics, and error codes.
 
 ## Preconditions
 
 - Work from the Prowl repository root.
-- Preserve unrelated user changes. Do not close or kill the user's normal Prowl app.
-- If the CLI changed, build and use the repo CLI, usually `./.build/debug/prowl`.
-- If the CLI did not change, an installed `prowl` may be usable, but the repo-built CLI keeps the app/CLI protocol aligned.
+- Preserve unrelated user changes and never stop the user's installed Prowl app.
+- Use the repo CLI (`./.build/debug/prowl`) when CLI code or protocol behavior changed.
+- Treat the debug app as sharing the installed app's `~/Library` data. Do not mutate real settings unless the scenario
+  explicitly requires it and restores the previous value.
+- Limit read-only recovery to two short retries after a transient error. Never retry an action whose delivery is uncertain;
+  observe the resulting state first.
 
-## Launch A Separate App
+## Launch the Separate Debug App
 
-The debug app uses a fixed socket at `/tmp/prowl-self-verify.sock`. This path is stable across shell invocations, so every step can reference it directly without intermediate files or re-sourcing.
-
-Clean up any stale socket from a previous run, then start the debug app in a persistent shell session:
+Use the dedicated socket `/tmp/prowl-self-verify.sock`. Clean stale artifacts, then keep `make run-app` alive in a persistent
+shell or PTY for the whole run:
 
 ```bash
 rm -f /tmp/prowl-self-verify.sock /tmp/prowl-self-verify.sock.lock
@@ -48,82 +72,47 @@ mkdir -p /tmp/prowl-self-verify
 PROWL_CLI_SOCKET=/tmp/prowl-self-verify.sock make run-app >/tmp/prowl-self-verify/run-app.log 2>&1
 ```
 
-Keep that command running in its own shell or PTY session for the whole validation run.
+Do not launch the `ProwlApp` executable directly from a short-lived background shell. When `PROWL_CLI_SOCKET` is set, CLI
+auto-launch is disabled; every CLI call must use the same socket.
 
-Do not launch the built `ProwlApp` binary directly in the background from an agent shell. Once that shell exits, the app can exit and leave a stale socket behind.
+If the socket exists but the CLI returns `APP_NOT_RUNNING`, remove the stale socket and lock only after confirming no debug
+`ProwlApp` process remains, then relaunch. If it returns `SOCKET_PERMISSION_DENIED`, report the sandbox limitation instead
+of repeatedly reconnecting.
 
-If plain `make run-app` reports a socket ownership problem, relaunch with the custom `PROWL_CLI_SOCKET`; the installed app may already own the standard socket.
+## Load the Helpers and Check Health
 
-If the socket appears but `prowl_debug list --json` returns `APP_NOT_RUNNING`, the app likely exited and left a stale socket/lock behind. Remove both socket files, confirm no debug `ProwlApp` PID is still alive, then relaunch with `PROWL_CLI_SOCKET=/tmp/prowl-self-verify.sock make run-app` in a persistent shell session. If it returns `SOCKET_PERMISSION_DENIED`, the agent sandbox cannot connect to that socket path; allowlist the path or rerun the CLI outside that sandbox.
-
-When `PROWL_CLI_SOCKET` is set, CLI auto-launch is disabled. The debug app and every CLI invocation must use the same socket value.
-
-The debug app shares the installed app's `~/Library` data, so it loads the real repository list and looks identical to the installed window; never identify the debug instance by appearance. Target it by socket plus pane or tab UUID.
-
-## Use The Run-App Log
-
-The `make run-app` log is the third verification surface, alongside `prowl read` and screenshots. Capture it to `/tmp/prowl-self-verify/run-app.log` as shown above instead of streaming the full output into the agent context.
-
-This is especially useful when you add your own logging during development or debugging. The recommended workflow is:
-
-1. Add `SupaLogger` calls in the code you are changing to emit markers you can search for later.
-2. Rebuild and relaunch the debug app so the new logs take effect.
-3. Before running a scenario, record the current log line count. After the scenario, inspect only the new lines, filtering for the markers you added:
-
-```bash
-log=/tmp/prowl-self-verify/run-app.log
-before="$(wc -l <"$log" | tr -d ' ')"
-
-# Run prowl_debug open/tab/send/read operations here.
-
-sleep 3
-after="$(wc -l <"$log" | tr -d ' ')"
-sed -n "$((before + 1)),${after}p" "$log" \
-  | rg "YourMarker|error|warning"
-```
-
-Replace `YourMarker` with whatever log prefix or keyword you introduced in step 1. Do not hard-code a fixed set of log patterns — choose search terms that match the specific behavior you are verifying.
-
-Logs can arrive a few seconds after the CLI command returns, so wait briefly and re-check before concluding an event is missing.
-
-Do not treat the log as the primary proof of terminal contents or CLI response shape. Use `prowl read` for terminal text, ordinary `jq` for CLI JSON, and screenshots for visual gaps.
-
-## Reusable Shell Setup
-
-Available script:
-
-- `scripts/helpers.sh` — Source-only helpers for the dedicated socket, tolerant JSON parsing, debug PID lookup, health checks, and PID-scoped screenshots.
-
-Use the bundled helper script instead of re-pasting shell functions. Source it after the debug app has started, then run its health check before driving the app:
+Source the bundled helpers after launch and before each later shell command:
 
 ```bash
 . .claude/skills/self-verify-prowl/scripts/helpers.sh
 wait_for_prowl_debug
 ```
 
-For each later shell command, source the helper and rerun the health check before driving the app:
+The helpers provide:
+
+- `prowl_debug` — runs the configured CLI against the dedicated socket.
+- `debug_pids` — returns only Prowl executables inside a DerivedData Debug product.
+- `debug_pid_with_window` and `debug_window_id` — select the visible debug window by PID.
+
+If the helper test changed, run it directly:
 
 ```bash
-. .claude/skills/self-verify-prowl/scripts/helpers.sh
-wait_for_prowl_debug
+bash .claude/skills/self-verify-prowl/scripts/helpers_test.sh
 ```
 
-Use `prowl_debug ...` and `debug_window_id` from `scripts/helpers.sh` for the commands below. Keep `PROWL_CLI_SOCKET` explicit if you inline commands instead of using the helper.
+Parse JSON with direct pipes, files, or `printf '%s\n' "$json" | jq`. Do not use `echo "$json" | jq`; zsh may reinterpret
+escape sequences. Invalid control characters in direct CLI output are a CLI regression, not a reason to weaken parsing.
 
-Parse `--json` output with ordinary `jq`. Do not pipe shell variables through `echo "$json" | jq`: zsh can interpret JSON escape sequences such as `\u001B` and turn them back into raw control characters. Use direct CLI pipes, files, or `printf '%s\n' "$json" | jq`.
+## Drive Terminal Scenarios with Prowl CLI
 
-If `jq` reports invalid control characters while parsing direct CLI stdout or a captured file, treat it as a CLI regression rather than working around it in this skill.
-
-## Drive With Prowl CLI
-
-Use the new CLI when CLI behavior changed:
+Build the repo CLI when required:
 
 ```bash
 make build-cli
 cli="./.build/debug/prowl"
 ```
 
-Then seed the debug app and create a deterministic temporary pane:
+Seed the debug app and create a disposable tab:
 
 ```bash
 opened="$(prowl_debug open . --json)"
@@ -132,64 +121,45 @@ created="$(prowl_debug tab create --worktree "$worktree" --json)"
 pane="$(printf '%s\n' "$created" | jq -r '.data.target.pane.id')"
 tab="$(printf '%s\n' "$created" | jq -r '.data.target.tab.id')"
 
-prowl_debug send --pane "$pane" 'printf "SELF_VERIFY:%s\n" "$PWD"' --capture --timeout 30 --json \
-  | jq -r '.data.capture.text'
-prowl_debug read --pane "$pane" --last 80 --wait-stable --json \
-  | jq -r '.data.text'
+prowl_debug send --pane "$pane" 'printf "SELF_VERIFY:%s\n" "$PWD"' \
+  --capture --timeout 30 --json | jq -r '.data.capture.text'
+prowl_debug read --pane "$pane" --last 80 --wait-stable --json | jq -r '.data.text'
 ```
 
-Prefer targeting by pane or tab UUIDs from JSON output. Avoid relying on titles when multiple Prowl instances or similar tabs exist.
+Prefer pane and tab UUIDs returned by JSON over titles. A fresh debug app may be windowless, so call `open .` before
+expecting `list` to contain panes.
 
-Key JSON fields (see `prowl-cli` skill for the full reference):
+Important JSON fields:
 
-- `read --json` → terminal text is `.data.text`, not `.content` or `.output`.
-- `send --capture --json` → captured output is `.data.capture.text`; exit code is `.data.wait.exit_code`.
-- `list --json` → pane list is `.data.items[]`, not `.worktrees[]`; each item has `.pane.id`, `.tab.id`, `.worktree.id`, `.task.status`.
+- `read --json`: `.data.text`
+- `send --capture --json`: `.data.capture.text` and `.data.wait.exit_code`
+- `list --json`: `.data.items[]`, including `.pane.id`, `.tab.id`, `.worktree.id`, and `.task.status`
 
-Always seed the debug instance with `prowl_debug open . --json` before expecting panes. A fresh debug app can start windowless and return an empty `list`; `open .` creates or focuses a worktree tab that later commands can target. Prefer creating an extra temporary tab for the scenario, then close that tab during cleanup.
+For command routing, assert a unique marker, cwd, or environment value. For tab, pane, focus, or worktree behavior, compare
+the targeted JSON state before and after the action. Use `agents --json` only when the changed behavior concerns Active
+Agents.
 
-`send --timeout` is in seconds (1–300, default 30): the maximum time to wait for the command to finish. The `wait.duration_ms` in the response is how long the command actually took, not the timeout — do not read a small `duration_ms` as the timeout being ignored.
+## Verify UI Semantics
 
-## Run Observable Scenarios
+When an accessibility-capable desktop tool is available:
 
-Turn the change into one or more observable scenarios. Prefer small checks that prove the behavior directly:
+1. Preflight its installation and Accessibility permission without prompting.
+2. Resolve the debug PID with `debug_pid_with_window`, then select the exact window belonging to that PID.
+3. Start with a compact or skeleton accessibility snapshot and drill into the relevant region.
+4. Act through a fresh semantic element reference rather than coordinates.
+5. Re-snapshot the affected region or surface and assert the resulting label, value, role, state, or window.
+6. Treat sheets, alerts, menus, and popovers as separate surfaces.
 
-- For command routing, run a command that prints the cwd, environment, or a unique marker.
-- For tab, pane, focus, or worktree behavior, create an isolated tab or pane and inspect `list --json` before and after the action.
-- For long-running task behavior, start a controlled command with visible output, then sample the pane with `read`.
-- For agent-specific behavior, start a short agent session and use `agents --json` only when the changed behavior involves the Active Agents roster.
+Do not identify the debug app by appearance: it shares data with the installed app and may look identical. If a tool cannot
+pin reads and actions to the debug PID or exact window, do not use it while both instances are running.
 
-Example command scenario:
+Use headed or physical input only when the semantic action is unavailable and the scenario explicitly needs physical
+delivery. If an action returns an uncertain-delivery or app-unresponsive result, inspect the new UI state before deciding
+whether it failed; never repeat the action blindly.
 
-```bash
-result="$(prowl_debug send --pane "$pane" \
-  'printf "SELF_VERIFY:%s\n" "$PWD"' \
-  --capture --timeout 30 --json)"
-printf '%s\n' "$result" | jq -r '.data.capture.text'
-printf '%s\n' "$result" | jq -r '.data.wait.exit_code'
+## Use Screenshots Only for Visual Assertions
 
-prowl_debug read --pane "$pane" --last 80 --wait-stable --json \
-  | jq -r '.data.text'
-```
-
-Example long-running scenario:
-
-```bash
-prowl_debug send --pane "$pane" \
-  'for i in 1 2 3; do echo "SELF_VERIFY_STEP:$i"; sleep 1; done' \
-  --no-wait --json
-
-prowl_debug read --pane "$pane" --last 120 --json \
-  | jq -r '.data.text'
-```
-
-If the scenario uses another agent, keep it scoped and reversible. Short non-interactive agent tasks can finish before they are sampled; use an interactive session only when the behavior under test requires observing an active retained pane.
-
-## Fallback Checks
-
-`prowl` is the primary control surface, but it cannot verify every visual detail. Use a screenshot when CLI output cannot prove the behavior.
-
-Capture only the debug app's window, not the whole screen. The current Prowl session usually sits in front of the debug instance, so a full-screen `screencapture -x` would show the wrong window. Use `debug_window_id` from the reusable setup block to resolve a PID-scoped window id:
+Capture only the debug app's window:
 
 ```bash
 . .claude/skills/self-verify-prowl/scripts/helpers.sh
@@ -198,42 +168,46 @@ test -n "$wid"
 screencapture -o -l"$wid" /tmp/prowl-self-verify/prowl-debug-window.png
 ```
 
-`debug_window_id` compiles its tiny CoreGraphics helper on first screenshot use and reuses it for later screenshots in the same run. `screencapture -o -l<windowid>` grabs just that window without its shadow. Then use `view_image` or another image inspection tool to review it.
+Review that image only for the visual assertion declared in the scenario. A screenshot path or successful capture is not
+itself a verification result.
 
-Browser or computer-use skills are useful for web and localhost targets, but do not provide reliable control over arbitrary macOS apps. Prefer the Prowl CLI first, then a single-window screenshot for visual gaps.
+## Use Targeted Logs Sparingly
+
+The run log is `/tmp/prowl-self-verify/run-app.log`. Record its line count before the scenario and inspect only appended
+lines after the action. Filter for a marker specific to the changed behavior; do not scan the entire log or treat generic
+warnings as proof.
+
+Logs can arrive asynchronously. One short wait and a second read is acceptable. After that, report the log assertion as
+failed or inconclusive.
 
 ## Cleanup
 
-Close tabs or panes created for verification:
+Close every temporary tab or pane by UUID:
 
 ```bash
 prowl_debug tab close --tab "$tab" --force --json
 ```
 
-Stop the `make run-app` session when validation is done. If you cannot stop that shell directly, terminate only the debug app launched from DerivedData and never the installed `/Applications/Prowl.app`. The Mach-O executable is named `ProwlApp` (not `Prowl`), and a plain `SIGTERM` is enough.
-
-Do not use `pkill -f "<path-pattern>"`: `-f` can also match the shell or helper process carrying that pattern. Use `debug_pids` from the reusable setup block so only processes whose executable basename is `ProwlApp` are signaled:
+Stop only the DerivedData debug process:
 
 ```bash
 for pid in $(debug_pids); do kill "$pid"; done
 sleep 2
 alive="$(debug_pids | tr '\n' ' ')"
-[ -n "$alive" ] && echo "debug still alive:$alive" || echo "debug app stopped"
+[ -n "$alive" ] && printf 'debug still alive:%s\n' "$alive" || printf 'debug app stopped\n'
 ```
 
-`SIGTERM` does not run the app's normal socket teardown, so the custom socket and its lock can remain. Remove them yourself, along with any screenshots:
+After the process stops, remove the dedicated socket, lock, and scratch directory. Never use `pkill -f`, and never target
+`/Applications/Prowl.app`.
 
-```bash
-rm -f /tmp/prowl-self-verify.sock /tmp/prowl-self-verify.sock.lock
-rm -rf /tmp/prowl-self-verify
-```
+## Report
 
-## Report Results
+Report:
 
-In the final report, include the essentials:
-
-- The CLI binary used (repo-built or installed).
-- The scenario performed and the concrete observed result.
+- The outcome (`PASS`, `FAIL`, `SKIPPED`, or `INCONCLUSIVE`) for each scenario.
+- The CLI binary and UI control surface used.
+- Each assertion and its direct evidence.
+- Any retry, permission, or targeting limitation that affected confidence.
 - Cleanup status.
 
-Add optional details only when they matter: pane or tab UUIDs, agent task state, screenshot path, build/check output, or remaining limitations.
+Keep build, lint, and unit-test results separate from end-to-end scenario outcomes.

@@ -1,4 +1,6 @@
 interface:
   display_name: "Self Verify Prowl"
-  short_description: "Bootstrap-verify Prowl with its CLI"
+  short_description: "Explicit end-to-end checks for Prowl Debug"
   default_prompt: "Use $self-verify-prowl to validate this Prowl change against a debug app instance."
+policy:
+  allow_implicit_invocation: false

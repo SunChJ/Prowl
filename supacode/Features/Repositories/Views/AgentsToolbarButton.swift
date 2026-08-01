@@ -62,6 +62,7 @@ struct AgentsToolbarButton: View {
     }
     .help(helpText)
     .accessibilityLabel(accessibilityText)
+    .accessibilityIdentifier("agents-toolbar-menu")
     .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
       AgentsPopoverContent(
         capsule: capsule,
@@ -145,6 +146,7 @@ struct AgentsQuickLaunchButton: View {
     }
     .help("Launch \(item.name) in this worktree")
     .accessibilityLabel("Launch \(item.name)")
+    .accessibilityIdentifier("agents-toolbar-quick-launch")
   }
 }
 
