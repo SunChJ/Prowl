@@ -34,7 +34,7 @@ exact profile.
 ## Refs
 
 - Original PR #649
-- Fork integration PR pending
+- Fork integration PR #656
 - Original implementation commits `14a6c1d8` and `b77888f3`
 - Fork follow-up commit `5c7e2a35`
 
