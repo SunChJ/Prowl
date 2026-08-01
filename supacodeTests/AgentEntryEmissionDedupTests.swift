@@ -90,6 +90,7 @@ struct AgentEntryEmissionDedupTests {
       ("paneIndex", Self.entry(paneIndex: 2)),
       ("iconLookupToken", Self.entry(iconLookupToken: "codex")),
       ("agent", Self.entry(agent: .codex)),
+      ("launchProfileName", Self.entry(launchProfileName: "Review Profile")),
       // Carries the resume target `prowl agents` reports; a suppressed change
       // would keep pointing at the previous session's transcript.
       ("session", Self.entry(session: Self.otherSession)),
@@ -141,6 +142,7 @@ struct AgentEntryEmissionDedupTests {
     paneIndex: Int = 1,
     iconLookupToken: String = "claude",
     agent: DetectedAgent = .claude,
+    launchProfileName: String? = nil,
     session: AgentSession? = baseSession,
     rawState: AgentRawState = .working,
     displayState: AgentDisplayState = .working,
@@ -160,7 +162,8 @@ struct AgentEntryEmissionDedupTests {
       session: session,
       rawState: rawState,
       displayState: displayState,
-      lastChangedAt: lastChangedAt
+      lastChangedAt: lastChangedAt,
+      launchProfileName: launchProfileName
     )
   }
 

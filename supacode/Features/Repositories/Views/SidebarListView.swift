@@ -62,7 +62,6 @@ struct SidebarListView: View {
   @State private var isAddChoicePresented = false
   @Namespace private var topSegmentNamespace
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
-  @Shared(.repositoryAppearances) private var repositoryAppearances
 
   var body: some View {
     let state = store.state
