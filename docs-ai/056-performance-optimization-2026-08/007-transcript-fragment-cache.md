@@ -36,7 +36,7 @@ reproduce those exact percentages.
 ## Refs
 
 - Original PR #650
-- Fork integration PR pending
+- Fork integration PR #657
 - Original implementation commits `1e8933cb` and `c97cbb4`
 - Fork follow-up commit `2c2eeddf`
 

@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644–#646, #650, #652, #653; review queue #647–#649 |
+| **Primary PRs** | #644–#646, #650, #652, #653, #657; review queue #647–#649 |
 | **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
