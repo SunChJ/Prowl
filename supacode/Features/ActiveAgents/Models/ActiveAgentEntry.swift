@@ -24,7 +24,10 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   let iconLookupToken: String
   let agent: DetectedAgent
   var session: AgentSession?
-  let rawState: AgentRawState
+  /// Un-stabilized per-poll detection result. Surfaced only by `prowl agents`
+  /// (`raw_state`); no SwiftUI view renders it (they show `displayState`). A
+  /// `var` so `equalsIgnoringRawState` can normalize it for emission dedup.
+  var rawState: AgentRawState
   let displayState: AgentDisplayState
   let lastChangedAt: Date
   /// Profile display name recorded at launch for Prowl-launched surfaces
@@ -33,6 +36,18 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   var launchProfileName: String?
   var displayName: String {
     launchProfileName ?? Self.displayName(iconLookupToken: iconLookupToken, agent: agent)
+  }
+
+  /// Equality for emission purposes, excluding `rawState`. `rawState` oscillates
+  /// on every 300 ms poll while an agent animates its spinner; if it gated
+  /// emission, each flicker would push a new entry into `ActiveAgentsFeature`
+  /// state and re-render the whole sidebar for a value no view displays.
+  /// `rawState` still rides along on entries that emit for a visible reason, so
+  /// `prowl agents` reports the raw state as of the last visible change.
+  func equalsIgnoringRawState(_ other: ActiveAgentEntry) -> Bool {
+    var normalized = self
+    normalized.rawState = other.rawState
+    return normalized == other
   }
 
   /// The user-facing agent name: the launch command token (e.g. `omp`) when it

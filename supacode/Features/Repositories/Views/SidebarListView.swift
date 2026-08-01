@@ -62,8 +62,6 @@ struct SidebarListView: View {
   @State private var isAddChoicePresented = false
   @Namespace private var topSegmentNamespace
   @Environment(\.resolvedKeybindings) private var resolvedKeybindings
-  @Environment(CommandKeyObserver.self) private var commandKeyObserver
-  @Shared(.repositoryAppearances) private var repositoryAppearances
 
   var body: some View {
     let state = store.state
@@ -72,31 +70,16 @@ struct SidebarListView: View {
     let expandableRepositoryIDs = Self.expandableRepositoryIDs(in: state.repositories)
     let repositoryItems = presentation.items.filter(\.isRepositoryOrderItem)
     let selectedWorktreeIDs = Self.selectedWorktreeIDs(in: state)
-    let selectedSurfaceID = state.selectedWorktreeID.flatMap { worktreeID in
-      terminalManager.stateIfExists(for: worktreeID)?.activeSurfaceID
-    }
-    // Only surface the hint while Cmd is held and the bindings are still at their
-    // defaults; a customized binding makes the merged "⌥⌃↑↓" glyph inaccurate.
-    let activeAgentsShortcutHint =
-      commandKeyObserver.isPressed
-      ? AppShortcuts.activeAgentsNavigationDisplay(in: resolvedKeybindings)
-      : nil
     let pendingSidebarReveal = state.pendingSidebarReveal
 
     let maximumPanelHeight =
       sidebarHeight > 0
       ? ActiveAgentsFeature.maximumPanelHeight(forContainerHeight: sidebarHeight)
       : ActiveAgentsFeature.maximumPanelHeight
-    let agentWorktreeMetadata = Self.activeAgentWorktreeMetadata(
-      repositories: state.repositories,
-      customTitles: state.repositoryCustomTitles,
-      repositoryAppearances: repositoryAppearances
-    )
-    let agentRowDisplays = Self.activeAgentRowDisplays(
-      entries: state.activeAgents.entries,
-      repositories: state.repositories,
-      metadata: agentWorktreeMetadata
-    )
+    // The Active Agents panel and its `entries` read live in
+    // `SidebarActiveAgentsOverlay` so that agent-state churn re-evaluates only
+    // that overlay, not this body and the repository list. This body must not
+    // read `state.activeAgents.entries`.
     let panelHeight = min(resizingPanelHeight ?? state.activeAgents.panelHeight, maximumPanelHeight)
     let panelOffset = state.activeAgents.isPanelHidden ? panelHeight : 0
     let activeAgentsPanelTopGap = 4.0
@@ -171,14 +154,14 @@ struct SidebarListView: View {
         }
       }
       .overlay(alignment: .bottom) {
-        ActiveAgentsPanel(
-          store: store.scope(state: \.activeAgents, action: \.activeAgents),
-          rowDisplays: agentRowDisplays,
-          selectedSurfaceID: selectedSurfaceID,
-          navigationShortcutHint: activeAgentsShortcutHint,
-          showTabTitles: state.showActiveAgentTabTitles,
-          height: panelHeight,
-          maximumHeight: maximumPanelHeight,
+        SidebarActiveAgentsOverlay(
+          store: store,
+          terminalManager: terminalManager,
+          panelHeight: panelHeight,
+          maximumPanelHeight: maximumPanelHeight,
+          panelOffset: panelOffset,
+          isPanelHidden: state.activeAgents.isPanelHidden,
+          sidebarFooterHeight: sidebarFooterHeight,
           onHeightChanged: { height in
             resizingPanelHeight = height
           },
@@ -187,13 +170,6 @@ struct SidebarListView: View {
             store.send(.activeAgents(.panelHeightChanged(height)))
           }
         )
-        .padding(6)
-        .frame(height: panelHeight)
-        .offset(y: panelOffset)
-        .clipped()
-        .padding(.bottom, sidebarFooterHeight)
-        .allowsHitTesting(!state.activeAgents.isPanelHidden)
-        .animation(.easeOut(duration: 0.18), value: state.activeAgents.isPanelHidden)
       }
       .dropDestination(for: URL.self) { urls, _ in
         let fileURLs = urls.filter(\.isFileURL)
@@ -609,12 +585,16 @@ struct SidebarListView: View {
     repositories: IdentifiedArrayOf<Repository>,
     metadata: ActiveAgentWorktreeMetadata
   ) -> [ActiveAgentEntry.ID: ActiveAgentRowDisplay] {
+    // Built (or reused) once for the whole batch: resolving each row against every worktree
+    // individually put a filesystem round-trip per row/worktree pair on the main thread.
+    let directoryIndex = WorktreeDirectoryIndexCache.index(for: repositories)
     var displays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay] = [:]
     for entry in entries {
       displays[entry.id] = activeAgentRowDisplay(
         for: entry,
         repositories: repositories,
-        metadata: metadata
+        metadata: metadata,
+        directoryIndex: directoryIndex
       )
     }
     return displays
@@ -626,13 +606,17 @@ struct SidebarListView: View {
   /// 2. `workingDirectory` is known but outside every repo → derive a name from its last path
   ///    component (same logic as adding a repository).
   /// 3. `workingDirectory` is unknown → fall back to the surface's owning worktree (legacy behavior).
+  /// `directoryIndex` is supplied by `activeAgentRowDisplays` so a batch shares one index; passing
+  /// `nil` builds a throwaway one for a single lookup.
   static func activeAgentRowDisplay(
     for entry: ActiveAgentEntry,
     repositories: IdentifiedArrayOf<Repository>,
-    metadata: ActiveAgentWorktreeMetadata
+    metadata: ActiveAgentWorktreeMetadata,
+    directoryIndex: WorktreeDirectoryIndex? = nil
   ) -> ActiveAgentRowDisplay {
     if let workingDirectory = entry.workingDirectory {
-      if let key = resolveWorktreeID(forWorkingDirectory: workingDirectory, in: repositories) {
+      let index = directoryIndex ?? WorktreeDirectoryIndex(repositories: repositories)
+      if let key = index.worktreeID(forWorkingDirectory: workingDirectory) {
         let fallbackName = workingDirectory.lastPathComponent
         return ActiveAgentRowDisplay(
           repositoryName: metadata.repositoryNamesByWorktreeID[key] ?? fallbackName,
@@ -665,24 +649,8 @@ struct SidebarListView: View {
     forWorkingDirectory workingDirectory: URL,
     in repositories: IdentifiedArrayOf<Repository>
   ) -> Worktree.ID? {
-    var best: (id: Worktree.ID, depth: Int)?
-    func consider(id: Worktree.ID, directory: URL) {
-      guard PathPolicy.contains(workingDirectory, in: directory) else { return }
-      let depth = PathPolicy.normalizeURL(directory).pathComponents.count
-      if let current = best, current.depth >= depth { return }
-      best = (id, depth)
-    }
-    for repository in repositories {
-      if repository.capabilities.supportsRunnableFolderActions,
-        !repository.capabilities.supportsWorktrees
-      {
-        consider(id: repository.id, directory: repository.rootURL)
-      }
-      for worktree in repository.worktrees {
-        consider(id: worktree.id, directory: worktree.workingDirectory)
-      }
-    }
-    return best?.id
+    WorktreeDirectoryIndexCache.index(for: repositories)
+      .worktreeID(forWorkingDirectory: workingDirectory)
   }
 
   /// Directory of the surface's owning worktree, used when the agent hasn't

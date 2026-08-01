@@ -296,6 +296,21 @@ extension WorktreeTerminalState {
     }
   }
 
+  /// Lands tab titles held back by coalescing and refreshes the Active Agents
+  /// entries that follow them — the same refresh a title written directly through
+  /// `updateTitle` triggers, so the two paths cannot drift.
+  ///
+  /// The manager's clock-driven trailing flush uses the same refresh path. This
+  /// synchronous seam lets callers and tests force a flush at an explicit date.
+  @discardableResult
+  func flushCoalescedTabTitles(now: Date = Date()) -> [TerminalTabID] {
+    let flushed = tabManager.flushPendingTitles(now: now)
+    for tabID in flushed {
+      refreshAgentEntriesForTitleChange(in: tabID)
+    }
+    return flushed
+  }
+
   /// Single-pane variant for a surface whose own title changed without moving
   /// the tab title (e.g. an unfocused split's OSC-2 update).
   func refreshAgentEntryForTitleChange(surfaceID: UUID, in tabId: TerminalTabID) {
@@ -312,7 +327,10 @@ extension WorktreeTerminalState {
       onAgentEntryRemoved?(surfaceID)
       return
     }
-    guard entry != lastEmittedAgentEntriesBySurface[surfaceID] else { return }
+    // Dedup ignoring `rawState`: it flickers every poll while an agent animates
+    // and drives no UI, so emitting on it alone would re-render the sidebar
+    // continuously. Visible changes (displayState, title, session, …) still emit.
+    guard lastEmittedAgentEntriesBySurface[surfaceID]?.equalsIgnoringRawState(entry) != true else { return }
     lastEmittedAgentEntriesBySurface[surfaceID] = entry
     onAgentEntryChanged?(entry)
   }

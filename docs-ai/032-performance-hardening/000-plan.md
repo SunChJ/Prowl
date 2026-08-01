@@ -1,13 +1,13 @@
 # 032 — Performance Hardening: Plan
 
-| | |
-| --- | --- |
-| **Status** | Implemented (retrospective) |
-| **Anchor date** | 2026-05-21 |
-| **Documented** | 2026-07-12 (backfilled) |
-| **Primary PRs** | #231, #367, #371, #398 (wave 1); #414, #415, #416, #417 (wave 2, see amendment) |
-| **Sources** | PR descriptions, Sentry App Hang evidence quoted in #231, `docs-ai/017-upstream-sync-process/upstream-ledger.md` (2026-06-09 batch) |
-| **Related** | [020-observability](../020-observability/000-plan.md), [017-upstream-sync-process](../017-upstream-sync-process/000-plan.md), [028-pr-status-tracking](../028-pr-status-tracking/000-plan.md), [030-agent-status-detection](../030-agent-status-detection/000-plan.md) |
+|                 |                                                                                                                                                                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**      | Implemented (retrospective)                                                                                                                                                                                                                                            |
+| **Anchor date** | 2026-05-21                                                                                                                                                                                                                                                             |
+| **Documented**  | 2026-07-12 (backfilled)                                                                                                                                                                                                                                                |
+| **Primary PRs** | #231, #367, #371, #398 (wave 1); #414, #415, #416, #417 (wave 2, see amendment)                                                                                                                                                                                        |
+| **Sources**     | PR descriptions, Sentry App Hang evidence quoted in #231, `docs-ai/017-upstream-sync-process/upstream-ledger.md` (2026-06-09 batch)                                                                                                                                    |
+| **Related**     | [020-observability](../020-observability/000-plan.md), [017-upstream-sync-process](../017-upstream-sync-process/000-plan.md), [028-pr-status-tracking](../028-pr-status-tracking/000-plan.md), [030-agent-status-detection](../030-agent-status-detection/000-plan.md) |
 
 ## Background
 
@@ -94,3 +94,7 @@ Wave-1 fixes, each independent:
 - Updated 2026-06-08: wave 2 — four upstream-ported performance fixes for agent-hot paths
   (#414–#417, from the 2026-06-09 upstream review batch) — see
   [002-june-upstream-ports.md](002-june-upstream-ports.md)
+- Updated 2026-07-22: wave 3 — the Active Agents row resolution repeated wave 1's
+  `isMainWorktree` failure mode and added blocking filesystem calls to it; replaced with a
+  cached `WorktreeDirectoryIndex` — see
+  [003-sidebar-agent-row-resolution.md](003-sidebar-agent-row-resolution.md)
