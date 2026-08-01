@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644–#646, #652, #653; review queue #647–#650 |
+| **Primary PRs** | #644–#647, #652, #653; review queue #648–#650 |
 | **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -135,7 +135,7 @@ pending independent code-path and test review.
 | #644 | Replace `Data.Iterator` line scans and avoid repeated large untracked-file work | Integrated through #652 with exact cached counts, a refresh-wide budget, and explicit incomplete state | `978b7b59` |
 | #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Reviewed and integrated through #653: default Debug launches bypass the expensive diagnostics; the opt-in path remains available and Release behavior is unchanged | `616bbf4b` |
 | #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Merged: exact agent/text cache identity preserves raw-state semantics; stabilization still runs per tick; cache lifetime follows detection/surface cleanup | `b2ac2936` |
-| #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Decide whether stale CLI `raw_state` is acceptable; trace UI/CLI ownership before merge | `e77ba660` |
+| #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Reviewed with follow-up: UI emission ignores raw-only churn while `prowl agents` reads live terminal raw state; full-field guard includes Profile attribution | `e77ba660` |
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Verify deepest-match and symlink semantics, cache invalidation, render-path purity, and current CI | `08773383` |
 | #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Verify final-title delivery, close/prune lifecycle, custom/locked titles, and clock boundaries | `b77888f3` |
 | #650 | Cache parsed transcript tails and fast-path fingerprint normalization | Verify append/mtime invalidation, cache pruning, Unicode equivalence, collision behavior, and current CI | `c97cbb4` |
@@ -173,3 +173,6 @@ pending independent code-path and test review.
   [002-opt-in-debug-tca-action-logging.md](002-opt-in-debug-tca-action-logging.md).
 - Updated 2026-08-02: Merged per-surface agent screen-scan memoization from #646 — see
   [003-agent-screen-scan-memoization.md](003-agent-screen-scan-memoization.md).
+- Updated 2026-08-02: Reviewed agent-entry emission deduplication from #647 and preserved the
+  live CLI raw-state contract in the fork follow-up — see
+  [004-agent-entry-emission-dedup.md](004-agent-entry-emission-dedup.md).
