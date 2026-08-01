@@ -270,7 +270,7 @@ struct GitClientLineChangesTests {
     try "a\nb\nc\n".write(to: tempRoot.appending(path: "a.txt"), atomically: true, encoding: .utf8)
     try "x\ny\n".write(to: tempRoot.appending(path: "b.txt"), atomically: true, encoding: .utf8)
 
-    let count = GitClient.countLinesInFiles(["a.txt", "b.txt"], relativeTo: tempRoot)
+    let count = GitClient.countLinesInFiles(["a.txt", "b.txt"], relativeTo: tempRoot).lines
     #expect(count == 5)
   }
 
@@ -282,7 +282,7 @@ struct GitClientLineChangesTests {
     try "hello".write(to: tempRoot.appending(path: "single.txt"), atomically: true, encoding: .utf8)
     try "a\nb".write(to: tempRoot.appending(path: "multi.txt"), atomically: true, encoding: .utf8)
 
-    let count = GitClient.countLinesInFiles(["single.txt", "multi.txt"], relativeTo: tempRoot)
+    let count = GitClient.countLinesInFiles(["single.txt", "multi.txt"], relativeTo: tempRoot).lines
     #expect(count == 3)
   }
 
@@ -297,38 +297,44 @@ struct GitClientLineChangesTests {
     binary.append(contentsOf: Data(repeating: 0x0A, count: 50))
     try binary.write(to: tempRoot.appending(path: "img.bin"))
 
-    let count = GitClient.countLinesInFiles(["ok.txt", "img.bin"], relativeTo: tempRoot)
+    let count = GitClient.countLinesInFiles(["ok.txt", "img.bin"], relativeTo: tempRoot).lines
     #expect(count == 2)
   }
 
-  /// A capture-sized untracked file must not be read at all. The badge counts
-  /// lines you are adding, and nobody typed 2 MiB of `sample(1)` output.
-  @Test func countLinesInFilesSkipsFilesAtOrAboveTheByteLimit() throws {
+  /// The former per-file cutoff silently hid readable text changes. A file at
+  /// that boundary must remain exact when the refresh-wide budget allows it.
+  @Test func countLinesInFilesCountsFilesAtTheLegacyByteLimit() throws {
     let fileManager = FileManager.default
     let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? fileManager.removeItem(at: tempRoot) }
     try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
     try "a\nb\n".write(to: tempRoot.appending(path: "small.txt"), atomically: true, encoding: .utf8)
-    // Text, not binary: the NUL probe would pass it and count every newline.
-    let oversized = Data(repeating: 0x0A, count: GitClient.untrackedLineCountByteLimit)
-    try oversized.write(to: tempRoot.appending(path: "sample.txt"))
+    let legacyLimit = 2 * 1_024 * 1_024
+    // Text, not binary: every newline must contribute to the visible badge.
+    let largeText = Data(repeating: 0x0A, count: legacyLimit)
+    try largeText.write(to: tempRoot.appending(path: "sample.txt"))
 
-    let count = GitClient.countLinesInFiles(["small.txt", "sample.txt"], relativeTo: tempRoot)
-    #expect(count == 2, "Only the small file should contribute")
+    let count = GitClient.countLinesInFiles(
+      ["small.txt", "sample.txt"],
+      relativeTo: tempRoot,
+      byteBudget: legacyLimit + 16
+    ).lines
+    #expect(count == legacyLimit + 2)
   }
 
-  /// The boundary is the whole point of the guard, so pin the side that must
-  /// still count. One byte under the limit is an ordinary file.
-  @Test func countLinesInFilesStillCountsJustUnderTheByteLimit() throws {
+  /// Keep coverage on both sides of the removed cutoff so a future optimization
+  /// cannot accidentally reintroduce the old discontinuity.
+  @Test func countLinesInFilesCountsJustUnderTheLegacyByteLimit() throws {
     let fileManager = FileManager.default
     let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? fileManager.removeItem(at: tempRoot) }
     try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
-    let justUnder = Data(repeating: 0x0A, count: GitClient.untrackedLineCountByteLimit - 1)
+    let legacyLimit = 2 * 1_024 * 1_024
+    let justUnder = Data(repeating: 0x0A, count: legacyLimit - 1)
     try justUnder.write(to: tempRoot.appending(path: "big.txt"))
 
-    let count = GitClient.countLinesInFiles(["big.txt"], relativeTo: tempRoot)
-    #expect(count == GitClient.untrackedLineCountByteLimit - 1)
+    let count = GitClient.countLinesInFiles(["big.txt"], relativeTo: tempRoot).lines
+    #expect(count == legacyLimit - 1)
   }
 
   @Test func countLinesInFilesSkipsMissingFiles() throws {
@@ -338,7 +344,7 @@ struct GitClientLineChangesTests {
     try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
     try "a\nb\n".write(to: tempRoot.appending(path: "exists.txt"), atomically: true, encoding: .utf8)
 
-    let count = GitClient.countLinesInFiles(["exists.txt", "gone.txt"], relativeTo: tempRoot)
+    let count = GitClient.countLinesInFiles(["exists.txt", "gone.txt"], relativeTo: tempRoot).lines
     #expect(count == 2)
   }
 
@@ -354,7 +360,7 @@ struct GitClientLineChangesTests {
     let content = String(repeating: "line\n", count: 40_000)
     try content.write(to: tempRoot.appending(path: "big.txt"), atomically: true, encoding: .utf8)
 
-    #expect(GitClient.countLinesInFiles(["big.txt"], relativeTo: tempRoot) == 40_000)
+    #expect(GitClient.countLinesInFiles(["big.txt"], relativeTo: tempRoot).lines == 40_000)
   }
 
   /// A newline landing on the final byte of a chunk is the boundary case: the scan must
@@ -370,7 +376,7 @@ struct GitClientLineChangesTests {
     bytes.append(contentsOf: Data("second\n".utf8))
     try bytes.write(to: tempRoot.appending(path: "boundary.txt"))
 
-    #expect(GitClient.countLinesInFiles(["boundary.txt"], relativeTo: tempRoot) == 2)
+    #expect(GitClient.countLinesInFiles(["boundary.txt"], relativeTo: tempRoot).lines == 2)
   }
 
   /// Binary detection probes only the first 8 KiB. A NUL past that window has always
@@ -385,7 +391,7 @@ struct GitClientLineChangesTests {
     bytes.append(0x0A)
     try bytes.write(to: tempRoot.appending(path: "late-nul.txt"))
 
-    #expect(GitClient.countLinesInFiles(["late-nul.txt"], relativeTo: tempRoot) == 1)
+    #expect(GitClient.countLinesInFiles(["late-nul.txt"], relativeTo: tempRoot).lines == 1)
   }
 
   @Test func countLinesInFilesCountsAnEmptyFileAsZero() throws {
@@ -395,7 +401,125 @@ struct GitClientLineChangesTests {
     try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
     try Data().write(to: tempRoot.appending(path: "empty.txt"))
 
-    #expect(GitClient.countLinesInFiles(["empty.txt"], relativeTo: tempRoot) == 0)
+    #expect(GitClient.countLinesInFiles(["empty.txt"], relativeTo: tempRoot).lines == 0)
+  }
+
+  @Test func countLinesInFilesReusesCachedCountsWithoutSpendingTheRefreshBudget() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try "a\nb\n".write(to: tempRoot.appending(path: "cached.txt"), atomically: true, encoding: .utf8)
+    let cache = UntrackedLineCountCache()
+
+    let cold = GitClient.countLinesInFiles(
+      ["cached.txt"],
+      relativeTo: tempRoot,
+      cache: cache,
+      byteBudget: 4
+    )
+    let warm = GitClient.countLinesInFiles(
+      ["cached.txt"],
+      relativeTo: tempRoot,
+      cache: cache,
+      byteBudget: 0
+    )
+
+    #expect(cold == UntrackedLineCountResult(lines: 2, skippedFileCount: 0))
+    #expect(warm == cold)
+  }
+
+  @Test func countLinesInFilesInvalidatesCachedCountsWhenTheFileChanges() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    let fileURL = tempRoot.appending(path: "changing.txt")
+    try "a\nb\n".write(to: fileURL, atomically: true, encoding: .utf8)
+    let cache = UntrackedLineCountCache()
+
+    let initial = GitClient.countLinesInFiles(
+      ["changing.txt"],
+      relativeTo: tempRoot,
+      cache: cache,
+      byteBudget: 4
+    )
+    try "a\nb\nc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+    let invalidated = GitClient.countLinesInFiles(
+      ["changing.txt"],
+      relativeTo: tempRoot,
+      cache: cache,
+      byteBudget: 0
+    )
+
+    #expect(initial == UntrackedLineCountResult(lines: 2, skippedFileCount: 0))
+    #expect(invalidated == UntrackedLineCountResult(lines: 0, skippedFileCount: 1))
+  }
+
+  @Test func countLinesInFilesAppliesOneBudgetAcrossAllCacheMisses() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try "a\n".write(to: tempRoot.appending(path: "small.txt"), atomically: true, encoding: .utf8)
+    try "b\nc\n".write(to: tempRoot.appending(path: "large.txt"), atomically: true, encoding: .utf8)
+
+    let result = GitClient.countLinesInFiles(
+      ["large.txt", "small.txt"],
+      relativeTo: tempRoot,
+      cache: UntrackedLineCountCache(),
+      byteBudget: 2
+    )
+
+    #expect(result == UntrackedLineCountResult(lines: 1, skippedFileCount: 1))
+  }
+
+  @Test func countLinesInFilesBoundsCachedWorktreeLifetime() throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    let firstRoot = tempRoot.appending(path: "first", directoryHint: .isDirectory)
+    let secondRoot = tempRoot.appending(path: "second", directoryHint: .isDirectory)
+    try fileManager.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+    try "a\n".write(to: firstRoot.appending(path: "file.txt"), atomically: true, encoding: .utf8)
+    try "b\n".write(to: secondRoot.appending(path: "file.txt"), atomically: true, encoding: .utf8)
+    let cache = UntrackedLineCountCache(maximumWorktreeCount: 1)
+
+    _ = GitClient.countLinesInFiles(
+      ["file.txt"], relativeTo: firstRoot, cache: cache, byteBudget: 2)
+    _ = GitClient.countLinesInFiles(
+      ["file.txt"], relativeTo: secondRoot, cache: cache, byteBudget: 2)
+    let evicted = GitClient.countLinesInFiles(
+      ["file.txt"], relativeTo: firstRoot, cache: cache, byteBudget: 0)
+
+    #expect(evicted == UntrackedLineCountResult(lines: 0, skippedFileCount: 1))
+  }
+
+  @Test func countLinesInFilesSupportsConcurrentRefreshes() async throws {
+    let fileManager = FileManager.default
+    let tempRoot = fileManager.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fileManager.removeItem(at: tempRoot) }
+    try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try "a\nb\n".write(to: tempRoot.appending(path: "shared.txt"), atomically: true, encoding: .utf8)
+    let cache = UntrackedLineCountCache()
+
+    let results = await withTaskGroup(of: UntrackedLineCountResult.self) { group in
+      for _ in 0..<16 {
+        group.addTask {
+          GitClient.countLinesInFiles(
+            ["shared.txt"], relativeTo: tempRoot, cache: cache, byteBudget: 4)
+        }
+      }
+      var results: [UntrackedLineCountResult] = []
+      for await result in group {
+        results.append(result)
+      }
+      return results
+    }
+
+    #expect(results.count == 16)
+    #expect(results.allSatisfy { $0 == UntrackedLineCountResult(lines: 2, skippedFileCount: 0) })
   }
 
   private func writeGitIndexHeader(
