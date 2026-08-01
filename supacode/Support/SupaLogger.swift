@@ -2,9 +2,7 @@ import OSLog
 
 nonisolated struct SupaLogger: Sendable {
   private let category: String
-  #if !DEBUG
-    private let logger: Logger
-  #endif
+  private let logger: Logger
   /// Signposter for emitting `os_signpost` intervals/events visible in
   /// Instruments. Signposts are essentially zero-cost when no Instruments
   /// session is attached (a single TLS read), so they are always live —
@@ -23,9 +21,7 @@ nonisolated struct SupaLogger: Sendable {
   init(_ category: String) {
     self.category = category
     let subsystem = Bundle.main.bundleIdentifier ?? "com.onevcat.prowl"
-    #if !DEBUG
-      self.logger = Logger(subsystem: subsystem, category: category)
-    #endif
+    self.logger = Logger(subsystem: subsystem, category: category)
     self.signposter = OSSignposter(subsystem: subsystem, category: "PointsOfInterest")
   }
 
@@ -51,6 +47,16 @@ nonisolated struct SupaLogger: Sendable {
     #else
       logger.warning("\(message, privacy: .public)")
     #endif
+  }
+
+  /// Emits to the unified log (`log stream`, Console, `make log-stream`) in
+  /// every build configuration. Unlike `debug`/`info`, which `print` in DEBUG
+  /// so they surface in the Xcode console, `notice` is for opt-in diagnostics
+  /// that must be greppable from the unified log even during local development
+  /// — e.g. the gated TCA action stream, which a `print` to a discarded stdout
+  /// would never reach.
+  func notice(_ message: String) {
+    logger.notice("\(message, privacy: .public)")
   }
 
   /// Wraps `body` in an `os_signpost` interval named `name`. The

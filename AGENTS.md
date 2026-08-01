@@ -21,6 +21,7 @@ make bump-version                # Bump version (date-based YYYY.M.DD) and creat
 ```
 
 Run a single test class or method:
+
 ```bash
 xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" \
   -only-testing:supacodeTests/TerminalTabManagerTests \
@@ -28,6 +29,7 @@ xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platf
 ```
 
 **Swift Testing vs XCTest `-only-testing` format**: Swift Testing (`@Test`) requires trailing `()` in the test identifier. Without it, `xcodebuild` silently matches nothing and reports `TEST SUCCEEDED` with zero tests run.
+
 ```bash
 # XCTest (func testFoo)
 -only-testing:supacodeTests/FooTests/testBar
@@ -36,6 +38,8 @@ xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platf
 ```
 
 Requires [mise](https://mise.jdx.dev/) for zig, swiftlint, and xcsift tooling.
+
+`make log-stream` shows no `TCA` action lines by default: per-action logging — the action label plus a full app-state snapshot and diff — is gated off because it runs on every action and shows up as steady main-thread cost. Launch with `PROWL_LOG_TCA_ACTIONS=1` (scheme env var, or exported before `open`) to trace the action stream through the unified log.
 
 ## Architecture
 
