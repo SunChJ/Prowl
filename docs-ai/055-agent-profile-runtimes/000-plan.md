@@ -18,11 +18,11 @@ safe first implementation for handoff and Agent Profiles, but it conflates indep
 runtime capabilities.
 
 The coupling becomes a maintenance problem as the product expands. A CLI may have a
-verified interactive invocation suitable for a launch profile while lacking a safe fork
-or ephemeral resume. Another may support model selection or a dedicated config root but
-not a portable unrestricted mode. Requiring the weakest capability before registering
-the runtime would unnecessarily block Profile support; pretending every registered
-runtime supports resume would make handoff and future cross-agent review unsafe.
+verified interactive invocation suitable for a launch profile while exposing different
+native resume semantics. Another may support model selection or a dedicated config root
+but not a portable unrestricted mode. Requiring the weakest capability before
+registering the runtime would unnecessarily block Profile support; native resume belongs
+to a separate product contract rather than Profile launch eligibility.
 
 This wave researches the current released CLIs, validates them locally where credentials
 permit, separates those capability gates, and extends Agent Profiles to every recognized
@@ -32,14 +32,14 @@ runtime whose interactive launch can be verified.
 
 - Produce a current matrix for every `DetectedAgent`: executable and aliases, installed
   version, interactive start, prompt/headless start, model and reasoning flags,
-  permission/unrestricted mode, account-home relocation, session resume/fork safety,
+  permission/unrestricted mode, account-home relocation, native session resume,
   and local end-to-end evidence.
 - Verify command contracts from official documentation and local `--help`; use source
   inspection for open-source agents when the first two layers appear insufficient.
 - Exercise locally available agents inside disposable Prowl panes and distinguish
   successful launch/detection from successful authenticated task completion.
-- Refactor runtime adapters so Profile launch, live observation, account isolation, and
-  side-effect-free resume are independently represented capabilities.
+- Refactor runtime adapters so Profile launch, live observation, and account isolation
+  are independently represented capabilities; keep native resume outside that registry.
 - Preserve the existing Claude/Codex persisted profile format and launch behavior.
 - Add Profile support for every recognized agent with a verified interactive launch,
   while exposing only the settings that the adapter can render honestly.
@@ -86,12 +86,12 @@ operations. The intended boundary is:
 - **launch observation** parses only settings that argv proves explicitly;
 - **account isolation** is optional metadata on the launch adapter, including the
   runtime's default config location and verified relocation variable/flag;
-- a **resume adapter** is independently optional and is returned only when the CLI has a
-  verified side-effect-free fork/ephemeral contract.
+- native resume behavior is research evidence only; it does not participate in the
+  generic launch adapter or Handoff contract.
 
-`canStart` and Profile eligibility derive from the launch registry. `canResume` derives
-from the resume registry. Handoff continues to use only the latter for fork briefing,
-while destination launches may use every verified launch adapter in a follow-up wave.
+`canStart` and Profile eligibility derive from the launch registry. Handoff briefing is
+provided explicitly by the live source agent or omitted with `--no-brief`; it never
+acquires a second native-session owner through the runtime registry.
 
 ### 3. Honest Profile configuration
 
@@ -113,11 +113,11 @@ make it pass. Add regression tests for:
 
 - start and optional prompt/headless argv ordering;
 - model/reasoning/unrestricted mappings only where supported;
-- independent `canStart` versus `canResume` results;
+- Profile launch eligibility remaining independent from native resume research;
 - persisted runtime decoding and seeded-profile coverage;
 - runtime switching and unsupported-field normalization;
 - planner behavior with and without dedicated-home support;
-- handoff retaining its safe-resume admission rules.
+- handoff requiring explicit `--brief` or `--no-brief` input.
 
 After logic tests are green, validate real launches from the current app, then run
 `make check`, the focused/full relevant test gates, CLI build/smoke/integration tests if
@@ -153,6 +153,9 @@ and final PR, then commit in reviewable layers and submit a non-draft PR to
 - Updated 2026-08-01: Correct execution-policy semantics and separate Pi from
   Oh My Pi throughout detection and session identity — see
   [002-execution-policy-and-pi-omp-separation.md](002-execution-policy-and-pi-omp-separation.md).
+- Updated 2026-08-01: Remove the obsolete resume/fork briefing fallback and
+  keep native resume outside the Profile/Handoff adapter contract — see
+  [047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md).
 - The launch catalog remains keyed by `AgentProfileRuntime`, with a one-to-one
   mapping to canonical detection identity. Pi and Oh My Pi now have distinct
   executables, icons, option contracts, availability checks, heuristics, and
@@ -163,7 +166,7 @@ and final PR, then commit in reviewable layers and submit a non-draft PR to
   identical would break bound-session resolution.
 - Handoff destination admission is an explicit product policy and remains
   Claude Code/Codex-only. A runtime being Profile-launchable does not imply
-  that Prowl can prepare or resume its native session safely.
+  any native resume operation.
 - Amp supports bare interactive Profiles and headless execution, but not a
   seeded interactive prompt through argv. The adapter rejects that intent
   explicitly instead of silently changing the requested interaction mode.

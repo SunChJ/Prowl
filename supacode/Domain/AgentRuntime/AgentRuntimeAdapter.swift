@@ -1,9 +1,8 @@
 import Foundation
 
-/// Interactive launch is deliberately independent from native-session resume.
-/// Every recognized runtime can launch, while only adapters with a proven
-/// side-effect-free fork/resume contract participate in handoff preparation
-/// (docs-ai 055).
+/// Interactive and headless launch behavior for one supported runtime.
+/// Handoff briefing is authored by the live source agent and does not resume
+/// native sessions through this adapter boundary (docs-ai 055).
 nonisolated protocol AgentRuntimeAdapter: Sendable {
   var runtime: AgentProfileRuntime { get }
   var displayName: String { get }
@@ -41,11 +40,6 @@ nonisolated extension AgentRuntimeAdapter {
     }
     return options
   }
-}
-
-nonisolated protocol AgentRuntimeResumeAdapter: Sendable {
-  var agent: DetectedAgent { get }
-  func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation
 }
 
 /// One path-valued CLI option in a managed-home relocation contract.
@@ -201,23 +195,6 @@ nonisolated struct AgentStartRequest: Equatable, Sendable {
   }
 }
 
-/// A headless, read-only resume of a verified native session. Unlike
-/// `AgentStartRequest` it carries no execution mode: a resume never escalates
-/// permissions, so only the same-adapter model can be inherited.
-nonisolated struct AgentResumeRequest: Equatable, Sendable {
-  let agent: DetectedAgent
-  let session: AgentSession
-  let prompt: String
-  let model: String?
-
-  init(agent: DetectedAgent, session: AgentSession, prompt: String, model: String? = nil) {
-    self.agent = agent
-    self.session = session
-    self.prompt = prompt
-    self.model = model
-  }
-}
-
 nonisolated struct AgentInvocation: Equatable, Sendable {
   let executable: String
   let arguments: [String]
@@ -239,8 +216,6 @@ nonisolated struct AgentInvocation: Equatable, Sendable {
 nonisolated enum AgentRuntimeError: Error, Equatable, Sendable {
   case unsupportedAgent(DetectedAgent)
   case unsupportedStartIntent(AgentProfileRuntime, AgentStartIntent)
-  case unsafeSessionConfidence(AgentSession.Confidence)
-  case resumeTimedOut
 }
 
 nonisolated enum AgentRuntimeAdapterRegistry {
@@ -285,10 +260,6 @@ nonisolated enum AgentRuntimeAdapterRegistry {
     adapter(for: agent) != nil
   }
 
-  static func canResume(_ agent: DetectedAgent) -> Bool {
-    resumeAdapter(for: agent) != nil
-  }
-
   static func observe(runtime: AgentProfileRuntime, arguments: [String]) -> AgentLaunchObservation {
     profileAdapter(for: runtime)?.observe(arguments: arguments) ?? .init()
   }
@@ -315,26 +286,6 @@ nonisolated enum AgentRuntimeAdapterRegistry {
     return try adapter.makeStartInvocation(request)
   }
 
-  static func makeResumeInvocation(
-    _ request: AgentResumeRequest,
-    replyFile: URL? = nil
-  ) throws -> AgentInvocation {
-    guard request.session.confidence == .exact || request.session.confidence == .high else {
-      throw AgentRuntimeError.unsafeSessionConfidence(request.session.confidence)
-    }
-    guard let adapter = resumeAdapter(for: request.agent) else {
-      throw AgentRuntimeError.unsupportedAgent(request.agent)
-    }
-    return try adapter.makeResumeInvocation(request, replyFile: replyFile)
-  }
-
-  private static func resumeAdapter(for agent: DetectedAgent) -> (any AgentRuntimeResumeAdapter)? {
-    switch agent {
-    case .claude: ClaudeCodeResumeAdapter()
-    case .codex: CodexResumeAdapter()
-    default: nil
-    }
-  }
 }
 
 // MARK: - Launch adapters
@@ -833,29 +784,6 @@ nonisolated private struct OMPRuntimeAdapter: AgentRuntimeAdapter {
     case .prompt(let prompt): AgentInvocation(executable: "omp", arguments: options + [prompt])
     case .headless(let prompt): AgentInvocation(executable: "omp", arguments: options + ["--print", prompt])
     }
-  }
-}
-
-// MARK: - Resume adapters
-
-nonisolated private struct CodexResumeAdapter: AgentRuntimeResumeAdapter {
-  let agent: DetectedAgent = .codex
-
-  func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation {
-    var arguments = ["exec", "resume", "--ephemeral"]
-    if let model = request.model { arguments += ["--model", model] }
-    if let replyFile { arguments += ["--output-last-message", replyFile.path(percentEncoded: false)] }
-    return AgentInvocation(executable: "codex", arguments: arguments + [request.session.id, request.prompt])
-  }
-}
-
-nonisolated private struct ClaudeCodeResumeAdapter: AgentRuntimeResumeAdapter {
-  let agent: DetectedAgent = .claude
-
-  func makeResumeInvocation(_ request: AgentResumeRequest, replyFile _: URL?) throws -> AgentInvocation {
-    var arguments = ["-p", "--fork-session", "--resume", request.session.id]
-    if let model = request.model { arguments += ["--model", model] }
-    return AgentInvocation(executable: "claude", arguments: arguments + [request.prompt])
   }
 }
 

@@ -65,27 +65,26 @@ rather than mislabeled as a same-process live check.
 
 ## Shipped capability matrix
 
-Legend: ✅ exposed or admitted by Prowl; — deliberately hidden because the CLI
-contract cannot satisfy Prowl's field semantics; ⚠️ native behavior exists but
-is not admitted to the stricter Prowl workflow.
+Legend: ✅ exposed by Prowl; — deliberately hidden because the CLI contract
+cannot satisfy Prowl's field semantics.
 
-| Runtime | Interactive / prompt / headless | Model | Reasoning | Execution mode selection | Dedicated home | Native resume / fork | Handoff-safe source briefing | Profile |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | ✅ / ✅ / `-p` | ✅ | `--effort` | bare / `--dangerously-skip-permissions` | `CLAUDE_CONFIG_DIR` | ✅ / ✅ | ✅ forked print resume | ✅ |
-| Codex | ✅ / ✅ / `exec` | ✅ | `model_reasoning_effort` | guarded / bypass approvals and sandbox | `CODEX_HOME` | ✅ / ephemeral | ✅ ephemeral exec resume | ✅ |
-| Gemini CLI | ✅ / `--prompt-interactive` / `--prompt` | ✅ | — | bare / YOLO plus sandbox disabled | `GEMINI_CLI_HOME`; sessions under `.gemini` | ✅ / — | ⚠️ not admitted | ✅ |
-| Cursor Agent | ✅ / positional / `--print` | ✅ | — | bare / YOLO plus sandbox disabled | **— no verified full-state relocation** | ✅ / — | ⚠️ not admitted | ✅ |
-| Cline CLI | `--tui` / `--tui <prompt>` / positional | ✅ | `--thinking` | `--auto-approve false` / `true` | `--config`, `--data-dir`, and `--hooks-dir` | ✅ task / — | ⚠️ not admitted | ✅ |
-| OpenCode | ✅ / `--prompt` / `run` | ✅ | `--variant` | bare / `--auto` | **— config-dir only; auth and sessions remain in XDG data** | ✅ / ✅ | ⚠️ not admitted | ✅ |
-| GitHub Copilot | ✅ / `--interactive` / `--prompt` | ✅ | `--reasoning-effort` | bare / `--allow-all` | `COPILOT_HOME` | ✅ / — | ⚠️ not admitted | ✅ |
-| Kimi Code | ✅ / `--prompt` / `--print --prompt` | ✅ | — (boolean thinking is not an effort scale) | bare / `--yolo` | **— alternate paths do not relocate every data class** | ✅ / ✅ | ⚠️ not admitted | ✅ |
-| Factory Droid | ✅ / positional / `exec` | **— interactive CLI has no model option** | — | **— tiered interactive autonomy; full bypass is headless-only** | **— settings overlay only** | ✅ / ✅ | ⚠️ not admitted | ✅ |
-| Amp | ✅ / **— seeded interactive prompt unavailable** / `--execute` | **— `--mode` is not a model selector** | `--effort` | **— default has no approval prompts; guarded mode is settings-only** | **— settings/log paths do not relocate auth and threads** | ✅ continue / — | ⚠️ not admitted | ✅ bare launch |
-| Qoder CLI | ✅ / `--prompt-interactive` / `--print` | ✅ | `--reasoning-effort` | bare / skip permissions | `--config-dir` | ✅ / ✅ | ⚠️ not admitted | ✅ |
-| Qwen Code | ✅ / `--prompt-interactive` / `--prompt` | ✅ | `--reasoning-effort` | bare / YOLO plus sandbox disabled | `QWEN_HOME` | ✅ / — | ⚠️ not admitted | ✅ Best effort |
-| Grok Build | ✅ / positional / `--single` | ✅ | `--reasoning-effort` | `default` / `bypassPermissions` plus sandbox off | **— no verified full-state relocation** | ✅ / ✅ | ⚠️ not admitted | ✅ |
-| Pi | ✅ / positional / `--print` | ✅ | `--thinking` | **— default has no approval prompts or sandbox; no guarded CLI mode** | `PI_CODING_AGENT_DIR` | ✅ / ✅ | ⚠️ not admitted | ✅ |
-| Oh My Pi | ✅ / positional / `--print` | ✅ | `--thinking` | `always-ask` / `yolo` | `PI_CODING_AGENT_DIR` | ✅ / ✅ | ⚠️ not admitted | ✅ |
+| Runtime | Interactive / prompt / headless | Model | Reasoning | Execution mode selection | Dedicated home | Native resume | Profile |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | ✅ / ✅ / `-p` | ✅ | `--effort` | bare / `--dangerously-skip-permissions` | `CLAUDE_CONFIG_DIR` | ✅ | ✅ |
+| Codex | ✅ / ✅ / `exec` | ✅ | `model_reasoning_effort` | guarded / bypass approvals and sandbox | `CODEX_HOME` | ✅ | ✅ |
+| Gemini CLI | ✅ / `--prompt-interactive` / `--prompt` | ✅ | — | bare / YOLO plus sandbox disabled | `GEMINI_CLI_HOME`; sessions under `.gemini` | ✅ | ✅ |
+| Cursor Agent | ✅ / positional / `--print` | ✅ | — | bare / YOLO plus sandbox disabled | **— no verified full-state relocation** | ✅ | ✅ |
+| Cline CLI | `--tui` / `--tui <prompt>` / positional | ✅ | `--thinking` | `--auto-approve false` / `true` | `--config`, `--data-dir`, and `--hooks-dir` | ✅ task | ✅ |
+| OpenCode | ✅ / `--prompt` / `run` | ✅ | `--variant` | bare / `--auto` | **— config-dir only; auth and sessions remain in XDG data** | ✅ | ✅ |
+| GitHub Copilot | ✅ / `--interactive` / `--prompt` | ✅ | `--reasoning-effort` | bare / `--allow-all` | `COPILOT_HOME` | ✅ | ✅ |
+| Kimi Code | ✅ / `--prompt` / `--print --prompt` | ✅ | — (boolean thinking is not an effort scale) | bare / `--yolo` | **— alternate paths do not relocate every data class** | ✅ | ✅ |
+| Factory Droid | ✅ / positional / `exec` | **— interactive CLI has no model option** | — | **— tiered interactive autonomy; full bypass is headless-only** | **— settings overlay only** | ✅ | ✅ |
+| Amp | ✅ / **— seeded interactive prompt unavailable** / `--execute` | **— `--mode` is not a model selector** | `--effort` | **— default has no approval prompts; guarded mode is settings-only** | **— settings/log paths do not relocate auth and threads** | ✅ continue | ✅ bare launch |
+| Qoder CLI | ✅ / `--prompt-interactive` / `--print` | ✅ | `--reasoning-effort` | bare / skip permissions | `--config-dir` | ✅ | ✅ |
+| Qwen Code | ✅ / `--prompt-interactive` / `--prompt` | ✅ | `--reasoning-effort` | bare / YOLO plus sandbox disabled | `QWEN_HOME` | ✅ | ✅ Best effort |
+| Grok Build | ✅ / positional / `--single` | ✅ | `--reasoning-effort` | `default` / `bypassPermissions` plus sandbox off | **— no verified full-state relocation** | ✅ | ✅ |
+| Pi | ✅ / positional / `--print` | ✅ | `--thinking` | **— default has no approval prompts or sandbox; no guarded CLI mode** | `PI_CODING_AGENT_DIR` | ✅ | ✅ |
+| Oh My Pi | ✅ / positional / `--print` | ✅ | `--thinking` | `always-ask` / `yolo` | `PI_CODING_AGENT_DIR` | ✅ | ✅ |
 
 ### Explicit unsupported results after false-positive checks
 
@@ -113,11 +112,10 @@ is not admitted to the stricter Prowl workflow.
   approval-required Standard mode. Cline, Grok, and Oh My Pi do expose both
   sides, so Prowl renders their guarded flag for Standard and their
   least-restricted flag(s) for Unrestricted.
-- **Only Claude Code and Codex remain admitted to handoff-safe source
-  briefing.** Other CLIs may resume or fork sessions, but output capture,
-  source-session immutability, confidence gates, and timeout/error behavior
-  have not yet been proven as one protocol. Generic Profile registration no
-  longer implies resume support.
+- **Native resume is research evidence, not a Prowl capability.** Handoff
+  never resumes a source session or starts a hidden model turn. A future native
+  session operation must define its own explicit product contract instead of
+  inheriting eligibility from Profile launch support.
 
 ### Permission-semantics evidence
 
@@ -157,10 +155,11 @@ is not admitted to the stricter Prowl workflow.
 
 ## Architecture findings
 
-The original adapter required start, observation, account isolation, and safe
-resume together. Registration therefore meant `canStart == canResume`, and a
-single `accountHomeEnvironmentVariable` assumed the provisioned directory was
-also the native session root. Both assumptions fail in the expanded catalog.
+The original adapter required start, observation, account isolation, and
+handoff resume together. Registration therefore conflated unrelated product
+operations, and a single `accountHomeEnvironmentVariable` assumed the
+provisioned directory was also the native session root. Both assumptions fail
+in the expanded catalog.
 
 The implementation now uses:
 
@@ -172,15 +171,15 @@ The implementation now uses:
   and least-restricted modes with asymmetric flags, or hide the field entirely;
 - an optional `AgentProfileHomeRelocation` that supports environment variables,
   one or more managed path arguments, and a distinct session root;
-- a separate resume-adapter lookup, leaving `canResume` true only for proven
-  workflows;
+- no generic resume adapter: native session detection remains available for
+  diagnostics and context, while Handoff accepts only explicit briefing input;
 - an explicit Handoff destination policy, so expanding generic launch support
   cannot silently expand the current handoff UX.
 
 This boundary is suitable for a later profile-based handoff or cross-review
 workflow: it can select a Profile, require prompted-interactive or headless
-support as appropriate, and independently require safe resume when it needs to
-prepare context from a native session.
+support as appropriate, and pass context explicitly without acquiring a hidden
+second owner of the source session.
 
 ## Installation and credential notes
 

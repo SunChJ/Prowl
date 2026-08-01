@@ -26,9 +26,9 @@ exclude false positives are recorded in the linked research document.
 
 ### Capability-based runtime adapters
 
-- Split Profile launch from side-effect-free session resume. All fifteen
-  runtimes have launch adapters, while only Claude Code and Codex remain in
-  the proven resume registry.
+- Removed native session resume from the generic adapter contract. All fifteen
+  runtimes have launch adapters; Handoff obtains briefing input only from the
+  live source agent or an explicit context-only choice.
 - Kept launch metadata keyed by `AgentProfileRuntime`, with a one-to-one
   canonical detection mapping so Pi and Oh My Pi remain independent.
 - Added explicit field capabilities and per-runtime invocation rendering for
@@ -109,7 +109,7 @@ exclude false positives are recorded in the linked research document.
   availability probes, and Handoff admission.
 - The first focused TDD run failed at the expected missing runtime/capability
   assertions before implementation.
-- `make test` passed with **2167 tests and zero failures**. The five emitted
+- `make test` passed with **2152 tests and zero failures**. The five emitted
   dependency-scan warnings are pre-existing package declaration warnings.
 - `make check` passed.
 - `make build-app` passed with zero warnings and zero errors.
@@ -127,8 +127,8 @@ exclude false positives are recorded in the linked research document.
   partial flag into a stronger Prowl guarantee.
 - Profile-based Handoff, cross-review, and other cross-agent orchestration are
   follow-up product waves. They can now require launch intent, optional Profile
-  home binding, and safe resume independently instead of relying on generic
-  adapter presence.
+  home binding, and explicit workflow context without relying on generic
+  adapter presence or hidden source-session resume.
 
 ## Delivery
 

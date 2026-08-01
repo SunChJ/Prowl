@@ -58,11 +58,9 @@ promise that external policy can be bypassed.
    marker (`~/.omp/agent/sessions`), home-relative session-directory encoder,
    rooted account-bound session layout, display identity, handoff token, and
    tests. Pi retains only Pi's own process, home, session layout, and UI rules.
-6. Split the research matrix's ambiguous `Safe Prowl resume` column into native
-   resume/fork support and handoff-safe source-briefing admission. Native
-   `--resume` may append to the source session; Prowl admission additionally
-   requires verified source immutability, output capture, confidence gates,
-   timeout behavior, and failure fallback.
+6. Keep native resume support in the research matrix as CLI evidence, but
+   remove it from Prowl's Handoff adapter contract. Handoff no longer starts a
+   hidden model turn; callers provide `--brief` or choose `--no-brief`.
 
 ## Outcome and validation
 

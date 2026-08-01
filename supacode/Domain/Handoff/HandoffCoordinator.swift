@@ -1,25 +1,20 @@
 import Foundation
 
-/// The outgoing side of a handoff as observed on the source pane: the
-/// session context persisted into the artifact, the argv-derived launch
-/// observation, and the pid-anchored native session used for a fork briefing.
+/// The outgoing side of a handoff as observed on the source pane: the session
+/// context persisted into the artifact and the argv-derived launch observation.
 nonisolated struct HandoffSourceContext: Sendable, Equatable {
   let sessionContext: HandoffStore.SessionContext?
   let observation: AgentLaunchObservation?
-  let session: AgentSession?
 }
 
 /// Where a transition's briefing comes from. The entry point decides; the
-/// coordinator executes. Inline is the primary path (the author is present),
-/// fork is the explicit fallback (the author is not), none is context-only.
+/// coordinator executes. The live source agent either supplies the briefing
+/// inline or the caller explicitly chooses a context-only transition.
 nonisolated enum HandoffBriefingSource: Sendable, Equatable {
   /// Agent-authored text supplied with the command (`--brief`). Invalid text
   /// throws before any filesystem side effect.
   case inline(String)
-  /// Resume the source session headlessly and use its validated reply.
-  /// Failure degrades the transition to context-only (`HandoffBriefing.failed`).
-  case fork(AgentResumeRequest)
-  /// Intentionally context-only (`--no-brief`, or no resumable source).
+  /// Intentionally context-only (`--no-brief`).
   case none
 }
 
@@ -28,8 +23,8 @@ nonisolated enum HandoffBriefingError: Error, Equatable, Sendable {
   case invalidInlineBrief
 }
 
-/// A briefing collected before the handoff's irreversible artifact work
-/// begins. HUD fallbacks use this to establish a visible commit boundary.
+/// A validated briefing prepared before the handoff's irreversible artifact
+/// work begins.
 nonisolated struct HandoffPreparedBriefing: Equatable, Sendable {
   let artifact: String?
   let outcome: HandoffBriefing
@@ -38,8 +33,8 @@ nonisolated struct HandoffPreparedBriefing: Equatable, Sendable {
 }
 
 /// The one pure transition core every handoff entry point drives — the CLI
-/// handler for agent-initiated handoffs and the HUD's fork/context-only
-/// fallbacks. A transition always runs the same sequence:
+/// handler for agent-initiated handoffs and the HUD's context-only fallback.
+/// A transition always runs the same sequence:
 ///
 ///   collect briefing → archive outgoing state → install fresh briefing
 ///   (or remove the stale one) → refresh generated context → [launch] → log
@@ -48,16 +43,7 @@ nonisolated struct HandoffPreparedBriefing: Equatable, Sendable {
 /// synchronously resolved pane for its payload while UI callers fire a
 /// terminal command — but every persisted artifact and log format lives here.
 nonisolated struct HandoffCoordinator: Sendable {
-  /// Resumes a source session headlessly and returns its reply text.
-  typealias Resume = @Sendable (AgentResumeRequest, URL) async throws -> String
-
   let store: HandoffStore
-  private let resume: Resume
-
-  init(store: HandoffStore, resume: @escaping Resume) {
-    self.store = store
-    self.resume = resume
-  }
 
   /// Everything `handoff to` persists before the receiving agent launches.
   struct TransitionArtifacts: Sendable {
@@ -80,35 +66,15 @@ nonisolated struct HandoffCoordinator: Sendable {
     case failed
   }
 
-  /// Resolve the briefing source to validated artifact text. Inline text that
-  /// fails validation throws (the caller reports it; nothing was written).
-  /// A cancelled fork rethrows `CancellationError` so an aborted UI run never
-  /// degrades into a context-only transition behind the user's back.
   /// Resolve a briefing source to validated artifact text. Inline text that
   /// fails validation throws (the caller reports it; nothing was written).
-  /// A cancelled fork rethrows `CancellationError` so an aborted UI run never
-  /// degrades into a context-only transition behind the user's back.
-  func collectBriefing(_ source: HandoffBriefingSource) async throws -> HandoffPreparedBriefing {
+  func collectBriefing(_ source: HandoffBriefingSource) throws -> HandoffPreparedBriefing {
     switch source {
     case .inline(let raw):
       guard let artifact = HandoffStore.validatedBriefing(from: raw) else {
         throw HandoffBriefingError.invalidInlineBrief
       }
       return HandoffPreparedBriefing(artifact: artifact, outcome: .inline)
-    case .fork(let request):
-      do {
-        let reply = try await resume(request, store.rootURL)
-        try Task.checkCancellation()
-        guard let artifact = HandoffStore.validatedBriefing(from: reply) else {
-          return HandoffPreparedBriefing(artifact: nil, outcome: .failed)
-        }
-        return HandoffPreparedBriefing(artifact: artifact, outcome: .fork)
-      } catch is CancellationError {
-        throw CancellationError()
-      } catch {
-        if Task.isCancelled { throw CancellationError() }
-        return HandoffPreparedBriefing(artifact: nil, outcome: .failed)
-      }
     case .none:
       return .contextOnly
     }
@@ -130,7 +96,7 @@ nonisolated struct HandoffCoordinator: Sendable {
       outgoingAgent: outgoingAgent,
       toAgent: toAgent,
       sessionContext: sessionContext,
-      briefing: try await collectBriefing(briefingSource),
+      briefing: try collectBriefing(briefingSource),
       now: now
     )
   }
@@ -179,7 +145,7 @@ nonisolated struct HandoffCoordinator: Sendable {
       outgoingAgent: outgoingAgent,
       sessionContext: sessionContext,
       note: note,
-      briefing: try await collectBriefing(briefingSource),
+      briefing: try collectBriefing(briefingSource),
       now: now
     )
   }

@@ -481,8 +481,7 @@ struct SupacodeApp: App {
         paneTitle: nil,
         terminalManager: terminalManager
       ),
-      observation: agentState?.launchObservation,
-      session: agentState?.session
+      observation: agentState?.launchObservation
     )
   }
 
@@ -760,14 +759,12 @@ struct SupacodeApp: App {
               paneID: resolved.paneID.uuidString,
               outgoingAgent: agent,
               outgoingLaunchObservation: agentState?.launchObservation,
-              outgoingSession: agentState?.session,
               sessionContext: makeHandoffSessionContext(
                 worktreeID: resolved.worktreeID,
                 paneID: resolved.paneID,
                 paneTitle: resolved.paneTitle,
                 terminalManager: terminalManager
-              ),
-              isSelfHandoff: callerPane?.surfaceID == resolved.paneID
+              )
             )
           }
           .mapError { .resolver($0) }
@@ -780,7 +777,6 @@ struct SupacodeApp: App {
           terminalManager: terminalManager
         )
       },
-      forkProvider: Self.forkHandoffBriefing,
       notifyLaunch: { launched, from, toAgent in
         Self.notifyHandoffLaunch(
           launched: launched,
@@ -875,13 +871,6 @@ struct SupacodeApp: App {
       body: "Took over in \(launched.worktreeName)",
       surfaceId: paneID
     )
-  }
-
-  nonisolated private static func forkHandoffBriefing(
-    request: AgentResumeRequest,
-    directory: URL
-  ) async throws -> String {
-    try await AgentRuntimeClient.liveValue.resume(request, in: directory)
   }
 
   private static func makeCLISocketServer(
