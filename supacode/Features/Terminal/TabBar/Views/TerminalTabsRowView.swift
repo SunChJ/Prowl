@@ -21,10 +21,16 @@ struct TerminalTabsRowView: View {
   @State private var rowFrame: CGRect = .zero
 
   var body: some View {
+    // Read `tabs` once and index it: the lookup below runs inside a `ForEach`
+    // over the same collection, so scanning it per row made each rebuild
+    // quadratic — and a rebuild happens whenever any one tab's title changes.
+    let tabs = manager.tabs
+    let tabsByID = Dictionary(tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
     ZStack(alignment: .topLeading) {
       HStack(alignment: .center, spacing: TerminalTabBarMetrics.tabSpacing) {
         ForEach(Array(openedTabs.enumerated()), id: \.element) { index, id in
-          if let item = manager.tabs.first(where: { $0.id == id }) {
+          if let item = tabsByID[id] {
             TerminalTabView(
               tab: item,
               isActive: manager.selectedTabId == id,
@@ -65,7 +71,7 @@ struct TerminalTabsRowView: View {
             .simultaneousGesture(makeTabDragGesture(id: id))
             .terminalTabContextMenu(
               tabId: id,
-              tabs: manager.tabs,
+              tabs: tabs,
               actions: TerminalTabContextMenuActions(
                 renameTab: renameTab,
                 changeIcon: changeIcon,
