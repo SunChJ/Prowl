@@ -1,24 +1,24 @@
 # Agent Profiles
 
-> Named launch presets for the verified agents (Claude Code, Codex): one click
+> Named launch presets for every agent runtime Prowl recognizes: one click
 > in the toolbar **Agents** menu or the Command Palette starts a fresh agent in
 > the current worktree with your model, effort, mode, and — optionally — a
 > dedicated account.
 
-**Keywords:** agent profile, preset, launch agent, agents menu, dedicated home, account, CLAUDE_CONFIG_DIR, CODEX_HOME, recommended profile
+**Keywords:** agent profile, preset, launch agent, agents menu, dedicated home, account, recommended profile
 
 **Related:** [handoff](handoff.md) · [active-agents](active-agents.md) · [command-palette](command-palette.md) · [settings](settings.md)
 
 ## What a profile is
 
 A profile is a named preset for one runtime: display name, optional custom SF
-Symbol icon, optional model and reasoning effort (both accept free text with
-per-runtime suggestions), execution mode (Standard / Unrestricted), and a
-launch placement (New Tab or New Split with a direction). By default a profile
-is **argv-only**: launching it is exactly like typing `claude`/`codex` with
-those flags yourself — same login,
-same skills, same session history. The same runtime can have any number of
-profiles.
+Symbol icon, runtime-supported launch options, and a launch placement (New Tab
+or New Split with a direction). Model, reasoning effort, execution mode, and
+Dedicated Home appear only when that CLI has a verified mapping for the field;
+Extra Arguments and launch-scoped environment variables remain available for
+expert configuration. By default a profile is **argv-only**: launching it is
+exactly like typing that CLI with those flags yourself — same login, skills,
+and session history. The same runtime can have any number of profiles.
 
 On first run Prowl seeds one bare profile per installed runtime. Seeds are
 ordinary profiles: rename, edit, or delete them freely — deleted seeds never
@@ -61,7 +61,7 @@ section's root.
 The editor's **Icon** preview opens an SF Symbol picker. A custom symbol appears
 where Prowl presents the launch preset: the Settings list, repository Default
 Agent Profile picker, toolbar Agents popover, and Command Palette. Clearing it
-restores the runtime's Claude Code / Codex brand icon. Live panes and Active
+restores the runtime's brand icon. Live panes and Active
 Agents retain the icon of the process Prowl actually detects.
 
 Changing a profile's **Agent** resets its Model, Reasoning Effort, Extra
@@ -81,7 +81,7 @@ per-profile environment overrides — e.g. `OPENAI_BASE_URL` + `OPENAI_API_KEY`
 to get a "Codex but using DeepSeek" profile. The whole patch is
 **launch-scoped**: it applies to the launched agent process (and its
 subprocesses) only. The pane's shell keeps your normal environment, so after
-the agent exits, a manual `codex` / `claude` — or any other command — in that
+the agent exits, a manual agent launch — or any other command — in that
 pane runs with your own account and environment. Mechanically, the launch
 command carries `env NAME="$PROWL_ENV_NAME" …` references while the values
 ride in hidden `PROWL_ENV_*` surface variables, so no override value ever
@@ -92,7 +92,8 @@ appears in the typed command, shell history, or scrollback. Rules:
 - Reserved names are ignored at launch and flagged inline: anything starting
   with `PROWL_`, `HOME` (relocating it would move every runtime's default home
   past Prowl's provisioning and deletion safeguards), plus the account-home
-  variables (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) — a custom home must go
+  variables (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`,
+  `COPILOT_HOME`, `QWEN_HOME`, `PI_CODING_AGENT_DIR`, and `CLINE_DATA_DIR`) — a custom home must go
   through **Use Dedicated Home**, which always wins over a same-named row.
 - Later duplicate names win (shell-export semantics).
 - Values are stored in plaintext in `~/.prowl/global.onevcat.json` (kept
@@ -104,10 +105,11 @@ appears in the typed command, shell history, or scrollback. Rules:
 
 ## Dedicated home (separate account)
 
-Toggling **Use Dedicated Home** (Advanced) gives the profile its own runtime
-home under `~/.prowl/agent-profiles/<uuid>/`, attached to the launched agent
-via a `CLAUDE_CONFIG_DIR` / `CODEX_HOME` assignment on the launch command
-(launch-scoped, like overrides). That relocates the runtime's *entire* home:
+For runtimes with a verified full-state relocation, toggling **Use Dedicated
+Home** (Advanced) gives the profile its own runtime home under
+`~/.prowl/agent-profiles/<uuid>/`. Prowl attaches it with the CLI's native
+environment variable or managed path arguments, launch-scoped like overrides.
+That relocates the runtime's *entire* home:
 separate login and usage, but also separate skills, global instructions
 (`CLAUDE.md` / `AGENTS.md`), and session history. The first launch is the
 sign-in moment — the agent's own TUI walks through login and the credentials
@@ -125,7 +127,9 @@ Trash Files** to move the folder to the Trash (never `rm`).
 
 The **Extra Arguments** field appends literal argv tokens after the
 preset-generated options (quotes group values with spaces; nothing is ever
-shell-interpreted). Your flags are respected as-is. The editor stays honest
+shell-interpreted). A bound Profile's managed-home arguments follow Extra
+Arguments so an accidental duplicate cannot redirect credentials outside the
+UUID home; otherwise your flags remain last-wins. The editor stays honest
 about what it can prove: recognized bypass flags (`--yolo`,
 `--dangerously-skip-permissions`, …) show the red unrestricted warning even
 when the picker says Standard; any other extra argument (including
@@ -137,6 +141,36 @@ The editor opens with a **Profile** section (name, agent, icon), followed by
 for bound profiles, using the same rendering as the real launch — then a
 **Details** section with the remaining launch options (model, reasoning
 effort, execution mode, placement).
+
+## Runtime capability matrix
+
+All listed runtimes support a bare interactive Agent Profile launch. Pi and Oh
+My Pi share Prowl's Pi detection family but remain separate Profile choices so
+the correct executable, icon, and arguments are preserved.
+
+| Runtime | Model | Reasoning | Unrestricted | Dedicated Home |
+| --- | --- | --- | --- | --- |
+| Claude Code | Yes | Yes | Yes | `CLAUDE_CONFIG_DIR` |
+| Codex | Yes | Yes | Yes | `CODEX_HOME` |
+| Gemini CLI | Yes | No | Yes | `GEMINI_CLI_HOME` |
+| Cursor Agent | Yes | No | Yes | No verified full-state relocation |
+| Cline CLI | Yes | Yes | No | Managed config, data, and hooks paths |
+| OpenCode | Yes | Yes | Yes | No; config override does not move auth/session data |
+| GitHub Copilot | Yes | Yes | Yes | `COPILOT_HOME` |
+| Kimi Code | Yes | No | Yes | No verified full-state relocation |
+| Factory Droid | No | No | No | No verified full-state relocation |
+| Amp | No | Yes | No | No verified full-state relocation |
+| Qoder CLI | Yes | Yes | Yes | `--config-dir` |
+| Qwen Code | Yes | Yes | Yes | `QWEN_HOME` |
+| Grok Build | Yes | Yes | No | No verified full-state relocation |
+| Pi | Yes | Yes | No | `PI_CODING_AGENT_DIR` |
+| Oh My Pi | Yes | Yes | Yes | `PI_CODING_AGENT_DIR` |
+
+Amp has one additional limitation: it supports bare interactive Profile launch
+and `--execute` headless launch, but has no argv form that seeds a prompt and
+then remains interactive. Current Agent Profiles always launch bare, so this
+does not block the shipped UI; it does prevent treating Amp as an interactive
+prompt receiver in a future handoff workflow without another transport.
 
 ## Where things live on disk
 
@@ -151,14 +185,14 @@ effort, execution mode, placement).
 - Session detection follows the relocated home while the launched bound agent
   is running (resume and handoff artifacts resolve against the profile's
   config root); once it exits, the pane's config root reverts with the
-  identity. An agent you start manually with your own
-  `CLAUDE_CONFIG_DIR`/`CODEX_HOME` is still detected, but without session
+  identity. An agent you start manually with your own runtime-home override is
+  still detected, but without session
   identity.
 - Availability is judged in two tiers. Ground truth is a background
   login-shell probe (`command -v`, the same PATH resolution a launch uses):
   once it answers, "not found" warns "… is not on your shell's PATH" and
   "found" clears any warning. Until it answers, the fallback heuristic — the
-  runtime's default home (`~/.claude` / `~/.codex`) exists iff the CLI has
+  runtime's default home exists iff the CLI has
   ever run — warns "… may not be installed". A positive probe is cached for
   the session; negatives re-probe each time the Agents popover opens, so
   installing a CLI mid-session clears its warning without a relaunch. Both
