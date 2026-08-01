@@ -2,11 +2,17 @@ import Dependencies
 import Foundation
 import Sharing
 
-extension SharedReaderKey where Self == InMemoryKey<[AgentProfileRuntime: Bool]>.Default {
+nonisolated struct AgentRuntimeAvailabilityProbeResult: Equatable, Sendable {
+  let isAvailable: Bool
+  let checkedAt: Date
+}
+
+extension SharedReaderKey
+where Self == InMemoryKey<[AgentProfileRuntime: AgentRuntimeAvailabilityProbeResult]>.Default {
   /// Session cache of the login-shell executable probe. A missing entry means
   /// the probe has not answered for that runtime yet this session.
-  static var agentRuntimeProbedAvailability: Self {
-    Self[.inMemory("agentRuntimeProbedAvailability"), default: [:]]
+  static var agentRuntimeAvailabilityProbeResults: Self {
+    Self[.inMemory("agentRuntimeAvailabilityProbeResults"), default: [:]]
   }
 }
 
@@ -15,60 +21,119 @@ extension AgentProfileAvailability {
   /// home-directory heuristic while a runtime is unanswered.
   @MainActor
   static func launchWarning(for profile: AgentProfile) -> String? {
-    @Shared(.agentRuntimeProbedAvailability) var probed
-    return launchWarning(for: profile, probedAvailable: probed[profile.runtime])
+    @Shared(.agentRuntimeAvailabilityProbeResults) var probeResults
+    return launchWarning(
+      for: profile,
+      probedAvailable: probeResults[profile.runtime]?.isAvailable
+    )
   }
 }
 
-/// Resolves each runtime's executable through the user's login shell — the
-/// same resolution a profile launch uses, so a positive answer means the
-/// launch will find the binary (docs-ai 053/005). A GUI app's own PATH is the
-/// launchd default and useless for this; the login shell's rc-built PATH is
-/// the truth. Results cache for the session: a positive is final, while a
-/// negative or unanswered runtime re-probes on the next refresh (opening the
-/// Agents popover), so installing a CLI mid-session clears its warning
-/// without a relaunch.
+/// Resolves runtime executables through the user's login shell — the same
+/// resolution a profile launch uses, so a positive answer means the launch
+/// will find the binary (docs-ai 053/005). A GUI app's own PATH is the launchd
+/// default and useless for this; the login shell's rc-built PATH is the truth.
+///
+/// One refresh batches every pending `command -v` into a single login shell.
+/// Positive answers are final for the app session. Negative answers have a
+/// short TTL so a newly installed CLI becomes visible without paying login-rc
+/// startup cost every time the Agents popover opens.
 @MainActor
 enum AgentRuntimeAvailabilityProbe {
+  static let negativeResultLifetime: TimeInterval = 5 * 60
+
+  private static let outputMarker = "__PROWL_AGENT_RUNTIME_AVAILABILITY__"
+  private static var inFlightRefresh: Task<Void, Never>?
+
   static func refresh() async {
-    @Shared(.agentRuntimeProbedAvailability) var probed
-    let pending = AgentProfileRuntime.allCases.filter { probed[$0] != true }
-    guard !pending.isEmpty else { return }
-    await withTaskGroup(of: (AgentProfileRuntime, Bool?).self) { group in
-      for runtime in pending {
-        group.addTask { (runtime, await probeAvailability(of: runtime)) }
-      }
-      for await (runtime, availability) in group {
-        guard let availability else { continue }
-        $probed.withLock { $0[runtime] = availability }
+    if let inFlightRefresh {
+      await inFlightRefresh.value
+      return
+    }
+
+    let task = Task { await performRefresh() }
+    inFlightRefresh = task
+    await task.value
+    inFlightRefresh = nil
+  }
+
+  private static func performRefresh() async {
+    @Dependency(\.date.now) var now
+    @Shared(.agentRuntimeAvailabilityProbeResults) var probeResults
+    let checkedAt = now
+    let pending = AgentProfileRuntime.allCases.filter { runtime in
+      guard let result = probeResults[runtime] else { return true }
+      guard !result.isAvailable else { return false }
+      return checkedAt.timeIntervalSince(result.checkedAt) >= negativeResultLifetime
+    }
+    guard !pending.isEmpty, let answers = await probeAvailability(of: pending) else { return }
+
+    $probeResults.withLock { results in
+      for (runtime, isAvailable) in answers {
+        results[runtime] = AgentRuntimeAvailabilityProbeResult(
+          isAvailable: isAvailable,
+          checkedAt: checkedAt
+        )
       }
     }
   }
 
-  /// true/false when the login shell answered; nil when the probe itself
-  /// could not run (spawn failure) — an unanswered probe must not masquerade
-  /// as "not installed".
-  private static func probeAvailability(of runtime: AgentProfileRuntime) async -> Bool? {
-    guard
-      let executable = try? AgentRuntimeAdapterRegistry.makeStartInvocation(
-        AgentStartRequest(runtime: runtime, intent: .interactive)
-      ).executable
-    else { return nil }
+  /// Returns the complete set of login-shell answers, or nil when the probe
+  /// itself could not run or returned malformed output. An incomplete batch
+  /// must remain unanswered rather than masquerading as "not installed".
+  private static func probeAvailability(
+    of runtimes: [AgentProfileRuntime]
+  ) async -> [AgentProfileRuntime: Bool]? {
+    let probes = runtimes.compactMap { runtime -> (runtime: AgentProfileRuntime, executable: String)? in
+      guard
+        let executable = try? AgentRuntimeAdapterRegistry.makeStartInvocation(
+          AgentStartRequest(runtime: runtime, intent: .interactive)
+        ).executable
+      else { return nil }
+      return (runtime, executable)
+    }
+    guard !probes.isEmpty else { return [:] }
+
+    let script = probes.map { probe in
+      let executable = AgentInvocation.shellQuote(probe.executable)
+      let available = AgentInvocation.shellQuote("\(outputMarker):\(probe.runtime.rawValue):1")
+      let unavailable = AgentInvocation.shellQuote("\(outputMarker):\(probe.runtime.rawValue):0")
+      return """
+        if command -v -- \(executable) >/dev/null 2>&1; then
+          printf '%s\\n' \(available)
+        else
+          printf '%s\\n' \(unavailable)
+        fi
+        """
+    }.joined(separator: "\n")
+
     @Dependency(ShellClient.self) var shell
-    do {
-      // `command -v` is a shell builtin, so it runs in an inner /bin/sh that
-      // inherits the PATH the outer login shell built from the user's rc.
-      _ = try await shell.runLogin(
+    guard
+      let output = try? await shell.runLogin(
         URL(fileURLWithPath: "/bin/sh"),
-        ["-c", "command -v -- '\(executable)'"],
+        ["-c", script],
         nil,
         log: false
       )
-      return true
-    } catch let error as ShellClientError {
-      return error.exitCode > 0 ? false : nil
-    } catch {
-      return nil
+    else { return nil }
+
+    var answers: [AgentProfileRuntime: Bool] = [:]
+    for line in output.stdout.split(whereSeparator: \.isNewline) {
+      let fields = line.split(separator: ":", omittingEmptySubsequences: false)
+      guard
+        fields.count == 3,
+        fields[0] == outputMarker[...],
+        let runtime = AgentProfileRuntime(rawValue: String(fields[1]))
+      else { continue }
+      switch fields[2] {
+      case "1": answers[runtime] = true
+      case "0": answers[runtime] = false
+      default: continue
+      }
     }
+
+    let expected = Set(probes.map { $0.runtime })
+    guard Set(answers.keys) == expected else { return nil }
+    return answers
   }
 }

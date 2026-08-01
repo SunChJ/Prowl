@@ -135,7 +135,11 @@ about what it can prove: recognized bypass flags (`--yolo`,
 when the picker says Standard; any other extra argument (including
 `--sandbox`/`--ask-for-approval`/`-c` overrides) shows a neutral "effective
 execution mode follows your extra arguments" note instead of claiming
-Standard — the semantics belong to your command line.
+Standard — the semantics belong to your command line. When the picker itself
+requests Unrestricted, the warning deliberately remains conservative even if
+later Extra Arguments may override the generated flags: Advanced arguments
+are authoritative, and Prowl does not attempt to interpret every runtime's
+full, evolving option and configuration surface.
 The editor opens with a **Profile** section (name, agent, icon), followed by
 **Launch Preview** — the exact rendered invocation, including the env prefix
 for bound profiles, using the same rendering as the real launch — then a
@@ -207,10 +211,12 @@ prompt receiver in a future handoff workflow without another transport.
   once it answers, "not found" warns "… is not on your shell's PATH" and
   "found" clears any warning. Until it answers, the fallback heuristic — the
   runtime's default home exists iff the CLI has
-  ever run — warns "… may not be installed". A positive probe is cached for
-  the session; negatives re-probe each time the Agents popover opens, so
-  installing a CLI mid-session clears its warning without a relaunch. Both
-  signals only dim rows, never disable them.
+  ever run — warns "… may not be installed". One login shell batches all
+  pending runtime lookups. A positive answer is cached for the session;
+  negative answers are cached for five minutes before becoming eligible for
+  another background probe, so installing a CLI is still detected without
+  repeatedly loading shell startup files whenever the Agents popover opens.
+  Both signals only dim rows, never disable them.
 - Prowl provides no directory sharing between a bound home and the default
   one. Symlinking read-mostly directories (e.g. `skills/`) yourself works, but
   never link files the CLI rewrites (`settings.json`, `config.toml`,

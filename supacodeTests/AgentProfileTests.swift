@@ -525,6 +525,14 @@ struct AgentProfileTests {
     claude.executionMode = .unrestricted
     #expect(claude.effectiveExecutionMode == .unrestricted)
 
+    // Advanced arguments remain authoritative and intentionally unparsed.
+    // Keep the explicit picker warning conservative even when a later flag
+    // may override the generated least-restricted request.
+    var cline = profile(name: "Cline", runtime: .cline)
+    cline.executionMode = .unrestricted
+    cline.extraArguments = "--auto-approve false"
+    #expect(cline.effectiveExecutionMode == .unrestricted)
+
     var piProfile = profile(name: "Pi", runtime: .pi)
     piProfile.executionMode = .unrestricted
     #expect(piProfile.effectiveExecutionMode == .standard)

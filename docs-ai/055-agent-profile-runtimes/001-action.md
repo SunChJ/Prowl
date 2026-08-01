@@ -73,6 +73,28 @@ exclude false positives are recorded in the linked research document.
   Claude/Codex policy, preventing generic Profile expansion from silently
   changing an independently verified workflow.
 
+### Review follow-up: executable-probe cost
+
+- Reproduced the review concern against the exact `ShellClient.runLogin`
+  shape (`zsh -l`, source `.zshrc`, then `exec /bin/sh -c`). Across 20
+  fifteen-runtime refreshes, the original 300-login-shell fan-out took 17.37s
+  wall time and 51.43 CPU-seconds on the development machine. A 20-login-shell
+  batched equivalent took 5.63s wall time and 1.96 CPU-seconds. Direct
+  per-process energy sampling was unavailable because `powermetrics` requires
+  superuser privileges; process count and CPU time establish the avoidable
+  energy work without pretending to have measured watts.
+- Replaced per-runtime shell tasks with one marker-delimited batch command.
+  Positive answers remain final for the app session; negative answers use a
+  five-minute TTL, preserving mid-session CLI installation detection without
+  reloading shell startup files on every popover open. Concurrent startup and
+  popover refreshes share one in-flight task.
+- Kept the established Advanced-arguments trust boundary. Prowl does not parse
+  every runtime's evolving flags or configuration. Unknown arguments on a
+  Standard selection produce the neutral disclosure; an explicit
+  Unrestricted picker selection retains its conservative warning even if a
+  later last-wins Advanced flag may override the generated request. The exact
+  final argv remains visible in Launch Preview.
+
 ## Research and live evidence
 
 - Captured installed versions and local `--help` contracts for all fifteen
@@ -109,7 +131,10 @@ exclude false positives are recorded in the linked research document.
   availability probes, and Handoff admission.
 - The first focused TDD run failed at the expected missing runtime/capability
   assertions before implementation.
-- `make test` passed with **2152 tests and zero failures**. The five emitted
+- The executable-probe review follow-up began with three expected RED tests;
+  its final focused suite passed all five batching, cache, failure-degradation,
+  and Advanced-argument disclosure tests.
+- `make test` passed with **2154 tests and zero failures**. The five emitted
   dependency-scan warnings are pre-existing package declaration warnings.
 - `make check` passed.
 - `make build-app` passed with zero warnings and zero errors.

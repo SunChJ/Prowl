@@ -153,7 +153,11 @@ nonisolated enum AgentProfileEnvironmentPolicy {
   }
 }
 
-/// What the editor may honestly claim about a profile's execution mode.
+/// The editor's conservative execution-mode disclosure. This is not a full
+/// parser for a runtime's final configuration: an explicit Unrestricted
+/// picker selection keeps its warning even when later Advanced arguments may
+/// override generated flags. Those arguments are authoritative user input.
+///
 /// CLI flag surfaces evolve (`--sandbox danger-full-access`,
 /// `--ask-for-approval never`, arbitrary `-c` overrides), so any recognition
 /// list goes stale: instead of chasing it, unrecognized extra arguments
@@ -167,10 +171,10 @@ nonisolated enum AgentProfileEffectiveExecutionMode: Equatable, Sendable {
 
 nonisolated extension AgentProfile {
   /// Extra arguments are respected as explicit user configuration — never
-  /// blocked or stripped. A bypass flag the adapter's `observe` recognizes
-  /// (`--yolo`, `--dangerously-*`, `--permission-mode bypassPermissions`)
-  /// upgrades the claim to `.unrestricted`; any other extra argument defers
-  /// the claim entirely.
+  /// blocked or stripped. For a Standard selection, a bypass flag the
+  /// adapter's `observe` recognizes (`--yolo`, `--dangerously-*`,
+  /// `--permission-mode bypassPermissions`) upgrades the disclosure to
+  /// `.unrestricted`; any other extra argument defers it entirely.
   var effectiveExecutionMode: AgentProfileEffectiveExecutionMode {
     let selectableModes =
       AgentRuntimeAdapterRegistry.profileAdapter(for: runtime)?.executionModeOptions ?? []
