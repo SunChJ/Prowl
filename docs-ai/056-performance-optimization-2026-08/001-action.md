@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644; follow-up PR from `perf/untracked-line-count-completion` |
+| **Primary PRs** | #644, #652 |
 
 ## Outcome
 
