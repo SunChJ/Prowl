@@ -138,5 +138,7 @@ exclude false positives are recorded in the linked research document.
   design/action record.
 - `cfb6ce75` — explicit guarded/least-restricted execution mappings and the
   independent Pi/OMP detection, heuristic, session, and CLI identities.
+- `8e5e5876` — permission/resume research, shipped runtime matrix, user manual,
+  and the durable 055.002 implementation record.
 - [PR #643](https://github.com/onevcat/Prowl/pull/643) targets
   `onevcat/Prowl:main` as a non-draft pull request.
