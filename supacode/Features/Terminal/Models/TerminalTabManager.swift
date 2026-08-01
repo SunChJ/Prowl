@@ -34,6 +34,14 @@ final class TerminalTabManager {
   /// The most recent title held back by coalescing. A spinner that stops leaves
   /// no further change to carry it, so `flushPendingTitles` lands it instead.
   @ObservationIgnored private var pendingLiveTitles: [TerminalTabID: String] = [:]
+  @ObservationIgnored private let titleFlushClock: any Clock<Duration>
+  @ObservationIgnored private var pendingTitleFlushTask: Task<Void, Never>?
+  @ObservationIgnored private var scheduledPendingTitleFlushDate: Date?
+  @ObservationIgnored var onCoalescedTitlesFlushed: (([TerminalTabID]) -> Void)?
+
+  init(titleFlushClock: any Clock<Duration> = ContinuousClock()) {
+    self.titleFlushClock = titleFlushClock
+  }
 
   /// Creates a tab next to the current selection. With `select: false` the
   /// selection is left untouched (background creation, e.g. a headless handoff
@@ -71,8 +79,14 @@ final class TerminalTabManager {
     guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
     guard !tabs[index].isTitleLocked else { return false }
     // A TUI re-emits the same title constantly; skip the no-op write so it
-    // doesn't invalidate the tab bar while an agent streams output.
-    guard tabs[index].title != title else { return false }
+    // doesn't invalidate the tab bar while an agent streams output. The latest
+    // title still supersedes a held frame: A → B (held) → A must not flush B.
+    guard tabs[index].title != title else {
+      if pendingLiveTitles.removeValue(forKey: id) != nil {
+        scheduleNextPendingTitleFlush(referenceDate: now)
+      }
+      return false
+    }
     // A changed title arriving inside the interval is almost always the next
     // frame of an animation. Hold it rather than rebuilding the tab bar for it;
     // the newest one wins, so nothing queues up.
@@ -80,23 +94,26 @@ final class TerminalTabManager {
       now.timeIntervalSince(lastWriteAt) < Self.liveTitleCoalescingInterval
     {
       pendingLiveTitles[id] = title
+      scheduleNextPendingTitleFlush(referenceDate: now)
       return false
     }
-    return writeLiveTitle(title, toTabAt: index, id: id, now: now)
+    let changed = writeLiveTitle(title, toTabAt: index, id: id, now: now)
+    scheduleNextPendingTitleFlush(referenceDate: now)
+    return changed
   }
 
   /// Lands any held-back title whose interval has elapsed. Returns the tabs whose
   /// visible `displayTitle` moved, so callers can refresh derived UI exactly as
   /// they would after `updateTitle`.
   ///
-  /// Driven by the agent-detection poll rather than a timer: the only way a
-  /// pending title is left stranded is that the writes stopped, and the poll is
-  /// already running for precisely the panes that animate.
+  /// A clock-driven trailing task calls this at the earliest pending deadline,
+  /// independently of agent detection, so non-agent programs cannot strand a
+  /// final title after the detection schedule goes cold.
   @discardableResult
   func flushPendingTitles(now: Date = Date()) -> [TerminalTabID] {
     guard !pendingLiveTitles.isEmpty else { return [] }
     var changed: [TerminalTabID] = []
-    for (id, title) in pendingLiveTitles {
+    for (id, title) in Array(pendingLiveTitles) {
       guard let lastWriteAt = lastLiveTitleWriteAt[id],
         now.timeIntervalSince(lastWriteAt) >= Self.liveTitleCoalescingInterval
       else { continue }
@@ -109,6 +126,7 @@ final class TerminalTabManager {
         changed.append(id)
       }
     }
+    scheduleNextPendingTitleFlush(referenceDate: now)
     return changed
   }
 
@@ -129,6 +147,39 @@ final class TerminalTabManager {
     let liveIDs = Set(tabs.map(\.id))
     lastLiveTitleWriteAt = lastLiveTitleWriteAt.filter { liveIDs.contains($0.key) }
     pendingLiveTitles = pendingLiveTitles.filter { liveIDs.contains($0.key) }
+    scheduleNextPendingTitleFlush(referenceDate: Date())
+  }
+
+  private func scheduleNextPendingTitleFlush(referenceDate: Date) {
+    let nextFlushDate = pendingLiveTitles.keys.compactMap { id in
+      lastLiveTitleWriteAt[id]?.addingTimeInterval(Self.liveTitleCoalescingInterval)
+    }.min()
+    guard let nextFlushDate else {
+      pendingTitleFlushTask?.cancel()
+      pendingTitleFlushTask = nil
+      scheduledPendingTitleFlushDate = nil
+      return
+    }
+    guard nextFlushDate != scheduledPendingTitleFlushDate else { return }
+
+    pendingTitleFlushTask?.cancel()
+    scheduledPendingTitleFlushDate = nextFlushDate
+    let delay = max(0, nextFlushDate.timeIntervalSince(referenceDate))
+    let sleep = titleFlushClock.anchoredSleep(for: .seconds(delay))
+    pendingTitleFlushTask = Task { @MainActor [weak self] in
+      do {
+        try await sleep()
+      } catch {
+        return
+      }
+      guard let self, self.scheduledPendingTitleFlushDate == nextFlushDate else { return }
+      self.pendingTitleFlushTask = nil
+      self.scheduledPendingTitleFlushDate = nil
+      let changed = self.flushPendingTitles(now: nextFlushDate)
+      if !changed.isEmpty {
+        self.onCoalescedTitlesFlushed?(changed)
+      }
+    }
   }
 
   /// Every tab the coalescing bookkeeping still holds an entry for.

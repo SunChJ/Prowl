@@ -215,18 +215,24 @@ final class WorktreeTerminalState {
     worktree: Worktree,
     runSetupScript: Bool = false,
     defaultFontSize: Float32? = nil,
-    targetHandleRegistry: TerminalTargetHandleRegistry? = nil
+    targetHandleRegistry: TerminalTargetHandleRegistry? = nil,
+    titleFlushClock: any Clock<Duration> = ContinuousClock()
   ) {
     self.runtime = runtime
     self.worktree = worktree
     self.targetHandleRegistry = targetHandleRegistry ?? TerminalTargetHandleRegistry()
     self.pendingSetupScript = runSetupScript
     self.defaultFontSize = defaultFontSize
-    self.tabManager = TerminalTabManager()
+    self.tabManager = TerminalTabManager(titleFlushClock: titleFlushClock)
     _repositorySettings = SharedReader(
       wrappedValue: RepositorySettings.default,
       .repositorySettings(worktree.repositoryRootURL)
     )
+    self.tabManager.onCoalescedTitlesFlushed = { [weak self] tabIDs in
+      for tabID in tabIDs {
+        self?.refreshAgentEntriesForTitleChange(in: tabID)
+      }
+    }
   }
 
   var worktreeID: Worktree.ID { worktree.id }

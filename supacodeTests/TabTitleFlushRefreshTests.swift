@@ -1,4 +1,5 @@
 import AppKit
+import Clocks
 import Foundation
 import GhosttyKit
 import Testing
@@ -64,13 +65,36 @@ struct TabTitleFlushRefreshTests {
     #expect(fixture.state.tabManager.tabs.first?.title == "⠋ building")
   }
 
+  @Test func aWithheldTitleFlushesWithoutAnAgentDetectionTask() async {
+    let clock = TestClock()
+    let fixture = makeFixture(titleFlushClock: clock)
+    var received: [ActiveAgentEntry] = []
+    fixture.state.onAgentEntryChanged = { received.append($0) }
+
+    _ = fixture.state.tabManager.updateTitle(fixture.tabId, title: "A", now: start)
+    _ = fixture.state.tabManager.updateTitle(
+      fixture.tabId,
+      title: "B",
+      now: start.addingTimeInterval(0.2)
+    )
+    #expect(fixture.state.agentDetectionTasks.isEmpty)
+
+    await clock.advance(by: .seconds(1))
+    for _ in 0..<10 { await Task.yield() }
+
+    #expect(fixture.state.tabManager.tabs.first?.title == "B")
+    #expect(received.map(\.paneTitle) == ["B"])
+  }
+
   private struct Fixture {
     let state: WorktreeTerminalState
     let tabId: TerminalTabID
     let pane: GhosttySurfaceView
   }
 
-  private func makeFixture() -> Fixture {
+  private func makeFixture(
+    titleFlushClock: any Clock<Duration> = ContinuousClock()
+  ) -> Fixture {
     let state = WorktreeTerminalState(
       runtime: GhosttyRuntime(),
       worktree: Worktree(
@@ -79,7 +103,8 @@ struct TabTitleFlushRefreshTests {
         detail: "",
         workingDirectory: URL(fileURLWithPath: "/tmp/repo/worktree"),
         repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
-      )
+      ),
+      titleFlushClock: titleFlushClock
     )
     let pane = GhosttySurfaceView(
       runtime: state.runtime,

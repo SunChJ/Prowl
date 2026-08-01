@@ -1,3 +1,4 @@
+import Clocks
 import Foundation
 import Testing
 
@@ -91,6 +92,16 @@ struct TerminalTabTitleCoalescingTests {
     #expect(title(of: manager, id) == "finished")
   }
 
+  @Test func aSuppressedTitleIsDiscardedWhenTheLatestTitleRevertsToTheVisibleValue() {
+    let (manager, id) = makeManager()
+    _ = manager.updateTitle(id, title: "A", now: start)
+    _ = manager.updateTitle(id, title: "B", now: start.addingTimeInterval(0.2))
+
+    #expect(manager.updateTitle(id, title: "A", now: start.addingTimeInterval(0.4)) == false)
+    #expect(manager.flushPendingTitles(now: start.addingTimeInterval(1.5)).isEmpty)
+    #expect(title(of: manager, id) == "A")
+  }
+
   @Test func coalescingIsPerTabNotGlobal() {
     let manager = TerminalTabManager()
     let first = manager.createTab(title: "first", icon: nil)
@@ -102,6 +113,33 @@ struct TerminalTabTitleCoalescingTests {
 
     #expect(title(of: manager, first) == "⠋ one")
     #expect(title(of: manager, second) == "⠋ two")
+  }
+
+  @Test func automaticFlushRearmsForTheNextTabsLaterDeadline() async {
+    let clock = TestClock()
+    let manager = TerminalTabManager(titleFlushClock: clock)
+    let first = manager.createTab(title: "first", icon: nil)
+    let second = manager.createTab(title: "second", icon: nil)
+    var flushed: [[TerminalTabID]] = []
+    manager.onCoalescedTitlesFlushed = { flushed.append($0) }
+
+    _ = manager.updateTitle(first, title: "first A", now: start)
+    _ = manager.updateTitle(first, title: "first B", now: start.addingTimeInterval(0.1))
+    _ = manager.updateTitle(second, title: "second A", now: start.addingTimeInterval(0.4))
+    _ = manager.updateTitle(second, title: "second B", now: start.addingTimeInterval(0.5))
+
+    await clock.advance(by: .seconds(0.9))
+    for _ in 0..<10 { await Task.yield() }
+
+    #expect(title(of: manager, first) == "first B")
+    #expect(title(of: manager, second) == "second A")
+    #expect(flushed == [[first]])
+
+    await clock.advance(by: .seconds(0.4))
+    for _ in 0..<10 { await Task.yield() }
+
+    #expect(title(of: manager, second) == "second B")
+    #expect(flushed == [[first], [second]])
   }
 
   @Test func aLockedTitleIsNeverWrittenOrHeld() {

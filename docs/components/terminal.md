@@ -68,6 +68,12 @@ A tab's displayed title is, in order of precedence:
 2. the **live shell title** the running program emits (OSC 2), else
 3. an auto-generated default like `project 1`, `project 2`.
 
+Rapid live-title animation is coalesced per tab to at most one visible update
+per second so one spinner frame does not rebuild the entire tab bar. The newest
+withheld title is applied at the end of that interval even when no agent is
+running, so a live title may visibly lag by up to one second but its final value
+is not left behind.
+
 The Run Script tab is labeled **RUN SCRIPT** and is **title-locked** for its
 lifetime. Prowl also "learns" your shell's idle prompt so it doesn't mistake it
 for a meaningful title.
