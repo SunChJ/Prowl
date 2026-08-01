@@ -61,6 +61,15 @@ final class WorktreeTerminalState {
     let isFocused: Bool
   }
 
+  /// One memoized agent-screen scan: the `raw` state `detectState` produced for
+  /// `text` under `agent`. Cached per surface so an unchanged screen is not
+  /// re-parsed on the next poll.
+  struct AgentScreenScan: Equatable {
+    let agent: DetectedAgent
+    let text: String
+    let raw: AgentRawState
+  }
+
   let tabManager: TerminalTabManager
   let runtime: GhosttyRuntime
   let worktree: Worktree
@@ -102,6 +111,14 @@ final class WorktreeTerminalState {
   var agentDetectionPresenceBySurface: [UUID: AgentDetectionPresence] = [:]
   var lastWorkingAtBySurface: [UUID: Date] = [:]
   var lastAgentDetectionDiagnosticsBySurface: [UUID: String] = [:]
+  /// Memoizes the last agent-screen scan per surface so `detectAgentState` can
+  /// reuse it while the terminal text and detected agent are unchanged. A
+  /// live-but-idle agent is polled every 300 ms; without this each poll re-ran
+  /// `DetectedAgent.detectState` — line splitting, lowercasing, and heuristic
+  /// scans over identical text. Observation-ignored: a pure cache that never
+  /// drives the UI.
+  @ObservationIgnored
+  var lastAgentScreenScanBySurface: [UUID: AgentScreenScan] = [:]
   /// Last `ActiveAgentEntry` emitted per surface. `detectAgentState` re-emits
   /// whenever any `PaneAgentState` field changes, including internal
   /// bookkeeping (raw-state oscillation, session miss streaks, presence
