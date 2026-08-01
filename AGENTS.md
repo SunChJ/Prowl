@@ -39,6 +39,8 @@ xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platf
 
 Requires [mise](https://mise.jdx.dev/) for zig, swiftlint, and xcsift tooling.
 
+`make log-stream` shows no `TCA` action lines by default: per-action logging — the action label plus a full app-state snapshot and diff — is gated off because it runs on every action and shows up as steady main-thread cost. Launch with `PROWL_LOG_TCA_ACTIONS=1` (scheme env var, or exported before `open`) to trace the action stream through the unified log.
+
 ## Architecture
 
 Prowl is a macOS orchestrator for running multiple coding agents in parallel, using GhosttyKit as the underlying terminal.
