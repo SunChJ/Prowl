@@ -30,7 +30,8 @@ the code path and resulting bypass, not the original capture.
 
 ## Refs
 
-- PR #645
+- Original PR #645
+- Fork integration PR #653
 - Original implementation commit `616bbf4b`
 
 ## Current state

@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644, #645, #652; review queue #646–#650 |
+| **Primary PRs** | #644, #645, #652, #653; review queue #646–#650 |
 | **Related** | [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -30,9 +30,9 @@ The first application was #644. Its `memchr` scan removes the dominant per-byte
 untracked text file to zero added lines. If that is the only change, the worktree badge
 disappears even though Show Diff still includes the file.
 
-The second application is #645. The root reducer remains wrapped for opt-in diagnostics,
-but a normal Debug launch now bypasses action reflection, state snapshots and equality
-checks, and `CustomDump` diff generation. See
+The second application originated in #645 and is integrated through #653. The root reducer
+remains wrapped for opt-in diagnostics, but a normal Debug launch now bypasses action
+reflection, state snapshots and equality checks, and `CustomDump` diff generation. See
 [056.002](002-opt-in-debug-tca-action-logging.md) for the reviewed behavior and scope.
 
 ## Measured baseline for #644
@@ -128,7 +128,7 @@ pending independent code-path and test review.
 | PR | Confirmed scope | Review focus / placeholder | Head |
 | --- | --- | --- | --- |
 | #644 | Replace `Data.Iterator` line scans and avoid repeated large untracked-file work | Integrated through #652 with exact cached counts, a refresh-wide budget, and explicit incomplete state | `978b7b59` |
-| #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Reviewed: default Debug launches bypass the expensive diagnostics; the opt-in path remains available and Release behavior is unchanged | `616bbf4b` |
+| #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Reviewed and integrated through #653: default Debug launches bypass the expensive diagnostics; the opt-in path remains available and Release behavior is unchanged | `616bbf4b` |
 | #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Verify cache invalidation, stabilization timing, observation isolation, and surface teardown | `b2ac2936` |
 | #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Decide whether stale CLI `raw_state` is acceptable; trace UI/CLI ownership before merge | `e77ba660` |
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Verify deepest-match and symlink semantics, cache invalidation, render-path purity, and current CI | `08773383` |
@@ -163,5 +163,6 @@ pending independent code-path and test review.
 
 ## Amendments
 
-- Updated 2026-08-02: Reviewed and integrated opt-in Debug TCA action logging from #645 — see
+- Updated 2026-08-02: Reviewed opt-in Debug TCA action logging from #645 and moved integration
+  to fork-owned PR #653 — see
   [002-opt-in-debug-tca-action-logging.md](002-opt-in-debug-tca-action-logging.md).
