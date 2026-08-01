@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | Fill in when submitted |
+| **Primary PRs** | [#643](https://github.com/onevcat/Prowl/pull/643) |
 | **Related** | [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [048 agent-runtime-adapters](../048-agent-runtime-adapters/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [runtime research](research-agent-profile-runtimes.md), `docs/components/agent-profiles.md`, `docs/components/handoff.md` |
 
 ## Background

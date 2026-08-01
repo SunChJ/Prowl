@@ -4,7 +4,7 @@
 | --- | --- |
 | **Date** | 2026-08-01 |
 | **Branch** | `feat/agent-profile-runtimes` |
-| **Primary PR** | Fill in after submission |
+| **Primary PR** | [#643](https://github.com/onevcat/Prowl/pull/643) |
 | **Evidence** | [Runtime research and shipped matrix](research-agent-profile-runtimes.md) |
 
 ## Outcome
@@ -114,6 +114,9 @@ exclude false positives are recorded in the linked research document.
 
 ## Delivery
 
-- Implementation commits: fill in after commit.
-- Documentation commit: fill in after commit.
-- Pull request: fill in after submission.
+- `171e6a92` — capability-based runtime adapters, Profile integration, rooted
+  session layouts, and regression coverage.
+- `c1b7ff0c` — runtime research, shipped matrix, agent manual, and this durable
+  design/action record.
+- [PR #643](https://github.com/onevcat/Prowl/pull/643) targets
+  `onevcat/Prowl:main` as a non-draft pull request.
