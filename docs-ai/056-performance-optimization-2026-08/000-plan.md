@@ -4,8 +4,8 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644, #645, #652, #653; review queue #646–#650 |
-| **Related** | [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
+| **Primary PRs** | #644–#646, #652, #653; review queue #647–#650 |
+| **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
 
@@ -34,6 +34,11 @@ The second application originated in #645 and is integrated through #653. The ro
 remains wrapped for opt-in diagnostics, but a normal Debug launch now bypasses action
 reflection, state snapshots and equality checks, and `CustomDump` diff generation. See
 [056.002](002-opt-in-debug-tca-action-logging.md) for the reviewed behavior and scope.
+
+The third application, #646, memoizes the last raw agent screen scan per terminal surface.
+Polling still reads the active screen and runs process, stabilization, and session logic, but
+an identical `(agent, text)` pair reuses the previous `DetectedAgent.detectState` result. See
+[056.003](003-agent-screen-scan-memoization.md) for the cache boundary and remaining costs.
 
 ## Measured baseline for #644
 
@@ -76,7 +81,7 @@ bounding this dense-match case.
 
 - No user-facing setting for byte budgets or cache policy in this wave.
 - No replacement of `git diff HEAD --shortstat` or the FSEvents scheduling pipeline.
-- No combined implementation of #646–#650; each remains an independent review and merge
+- No combined implementation of #647–#650; each remains an independent review and merge
   decision.
 - No author-reported sampling number is treated as independently verified without a
   same-path reproduction.
@@ -122,14 +127,14 @@ input while preserving exact counts.
 
 ## Performance PR review queue
 
-The descriptions and heads below were confirmed on 2026-08-02. Claims for #646–#650 remain
+The descriptions and heads below were confirmed on 2026-08-02. Claims for #647–#650 remain
 pending independent code-path and test review.
 
 | PR | Confirmed scope | Review focus / placeholder | Head |
 | --- | --- | --- | --- |
 | #644 | Replace `Data.Iterator` line scans and avoid repeated large untracked-file work | Integrated through #652 with exact cached counts, a refresh-wide budget, and explicit incomplete state | `978b7b59` |
 | #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Reviewed and integrated through #653: default Debug launches bypass the expensive diagnostics; the opt-in path remains available and Release behavior is unchanged | `616bbf4b` |
-| #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Verify cache invalidation, stabilization timing, observation isolation, and surface teardown | `b2ac2936` |
+| #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Merged: exact agent/text cache identity preserves raw-state semantics; stabilization still runs per tick; cache lifetime follows detection/surface cleanup | `b2ac2936` |
 | #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Decide whether stale CLI `raw_state` is acceptable; trace UI/CLI ownership before merge | `e77ba660` |
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Verify deepest-match and symlink semantics, cache invalidation, render-path purity, and current CI | `08773383` |
 | #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Verify final-title delivery, close/prune lifecycle, custom/locked titles, and clock boundaries | `b77888f3` |
@@ -166,3 +171,5 @@ pending independent code-path and test review.
 - Updated 2026-08-02: Reviewed opt-in Debug TCA action logging from #645 and moved integration
   to fork-owned PR #653 — see
   [002-opt-in-debug-tca-action-logging.md](002-opt-in-debug-tca-action-logging.md).
+- Updated 2026-08-02: Merged per-surface agent screen-scan memoization from #646 — see
+  [003-agent-screen-scan-memoization.md](003-agent-screen-scan-memoization.md).
