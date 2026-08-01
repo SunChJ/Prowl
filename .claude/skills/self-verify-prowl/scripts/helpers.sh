@@ -12,10 +12,26 @@ prowl_debug() {
   PROWL_CLI_SOCKET="$socket" "$cli" "$@"
 }
 
+# Return success only for the executable inside a DerivedData Debug product.
+# Accept the pre-rebrand bundle name so the helper also works on older branches.
+is_debug_prowl_executable() {
+  case "$1" in
+    */DerivedData/*/Build/Products/Debug/Prowl\ Debug.app/Contents/MacOS/ProwlApp \
+      | */DerivedData/*/Build/Products/Debug/Prowl.app/Contents/MacOS/ProwlApp)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 # List all debug-build ProwlApp PIDs (may include helper/child processes).
 debug_pids() {
-  for pid in $(pgrep -f "DerivedData/.*/Debug/Prowl.app/Contents/MacOS/ProwlApp"); do
-    [ "$(ps -p "$pid" -o comm= 2>/dev/null | sed 's#.*/##')" = "ProwlApp" ] && echo "$pid"
+  local executable
+  for pid in $(pgrep -x ProwlApp 2>/dev/null); do
+    executable="$(ps -p "$pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//')"
+    is_debug_prowl_executable "$executable" && printf '%s\n' "$pid"
   done
 }
 
@@ -81,8 +97,8 @@ wait_for_prowl_debug() {
   # no-op CLI round trip before running scenario commands.
   test -n "$(debug_pids | head -1)" || return 1
   health="$(prowl_debug list --json)"
-  test "$(echo "$health" | jq -r '.ok')" = "true" || {
-    echo "$health" | jq -r '.error.code? // "unknown"'
+  test "$(printf '%s\n' "$health" | jq -r '.ok')" = "true" || {
+    printf '%s\n' "$health" | jq -r '.error.code? // "unknown"'
     return 1
   }
 }
