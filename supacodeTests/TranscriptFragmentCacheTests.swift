@@ -68,30 +68,86 @@ struct TranscriptFragmentCacheTests {
     #expect(recovered == ["now readable"])
   }
 
-  @Test func pruneDropsOnlyEntriesNotConsultedSinceTheLastPrune() {
+  @Test func replacesAnOlderVersionOfTheSamePathImmediately() {
     var cache = TranscriptFragmentCache()
-    let stable = key("/tmp/stable.jsonl", 100)
-    let superseded = key("/tmp/busy.jsonl", 100)
-    _ = cache.fragments(for: stable) { ["stable"] }
-    _ = cache.fragments(for: superseded) { ["v1"] }
-    #expect(cache.count == 2)
-
-    cache.pruneUnconsulted()
-    #expect(cache.count == 2, "Both were consulted in this round, so both survive")
-
-    // Next round: the busy transcript is appended to, so its old key is never
-    // consulted again and must not accumulate.
-    _ = cache.fragments(for: stable) { ["stable"] }
+    _ = cache.fragments(for: key("/tmp/busy.jsonl", 100)) { ["v1"] }
     _ = cache.fragments(for: key("/tmp/busy.jsonl", 101)) { ["v2"] }
-    cache.pruneUnconsulted()
 
-    #expect(cache.count == 2)
-    var loads = 0
-    _ = cache.fragments(for: superseded) {
-      loads += 1
-      return ["v1 again"]
+    #expect(cache.count == 1)
+  }
+
+  @Test func dropsAnOlderVersionWhenLoadingTheNewVersionFails() {
+    var cache = TranscriptFragmentCache()
+    _ = cache.fragments(for: key("/tmp/busy.jsonl", 100)) { ["v1"] }
+
+    #expect(cache.fragments(for: key("/tmp/busy.jsonl", 101)) { nil } == nil)
+    #expect(cache.count == 0)
+  }
+
+  @Test func evictsTheLeastRecentlyUsedEntryAtCapacity() {
+    var cache = TranscriptFragmentCache(maxEntryCount: 2, maxRetainedUTF8Bytes: .max)
+    let first = key("/tmp/first.jsonl", 100)
+    let second = key("/tmp/second.jsonl", 100)
+    let third = key("/tmp/third.jsonl", 100)
+    _ = cache.fragments(for: first) { ["first"] }
+    _ = cache.fragments(for: second) { ["second"] }
+    _ = cache.fragments(for: first) { ["not reached"] }
+    _ = cache.fragments(for: third) { ["third"] }
+
+    var firstReloads = 0
+    _ = cache.fragments(for: first) {
+      firstReloads += 1
+      return ["first reloaded"]
     }
-    #expect(loads == 1, "The superseded entry was evicted, so it must reload")
+    var secondReloads = 0
+    _ = cache.fragments(for: second) {
+      secondReloads += 1
+      return ["second reloaded"]
+    }
+
+    #expect(firstReloads == 0, "A cache hit must make the entry most recently used")
+    #expect(secondReloads == 1, "The least recently used entry must be evicted first")
+  }
+
+  @Test func doesNotRetainAnEntryLargerThanTheByteBudget() {
+    var cache = TranscriptFragmentCache(maxEntryCount: 10, maxRetainedUTF8Bytes: 3)
+    let target = key("/tmp/large.jsonl", 100)
+    var loads = 0
+
+    for _ in 0..<2 {
+      _ = cache.fragments(for: target) {
+        loads += 1
+        return ["four"]
+      }
+    }
+
+    #expect(loads == 2)
+    #expect(cache.count == 0)
+  }
+
+  @Test func byteBudgetEvictsTheLeastRecentlyUsedEntry() {
+    var cache = TranscriptFragmentCache(maxEntryCount: 10, maxRetainedUTF8Bytes: 10)
+    let first = key("a", 100)
+    let second = key("b", 100)
+    let third = key("c", 100)
+    _ = cache.fragments(for: first) { ["1234"] }
+    _ = cache.fragments(for: second) { ["1234"] }
+    _ = cache.fragments(for: first) { ["not reached"] }
+    _ = cache.fragments(for: third) { ["1234"] }
+
+    var firstReloads = 0
+    _ = cache.fragments(for: first) {
+      firstReloads += 1
+      return ["1234"]
+    }
+    var secondReloads = 0
+    _ = cache.fragments(for: second) {
+      secondReloads += 1
+      return ["1234"]
+    }
+
+    #expect(firstReloads == 0)
+    #expect(secondReloads == 1)
   }
 
   @Test func bestMatchServesASecondCallFromTheCache() throws {

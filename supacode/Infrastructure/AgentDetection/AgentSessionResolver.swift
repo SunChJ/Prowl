@@ -70,22 +70,40 @@ nonisolated struct AgentSessionResolution: Sendable {
   let isFresh: Bool
 }
 
-/// Parsed, normalized transcript fragments reused across resolver polls.
+/// Parsed, normalized transcript fragments reused across resolver polls and panes.
 ///
 /// Fingerprint matching re-reads the same transcript tails every time a pane's
 /// session cache expires (5 s while a session stays resolved). The bytes are
 /// almost always identical and the tails sit in the page cache, so the cost is
 /// re-parsing JSON and re-normalizing text rather than I/O. Keying the parsed
 /// result on the file's modification time replays it for unchanged transcripts
-/// without altering which candidate wins.
+/// without altering which candidate wins. Entry-count and retained-payload limits
+/// bound process churn and candidate-set churn independently of process cleanup.
 nonisolated struct TranscriptFragmentCache: Sendable {
   struct Key: Hashable, Sendable {
     let path: String
     let modifiedAt: Date
   }
 
-  private var entries: [Key: [String]] = [:]
-  private var consulted: Set<Key> = []
+  private struct Entry: Sendable {
+    let fragments: [String]
+    let retainedUTF8Bytes: Int
+    var lastAccess: UInt64
+  }
+
+  private var entries: [Key: Entry] = [:]
+  private var retainedUTF8Bytes = 0
+  private var accessCounter: UInt64 = 0
+  private let maxEntryCount: Int
+  private let maxRetainedUTF8Bytes: Int
+
+  init(
+    maxEntryCount: Int = 128,
+    maxRetainedUTF8Bytes: Int = 8 * 1_024 * 1_024
+  ) {
+    self.maxEntryCount = max(0, maxEntryCount)
+    self.maxRetainedUTF8Bytes = max(0, maxRetainedUTF8Bytes)
+  }
 
   var count: Int { entries.count }
 
@@ -93,20 +111,49 @@ nonisolated struct TranscriptFragmentCache: Sendable {
   /// `load()`. A nil `load()` is deliberately not cached: an unreadable tail is
   /// transient, and caching the failure would keep a recovered file excluded.
   mutating func fragments(for key: Key, load: () -> [String]?) -> [String]? {
-    consulted.insert(key)
-    if let cached = entries[key] { return cached }
+    accessCounter &+= 1
+    if var cached = entries[key] {
+      cached.lastAccess = accessCounter
+      entries[key] = cached
+      return cached.fragments
+    }
+    // Only the newest observed version of a path can be useful. Removing older
+    // modification-time keys immediately avoids spending the shared budget on
+    // append history until LRU pressure happens to arrive. Do this even when
+    // the new version is temporarily unreadable: an old key cannot answer a
+    // request for the new file contents.
+    for superseded in entries.keys.filter({ $0.path == key.path }) {
+      remove(superseded)
+    }
     guard let loaded = load() else { return nil }
-    entries[key] = loaded
+
+    let byteCount =
+      key.path.utf8.count
+      + loaded.reduce(into: 0) { count, fragment in
+        count += fragment.utf8.count
+      }
+    guard maxEntryCount > 0, byteCount <= maxRetainedUTF8Bytes else { return loaded }
+    entries[key] = Entry(
+      fragments: loaded,
+      retainedUTF8Bytes: byteCount,
+      lastAccess: accessCounter
+    )
+    retainedUTF8Bytes += byteCount
+    evictIfNeeded()
     return loaded
   }
 
-  /// Drops every entry not consulted since the previous prune: superseded
-  /// versions of an appended transcript, and files that left the candidate set.
-  /// Because the key carries a modification date, an actively written transcript
-  /// mints a new entry per poll; without this the cache would grow without bound.
-  mutating func pruneUnconsulted() {
-    entries = entries.filter { consulted.contains($0.key) }
-    consulted.removeAll(keepingCapacity: true)
+  private mutating func evictIfNeeded() {
+    while entries.count > maxEntryCount || retainedUTF8Bytes > maxRetainedUTF8Bytes {
+      guard let leastRecentlyUsed = entries.min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key
+      else { return }
+      remove(leastRecentlyUsed)
+    }
+  }
+
+  private mutating func remove(_ key: Key) {
+    guard let removed = entries.removeValue(forKey: key) else { return }
+    retainedUTF8Bytes -= removed.retainedUTF8Bytes
   }
 }
 
@@ -186,9 +233,10 @@ actor AgentSessionResolver {
   }
 
   private var cache: [CacheKey: CachedResult] = [:]
-  /// Per-pane transcript fragment reuse, kept beside `cache` so both are evicted
-  /// on the same liveness check.
-  private var fragmentCaches: [CacheKey: TranscriptFragmentCache] = [:]
+  /// Transcript parsing depends only on file identity, not on the process doing
+  /// the match. Sharing one bounded cache avoids retaining duplicate 128 KiB
+  /// tails for every pane that consults the same candidate set.
+  private var fragmentCache = TranscriptFragmentCache()
   private let fileManager: FileManager
   private let homeDirectory: URL
 
@@ -226,7 +274,6 @@ actor AgentSessionResolver {
       }
     }
 
-    var fragments = fragmentCaches[key] ?? TranscriptFragmentCache()
     let (resolved, usedWideScan) = resolveUncached(
       ResolveRequest(
         identified: identified,
@@ -236,10 +283,8 @@ actor AgentSessionResolver {
         configRoot: configRoot,
         now: now
       ),
-      fragments: &fragments
+      fragments: &fragmentCache
     )
-    fragments.pruneUnconsulted()
-    fragmentCaches[key] = fragments
     var session = resolved
     var provisionalID: String?
     if let candidate = session, candidate.confidence == .medium {
@@ -265,7 +310,6 @@ actor AgentSessionResolver {
       cache = cache.filter { entry in
         ProcessDetection.processStartDate(pid: entry.key.pid) == entry.key.startedAt
       }
-      fragmentCaches = fragmentCaches.filter { cache[$0.key] != nil }
     }
     return AgentSessionResolution(session: session, isFresh: true)
   }

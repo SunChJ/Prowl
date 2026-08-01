@@ -91,6 +91,20 @@ struct AgentSessionFingerprintNormalizeTests {
     }
   }
 
+  @Test func fastPathMatchesReferenceForEveryASCIIByteAndPair() {
+    let scalars = (UInt8.min...UInt8.max).prefix(128).map { String(Unicode.Scalar($0)) }
+    for first in scalars {
+      #expect(AgentSessionFingerprintMatcher.normalize(first) == Self.pristine(first))
+      for second in scalars {
+        let input = first + second
+        #expect(
+          AgentSessionFingerprintMatcher.normalize(input) == Self.pristine(input),
+          "normalize diverged for \(String(reflecting: input))"
+        )
+      }
+    }
+  }
+
   @Test func normalizesToExpectedText() {
     #expect(AgentSessionFingerprintMatcher.normalize("  \u{001B}[1;31mHello\t\tWORLD  ") == "hello world")
     #expect(AgentSessionFingerprintMatcher.normalize("") == "")
