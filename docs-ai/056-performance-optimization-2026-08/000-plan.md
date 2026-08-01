@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644, #652; review queue #645–#650 |
+| **Primary PRs** | #644, #645, #652, #653; review queue #646–#650 |
 | **Related** | [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -25,10 +25,15 @@ This entry records the cross-cutting standard used to review and integrate that 
 - require tests that can fail when the optimized path stops being equivalent;
 - keep each PR independently reviewable instead of combining unrelated hot paths.
 
-The first application is #644. Its `memchr` scan removes the dominant per-byte
+The first application was #644. Its `memchr` scan removes the dominant per-byte
 `Data.Iterator` overhead, but its per-file 2 MiB cutoff silently maps a present, readable
 untracked text file to zero added lines. If that is the only change, the worktree badge
 disappears even though Show Diff still includes the file.
+
+The second application originated in #645 and is integrated through #653. The root reducer
+remains wrapped for opt-in diagnostics, but a normal Debug launch now bypasses action
+reflection, state snapshots and equality checks, and `CustomDump` diff generation. See
+[056.002](002-opt-in-debug-tca-action-logging.md) for the reviewed behavior and scope.
 
 ## Measured baseline for #644
 
@@ -71,10 +76,10 @@ bounding this dense-match case.
 
 - No user-facing setting for byte budgets or cache policy in this wave.
 - No replacement of `git diff HEAD --shortstat` or the FSEvents scheduling pipeline.
-- No combined implementation of #645–#650; each remains an independent review and merge
+- No combined implementation of #646–#650; each remains an independent review and merge
   decision.
-- No claim that author-reported sampling numbers are independently verified until that PR
-  receives its own review.
+- No author-reported sampling number is treated as independently verified without a
+  same-path reproduction.
 
 ## Design / Approach
 
@@ -117,13 +122,13 @@ input while preserving exact counts.
 
 ## Performance PR review queue
 
-The descriptions and heads below were confirmed on 2026-08-01. All claims remain pending
-independent code-path and test review except #644, which is the active implementation wave.
+The descriptions and heads below were confirmed on 2026-08-02. Claims for #646–#650 remain
+pending independent code-path and test review.
 
 | PR | Confirmed scope | Review focus / placeholder | Head |
 | --- | --- | --- | --- |
-| #644 | Replace `Data.Iterator` line scans and avoid repeated large untracked-file work | Active: preserve exact badge semantics with cache, aggregate budget, and explicit incomplete state | `978b7b59` |
-| #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Verify flag parsing, logging contract, Debug-only scope, and pass-through reducer semantics | `616bbf4b` |
+| #644 | Replace `Data.Iterator` line scans and avoid repeated large untracked-file work | Integrated through #652 with exact cached counts, a refresh-wide budget, and explicit incomplete state | `978b7b59` |
+| #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Reviewed and integrated through #653: default Debug launches bypass the expensive diagnostics; the opt-in path remains available and Release behavior is unchanged | `616bbf4b` |
 | #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Verify cache invalidation, stabilization timing, observation isolation, and surface teardown | `b2ac2936` |
 | #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Decide whether stale CLI `raw_state` is acceptable; trace UI/CLI ownership before merge | `e77ba660` |
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Verify deepest-match and symlink semantics, cache invalidation, render-path purity, and current CI | `08773383` |
@@ -157,3 +162,7 @@ independent code-path and test review except #644, which is the active implement
   hybrid scanner change.
 
 ## Amendments
+
+- Updated 2026-08-02: Reviewed opt-in Debug TCA action logging from #645 and moved integration
+  to fork-owned PR #653 — see
+  [002-opt-in-debug-tca-action-logging.md](002-opt-in-debug-tca-action-logging.md).
