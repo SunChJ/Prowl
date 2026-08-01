@@ -12,12 +12,12 @@
 Agent Profiles now support every launch runtime represented by Prowl's current
 agent catalog: Claude Code, Codex, Gemini CLI, Cursor Agent, Cline, OpenCode,
 GitHub Copilot, Kimi Code, Factory Droid, Amp, Qoder CLI, Qwen Code, Grok
-Build, Pi, and Oh My Pi. This is fifteen launch runtimes over fourteen
-`DetectedAgent` families because Pi and Oh My Pi intentionally share process
-detection while remaining different Profile targets.
+Build, Pi, and Oh My Pi. This is fifteen launch runtimes over fifteen
+`DetectedAgent` families: Pi and Oh My Pi are now independent process,
+heuristic, display, and session identities.
 
 The implementation does not pretend that every CLI has the same contract.
-Model, reasoning effort, unrestricted execution, and Dedicated Home controls
+Model, reasoning effort, execution mode, and Dedicated Home controls
 are rendered only when the selected launch adapter can satisfy their Prowl
 semantics. The full positive/negative matrix and the source checks used to
 exclude false positives are recorded in the linked research document.
@@ -29,12 +29,15 @@ exclude false positives are recorded in the linked research document.
 - Split Profile launch from side-effect-free session resume. All fifteen
   runtimes have launch adapters, while only Claude Code and Codex remain in
   the proven resume registry.
-- Keyed launch metadata by `AgentProfileRuntime` so Pi and Oh My Pi preserve
-  their executable, icon, availability probe, and option differences while
-  still mapping to the `.pi` detection family.
+- Kept launch metadata keyed by `AgentProfileRuntime`, with a one-to-one
+  canonical detection mapping so Pi and Oh My Pi remain independent.
 - Added explicit field capabilities and per-runtime invocation rendering for
   interactive, seeded-interactive, and headless intents. Unsupported intents,
   notably Amp's seeded interactive mode, fail as typed adapter errors.
+- Replaced the one-sided unrestricted capability with adapter-declared
+  execution-mode choices. Cline, Grok, and Oh My Pi render explicit guarded
+  and least-restricted invocations; Droid, Amp, and Pi hide the field because
+  their interactive CLIs cannot express both Prowl modes.
 - Kept user Extra Arguments last-wins for ordinary options, but append managed
   home arguments after them so a bound Profile cannot be redirected away from
   the provisioned directory.
@@ -50,6 +53,8 @@ exclude false positives are recorded in the linked research document.
 - Added rooted session layouts and pid-artifact lookup where those runtimes
   store native identity beneath the relocated root. Surface launch metadata
   now carries `sessionConfigRoot` independently from `dedicatedHome`.
+- Added OMP's native `~/.omp/agent/sessions` marker and home-relative directory
+  encoding independently from Pi's `~/.pi/agent/sessions` layout.
 - Deliberately omitted Dedicated Home for Cursor, OpenCode, Kimi, Droid, Amp,
   and Grok after documentation/source inspection showed that available
   overrides relocate only part of their mutable state.
@@ -57,7 +62,8 @@ exclude false positives are recorded in the linked research document.
 ### Profile and workflow UX
 
 - Expanded persisted runtime tokens without changing existing Claude/Codex
-  encodings. OMP keeps its own icon even though live detection reports Pi.
+  encodings. OMP now reports its own `.omp` detection identity and keeps its
+  icon without launch-metadata recovery.
 - Made the Agent Profile editor conditional: unsupported model, reasoning,
   execution, and home controls are absent rather than present-but-ignored.
   Switching to a runtime without full home relocation clears the binding.
@@ -74,11 +80,23 @@ exclude false positives are recorded in the linked research document.
 - Installed the previously missing Qwen Code 0.21.2 through its official
   Homebrew distribution. It launched and was detected, but no paid provider
   credential was added, so authenticated task execution is marked Best Effort.
-- Launched every runtime in a disposable Prowl tab and confirmed the expected
-  detection family. Cline was corrected to `cline --tui`; bare `cline` opens
-  its Kanban UI and is not an agent-terminal launch.
+- Launched every runtime in a disposable Prowl tab and confirmed interactive
+  startup. Cline was corrected to `cline --tui`; bare `cline` opens its Kanban
+  UI and is not an agent-terminal launch.
 - Performed source-level false-positive checks for partial home relocation and
-  OMP's `PI_CODING_AGENT_DIR` behavior before finalizing the unsupported rows.
+  OMP's approval, session, and `PI_CODING_AGENT_DIR` behavior before finalizing
+  the unsupported rows.
+- Rechecked permission semantics against current help and official sources.
+  Pi's default is intentionally unprompted; Cline and OMP expose inverse
+  guarded flags; Grok requires independent permission and sandbox flags; Droid
+  exposes a third-state autonomy scale; Amp's guarded behavior is settings-only.
+- Re-ran guarded launches through `prowl`: Cline visibly disabled auto-approve,
+  Grok accepted `--permission-mode default`, and OMP accepted
+  `--approval-mode always-ask` and printed its native `omp --resume <id>` path.
+  The installed baseline also reproduced the erroneous OMP-as-Pi identity. A
+  simultaneous Debug instance could not mount Ghostty surfaces, so the fixed
+  `.omp` payload is verified by production-path tests rather than claimed as a
+  post-change live observation.
 - Opened the latest Debug app through the native Settings UI and confirmed the
   Add Profile menu exposes all fifteen launch runtimes without creating or
   editing user Profiles.
@@ -91,12 +109,12 @@ exclude false positives are recorded in the linked research document.
   availability probes, and Handoff admission.
 - The first focused TDD run failed at the expected missing runtime/capability
   assertions before implementation.
-- `make test` passed with **2164 tests and zero failures**. The five emitted
+- `make test` passed with **2167 tests and zero failures**. The five emitted
   dependency-scan warnings are pre-existing package declaration warnings.
 - `make check` passed.
 - `make build-app` passed with zero warnings and zero errors.
-- CLI sources and contracts were not changed, so the CLI-specific build,
-  smoke, and socket integration gates were not required.
+- `make build-cli` and `make test-cli-smoke` passed.
+- `make test-cli-integration` passed all **64 tests**.
 
 ## Known limitations and follow-up seams
 
@@ -118,5 +136,7 @@ exclude false positives are recorded in the linked research document.
   session layouts, and regression coverage.
 - `c1b7ff0c` — runtime research, shipped matrix, agent manual, and this durable
   design/action record.
+- `cfb6ce75` — explicit guarded/least-restricted execution mappings and the
+  independent Pi/OMP detection, heuristic, session, and CLI identities.
 - [PR #643](https://github.com/onevcat/Prowl/pull/643) targets
   `onevcat/Prowl:main` as a non-draft pull request.

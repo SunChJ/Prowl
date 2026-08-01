@@ -118,8 +118,8 @@ prowl agents --json
 ```
 Each agent contains:
 - `id`: the pane/surface UUID, suitable for `--pane`.
-- `type`, `name`: normalized detector type and displayed command name. Aliases
-  such as `omp` are preserved in `name`.
+- `type`, `name`: normalized detector type and displayed command name. Pi uses
+  `pi`; Oh My Pi uses `omp`, with `oh-my-pi` preserved as a display alias.
 - `status`, `raw_state`: detected agent state. `status` is one of `blocked`,
   `working`, `done`, `idle`; `raw_state` is the lower-level detector state.
 - `last_changed_at`: ISO-8601 timestamp for the most recent state change.
@@ -288,7 +288,7 @@ blocking it.
   verified Claude Code and Codex adapters for the destination launch only;
   model identifiers remain with their original agent family. Interactive
   launch is verified for `claude` and `codex`; `--no-launch` still archives +
-  saves and accepts the full detected-agent list: `pi`, `claude`, `codex`,
+  saves and accepts the full detected-agent list: `pi`, `omp`, `claude`, `codex`,
   `gemini`, `cursor-agent`, `cline`, `opencode`, `copilot`, `kimi`, `droid`,
   `amp`, `qodercli`, `qwen`, `grok`.
 - **`save`** — a deferred-handoff checkpoint: installs a fresh briefing

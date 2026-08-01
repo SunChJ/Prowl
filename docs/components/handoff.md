@@ -131,7 +131,7 @@ prowl handoff save       [target] [--brief -|--no-brief] [--note "…"]
 - **`to <agent>`** runs the full transition and launches the receiver in a
   background tab. Interactive launch is verified for `claude` and `codex`;
   `--no-launch` still archives + saves and accepts every detected-agent
-  token (`pi`, `claude`, `codex`, `gemini`, `cursor-agent`, `cline`,
+  token (`pi`, `omp`, `claude`, `codex`, `gemini`, `cursor-agent`, `cline`,
   `opencode`, `copilot`, `kimi`, `droid`, `amp`, `qodercli`, `qwen`, `grok`).
 - **`save`** is the deferred-handoff checkpoint: install a fresh briefing and
   regenerate context, with no destination and no launch. Use it when you stop
@@ -197,6 +197,13 @@ The HUD is a trigger and an observer for the same CLI transition:
 Because the request is plain language, **any detected agent can be a
 source** — the pane-injection path is not limited to claude/codex; only the
 fork fallback is.
+
+Native CLI resume and Prowl's Fork Briefing are different contracts. A native
+`--resume` may reopen and append to the source session; Oh My Pi supports that
+operation. Fork Briefing additionally requires an exact/high-confidence
+session identity, an immutable source, deterministic headless output and exit,
+and bounded failure handling. Until those properties are proven together for
+a runtime, native resume support does not admit it to this fallback.
 
 ## Safety
 

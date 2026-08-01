@@ -150,10 +150,13 @@ and final PR, then commit in reviewable layers and submit a non-draft PR to
 
 ## Amendments
 
-- The launch catalog is keyed by `AgentProfileRuntime`, not only
-  `DetectedAgent`. Pi and Oh My Pi deliberately share the `.pi` detection
-  family, but require distinct executables, icons, option contracts, and
-  availability checks.
+- Updated 2026-08-01: Correct execution-policy semantics and separate Pi from
+  Oh My Pi throughout detection and session identity — see
+  [002-execution-policy-and-pi-omp-separation.md](002-execution-policy-and-pi-omp-separation.md).
+- The launch catalog remains keyed by `AgentProfileRuntime`, with a one-to-one
+  mapping to canonical detection identity. Pi and Oh My Pi now have distinct
+  executables, icons, option contracts, availability checks, heuristics, and
+  session stores.
 - A relocated Profile home now records its native session/config root
   separately from the provisioned root. Gemini nests state under `.gemini`,
   while Cline uses an explicit `data/tasks` subtree; assuming both paths are

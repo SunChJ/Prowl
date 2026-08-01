@@ -65,9 +65,9 @@ restores the runtime's brand icon. Live panes and Active
 Agents retain the icon of the process Prowl actually detects.
 
 Changing a profile's **Agent** resets its Model, Reasoning Effort, Extra
-Arguments, and confirmed Unrestricted mode to the new runtime defaults. Those
-values are runtime-specific; add new values after choosing the destination
-agent.
+Arguments, and execution mode to the new runtime defaults. Unsupported fields
+disappear instead of carrying stale state across runtimes; add new values only
+after choosing the destination agent.
 
 **Recommended** resolves in three tiers: the repo's **Default Agent Profile**
 (Repo Settings) → the last profile explicitly launched in this repo → the
@@ -131,7 +131,7 @@ shell-interpreted). A bound Profile's managed-home arguments follow Extra
 Arguments so an accidental duplicate cannot redirect credentials outside the
 UUID home; otherwise your flags remain last-wins. The editor stays honest
 about what it can prove: recognized bypass flags (`--yolo`,
-`--dangerously-skip-permissions`, …) show the red unrestricted warning even
+`--dangerously-skip-permissions`, …) show the red least-restricted warning even
 when the picker says Standard; any other extra argument (including
 `--sandbox`/`--ask-for-approval`/`-c` overrides) shows a neutral "effective
 execution mode follows your extra arguments" note instead of claiming
@@ -145,26 +145,40 @@ effort, execution mode, placement).
 ## Runtime capability matrix
 
 All listed runtimes support a bare interactive Agent Profile launch. Pi and Oh
-My Pi share Prowl's Pi detection family but remain separate Profile choices so
-the correct executable, icon, and arguments are preserved.
+My Pi are independent runtime and detection families: each keeps its own
+executable, icon, screen heuristics, home, and session identity.
 
-| Runtime | Model | Reasoning | Unrestricted | Dedicated Home |
+| Runtime | Model | Reasoning | Execution mode | Dedicated Home |
 | --- | --- | --- | --- | --- |
-| Claude Code | Yes | Yes | Yes | `CLAUDE_CONFIG_DIR` |
-| Codex | Yes | Yes | Yes | `CODEX_HOME` |
-| Gemini CLI | Yes | No | Yes | `GEMINI_CLI_HOME` |
-| Cursor Agent | Yes | No | Yes | No verified full-state relocation |
-| Cline CLI | Yes | Yes | No | Managed config, data, and hooks paths |
-| OpenCode | Yes | Yes | Yes | No; config override does not move auth/session data |
-| GitHub Copilot | Yes | Yes | Yes | `COPILOT_HOME` |
-| Kimi Code | Yes | No | Yes | No verified full-state relocation |
-| Factory Droid | No | No | No | No verified full-state relocation |
-| Amp | No | Yes | No | No verified full-state relocation |
-| Qoder CLI | Yes | Yes | Yes | `--config-dir` |
-| Qwen Code | Yes | Yes | Yes | `QWEN_HOME` |
-| Grok Build | Yes | Yes | No | No verified full-state relocation |
-| Pi | Yes | Yes | No | `PI_CODING_AGENT_DIR` |
-| Oh My Pi | Yes | Yes | Yes | `PI_CODING_AGENT_DIR` |
+| Claude Code | Yes | Yes | Standard / Unrestricted | `CLAUDE_CONFIG_DIR` |
+| Codex | Yes | Yes | Standard / Unrestricted | `CODEX_HOME` |
+| Gemini CLI | Yes | No | Standard / Unrestricted | `GEMINI_CLI_HOME` |
+| Cursor Agent | Yes | No | Standard / Unrestricted | No verified full-state relocation |
+| Cline CLI | Yes | Yes | Standard / Unrestricted | Managed config, data, and hooks paths |
+| OpenCode | Yes | Yes | Standard / Unrestricted | No; config override does not move auth/session data |
+| GitHub Copilot | Yes | Yes | Standard / Unrestricted | `COPILOT_HOME` |
+| Kimi Code | Yes | No | Standard / Unrestricted | No verified full-state relocation |
+| Factory Droid | No | No | Runtime default only | No verified full-state relocation |
+| Amp | No | Yes | Runtime default only | No verified full-state relocation |
+| Qoder CLI | Yes | Yes | Standard / Unrestricted | `--config-dir` |
+| Qwen Code | Yes | Yes | Standard / Unrestricted | `QWEN_HOME` |
+| Grok Build | Yes | Yes | Standard / Unrestricted | No verified full-state relocation |
+| Pi | Yes | Yes | Runtime default only | `PI_CODING_AGENT_DIR` |
+| Oh My Pi | Yes | Yes | Standard / Unrestricted | `PI_CODING_AGENT_DIR` |
+
+The execution-mode picker appears only when Prowl can render both choices
+honestly. Cline maps Standard to `--auto-approve false` and Unrestricted to
+`--auto-approve true`; Grok maps them to `--permission-mode default` and
+`--permission-mode bypassPermissions --sandbox off`; Oh My Pi maps them to
+`--approval-mode always-ask` and `--approval-mode yolo`. Managed policies,
+hooks, and per-tool deny or prompt rules remain authoritative.
+
+Factory Droid, Amp, and Pi deliberately have no picker. Droid exposes tiered
+interactive autonomy and reserves its full bypass for headless `droid exec`.
+Amp and Pi normally run without approval prompts, but neither offers a
+launch-scoped pair of CLI flags that lets Prowl force both a guarded Standard
+mode and the default least-restricted mode. Their own configuration remains in
+control; Extra Arguments stay available for expert overrides.
 
 Amp has one additional limitation: it supports bare interactive Profile launch
 and `--execute` headless launch, but has no argv form that seeds a prompt and
