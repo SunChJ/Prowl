@@ -25,7 +25,9 @@ struct AgentRuntimeAdapterTests {
       CatalogExpectation(runtime: .codex, agent: .codex, executable: "codex", arguments: []),
       CatalogExpectation(runtime: .gemini, agent: .gemini, executable: "gemini", arguments: []),
       CatalogExpectation(runtime: .cursor, agent: .cursor, executable: "cursor-agent", arguments: []),
-      CatalogExpectation(runtime: .cline, agent: .cline, executable: "cline", arguments: ["--tui"]),
+      CatalogExpectation(
+        runtime: .cline, agent: .cline, executable: "cline",
+        arguments: ["--auto-approve", "false", "--tui"]),
       CatalogExpectation(runtime: .opencode, agent: .opencode, executable: "opencode", arguments: []),
       CatalogExpectation(runtime: .copilot, agent: .copilot, executable: "copilot", arguments: []),
       CatalogExpectation(runtime: .kimi, agent: .kimi, executable: "kimi", arguments: []),
@@ -33,9 +35,13 @@ struct AgentRuntimeAdapterTests {
       CatalogExpectation(runtime: .amp, agent: .amp, executable: "amp", arguments: []),
       CatalogExpectation(runtime: .qoder, agent: .qoder, executable: "qodercli", arguments: []),
       CatalogExpectation(runtime: .qwen, agent: .qwen, executable: "qwen", arguments: []),
-      CatalogExpectation(runtime: .grok, agent: .grok, executable: "grok", arguments: []),
+      CatalogExpectation(
+        runtime: .grok, agent: .grok, executable: "grok",
+        arguments: ["--permission-mode", "default"]),
       CatalogExpectation(runtime: .pi, agent: .pi, executable: "pi", arguments: []),
-      CatalogExpectation(runtime: .omp, agent: .pi, executable: "omp", arguments: []),
+      CatalogExpectation(
+        runtime: .omp, agent: .omp, executable: "omp",
+        arguments: ["--approval-mode", "always-ask"]),
     ]
 
     #expect(AgentProfileRuntime.allCases.count == expected.count)
@@ -62,7 +68,9 @@ struct AgentRuntimeAdapterTests {
       IntentExpectation(
         runtime: .cursor, promptedArguments: ["Review this."], headlessArguments: ["--print", "Review this."]),
       IntentExpectation(
-        runtime: .cline, promptedArguments: ["--tui", "Review this."], headlessArguments: ["Review this."]),
+        runtime: .cline,
+        promptedArguments: ["--auto-approve", "false", "--tui", "Review this."],
+        headlessArguments: ["--auto-approve", "false", "Review this."]),
       IntentExpectation(
         runtime: .opencode, promptedArguments: ["--prompt", "Review this."],
         headlessArguments: ["run", "Review this."]),
@@ -81,11 +89,15 @@ struct AgentRuntimeAdapterTests {
         runtime: .qwen, promptedArguments: ["--prompt-interactive", "Review this."],
         headlessArguments: ["--prompt", "Review this."]),
       IntentExpectation(
-        runtime: .grok, promptedArguments: ["Review this."], headlessArguments: ["--single", "Review this."]),
+        runtime: .grok,
+        promptedArguments: ["--permission-mode", "default", "Review this."],
+        headlessArguments: ["--permission-mode", "default", "--single", "Review this."]),
       IntentExpectation(
         runtime: .pi, promptedArguments: ["Review this."], headlessArguments: ["--print", "Review this."]),
       IntentExpectation(
-        runtime: .omp, promptedArguments: ["Review this."], headlessArguments: ["--print", "Review this."]),
+        runtime: .omp,
+        promptedArguments: ["--approval-mode", "always-ask", "Review this."],
+        headlessArguments: ["--approval-mode", "always-ask", "--print", "Review this."]),
     ]
 
     for expectation in expected {
@@ -115,8 +127,9 @@ struct AgentRuntimeAdapterTests {
   @Test func profileOptionsAreCapabilityGated() throws {
     let noModel: Set<AgentProfileRuntime> = [.droid, .amp]
     let noReasoning: Set<AgentProfileRuntime> = [.gemini, .cursor, .kimi, .droid]
-    let unrestricted: Set<AgentProfileRuntime> = [
-      .claude, .codex, .gemini, .cursor, .opencode, .copilot, .kimi, .qoder, .qwen, .omp,
+    let executionModeSelection: Set<AgentProfileRuntime> = [
+      .claude, .codex, .gemini, .cursor, .cline, .opencode, .copilot, .kimi, .qoder, .qwen, .grok,
+      .omp,
     ]
     let isolated: Set<AgentProfileRuntime> = [
       .claude, .codex, .gemini, .cline, .copilot, .qoder, .qwen, .pi, .omp,
@@ -126,7 +139,10 @@ struct AgentRuntimeAdapterTests {
       let adapter = try #require(AgentRuntimeAdapterRegistry.profileAdapter(for: runtime))
       #expect(adapter.supportsModelSelection == !noModel.contains(runtime))
       #expect(adapter.supportsReasoningEffort == !noReasoning.contains(runtime))
-      #expect(adapter.supportsUnrestrictedExecution == unrestricted.contains(runtime))
+      #expect(
+        adapter.executionModeOptions
+          == (executionModeSelection.contains(runtime) ? [.standard, .unrestricted] : [])
+      )
       #expect(adapter.supportsAccountIsolation == isolated.contains(runtime))
     }
   }
@@ -140,7 +156,7 @@ struct AgentRuntimeAdapterTests {
     let expected: [(AgentProfileRuntime, [String])] = [
       (.gemini, ["--model", "model-x", "--approval-mode", "yolo", "--sandbox=false"]),
       (.cursor, ["--model", "model-x", "--yolo", "--sandbox", "disabled"]),
-      (.cline, ["--model", "model-x", "--thinking", "high", "--tui"]),
+      (.cline, ["--model", "model-x", "--thinking", "high", "--auto-approve", "true", "--tui"]),
       (.opencode, ["--model", "model-x", "--variant", "high", "--auto"]),
       (.copilot, ["--model", "model-x", "--reasoning-effort", "high", "--allow-all"]),
       (.kimi, ["--model", "model-x", "--yolo"]),
@@ -148,7 +164,13 @@ struct AgentRuntimeAdapterTests {
       (.amp, ["--effort", "high"]),
       (.qoder, ["--model", "model-x", "--reasoning-effort", "high", "--dangerously-skip-permissions"]),
       (.qwen, ["--model", "model-x", "--reasoning-effort", "high", "--approval-mode", "yolo", "--sandbox=false"]),
-      (.grok, ["--model", "model-x", "--reasoning-effort", "high"]),
+      (
+        .grok,
+        [
+          "--model", "model-x", "--reasoning-effort", "high", "--permission-mode", "bypassPermissions",
+          "--sandbox", "off",
+        ]
+      ),
       (.pi, ["--model", "model-x", "--thinking", "high"]),
       (.omp, ["--model", "model-x", "--thinking", "high", "--approval-mode", "yolo"]),
     ]
@@ -159,6 +181,35 @@ struct AgentRuntimeAdapterTests {
       )
       #expect(invocation.arguments == arguments)
     }
+  }
+
+  @Test func guardedModesOverrideUnsafeRuntimeDefaults() throws {
+    let expected: [(AgentProfileRuntime, [String])] = [
+      (.cline, ["--auto-approve", "false", "--tui"]),
+      (.grok, ["--permission-mode", "default"]),
+      (.omp, ["--approval-mode", "always-ask"]),
+    ]
+
+    for (runtime, arguments) in expected {
+      let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+        AgentStartRequest(runtime: runtime, intent: .interactive)
+      )
+      #expect(invocation.arguments == arguments)
+    }
+  }
+
+  @Test func launchObservationUsesTheLastOccurrenceOfAnOption() {
+    let cline = AgentRuntimeAdapterRegistry.observe(
+      runtime: .cline,
+      arguments: ["cline", "--auto-approve", "false", "--auto-approve", "true"]
+    )
+    #expect(cline.executionMode == .unrestricted)
+
+    let omp = AgentRuntimeAdapterRegistry.observe(
+      runtime: .omp,
+      arguments: ["omp", "--approval-mode", "always-ask", "--approval-mode=yolo"]
+    )
+    #expect(omp.executionMode == .unrestricted)
   }
 
   @Test func startAndResumeCapabilitiesAreIndependent() {

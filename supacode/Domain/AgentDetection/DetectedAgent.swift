@@ -3,6 +3,7 @@ import Foundation
 enum DetectedAgent: String, CaseIterable, Equatable, Identifiable, Sendable {
   // swiftlint:disable:next identifier_name
   case pi
+  case omp
   case claude
   case codex
   case gemini

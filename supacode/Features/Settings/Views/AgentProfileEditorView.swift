@@ -72,10 +72,13 @@ struct AgentProfileEditorView: View {
           suggestions: effortSuggestions
         )
       }
-      if runtimeAdapter?.supportsUnrestrictedExecution == true {
+      if let executionModeOptions = runtimeAdapter?.executionModeOptions,
+        !executionModeOptions.isEmpty
+      {
         Picker("Execution Mode", selection: $store.profile.executionMode) {
-          Text("Standard").tag(AgentExecutionMode.standard)
-          Text("Unrestricted").tag(AgentExecutionMode.unrestricted)
+          ForEach(executionModeOptions) { mode in
+            Text(mode.title).tag(mode)
+          }
         }
       }
       switch store.profile.effectiveExecutionMode {
@@ -84,8 +87,9 @@ struct AgentProfileEditorView: View {
       case .unrestricted:
         Text(
           store.profile.executionMode == .unrestricted
-            ? "Runs without permission prompts or sandboxing."
-            : "Extra arguments enable unrestricted execution — no permission prompts or sandboxing."
+            ? "Requests the runtime's least-restricted mode. "
+              + "It may execute commands and modify files without prompting."
+            : "Extra arguments request the runtime's least-restricted mode."
         )
         .font(.caption)
         .foregroundStyle(.red)

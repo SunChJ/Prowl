@@ -83,6 +83,13 @@ struct AgentSessionProfileTests {
     #expect(piProfile.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/sessions/--tmp-repo--"])
     #expect(piProfile.rootedParsePath?("\(root.path)/sessions/--tmp-repo--/\(uuid).jsonl", root)?.id == uuid)
 
+    let ompProfile = AgentSessionProfile.profile(for: .omp)
+    #expect(ompProfile.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/sessions/--tmp-repo--"])
+    #expect(
+      ompProfile.rootedParsePath?("\(root.path)/sessions/--tmp-repo--/2026-08-01T12-00-00-000Z_\(uuid).jsonl", root)?.id
+        == uuid
+    )
+
     let copilot = AgentSessionProfile.profile(for: .copilot)
     #expect(copilot.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/session-state"])
     #expect(copilot.rootedParsePath?("\(root.path)/session-state/\(uuid)/events.jsonl", root)?.id == uuid)
@@ -142,10 +149,12 @@ struct AgentSessionProfileTests {
     #expect(profile.parsePath("/Users/me/.claude/projects/-Users-me-Sync-github-Prowl/\(id).jsonl") == nil)
   }
 
-  @Test func piAndDroidRootsKeepDotsAndSpaces() {
+  @Test func piOmpAndDroidUseIndependentSessionLayouts() {
     let cwd = URL(fileURLWithPath: "/Users/me/.prowl/repos/My App", isDirectory: true)
     let piRoots = AgentSessionProfile.profile(for: .pi).candidateRoots(home, cwd, now, now)
     #expect(piRoots.map(\.path) == ["/Users/me/.pi/agent/sessions/--Users-me-.prowl-repos-My App--"])
+    let ompRoots = AgentSessionProfile.profile(for: .omp).candidateRoots(home, cwd, now, now)
+    #expect(ompRoots.map(\.path) == ["/Users/me/.omp/agent/sessions/-.prowl-repos-My App"])
     let droidRoots = AgentSessionProfile.profile(for: .droid).candidateRoots(home, cwd, now, now)
     #expect(droidRoots.map(\.path) == ["/Users/me/.factory/sessions/-Users-me-.prowl-repos-My App"])
   }

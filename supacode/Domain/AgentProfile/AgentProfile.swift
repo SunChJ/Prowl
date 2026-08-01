@@ -1,9 +1,9 @@
 import Foundation
 
-/// The executable runtimes an Agent Profile may launch. This is intentionally
-/// distinct from `DetectedAgent`: Pi and OMP share one detection family, but
-/// they are separate launch products with different executable and option
-/// contracts (docs-ai 055).
+/// The executable runtimes an Agent Profile may launch. Kept distinct from
+/// `DetectedAgent` because launch metadata and detected process identity have
+/// different consumers, while every standard runtime maps one-to-one (docs-ai
+/// 055.002).
 nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiable, Sendable {
   case claude
   case codex
@@ -39,7 +39,8 @@ nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiabl
     case .qoder: .qoder
     case .qwen: .qwen
     case .grok: .grok
-    case .pi, .omp: .pi
+    case .pi: .pi
+    case .omp: .omp
     }
   }
 
@@ -59,14 +60,12 @@ nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiabl
     case .qwen: self = .qwen
     case .grok: self = .grok
     case .pi: self = .pi
+    case .omp: self = .omp
     }
   }
 
   var iconLookupToken: String {
-    switch self {
-    case .omp: "omp"
-    default: agent.iconLookupToken
-    }
+    agent.iconLookupToken
   }
 
   /// The runtime's default home directory name under `$HOME`. Its existence

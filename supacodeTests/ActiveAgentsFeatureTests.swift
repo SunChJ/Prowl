@@ -74,7 +74,7 @@ struct ActiveAgentsFeatureTests {
       id: UUID(0),
       state: .idle,
       changedAt: Date(timeIntervalSince1970: 10),
-      agent: .pi,
+      agent: .omp,
       iconLookupToken: "omp"
     )
     #expect(ompEntry.iconSource?.assetName == "OMP")
@@ -104,8 +104,8 @@ struct ActiveAgentsFeatureTests {
     // The toolbar Agents capsule feeds `paneState.iconLookupToken ?? agent.iconLookupToken`
     // through this policy, so it must agree with the panel rows for every alias.
     // Launch aliases with their own icon token keep their name…
-    #expect(ActiveAgentEntry.displayName(iconLookupToken: "omp", agent: .pi) == "omp")
-    #expect(ActiveAgentEntry.displayName(iconLookupToken: "oh-my-pi", agent: .pi) == "oh-my-pi")
+    #expect(ActiveAgentEntry.displayName(iconLookupToken: "omp", agent: .omp) == "omp")
+    #expect(ActiveAgentEntry.displayName(iconLookupToken: "oh-my-pi", agent: .omp) == "oh-my-pi")
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "cursor-agent", agent: .cursor) == "cursor-agent")
     // …tokens without an icon entry and the generic `agent` entrypoint fall
     // back to the semantic agent name.

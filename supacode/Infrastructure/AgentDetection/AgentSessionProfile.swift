@@ -54,6 +54,7 @@ nonisolated struct AgentSessionProfile: Sendable {
     case .codex: .codex
     case .claude: .claude
     case .pi: .pi
+    case .omp: .omp
     case .gemini: .gemini
     case .cursor: .cursor
     case .cline: .cline
@@ -134,6 +135,38 @@ nonisolated extension AgentSessionProfile {
     rootedCandidateRoots: { configRoot, cwd, _, _ in
       guard let cwd else { return [] }
       return [configRoot.appending(path: "sessions/-\(slashDashed(cwd.path))--")]
+    },
+    rootedParsePath: { path, configRoot in
+      uuidJSONL(path: path, underRoot: configRoot.appending(path: "sessions"))
+    }
+  )
+
+  /// Oh My Pi ≥ 17: `~/.omp/agent/sessions/<home-relative cwd>/*.jsonl`.
+  /// OMP migrated from Pi's absolute `--<cwd>--` buckets to `-<relative>`
+  /// buckets for directories below the user's home. Keep a broad fallback
+  /// root for migrated and canonicalized paths while preferring the exact
+  /// current bucket.
+  fileprivate static let omp = AgentSessionProfile(
+    parsePath: { uuidJSONL(path: $0, marker: "/.omp/agent/sessions/") },
+    candidateRoots: { home, cwd, _, _ in
+      guard let cwd else { return [] }
+      return [
+        home.appending(path: ".omp/agent/sessions/\(ompSessionDirectoryName(home: home, cwd: cwd))")
+      ]
+    },
+    fallbackRoots: { home, _ in
+      [home.appending(path: ".omp/agent/sessions")]
+    },
+    rootedCandidateRoots: { configRoot, cwd, _, _ in
+      guard let cwd else { return [] }
+      return [
+        configRoot.appending(
+          path: "sessions/\(ompSessionDirectoryName(home: FileManager.default.homeDirectoryForCurrentUser, cwd: cwd))"
+        )
+      ]
+    },
+    rootedFallbackRoots: { configRoot, _ in
+      [configRoot.appending(path: "sessions")]
     },
     rootedParsePath: { path, configRoot in
       uuidJSONL(path: path, underRoot: configRoot.appending(path: "sessions"))
@@ -512,6 +545,24 @@ nonisolated extension AgentSessionProfile {
   /// character verbatim).
   fileprivate static func slashDashed(_ path: String) -> String {
     path.replacing("/", with: "-")
+  }
+
+  /// OMP's current session buckets are home-relative when possible and retain
+  /// Pi's legacy absolute encoding for paths outside the home directory.
+  fileprivate static func ompSessionDirectoryName(home: URL, cwd: URL) -> String {
+    let slash = CharacterSet(charactersIn: "/")
+    let rawHomePath = home.standardizedFileURL.path(percentEncoded: false)
+    let rawCwdPath = cwd.standardizedFileURL.path(percentEncoded: false)
+    let homePath = rawHomePath.count > 1 ? rawHomePath.trimmingCharacters(in: slash) : rawHomePath
+    let cwdPath = rawCwdPath.count > 1 ? rawCwdPath.trimmingCharacters(in: slash) : rawCwdPath
+    if cwdPath == homePath {
+      return "-"
+    }
+    let homePrefix = homePath.hasSuffix("/") ? homePath : homePath + "/"
+    if cwdPath.hasPrefix(homePrefix) {
+      return "-" + cwdPath.dropFirst(homePrefix.count).replacing("/", with: "-")
+    }
+    return "--" + cwdPath.drop(while: { $0 == "/" }).replacing("/", with: "-") + "--"
   }
 
   /// Claude Code's project-directory rule: every UTF-16 code unit outside

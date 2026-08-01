@@ -172,7 +172,11 @@ nonisolated extension AgentProfile {
   /// upgrades the claim to `.unrestricted`; any other extra argument defers
   /// the claim entirely.
   var effectiveExecutionMode: AgentProfileEffectiveExecutionMode {
-    if executionMode == .unrestricted { return .unrestricted }
+    let selectableModes =
+      AgentRuntimeAdapterRegistry.profileAdapter(for: runtime)?.executionModeOptions ?? []
+    if executionMode == .unrestricted, selectableModes.contains(.unrestricted) {
+      return .unrestricted
+    }
     let tokens = ShellWordSplitter.split(extraArguments)
     guard !tokens.isEmpty else { return .standard }
     let observed = AgentRuntimeAdapterRegistry.observe(runtime: runtime, arguments: tokens)

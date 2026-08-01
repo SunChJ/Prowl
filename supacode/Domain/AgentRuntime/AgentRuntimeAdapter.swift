@@ -9,7 +9,10 @@ nonisolated protocol AgentRuntimeAdapter: Sendable {
   var displayName: String { get }
   var supportsModelSelection: Bool { get }
   var supportsReasoningEffort: Bool { get }
-  var supportsUnrestrictedExecution: Bool { get }
+  /// Empty when the runtime cannot represent both persisted modes honestly.
+  /// Adapters exposing the picker must render every listed mode, including
+  /// inverse guarded flags for CLIs whose default is auto-approved.
+  var executionModeOptions: [AgentExecutionMode] { get }
   var accountIsolation: AgentProfileHomeRelocation? { get }
   var reasoningEffortSuggestions: [String] { get }
   var modelSuggestions: [String] { get }
@@ -23,7 +26,7 @@ nonisolated extension AgentRuntimeAdapter {
   var accountHomeEnvironmentVariable: String? { accountIsolation?.environmentVariable }
   var supportsModelSelection: Bool { false }
   var supportsReasoningEffort: Bool { false }
-  var supportsUnrestrictedExecution: Bool { false }
+  var executionModeOptions: [AgentExecutionMode] { [] }
   var accountIsolation: AgentProfileHomeRelocation? { nil }
   var reasoningEffortSuggestions: [String] { [] }
   var modelSuggestions: [String] { [] }
@@ -91,9 +94,18 @@ nonisolated struct AgentProfileHomeRelocation: Equatable, Sendable {
   }
 }
 
-nonisolated enum AgentExecutionMode: String, Codable, Equatable, Sendable {
+nonisolated enum AgentExecutionMode: String, Codable, CaseIterable, Equatable, Identifiable, Sendable {
   case standard
   case unrestricted
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .standard: "Standard"
+    case .unrestricted: "Unrestricted"
+    }
+  }
 }
 
 /// How an agent process should begin. An empty prompt sentinel is forbidden by
@@ -252,9 +264,7 @@ nonisolated enum AgentRuntimeAdapterRegistry {
     }
   }
 
-  /// Canonical launch adapter for a detected family. OMP is selected only by
-  /// an explicit profile runtime because detection intentionally classifies it
-  /// as Pi.
+  /// Canonical launch adapter for one detected runtime.
   static func adapter(for agent: DetectedAgent) -> (any AgentRuntimeAdapter)? {
     profileAdapter(for: AgentProfileRuntime(agent: agent))
   }
@@ -284,9 +294,6 @@ nonisolated enum AgentRuntimeAdapterRegistry {
   }
 
   static func observe(agent: DetectedAgent, arguments: [String]) -> AgentLaunchObservation {
-    if agent == .pi, arguments.first?.lastPathComponent == "omp" {
-      return observe(runtime: .omp, arguments: arguments)
-    }
     return adapter(for: agent)?.observe(arguments: arguments) ?? .init()
   }
 
@@ -337,7 +344,7 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Codex"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(environmentVariable: "CODEX_HOME")
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
@@ -373,7 +380,7 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Claude Code"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "CLAUDE_CONFIG_DIR"
   )
@@ -415,7 +422,7 @@ nonisolated private struct GeminiRuntimeAdapter: AgentRuntimeAdapter {
   let runtime: AgentProfileRuntime = .gemini
   let displayName = "Gemini CLI"
   let supportsModelSelection = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "GEMINI_CLI_HOME",
     sessionRootRelativePath: ".gemini"
@@ -450,7 +457,7 @@ nonisolated private struct CursorRuntimeAdapter: AgentRuntimeAdapter {
   let runtime: AgentProfileRuntime = .cursor
   let displayName = "Cursor Agent"
   let supportsModelSelection = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     let approves = arguments.containsAny("--force", "--yolo")
@@ -481,6 +488,7 @@ nonisolated private struct ClineRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Cline"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     pathArguments: [
       AgentProfileHomePathArgument(option: "--config", relativePath: "config"),
@@ -493,13 +501,27 @@ nonisolated private struct ClineRuntimeAdapter: AgentRuntimeAdapter {
   let reasoningEffortSuggestions = ["none", "low", "medium", "high", "xhigh"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
-    AgentLaunchObservation(model: arguments.optionValue(long: "--model", short: "-m"))
+    let autoApprove = arguments.optionValue(long: "--auto-approve")
+    let executionMode: AgentExecutionMode? =
+      switch autoApprove {
+      case "true": .unrestricted
+      case "false": .standard
+      default: nil
+      }
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: executionMode
+    )
   }
 
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
     var generated: [String] = []
     if let model = request.configuration.model { generated += ["--model", model] }
     if let effort = request.configuration.reasoningEffort { generated += ["--thinking", effort] }
+    generated += [
+      "--auto-approve",
+      request.configuration.executionMode == .unrestricted ? "true" : "false",
+    ]
     let options = finalizedOptions(generated, request: request)
     return switch request.intent {
     case .interactive: AgentInvocation(executable: "cline", arguments: options + ["--tui"])
@@ -514,7 +536,7 @@ nonisolated private struct OpenCodeRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "OpenCode"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     AgentLaunchObservation(
@@ -542,7 +564,7 @@ nonisolated private struct CopilotRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "GitHub Copilot"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "COPILOT_HOME"
   )
@@ -573,7 +595,7 @@ nonisolated private struct KimiRuntimeAdapter: AgentRuntimeAdapter {
   let runtime: AgentProfileRuntime = .kimi
   let displayName = "Kimi CLI"
   let supportsModelSelection = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     AgentLaunchObservation(
@@ -639,7 +661,7 @@ nonisolated private struct QoderRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Qoder CLI"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     pathArguments: [AgentProfileHomePathArgument(option: "--config-dir", relativePath: "")]
   )
@@ -677,7 +699,7 @@ nonisolated private struct QwenRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Qwen Code"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(environmentVariable: "QWEN_HOME")
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh"]
 
@@ -711,16 +733,32 @@ nonisolated private struct GrokRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Grok Build"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let reasoningEffortSuggestions = ["low", "medium", "high"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
-    AgentLaunchObservation(model: arguments.optionValue(long: "--model", short: "-m"))
+    let permissionMode = arguments.optionValue(long: "--permission-mode")
+    let bypassesPermissions =
+      permissionMode == "bypassPermissions" || arguments.contains("--always-approve")
+    let sandboxIsOff = arguments.optionValue(long: "--sandbox") == "off"
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: bypassesPermissions && sandboxIsOff
+        ? .unrestricted
+        : permissionMode == "default" ? .standard : nil
+    )
   }
 
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
     var generated: [String] = []
     if let model = request.configuration.model { generated += ["--model", model] }
     if let effort = request.configuration.reasoningEffort { generated += ["--reasoning-effort", effort] }
+    switch request.configuration.executionMode {
+    case .standard:
+      generated += ["--permission-mode", "default"]
+    case .unrestricted:
+      generated += ["--permission-mode", "bypassPermissions", "--sandbox", "off"]
+    }
     let options = finalizedOptions(generated, request: request)
     return switch request.intent {
     case .interactive: AgentInvocation(executable: "grok", arguments: options)
@@ -766,19 +804,18 @@ nonisolated private struct OMPRuntimeAdapter: AgentRuntimeAdapter {
   let displayName = "Oh My Pi"
   let supportsModelSelection = true
   let supportsReasoningEffort = true
-  let supportsUnrestrictedExecution = true
+  let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "PI_CODING_AGENT_DIR"
   )
   let reasoningEffortSuggestions = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
-    let bypasses =
-      arguments.contains("--auto-approve")
-      || arguments.optionValue(long: "--approval-mode") == "yolo"
+    let approvalMode = arguments.optionValue(long: "--approval-mode")
+    let bypasses = arguments.contains("--auto-approve") || approvalMode == "yolo"
     return AgentLaunchObservation(
       model: arguments.optionValue(long: "--model"),
-      executionMode: bypasses ? .unrestricted : nil
+      executionMode: bypasses ? .unrestricted : approvalMode == "always-ask" ? .standard : nil
     )
   }
 
@@ -786,9 +823,10 @@ nonisolated private struct OMPRuntimeAdapter: AgentRuntimeAdapter {
     var generated: [String] = []
     if let model = request.configuration.model { generated += ["--model", model] }
     if let effort = request.configuration.reasoningEffort { generated += ["--thinking", effort] }
-    if request.configuration.executionMode == .unrestricted {
-      generated += ["--approval-mode", "yolo"]
-    }
+    generated += [
+      "--approval-mode",
+      request.configuration.executionMode == .unrestricted ? "yolo" : "always-ask",
+    ]
     let options = finalizedOptions(generated, request: request)
     return switch request.intent {
     case .interactive: AgentInvocation(executable: "omp", arguments: options)
@@ -823,7 +861,8 @@ nonisolated private struct ClaudeCodeResumeAdapter: AgentRuntimeResumeAdapter {
 
 nonisolated extension [String] {
   fileprivate func optionValue(long: String, short: String? = nil) -> String? {
-    for (index, argument) in enumerated() {
+    for index in indices.reversed() {
+      let argument = self[index]
       if argument == long || short == argument {
         let next = self.index(after: index)
         guard next < endIndex else { return nil }

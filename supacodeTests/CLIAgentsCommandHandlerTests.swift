@@ -26,7 +26,7 @@ struct CLIAgentsCommandHandlerTests {
     #expect(payload.agents.map(\.id) == [fixture.tabPaneID.uuidString, fixture.otherPaneID.uuidString])
 
     let agent = payload.agents[0]
-    #expect(agent.type == "pi")
+    #expect(agent.type == "omp")
     #expect(agent.name == "omp")
     #expect(agent.status == .blocked)
     #expect(agent.rawState == "blocked")
@@ -47,7 +47,7 @@ struct CLIAgentsCommandHandlerTests {
     #expect(agent.pane.cwd == "/tmp/project-repo/Sources")
     #expect(agent.pane.focused)
     #expect(agent.session?.id == "019f4f1b-3650-7661-a56d-351f02f01139")
-    #expect(agent.session?.path == "/tmp/pi-session.jsonl")
+    #expect(agent.session?.path == "/tmp/omp-session.jsonl")
     #expect(agent.session?.confidence == "high")
     #expect(agent.session?.source == "transcript_match")
 
@@ -141,10 +141,10 @@ struct CLIAgentsCommandHandlerTests {
           workingDirectory: URL(fileURLWithPath: "/tmp/project-repo/Sources"),
           paneIndex: 2,
           iconLookupToken: "omp",
-          agent: .pi,
+          agent: .omp,
           session: AgentSession(
             id: "019f4f1b-3650-7661-a56d-351f02f01139",
-            transcriptPath: URL(fileURLWithPath: "/tmp/pi-session.jsonl"),
+            transcriptPath: URL(fileURLWithPath: "/tmp/omp-session.jsonl"),
             source: .transcriptMatch,
             confidence: .high
           ),

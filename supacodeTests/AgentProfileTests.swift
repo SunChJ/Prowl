@@ -93,14 +93,14 @@ struct AgentProfileTests {
     #expect(AgentProfileIconResolver.source(for: omp.iconSource) == ompExpected)
   }
 
-  @Test func everyRuntimeRoundTripsWithoutCollapsingPiAndOMP() throws {
+  @Test func everyRuntimeRoundTripsWithIndependentPiAndOMPAgents() throws {
     for runtime in AgentProfileRuntime.allCases {
       let encoded = try JSONEncoder().encode(AgentProfile(name: runtime.rawValue, runtime: runtime))
       let decoded = try JSONDecoder().decode(AgentProfile.self, from: encoded)
       #expect(decoded.runtime == runtime)
     }
     #expect(AgentProfileRuntime.pi.agent == .pi)
-    #expect(AgentProfileRuntime.omp.agent == .pi)
+    #expect(AgentProfileRuntime.omp.agent == .omp)
   }
 
   // MARK: - Recommendation
@@ -524,6 +524,10 @@ struct AgentProfileTests {
     #expect(claude.effectiveExecutionMode == .followsExtraArguments)
     claude.executionMode = .unrestricted
     #expect(claude.effectiveExecutionMode == .unrestricted)
+
+    var piProfile = profile(name: "Pi", runtime: .pi)
+    piProfile.executionMode = .unrestricted
+    #expect(piProfile.effectiveExecutionMode == .standard)
   }
 
   @Test func physicalContainmentRejectsSymlinkLeafAndEscapingTargets() throws {

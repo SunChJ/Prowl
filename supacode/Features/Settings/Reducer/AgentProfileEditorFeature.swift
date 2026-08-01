@@ -178,8 +178,8 @@ struct AgentProfileEditorFeature {
       }
     } message: {
       TextState(
-        "The agent will run without permission prompts or sandboxing. "
-          + "It can execute any command and modify any file your user can."
+        "The agent will use the runtime's least-restricted mode. It may execute commands and modify files "
+          + "without prompting; managed or user-defined runtime policies can still apply."
       )
     }
   }
