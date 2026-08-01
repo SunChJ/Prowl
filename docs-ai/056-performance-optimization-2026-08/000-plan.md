@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644–#649, #652–#656; review queue #650 |
+| **Primary PRs** | #644–#650, #652–#657 |
 | **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -127,8 +127,7 @@ input while preserving exact counts.
 
 ## Performance PR review queue
 
-The descriptions and heads below were confirmed on 2026-08-02. Claims for #650 remain
-pending independent code-path and test review.
+The descriptions and heads below were confirmed and independently reviewed on 2026-08-02.
 
 | PR | Confirmed scope | Review focus / placeholder | Head |
 | --- | --- | --- | --- |
@@ -138,7 +137,7 @@ pending independent code-path and test review.
 | #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Reviewed and integrated through #654: UI emission ignores raw-only churn while `prowl agents` reads live terminal raw state; full-field guard includes Profile attribution | `e77ba660` |
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Reviewed and integrated through #655: deepest-match semantics hold; canonical paths revalidate at a bounded cadence so live symlink retargets cannot stale the cache indefinitely | `08773383` |
 | #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Reviewed and integrated through #656: per-tab coalescing has clock-driven trailing delivery independent of agent detection, and stale pending frames are discarded | `b77888f3` |
-| #650 | Cache parsed transcript tails and fast-path fingerprint normalization | Verify append/mtime invalidation, cache pruning, Unicode equivalence, collision behavior, and current CI | `c97cbb4` |
+| #650 | Cache parsed transcript tails and fast-path fingerprint normalization | Reviewed and integrated through #657: normalized fragments use one resolver-wide, entry- and payload-bounded LRU; the ASCII and escape-absence paths are pinned to the original Unicode-aware formulation | `c97cbb4` |
 
 ## Alternatives & decisions
 
@@ -182,3 +181,6 @@ pending independent code-path and test review.
 - Updated 2026-08-02: Reviewed animated terminal-title coalescing from #649 and prepared
   fork integration with guaranteed trailing delivery — see
   [006-tab-title-coalescing.md](006-tab-title-coalescing.md).
+- Updated 2026-08-02: Reviewed transcript-fragment reuse and fingerprint normalization from
+  #650 and bounded cache lifetime independently of process cleanup — see
+  [007-transcript-fragment-cache.md](007-transcript-fragment-cache.md).
