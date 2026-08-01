@@ -1,11 +1,26 @@
 import Foundation
 
-/// The runtimes a profile may launch. Deliberately narrower than
-/// `DetectedAgent`: only runtimes with a verified interactive launch adapter
-/// and a verified account-isolation mechanism are eligible (docs-ai 053).
+/// The executable runtimes an Agent Profile may launch. This is intentionally
+/// distinct from `DetectedAgent`: Pi and OMP share one detection family, but
+/// they are separate launch products with different executable and option
+/// contracts (docs-ai 055).
 nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiable, Sendable {
   case claude
   case codex
+  case gemini
+  case cursor = "cursor-agent"
+  case cline
+  case opencode
+  case copilot
+  case kimi
+  case droid
+  case amp
+  case qoder = "qodercli"
+  case qwen
+  case grok
+  // swiftlint:disable:next identifier_name
+  case pi
+  case omp
 
   var id: String { rawValue }
 
@@ -13,6 +28,44 @@ nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiabl
     switch self {
     case .claude: .claude
     case .codex: .codex
+    case .gemini: .gemini
+    case .cursor: .cursor
+    case .cline: .cline
+    case .opencode: .opencode
+    case .copilot: .copilot
+    case .kimi: .kimi
+    case .droid: .droid
+    case .amp: .amp
+    case .qoder: .qoder
+    case .qwen: .qwen
+    case .grok: .grok
+    case .pi, .omp: .pi
+    }
+  }
+
+  init(agent: DetectedAgent) {
+    switch agent {
+    case .claude: self = .claude
+    case .codex: self = .codex
+    case .gemini: self = .gemini
+    case .cursor: self = .cursor
+    case .cline: self = .cline
+    case .opencode: self = .opencode
+    case .copilot: self = .copilot
+    case .kimi: self = .kimi
+    case .droid: self = .droid
+    case .amp: self = .amp
+    case .qoder: self = .qoder
+    case .qwen: self = .qwen
+    case .grok: self = .grok
+    case .pi: self = .pi
+    }
+  }
+
+  var iconLookupToken: String {
+    switch self {
+    case .omp: "omp"
+    default: agent.iconLookupToken
     }
   }
 
@@ -23,6 +76,19 @@ nonisolated enum AgentProfileRuntime: String, Codable, CaseIterable, Identifiabl
     switch self {
     case .claude: ".claude"
     case .codex: ".codex"
+    case .gemini: ".gemini"
+    case .cursor: ".cursor"
+    case .cline: ".cline"
+    case .opencode: ".local/share/opencode"
+    case .copilot: ".copilot"
+    case .kimi: ".kimi"
+    case .droid: ".factory"
+    case .amp: ".config/amp"
+    case .qoder: ".qoder"
+    case .qwen: ".qwen"
+    case .grok: ".grok"
+    case .pi: ".pi/agent"
+    case .omp: ".omp/agent"
     }
   }
 }

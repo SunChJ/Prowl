@@ -25,6 +25,34 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   let surfaceEnvironment: [String: String]
   /// Dedicated home to provision before launch; nil for pure presets.
   let dedicatedHome: URL?
+  /// Runtime-specific session root under the managed home. This is direct for
+  /// most CLIs, nested for runtimes such as Gemini and Cline, and is the only
+  /// rooted location the session resolver may inspect for this surface.
+  let sessionConfigRoot: URL?
+
+  init(
+    profileID: UUID,
+    profileName: String,
+    runtime: AgentProfileRuntime,
+    invocation: AgentInvocation,
+    commandEnvironmentTokens: [String],
+    placement: AgentProfilePlacement,
+    splitDirection: UserCustomSplitDirection,
+    surfaceEnvironment: [String: String],
+    dedicatedHome: URL?,
+    sessionConfigRoot: URL? = nil
+  ) {
+    self.profileID = profileID
+    self.profileName = profileName
+    self.runtime = runtime
+    self.invocation = invocation
+    self.commandEnvironmentTokens = commandEnvironmentTokens
+    self.placement = placement
+    self.splitDirection = splitDirection
+    self.surfaceEnvironment = surfaceEnvironment
+    self.dedicatedHome = dedicatedHome
+    self.sessionConfigRoot = sessionConfigRoot ?? dedicatedHome
+  }
 
   /// The exact line typed into the new pane; doubles as the launch preview.
   var terminalInput: String {
@@ -53,8 +81,9 @@ nonisolated enum AgentProfileEnvironmentPolicy {
   static var reservedNames: Set<String> {
     Set(
       AgentProfileRuntime.allCases.compactMap {
-        AgentRuntimeAdapterRegistry.adapter(for: $0.agent)?.accountHomeEnvironmentVariable
+        AgentRuntimeAdapterRegistry.profileAdapter(for: $0)?.accountIsolation?.reservedEnvironmentVariables
       }
+      .flatMap { $0 }
     )
   }
 
@@ -146,7 +175,7 @@ nonisolated extension AgentProfile {
     if executionMode == .unrestricted { return .unrestricted }
     let tokens = ShellWordSplitter.split(extraArguments)
     guard !tokens.isEmpty else { return .standard }
-    let observed = AgentRuntimeAdapterRegistry.observe(agent: runtime.agent, arguments: tokens)
+    let observed = AgentRuntimeAdapterRegistry.observe(runtime: runtime, arguments: tokens)
     return observed.executionMode == .unrestricted ? .unrestricted : .followsExtraArguments
   }
 }
@@ -165,7 +194,7 @@ nonisolated enum AgentProfileLaunchPlanner {
     for profile: AgentProfile,
     homeBaseDirectory: URL
   ) throws -> AgentProfileLaunchPlan {
-    guard let adapter = AgentRuntimeAdapterRegistry.adapter(for: profile.runtime.agent) else {
+    guard let adapter = AgentRuntimeAdapterRegistry.profileAdapter(for: profile.runtime) else {
       throw AgentProfileLaunchPlanError.runtimeUnavailable(profile.runtime)
     }
     let configuration = AgentLaunchConfiguration(
@@ -174,10 +203,6 @@ nonisolated enum AgentProfileLaunchPlanner {
       reasoningEffort: profile.reasoningEffort,
       extraArguments: ShellWordSplitter.split(profile.extraArguments)
     )
-    let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
-      AgentStartRequest(agent: profile.runtime.agent, intent: .interactive, configuration: configuration)
-    )
-
     // The whole patch renders as launch-scoped `env` tokens (docs-ai
     // 053/006). The home token leads: it is the launch's identity, and the
     // reserved-name policy already guarantees no user row can carry the same
@@ -185,19 +210,31 @@ nonisolated enum AgentProfileLaunchPlanner {
     var tokens: [String] = []
     var surfaceEnvironment: [String: String] = [:]
     var dedicatedHome: URL?
+    var sessionConfigRoot: URL?
     if profile.bindsDedicatedHome {
-      guard let variable = adapter.accountHomeEnvironmentVariable else {
+      guard let relocation = adapter.accountIsolation else {
         throw AgentProfileLaunchPlanError.accountIsolationUnsupported(profile.runtime)
       }
       let home = dedicatedHomeDirectory(for: profile.id, base: homeBaseDirectory)
       guard isContained(home, in: homeBaseDirectory) else {
         throw AgentProfileLaunchPlanError.homeEscapesBase(home)
       }
-      // Inlined literal: the UUID-derived path is not a secret, and seeing it
-      // in the preview documents which home the launch binds.
-      tokens.append("\(variable)=\(AgentInvocation.shellQuote(pathString(home)))")
+      if let variable = relocation.environmentVariable {
+        // Inlined literal: the UUID-derived path is not a secret, and seeing
+        // it in the preview documents which home the launch binds.
+        tokens.append("\(variable)=\(AgentInvocation.shellQuote(pathString(home)))")
+      }
       dedicatedHome = home
+      sessionConfigRoot = relocation.sessionConfigRoot(for: home)
     }
+    let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(
+        runtime: profile.runtime,
+        intent: .interactive,
+        configuration: configuration,
+        dedicatedHome: dedicatedHome
+      )
+    )
     let overrides = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
     for name in overrides.keys.sorted() {
       let carrier = AgentProfileEnvironmentPolicy.carrierName(for: name)
@@ -214,7 +251,8 @@ nonisolated enum AgentProfileLaunchPlanner {
       placement: profile.placement,
       splitDirection: profile.splitDirection,
       surfaceEnvironment: surfaceEnvironment,
-      dedicatedHome: dedicatedHome
+      dedicatedHome: dedicatedHome,
+      sessionConfigRoot: sessionConfigRoot
     )
   }
 

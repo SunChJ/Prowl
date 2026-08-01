@@ -50,7 +50,7 @@ struct AgentRuntimeAvailabilityProbeTests {
 
       await AgentRuntimeAvailabilityProbe.refresh()
 
-      #expect(probeCalls.value == 1)
+      #expect(probeCalls.value == AgentProfileRuntime.allCases.count - 1)
       #expect(probed[.codex] == true)
       #expect(probed[.claude] == nil)
     }

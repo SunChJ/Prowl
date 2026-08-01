@@ -51,7 +51,7 @@ enum AgentRuntimeAvailabilityProbe {
   private static func probeAvailability(of runtime: AgentProfileRuntime) async -> Bool? {
     guard
       let executable = try? AgentRuntimeAdapterRegistry.makeStartInvocation(
-        AgentStartRequest(agent: runtime.agent, intent: .interactive)
+        AgentStartRequest(runtime: runtime, intent: .interactive)
       ).executable
     else { return nil }
     @Dependency(ShellClient.self) var shell

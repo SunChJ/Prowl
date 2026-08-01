@@ -44,6 +44,10 @@ nonisolated struct AgentSessionProfile: Sendable {
     (@Sendable (_ configRoot: URL, _ cwd: URL?, _ processStartedAt: Date, _ now: Date) -> [URL])?
   var rootedFallbackRoots: (@Sendable (_ configRoot: URL, _ cwd: URL?) -> [URL])?
   var rootedParsePath: (@Sendable (_ path: String, _ configRoot: URL) -> AgentSession?)?
+  /// Exact pid lookup under a relocated native config root. Kept separate from
+  /// `pidKeyedSession` because default layouts prepend `.copilot`/`.qwen`,
+  /// while their relocation variables already point at those directories.
+  var rootedPIDKeyedSession: (@Sendable (_ configRoot: URL, _ pid: pid_t, _ processStartedAt: Date) -> AgentSession?)?
 
   static func profile(for agent: DetectedAgent) -> AgentSessionProfile {
     switch agent {
@@ -126,6 +130,13 @@ nonisolated extension AgentSessionProfile {
     candidateRoots: { home, cwd, _, _ in
       guard let cwd else { return [] }
       return [home.appending(path: ".pi/agent/sessions/-\(slashDashed(cwd.path))--")]
+    },
+    rootedCandidateRoots: { configRoot, cwd, _, _ in
+      guard let cwd else { return [] }
+      return [configRoot.appending(path: "sessions/-\(slashDashed(cwd.path))--")]
+    },
+    rootedParsePath: { path, configRoot in
+      uuidJSONL(path: path, underRoot: configRoot.appending(path: "sessions"))
     }
   )
 
@@ -157,6 +168,22 @@ nonisolated extension AgentSessionProfile {
     },
     fallbackRoots: { home, _ in
       [home.appending(path: ".gemini/tmp")]
+    },
+    rootedCandidateRoots: { configRoot, cwd, _, _ in
+      guard let cwd else { return [configRoot.appending(path: "tmp")] }
+      let tmp = configRoot.appending(path: "tmp")
+      var roots: [URL] = []
+      if let slug = geminiProjectSlug(configRoot: configRoot, cwd: cwd) {
+        roots.append(tmp.appending(path: "\(slug)/chats"))
+      }
+      roots.append(tmp.appending(path: "\(sha256Hex(cwd.path))/chats"))
+      return roots
+    },
+    rootedFallbackRoots: { configRoot, _ in
+      [configRoot.appending(path: "tmp")]
+    },
+    rootedParsePath: { path, configRoot in
+      geminiSession(path: path, underRoot: configRoot.appending(path: "tmp"))
     }
   )
 
@@ -177,6 +204,12 @@ nonisolated extension AgentSessionProfile {
     parsePath: { markedComponent(path: $0, marker: "/.cline/data/tasks/", component: "tasks") },
     candidateRoots: { home, _, _, _ in
       [home.appending(path: ".cline/data/tasks")]
+    },
+    rootedCandidateRoots: { configRoot, _, _, _ in
+      [configRoot.appending(path: "tasks")]
+    },
+    rootedParsePath: { path, configRoot in
+      firstComponent(path: path, underRoot: configRoot.appending(path: "tasks"))
     }
   )
 
@@ -193,6 +226,23 @@ nonisolated extension AgentSessionProfile {
       CopilotProcessLog.session(
         logsDirectory: home.appending(path: ".copilot/logs"),
         sessionStateDirectory: home.appending(path: ".copilot/session-state"),
+        pid: pid,
+        processStartedAt: processStartedAt
+      )
+    },
+    rootedCandidateRoots: { configRoot, _, _, _ in
+      [configRoot.appending(path: "session-state")]
+    },
+    rootedParsePath: { path, configRoot in
+      firstComponent(
+        path: path,
+        underRoot: configRoot.appending(path: "session-state")
+      )
+    },
+    rootedPIDKeyedSession: { configRoot, pid, processStartedAt in
+      CopilotProcessLog.session(
+        logsDirectory: configRoot.appending(path: "logs"),
+        sessionStateDirectory: configRoot.appending(path: "session-state"),
         pid: pid,
         processStartedAt: processStartedAt
       )
@@ -239,6 +289,13 @@ nonisolated extension AgentSessionProfile {
     candidateRoots: { home, cwd, _, _ in
       guard let cwd else { return [] }
       return [home.appending(path: ".qoder/projects/\(alphanumericDashed(cwd.path))")]
+    },
+    rootedCandidateRoots: { configRoot, cwd, _, _ in
+      guard let cwd else { return [] }
+      return [configRoot.appending(path: "projects/\(alphanumericDashed(cwd.path))")]
+    },
+    rootedParsePath: { path, configRoot in
+      uuidJSONL(path: path, underRoot: configRoot.appending(path: "projects"))
     }
   )
 
@@ -293,6 +350,23 @@ nonisolated extension AgentSessionProfile {
     pidKeyedSession: { home, pid, processStartedAt in
       QwenRuntimeStatus.session(
         projectsRoot: home.appending(path: ".qwen/projects"),
+        pid: pid,
+        processStartedAt: processStartedAt
+      )
+    },
+    rootedCandidateRoots: { configRoot, cwd, _, _ in
+      guard let cwd else { return [configRoot.appending(path: "projects")] }
+      return [configRoot.appending(path: "projects/\(alphanumericDashed(cwd.path))/chats")]
+    },
+    rootedFallbackRoots: { configRoot, _ in
+      [configRoot.appending(path: "projects")]
+    },
+    rootedParsePath: { path, configRoot in
+      uuidJSONL(path: path, underRoot: configRoot.appending(path: "projects"))
+    },
+    rootedPIDKeyedSession: { configRoot, pid, processStartedAt in
+      QwenRuntimeStatus.session(
+        projectsRoot: configRoot.appending(path: "projects"),
         pid: pid,
         processStartedAt: processStartedAt
       )
@@ -398,6 +472,32 @@ nonisolated extension AgentSessionProfile {
     )
   }
 
+  fileprivate static func firstComponent(path: String, underRoot root: URL) -> AgentSession? {
+    let rootPath = root.standardizedFileURL.path(percentEncoded: false)
+    let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path(percentEncoded: false)
+    let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+    guard standardizedPath.hasPrefix(prefix),
+      let id = standardizedPath.dropFirst(prefix.count).split(separator: "/").first
+    else { return nil }
+    return AgentSession(
+      id: String(id),
+      transcriptPath: URL(fileURLWithPath: standardizedPath),
+      source: .recentFile
+    )
+  }
+
+  fileprivate static func geminiSession(path: String, underRoot root: URL) -> AgentSession? {
+    let rootPath = root.standardizedFileURL.path(percentEncoded: false)
+    let url = URL(fileURLWithPath: path)
+    guard path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/"), path.contains("/chats/"),
+      url.pathExtension == "jsonl", url.lastPathComponent.hasPrefix("session-")
+    else { return nil }
+    guard let id = url.deletingPathExtension().lastPathComponent.split(separator: "-").last.map(String.init),
+      !id.isEmpty
+    else { return nil }
+    return AgentSession(id: id, transcriptPath: url, source: .recentFile)
+  }
+
   fileprivate static func uuid(in value: String) -> String? {
     let pattern = #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"#
     guard let range = value.range(of: pattern, options: .regularExpression) else { return nil }
@@ -470,7 +570,11 @@ nonisolated extension AgentSessionProfile {
   }
 
   fileprivate static func geminiProjectSlug(home: URL, cwd: URL) -> String? {
-    let url = home.appending(path: ".gemini/projects.json")
+    geminiProjectSlug(configRoot: home.appending(path: ".gemini"), cwd: cwd)
+  }
+
+  fileprivate static func geminiProjectSlug(configRoot: URL, cwd: URL) -> String? {
+    let url = configRoot.appending(path: "projects.json")
     guard let data = try? Data(contentsOf: url),
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
       let projects = object["projects"] as? [String: Any]

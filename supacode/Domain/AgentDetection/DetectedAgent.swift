@@ -28,7 +28,7 @@ enum DetectedAgent: String, CaseIterable, Equatable, Identifiable, Sendable {
     }
   }
 
-  var iconLookupToken: String {
+  nonisolated var iconLookupToken: String {
     switch self {
     case .claude:
       return "claude"

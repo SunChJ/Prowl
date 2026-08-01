@@ -443,7 +443,7 @@ struct WorktreeDetailView: View {
       AgentsLauncherItem(
         id: profile.id,
         name: profile.name,
-        runtimeName: AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent),
+        runtimeName: AgentRuntimeAdapterRegistry.displayName(for: profile.runtime),
         iconSource: profile.iconSource,
         isRecommended: profile.id == recommendedID,
         availabilityWarning: AgentProfileAvailability.launchWarning(for: profile)

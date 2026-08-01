@@ -74,6 +74,9 @@ struct AgentProfileEditorFeature {
         state.profile.extraArguments = ""
         state.profile.environmentOverrides = []
         state.profile.executionMode = .standard
+        if AgentRuntimeAdapterRegistry.profileAdapter(for: runtime)?.supportsAccountIsolation != true {
+          state.profile.bindsDedicatedHome = false
+        }
         refreshHomeStatus(&state)
         return .send(.delegate(.profileEdited(state.profile)))
 

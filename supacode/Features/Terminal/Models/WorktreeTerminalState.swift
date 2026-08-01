@@ -85,9 +85,27 @@ final class WorktreeTerminalState {
     /// resolver uses it as the config root for this surface. Nil for pure
     /// presets (default home layout).
     let dedicatedHome: URL?
+    /// The native session layout may be nested below the provisioned home
+    /// (Gemini: `.gemini`, Cline: `data`). Keep provisioning and attribution
+    /// roots distinct instead of teaching the resolver launch semantics.
+    let sessionConfigRoot: URL?
+
+    init(
+      profileID: UUID,
+      name: String,
+      runtime: AgentProfileRuntime,
+      dedicatedHome: URL?,
+      sessionConfigRoot: URL? = nil
+    ) {
+      self.profileID = profileID
+      self.name = name
+      self.runtime = runtime
+      self.dedicatedHome = dedicatedHome
+      self.sessionConfigRoot = sessionConfigRoot ?? dedicatedHome
+    }
 
     func configRoot(forDetected agent: DetectedAgent) -> URL? {
-      runtime.agent == agent ? dedicatedHome : nil
+      runtime.agent == agent ? sessionConfigRoot : nil
     }
   }
 
@@ -430,7 +448,8 @@ final class WorktreeTerminalState {
       profileID: plan.profileID,
       name: plan.profileName,
       runtime: plan.runtime,
-      dedicatedHome: plan.dedicatedHome
+      dedicatedHome: plan.dedicatedHome,
+      sessionConfigRoot: plan.sessionConfigRoot
     )
     if plan.placement == .split,
       let surfaceID = createSplitOnFocusedSurface(

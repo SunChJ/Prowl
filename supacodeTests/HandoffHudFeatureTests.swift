@@ -131,7 +131,7 @@ struct HandoffHudFeatureTests {
     )
 
     let agentKinds = state.targets.compactMap(\.agent)
-    #expect(agentKinds == AgentRuntimeAdapterRegistry.launchableAgents)
+    #expect(agentKinds == [.claude, .codex])
     #expect(state.targets.last?.kind == .briefOnly)
     let codexTarget = try #require(state.targets.first { $0.agent == .codex })
     #expect(codexTarget.isCurrentAgent)

@@ -54,6 +54,20 @@ struct AgentProfileEditorFeatureTests {
     await store.receive(\.delegate.profileEdited)
   }
 
+  @Test(.dependencies) func changingToRuntimeWithoutIsolationClearsDedicatedHomeBinding() async {
+    var profile = AgentProfile(name: "Codex", runtime: .codex)
+    profile.bindsDedicatedHome = true
+    let store = TestStore(initialState: AgentProfileEditorFeature.State(profile: profile)) {
+      AgentProfileEditorFeature()
+    }
+
+    await store.send(.runtimeChanged(.cursor)) {
+      $0.profile.runtime = .cursor
+      $0.profile.bindsDedicatedHome = false
+    }
+    await store.receive(\.delegate.profileEdited)
+  }
+
   @Test func suggestionSelectionDistinguishesCustomValuesFromRuntimeDefault() {
     let suggestions = ["low", "medium", "high"]
 

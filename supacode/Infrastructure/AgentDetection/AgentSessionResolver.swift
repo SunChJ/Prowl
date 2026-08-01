@@ -259,8 +259,11 @@ actor AgentSessionResolver {
       return (resolved, false)
     }
 
-    // pid-keyed artifacts live in the default home; a relocated config root
-    // has no equivalent (no bound-capable runtime defines one).
+    if let configRoot,
+      let session = profile.rootedPIDKeyedSession?(configRoot, identified.process.pid, processStartedAt)
+    {
+      return (session, false)
+    }
     if configRoot == nil,
       let session = profile.pidKeyedSession?(homeDirectory, identified.process.pid, processStartedAt)
     {

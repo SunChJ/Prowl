@@ -6,6 +6,168 @@ import Testing
 @testable import supacode
 
 struct AgentRuntimeAdapterTests {
+  private struct CatalogExpectation {
+    let runtime: AgentProfileRuntime
+    let agent: DetectedAgent
+    let executable: String
+    let arguments: [String]
+  }
+
+  private struct IntentExpectation {
+    let runtime: AgentProfileRuntime
+    let promptedArguments: [String]
+    let headlessArguments: [String]
+  }
+
+  @Test func profileRuntimeCatalogCoversEveryLaunchableCLI() throws {
+    let expected = [
+      CatalogExpectation(runtime: .claude, agent: .claude, executable: "claude", arguments: []),
+      CatalogExpectation(runtime: .codex, agent: .codex, executable: "codex", arguments: []),
+      CatalogExpectation(runtime: .gemini, agent: .gemini, executable: "gemini", arguments: []),
+      CatalogExpectation(runtime: .cursor, agent: .cursor, executable: "cursor-agent", arguments: []),
+      CatalogExpectation(runtime: .cline, agent: .cline, executable: "cline", arguments: ["--tui"]),
+      CatalogExpectation(runtime: .opencode, agent: .opencode, executable: "opencode", arguments: []),
+      CatalogExpectation(runtime: .copilot, agent: .copilot, executable: "copilot", arguments: []),
+      CatalogExpectation(runtime: .kimi, agent: .kimi, executable: "kimi", arguments: []),
+      CatalogExpectation(runtime: .droid, agent: .droid, executable: "droid", arguments: []),
+      CatalogExpectation(runtime: .amp, agent: .amp, executable: "amp", arguments: []),
+      CatalogExpectation(runtime: .qoder, agent: .qoder, executable: "qodercli", arguments: []),
+      CatalogExpectation(runtime: .qwen, agent: .qwen, executable: "qwen", arguments: []),
+      CatalogExpectation(runtime: .grok, agent: .grok, executable: "grok", arguments: []),
+      CatalogExpectation(runtime: .pi, agent: .pi, executable: "pi", arguments: []),
+      CatalogExpectation(runtime: .omp, agent: .pi, executable: "omp", arguments: []),
+    ]
+
+    #expect(AgentProfileRuntime.allCases.count == expected.count)
+    for expectation in expected {
+      let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+        AgentStartRequest(runtime: expectation.runtime, intent: .interactive)
+      )
+      #expect(expectation.runtime.agent == expectation.agent)
+      #expect(invocation.executable == expectation.executable)
+      #expect(invocation.arguments == expectation.arguments)
+    }
+    #expect(AgentRuntimeAdapterRegistry.launchableAgents == DetectedAgent.allCases)
+  }
+
+  @Test func promptedAndHeadlessStartsUseRuntimeSpecificCLISemantics() throws {
+    let expected = [
+      IntentExpectation(
+        runtime: .claude, promptedArguments: ["Review this."], headlessArguments: ["-p", "Review this."]),
+      IntentExpectation(
+        runtime: .codex, promptedArguments: ["Review this."], headlessArguments: ["exec", "Review this."]),
+      IntentExpectation(
+        runtime: .gemini, promptedArguments: ["--prompt-interactive", "Review this."],
+        headlessArguments: ["--prompt", "Review this."]),
+      IntentExpectation(
+        runtime: .cursor, promptedArguments: ["Review this."], headlessArguments: ["--print", "Review this."]),
+      IntentExpectation(
+        runtime: .cline, promptedArguments: ["--tui", "Review this."], headlessArguments: ["Review this."]),
+      IntentExpectation(
+        runtime: .opencode, promptedArguments: ["--prompt", "Review this."],
+        headlessArguments: ["run", "Review this."]),
+      IntentExpectation(
+        runtime: .copilot, promptedArguments: ["--interactive", "Review this."],
+        headlessArguments: ["--prompt", "Review this."]),
+      IntentExpectation(
+        runtime: .kimi, promptedArguments: ["--prompt", "Review this."],
+        headlessArguments: ["--print", "--prompt", "Review this."]),
+      IntentExpectation(
+        runtime: .droid, promptedArguments: ["Review this."], headlessArguments: ["exec", "Review this."]),
+      IntentExpectation(
+        runtime: .qoder, promptedArguments: ["--prompt-interactive", "Review this."],
+        headlessArguments: ["--print", "Review this."]),
+      IntentExpectation(
+        runtime: .qwen, promptedArguments: ["--prompt-interactive", "Review this."],
+        headlessArguments: ["--prompt", "Review this."]),
+      IntentExpectation(
+        runtime: .grok, promptedArguments: ["Review this."], headlessArguments: ["--single", "Review this."]),
+      IntentExpectation(
+        runtime: .pi, promptedArguments: ["Review this."], headlessArguments: ["--print", "Review this."]),
+      IntentExpectation(
+        runtime: .omp, promptedArguments: ["Review this."], headlessArguments: ["--print", "Review this."]),
+    ]
+
+    for expectation in expected {
+      let prompted = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+        AgentStartRequest(runtime: expectation.runtime, intent: .prompt("Review this."))
+      )
+      let headless = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+        AgentStartRequest(runtime: expectation.runtime, intent: .headless("Review this."))
+      )
+      #expect(prompted.arguments == expectation.promptedArguments)
+      #expect(headless.arguments == expectation.headlessArguments)
+    }
+
+    #expect(
+      throws: AgentRuntimeError.unsupportedStartIntent(.amp, .prompt("Review this."))
+    ) {
+      try AgentRuntimeAdapterRegistry.makeStartInvocation(
+        AgentStartRequest(runtime: .amp, intent: .prompt("Review this."))
+      )
+    }
+    let ampHeadless = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+      AgentStartRequest(runtime: .amp, intent: .headless("Review this."))
+    )
+    #expect(ampHeadless.arguments == ["--execute", "Review this."])
+  }
+
+  @Test func profileOptionsAreCapabilityGated() throws {
+    let noModel: Set<AgentProfileRuntime> = [.droid, .amp]
+    let noReasoning: Set<AgentProfileRuntime> = [.gemini, .cursor, .kimi, .droid]
+    let unrestricted: Set<AgentProfileRuntime> = [
+      .claude, .codex, .gemini, .cursor, .opencode, .copilot, .kimi, .qoder, .qwen, .omp,
+    ]
+    let isolated: Set<AgentProfileRuntime> = [
+      .claude, .codex, .gemini, .cline, .copilot, .qoder, .qwen, .pi, .omp,
+    ]
+
+    for runtime in AgentProfileRuntime.allCases {
+      let adapter = try #require(AgentRuntimeAdapterRegistry.profileAdapter(for: runtime))
+      #expect(adapter.supportsModelSelection == !noModel.contains(runtime))
+      #expect(adapter.supportsReasoningEffort == !noReasoning.contains(runtime))
+      #expect(adapter.supportsUnrestrictedExecution == unrestricted.contains(runtime))
+      #expect(adapter.supportsAccountIsolation == isolated.contains(runtime))
+    }
+  }
+
+  @Test func expandedRuntimeOptionsRenderOnlyVerifiedFields() throws {
+    let configuration = AgentLaunchConfiguration(
+      model: "model-x",
+      executionMode: .unrestricted,
+      reasoningEffort: "high"
+    )
+    let expected: [(AgentProfileRuntime, [String])] = [
+      (.gemini, ["--model", "model-x", "--approval-mode", "yolo", "--sandbox=false"]),
+      (.cursor, ["--model", "model-x", "--yolo", "--sandbox", "disabled"]),
+      (.cline, ["--model", "model-x", "--thinking", "high", "--tui"]),
+      (.opencode, ["--model", "model-x", "--variant", "high", "--auto"]),
+      (.copilot, ["--model", "model-x", "--reasoning-effort", "high", "--allow-all"]),
+      (.kimi, ["--model", "model-x", "--yolo"]),
+      (.droid, []),
+      (.amp, ["--effort", "high"]),
+      (.qoder, ["--model", "model-x", "--reasoning-effort", "high", "--dangerously-skip-permissions"]),
+      (.qwen, ["--model", "model-x", "--reasoning-effort", "high", "--approval-mode", "yolo", "--sandbox=false"]),
+      (.grok, ["--model", "model-x", "--reasoning-effort", "high"]),
+      (.pi, ["--model", "model-x", "--thinking", "high"]),
+      (.omp, ["--model", "model-x", "--thinking", "high", "--approval-mode", "yolo"]),
+    ]
+
+    for (runtime, arguments) in expected {
+      let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
+        AgentStartRequest(runtime: runtime, intent: .interactive, configuration: configuration)
+      )
+      #expect(invocation.arguments == arguments)
+    }
+  }
+
+  @Test func startAndResumeCapabilitiesAreIndependent() {
+    for agent in DetectedAgent.allCases {
+      #expect(AgentRuntimeAdapterRegistry.canStart(agent))
+      #expect(AgentRuntimeAdapterRegistry.canResume(agent) == (agent == .claude || agent == .codex))
+    }
+  }
+
   @Test func codexStartBuildsUnrestrictedInvocation() throws {
     let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
       AgentStartRequest(

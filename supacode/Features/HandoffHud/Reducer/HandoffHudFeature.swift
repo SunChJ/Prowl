@@ -112,7 +112,10 @@ struct HandoffHudFeature {
         session: source?.session,
         observation: source?.observation
       )
-      var targets = AgentRuntimeAdapterRegistry.launchableAgents.map { agent in
+      // Handoff destination policy is independent from generic Profile launch
+      // support. Expanding the runtime catalog must not expose a receiver until
+      // its kickoff semantics and transition contract are explicitly verified.
+      var targets = HandoffAgentSupport.launchableAgents.compactMap(DetectedAgent.init(rawValue:)).map { agent in
         HandoffTargetOption(
           kind: .agent(agent),
           title: AgentRuntimeAdapterRegistry.displayName(for: agent),
