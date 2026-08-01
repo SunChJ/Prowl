@@ -56,8 +56,8 @@ bounding this dense-match case.
 
 - Preserve #644's original author commits and measurable scan improvement.
 - Remove the silent per-file 2 MiB semantic cutoff.
-- Cache exact untracked-file line counts across refreshes using stable file metadata, so an
-  unchanged large capture is not reread when another file triggers FSEvents.
+- Cache calculated untracked-file line counts across refreshes using stable file metadata, so a
+  metadata-unchanged large capture is not reread when another file triggers FSEvents.
 - Bound uncached work with one deterministic byte budget for the whole refresh, not a
   per-file limit that can still scan an unbounded aggregate.
 - Propagate incomplete-count state to the sidebar and workspace-child rows instead of
@@ -78,17 +78,18 @@ bounding this dense-match case.
 
 ## Design / Approach
 
-### Exact cache
+### Metadata-validated cache
 
 Introduce a long-lived, concurrency-safe untracked-line cache shared by live `GitClient`
 instances. Entries are scoped by worktree and relative path and fingerprinted with file
-identity, byte size, and modification date. An unchanged fingerprint reuses either the
-exact text line count or the binary-file result. Every current `git ls-files --others`
-result prunes disappeared paths from that worktree's cache.
+identity, byte size, and modification date. A metadata-equivalent fingerprint reuses either
+the previously calculated text line count or the binary-file result. Every current
+`git ls-files --others` result prunes disappeared paths from that worktree's cache.
 
 Cache misses are scanned outside cache isolation so independent worktrees are not forced
-through one serialized I/O executor. Updates are committed with their fingerprint; a
-concurrent stale result cannot be reused after the file metadata changes.
+through one serialized I/O executor. Updates are committed with their fingerprint, and a
+later refresh whose metadata differs will not reuse the cached result. Cache retention is
+bounded by worktree, entry, and relative-path-key limits.
 
 ### Aggregate scan budget
 

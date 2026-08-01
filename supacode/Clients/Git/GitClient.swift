@@ -463,6 +463,7 @@ struct GitClient {
   }
 
   nonisolated static let untrackedLineCountByteBudget = 32 * 1_024 * 1_024
+  nonisolated static let untrackedLineCountCacheUpdateBatchSize = 256
 
   nonisolated static func countLinesInFiles(
     _ relativePaths: [String],
@@ -524,6 +525,7 @@ struct GitClient {
 
     var remainingByteBudget = max(0, byteBudget)
     var cacheUpdates: [UntrackedLineCacheUpdate] = []
+    cacheUpdates.reserveCapacity(untrackedLineCountCacheUpdateBatchSize)
     for file in misses.sorted(by: { lhs, rhs in
       if lhs.fingerprint.byteCount == rhs.fingerprint.byteCount {
         return lhs.relativePath < rhs.relativePath
@@ -534,30 +536,38 @@ struct GitClient {
         skippedFileCount += 1
         continue
       }
+      let cacheUpdate: UntrackedLineCacheUpdate?
       switch Self.countLines(in: file.url, maximumByteCount: remainingByteBudget) {
       case .text(let lines, let bytesRead):
         total += lines
         remainingByteBudget -= bytesRead
-        cacheUpdates.append(
-          UntrackedLineCacheUpdate(
-            relativePath: file.relativePath,
-            fingerprint: file.fingerprint,
-            value: .text(lines)
-          ))
+        cacheUpdate = UntrackedLineCacheUpdate(
+          relativePath: file.relativePath,
+          fingerprint: file.fingerprint,
+          value: .text(lines)
+        )
       case .binary(let bytesRead):
         remainingByteBudget -= bytesRead
-        cacheUpdates.append(
-          UntrackedLineCacheUpdate(
-            relativePath: file.relativePath,
-            fingerprint: file.fingerprint,
-            value: .binary
-          ))
+        cacheUpdate = UntrackedLineCacheUpdate(
+          relativePath: file.relativePath,
+          fingerprint: file.fingerprint,
+          value: .binary
+        )
       case .budgetExceeded:
         remainingByteBudget = 0
         skippedFileCount += 1
+        cacheUpdate = nil
       case .unavailable(let bytesRead):
         remainingByteBudget -= bytesRead
         skippedFileCount += 1
+        cacheUpdate = nil
+      }
+      if let cacheUpdate {
+        cacheUpdates.append(cacheUpdate)
+        if cacheUpdates.count == untrackedLineCountCacheUpdateBatchSize {
+          cache.store(cacheUpdates, worktreeKey: worktreeKey)
+          cacheUpdates.removeAll(keepingCapacity: true)
+        }
       }
     }
     cache.store(cacheUpdates, worktreeKey: worktreeKey)

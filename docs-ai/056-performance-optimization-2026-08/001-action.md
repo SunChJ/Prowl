@@ -10,7 +10,7 @@
 
 The follow-up preserves both commits from #644 and keeps its `memchr` speedup,
 but removes the silent 2 MiB per-file cutoff. Untracked-file line counts now use
-an exact metadata cache plus one 32 MiB budget across uncached files for a
+a metadata-validated cache plus one 32 MiB budget across uncached files for a
 refresh. Cached files cost no scan budget, while files that do not fit are
 reported explicitly instead of being folded into an exact zero.
 
@@ -28,10 +28,11 @@ files.
   plus the number of omitted files. Its sparse `memchr` scan switches to a raw
   pointer loop after 2,048 matches in one 64 KiB chunk to bound newline-dense
   input.
-- `UntrackedLineCountCache.swift` — stores exact text counts and binary results
+- `UntrackedLineCountCache.swift` — stores counted text values and binary results
   by worktree/path and file identity, size, and modification date. It prunes
-  disappeared paths and retains at most 128 worktree roots with LRU eviction.
-  File I/O stays outside the short cache lock.
+  disappeared paths, retains at most 128 worktree roots, and caps both cache
+  entries and retained relative-path bytes with LRU eviction. File I/O stays
+  outside the short cache lock.
 - `GitClientTypes.swift` and the repository reducer/state files — carry one
   structured `GitLineChanges` value through regular worktrees and project
   workspace children, including the omitted-untracked-file count.
