@@ -32,6 +32,7 @@ reproducing those percentages.
 ## Refs
 
 - Original PR #648
+- Fork integration PR #655
 - Original implementation commit `246373b6`
 - Fork follow-up commit `b39b7ff4`
 - Detailed performance record:
