@@ -21,6 +21,7 @@ make bump-version                # Bump version (date-based YYYY.M.DD) and creat
 ```
 
 Run a single test class or method:
+
 ```bash
 xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" \
   -only-testing:supacodeTests/TerminalTabManagerTests \
@@ -28,6 +29,7 @@ xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platf
 ```
 
 **Swift Testing vs XCTest `-only-testing` format**: Swift Testing (`@Test`) requires trailing `()` in the test identifier. Without it, `xcodebuild` silently matches nothing and reports `TEST SUCCEEDED` with zero tests run.
+
 ```bash
 # XCTest (func testFoo)
 -only-testing:supacodeTests/FooTests/testBar
@@ -36,6 +38,8 @@ xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platf
 ```
 
 Requires [mise](https://mise.jdx.dev/) for zig, swiftlint, and xcsift tooling.
+
+`make log-stream` shows no `TCA` action lines by default: per-action logging — the action label plus a full app-state snapshot and diff — is gated off because it runs on every action and shows up as steady main-thread cost. Launch with `PROWL_LOG_TCA_ACTIONS=1` (scheme env var, or exported before `open`) to trace the action stream through the unified log.
 
 ## Architecture
 
@@ -112,6 +116,14 @@ Reducer ← .terminalEvent(Event) ← AsyncStream<Event>
 - SwiftLint runs in strict mode; never disable lint rules without permission
 - Custom SwiftLint rule: `store_state_mutation_in_views` — do not mutate `store.*` directly in view files; send actions instead
 - Before creating a PR, run `make check`. Use `make format` only for intentional full-tree formatting cleanup.
+- If `make check` fails with `swift-format: command not found`, the Xcode toolchain is not on `PATH`. The Makefile invokes `swift-format` unqualified, and the binary ships inside Xcode rather than in a standard bin directory. Prepend it for the invocation:
+
+  ```bash
+  export PATH="$(dirname "$(xcrun --find swift-format)"):$PATH"
+  make check
+  ```
+
+  `make lint` is unaffected — it already runs SwiftLint through `mise exec`.
 
 ## UX Standards
 

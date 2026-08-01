@@ -51,7 +51,7 @@ final class Debouncer {
 /// `TestClock`, let the test advance past a deadline that was never armed,
 /// hanging the sleep forever (the CI-only `DebouncerTests` flake).
 extension Clock where Duration == Swift.Duration {
-  fileprivate func anchoredSleep(for interval: Duration) -> @Sendable () async throws -> Void {
+  func anchoredSleep(for interval: Duration) -> @Sendable () async throws -> Void {
     let deadline = now.advanced(by: interval)
     return { try await self.sleep(until: deadline, tolerance: nil) }
   }

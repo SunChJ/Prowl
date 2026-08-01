@@ -29,7 +29,10 @@ struct CLIAgentsCommandHandlerTests {
     #expect(agent.type == "omp")
     #expect(agent.name == "omp")
     #expect(agent.status == .blocked)
-    #expect(agent.rawState == "blocked")
+    // The reducer entry may intentionally lag raw-state-only terminal polls so
+    // the sidebar does not re-render. CLI snapshots must use the live terminal
+    // raw state instead of that UI-deduplicated value.
+    #expect(agent.rawState == "working")
     #expect(agent.lastChangedAt == "2026-09-21T14:00:00Z")
     #expect(agent.project.name == "Prowl")
     #expect(agent.project.branch == "feature/agents")
@@ -179,7 +182,8 @@ struct CLIAgentsCommandHandlerTests {
           otherPaneID: otherPaneID,
           tabID: tabID,
           tabWorktree: tabWorktree
-        )
+        ),
+        rawStatesBySurfaceID: [tabPaneID: .working]
       )
     )
   }

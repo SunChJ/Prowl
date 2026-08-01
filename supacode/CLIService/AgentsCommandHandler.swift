@@ -3,6 +3,10 @@ import Foundation
 struct AgentsRuntimeSnapshot {
   let repositoriesState: RepositoriesFeature.State
   let listSnapshot: ListRuntimeSnapshot
+  /// Live detector output keyed by pane. Reducer entries intentionally skip
+  /// raw-state-only changes to avoid invalidating the sidebar, so CLI snapshots
+  /// must source this field from terminal state instead.
+  let rawStatesBySurfaceID: [UUID: AgentRawState]
 }
 
 final class AgentsCommandHandler: CommandHandler {
@@ -83,7 +87,7 @@ final class AgentsCommandHandler: CommandHandler {
         type: entry.agent.rawValue,
         name: entry.displayName,
         status: AgentsCommandStatus(rawValue: entry.displayState.rawValue) ?? .idle,
-        rawState: entry.rawState.rawValue,
+        rawState: (snapshot.rawStatesBySurfaceID[entry.surfaceID] ?? entry.rawState).rawValue,
         lastChangedAt: dateFormatter.string(from: entry.lastChangedAt),
         project: AgentsCommandProject(
           name: display.repositoryName,

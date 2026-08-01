@@ -45,6 +45,7 @@ extension WorktreeTerminalState {
     agentDetectionPresenceBySurface.removeValue(forKey: surfaceID)
     lastWorkingAtBySurface.removeValue(forKey: surfaceID)
     lastAgentDetectionDiagnosticsBySurface.removeValue(forKey: surfaceID)
+    lastAgentScreenScanBySurface.removeValue(forKey: surfaceID)
     if surfaceAgentStates[surfaceID]?.detectedAgent == nil {
       surfaceAgentStates.removeValue(forKey: surfaceID)
     }
@@ -89,13 +90,13 @@ extension WorktreeTerminalState {
     let now = Date()
     let previous = surfaceAgentStates[surfaceID] ?? PaneAgentState(lastChangedAt: now)
     let activeText = view.bridge.readActiveText() ?? ""
-    // `detectState` is a `nonisolated` pure function that runs in well under a
-    // millisecond on a terminal-sized active screen, so the prior `Task.detached` hop
-    // bought nothing but allocator churn. In long sessions, each detection
-    // tick (300 ms or 2 s per surface) was leaving a task stack + closure
-    // capture behind that never reached ARC; over a 24 h session this added
-    // up to hundreds of MB of unreferenced allocations.
-    let raw = agent.detectState(in: activeText)
+    // Reuse the previous scan while the screen and detected agent are unchanged.
+    // A live-but-idle agent is polled every 300 ms and `detectState` re-splits,
+    // lowercases, and scans the whole screen each time; skipping that for
+    // identical text is the bulk of steady-state detection cost. Time-based
+    // stabilization below still runs every tick, so working→idle decay is
+    // unaffected.
+    let raw = cachedRawState(forSurfaceID: surfaceID, agent: agent, text: activeText)
     guard surfaces[surfaceID] != nil else { return false }
 
     var lastWorkingAt = lastWorkingAtBySurface[surfaceID]
@@ -172,6 +173,36 @@ extension WorktreeTerminalState {
     updateTabAgentBusyState(for: tabId)
     emitAgentEntry(surfaceID: surfaceID, tabId: tabId, state: next)
     return true
+  }
+
+  /// Resolves the raw agent state for `text`, reusing `cache` when it already
+  /// holds a scan for the same `agent` and identical `text`. Returns the raw
+  /// state and the scan to store back for the next call.
+  ///
+  /// `detectState` is a `nonisolated` pure function of the screen, so reusing
+  /// its result for identical input is exactly equivalent to recomputing it.
+  /// It runs inline (no `Task.detached`): the detached hop bought only allocator
+  /// churn — over a long session each tick left a task stack + closure capture
+  /// that never reached ARC, adding up to hundreds of MB of unreferenced
+  /// allocations.
+  nonisolated static func resolveRawState(
+    agent: DetectedAgent,
+    text: String,
+    cache: AgentScreenScan?
+  ) -> (raw: AgentRawState, scan: AgentScreenScan) {
+    if let cache, cache.agent == agent, cache.text == text {
+      return (cache.raw, cache)
+    }
+    let raw = agent.detectState(in: text)
+    return (raw, AgentScreenScan(agent: agent, text: text, raw: raw))
+  }
+
+  /// Instance wrapper over `resolveRawState` that reads and writes the per-surface
+  /// memo, keeping `detectAgentState` to a single line at the call site.
+  private func cachedRawState(forSurfaceID surfaceID: UUID, agent: DetectedAgent, text: String) -> AgentRawState {
+    let (raw, scan) = Self.resolveRawState(agent: agent, text: text, cache: lastAgentScreenScanBySurface[surfaceID])
+    lastAgentScreenScanBySurface[surfaceID] = scan
+    return raw
   }
 
   private func resolvedLaunchObservation(
@@ -265,6 +296,21 @@ extension WorktreeTerminalState {
     }
   }
 
+  /// Lands tab titles held back by coalescing and refreshes the Active Agents
+  /// entries that follow them — the same refresh a title written directly through
+  /// `updateTitle` triggers, so the two paths cannot drift.
+  ///
+  /// The manager's clock-driven trailing flush uses the same refresh path. This
+  /// synchronous seam lets callers and tests force a flush at an explicit date.
+  @discardableResult
+  func flushCoalescedTabTitles(now: Date = Date()) -> [TerminalTabID] {
+    let flushed = tabManager.flushPendingTitles(now: now)
+    for tabID in flushed {
+      refreshAgentEntriesForTitleChange(in: tabID)
+    }
+    return flushed
+  }
+
   /// Single-pane variant for a surface whose own title changed without moving
   /// the tab title (e.g. an unfocused split's OSC-2 update).
   func refreshAgentEntryForTitleChange(surfaceID: UUID, in tabId: TerminalTabID) {
@@ -281,7 +327,10 @@ extension WorktreeTerminalState {
       onAgentEntryRemoved?(surfaceID)
       return
     }
-    guard entry != lastEmittedAgentEntriesBySurface[surfaceID] else { return }
+    // Dedup ignoring `rawState`: it flickers every poll while an agent animates
+    // and drives no UI, so emitting on it alone would re-render the sidebar
+    // continuously. Visible changes (displayState, title, session, …) still emit.
+    guard lastEmittedAgentEntriesBySurface[surfaceID]?.equalsIgnoringRawState(entry) != true else { return }
     lastEmittedAgentEntriesBySurface[surfaceID] = entry
     onAgentEntryChanged?(entry)
   }
@@ -341,6 +390,7 @@ extension WorktreeTerminalState {
     agentDetectionPresenceBySurface.removeValue(forKey: surfaceId)
     lastWorkingAtBySurface.removeValue(forKey: surfaceId)
     lastAgentDetectionDiagnosticsBySurface.removeValue(forKey: surfaceId)
+    lastAgentScreenScanBySurface.removeValue(forKey: surfaceId)
     lastEmittedAgentEntriesBySurface.removeValue(forKey: surfaceId)
     onAgentEntryRemoved?(surfaceId)
   }
@@ -356,6 +406,7 @@ extension WorktreeTerminalState {
     agentDetectionPresenceBySurface.removeAll()
     lastWorkingAtBySurface.removeAll()
     lastAgentDetectionDiagnosticsBySurface.removeAll()
+    lastAgentScreenScanBySurface.removeAll()
     lastEmittedAgentEntriesBySurface.removeAll()
     for id in removedIDs {
       onAgentEntryRemoved?(id)

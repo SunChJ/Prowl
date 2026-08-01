@@ -540,12 +540,19 @@ struct SupacodeApp: App {
       )
     }
     let agentsHandler = AgentsCommandHandler {
-      AgentsRuntimeSnapshot(
+      var rawStatesBySurfaceID: [UUID: AgentRawState] = [:]
+      for terminalState in terminalManager.activeWorktreeStates {
+        for (surfaceID, agentState) in terminalState.surfaceAgentStates {
+          rawStatesBySurfaceID[surfaceID] = agentState.fallbackState
+        }
+      }
+      return AgentsRuntimeSnapshot(
         repositoriesState: appStore.state.repositories,
         listSnapshot: ListRuntimeSnapshotBuilder.makeSnapshot(
           repositoriesState: appStore.state.repositories,
           terminalManager: terminalManager
-        )
+        ),
+        rawStatesBySurfaceID: rawStatesBySurfaceID
       )
     }
     let sendHandler = SendCommandHandler(
