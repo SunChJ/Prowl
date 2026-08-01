@@ -1,0 +1,6 @@
+interface:
+  display_name: "Prowl UI"
+  short_description: "Verify Prowl Debug UI with agent-ctrl"
+  default_prompt: "Use $prowl-ui to verify this behavior in Prowl Debug."
+policy:
+  allow_implicit_invocation: false
