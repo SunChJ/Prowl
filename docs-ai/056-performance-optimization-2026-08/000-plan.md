@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644–#646, #652, #653; review queue #647–#650 |
+| **Primary PRs** | #644–#646, #649, #652, #653; review queue #647, #648, #650 |
 | **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -137,7 +137,7 @@ pending independent code-path and test review.
 | #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Merged: exact agent/text cache identity preserves raw-state semantics; stabilization still runs per tick; cache lifetime follows detection/surface cleanup | `b2ac2936` |
 | #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Decide whether stale CLI `raw_state` is acceptable; trace UI/CLI ownership before merge | `e77ba660` |
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Verify deepest-match and symlink semantics, cache invalidation, render-path purity, and current CI | `08773383` |
-| #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Verify final-title delivery, close/prune lifecycle, custom/locked titles, and clock boundaries | `b77888f3` |
+| #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Reviewed for fork integration: per-tab coalescing now has clock-driven trailing delivery independent of agent detection, stale pending frames are discarded, and the optimized tab map is rebuilt after every structural mutation | `5c7e2a35` |
 | #650 | Cache parsed transcript tails and fast-path fingerprint normalization | Verify append/mtime invalidation, cache pruning, Unicode equivalence, collision behavior, and current CI | `c97cbb4` |
 
 ## Alternatives & decisions
@@ -173,3 +173,6 @@ pending independent code-path and test review.
   [002-opt-in-debug-tca-action-logging.md](002-opt-in-debug-tca-action-logging.md).
 - Updated 2026-08-02: Merged per-surface agent screen-scan memoization from #646 — see
   [003-agent-screen-scan-memoization.md](003-agent-screen-scan-memoization.md).
+- Updated 2026-08-02: Reviewed animated terminal-title coalescing from #649 and prepared
+  fork integration with guaranteed trailing delivery — see
+  [006-tab-title-coalescing.md](006-tab-title-coalescing.md).
