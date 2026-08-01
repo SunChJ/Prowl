@@ -39,8 +39,8 @@ Keep scenarios narrow. “The app launched” or “the UI looks correct” is n
 Use the smallest surface that can prove the assertion:
 
 1. Use `prowl` for worktrees, tabs, panes, terminal contents, command routing, task state, and agent sessions.
-2. Use a semantic macOS accessibility tool for UI labels, roles, enabled or selected state, navigation, sheets, menus,
-   popovers, and buttons. Load that tool's own skill before using it.
+2. Use the repository's `prowl-ui` skill for native UI labels, roles, enabled or selected state, navigation, sheets, menus,
+   popovers, and buttons, but only after its deterministic preflight returns `READY`.
 3. Use a PID-scoped screenshot only for geometry, clipping, visual hierarchy, or other pixel-level assertions.
 4. Use targeted `SupaLogger` markers only when neither public CLI state nor accessibility state exposes the behavior.
 
@@ -50,6 +50,18 @@ AppleScript coordinate loops are not an acceptable fallback. If no suitable cont
 
 Before writing any `prowl` command, load and read the `prowl-cli` skill. It is authoritative for JSON fields, selectors,
 quoting, argument semantics, and error codes.
+
+For a native UI scenario, run the cheap dependency gate before loading the full `prowl-ui` skill:
+
+```bash
+ui_status=0
+ui_preflight="$(.claude/skills/prowl-ui/scripts/preflight.sh)" || ui_status=$?
+printf '%s\n' "$ui_preflight"
+```
+
+Exit `0` means `READY`: load `.claude/skills/prowl-ui/SKILL.md` and continue. Exit `2` means `SKIPPED`: record its JSON
+reason and stop that UI scenario without entering an LLM-driven interaction loop. Do not install or authorize a dependency
+during self-verification.
 
 ## Preconditions
 
@@ -141,14 +153,14 @@ Agents.
 
 ## Verify UI Semantics
 
-When an accessibility-capable desktop tool is available:
+After the `prowl-ui` preflight is `READY`, follow that skill's Prowl-specific workflow. At minimum:
 
-1. Preflight its installation and Accessibility permission without prompting.
-2. Resolve the debug PID with `debug_pid_with_window`, then select the exact window belonging to that PID.
-3. Start with a compact or skeleton accessibility snapshot and drill into the relevant region.
-4. Act through a fresh semantic element reference rather than coordinates.
-5. Re-snapshot the affected region or surface and assert the resulting label, value, role, state, or window.
-6. Treat sheets, alerts, menus, and popovers as separate surfaces.
+1. Resolve the debug PID with `debug_pid_with_window`, then pin the AX session to that PID.
+2. Start with a compact accessibility snapshot and drill into the relevant region.
+3. Act once through a fresh semantic element reference.
+4. Re-snapshot the affected region or surface and assert the resulting label, value, role, state, window, or matching
+   `prowl` JSON.
+5. Close the AX session and restore any UI state changed by the scenario.
 
 Do not identify the debug app by appearance: it shares data with the installed app and may look identical. If a tool cannot
 pin reads and actions to the debug PID or exact window, do not use it while both instances are running.

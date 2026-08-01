@@ -203,6 +203,9 @@ private struct AgentsPopoverContent: View {
     }
     .padding(6)
     .frame(width: 280, alignment: .leading)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Agents")
+    .accessibilityIdentifier("agents-toolbar-popover")
     // Runtimes still warned about (or unanswered) re-probe on every open, so
     // a CLI installed mid-session clears its warning without a relaunch.
     .task { await AgentRuntimeAvailabilityProbe.refresh() }

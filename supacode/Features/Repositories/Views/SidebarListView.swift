@@ -245,11 +245,17 @@ struct SidebarListView: View {
   // the macOS 26 look while truly filling the width.
   private var topSegmentBar: some View {
     HStack(spacing: 4) {
-      topSegmentButton(.tabbed, systemImage: "checklist.unchecked", title: "Default")
+      topSegmentButton(
+        .tabbed,
+        systemImage: "checklist.unchecked",
+        title: "Default",
+        accessibilityIdentifier: "sidebar-view-mode-default"
+      )
       topSegmentButton(
         .canvas,
         systemImage: "square.grid.2x2",
         title: "Canvas",
+        accessibilityIdentifier: "sidebar-view-mode-canvas",
         shortcutCommandID: AppShortcuts.CommandID.toggleCanvas,
         requiresRepository: true
       )
@@ -257,6 +263,7 @@ struct SidebarListView: View {
         .shelf,
         systemImage: "distribute.horizontal.fill",
         title: "Shelf",
+        accessibilityIdentifier: "sidebar-view-mode-shelf",
         shortcutCommandID: AppShortcuts.CommandID.toggleShelf,
         requiresRepository: true
       )
@@ -277,6 +284,7 @@ struct SidebarListView: View {
     _ segment: TopSegment,
     systemImage: String,
     title: String,
+    accessibilityIdentifier: String,
     shortcutCommandID: String? = nil,
     requiresRepository: Bool = false
   ) -> some View {
@@ -312,6 +320,8 @@ struct SidebarListView: View {
     .disabled(isDisabled)
     .help(helpText)
     .accessibilityLabel(Text(title))
+    .accessibilityIdentifier(accessibilityIdentifier)
+    .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
   }
 
   private func focusTerminalAfterSidebarSelection(worktreeID: Worktree.ID?) {

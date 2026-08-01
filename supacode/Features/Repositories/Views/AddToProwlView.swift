@@ -58,6 +58,9 @@ struct AddToProwlView: View {
     }
     .padding(EdgeInsets(top: 26, leading: 26, bottom: 20, trailing: 26))
     .frame(width: 400)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Add to Prowl")
+    .accessibilityIdentifier("add-to-prowl-popover")
   }
 
   private var dropZone: some View {
