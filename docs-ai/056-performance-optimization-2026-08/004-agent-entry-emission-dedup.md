@@ -33,6 +33,7 @@ the review verified the emission and observation path, not the original instrume
 ## Refs
 
 - Original PR #647
+- Fork integration PR #654
 - Original implementation commits `7903375c` and `e77ba660`
 - Fork follow-up commit `d209df96`
 
