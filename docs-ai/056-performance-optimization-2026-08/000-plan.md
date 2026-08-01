@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644–#646, #649, #652, #653, #656; review queue #647, #648, #650 |
+| **Primary PRs** | #644–#649, #652–#656; review queue #650 |
 | **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -127,7 +127,7 @@ input while preserving exact counts.
 
 ## Performance PR review queue
 
-The descriptions and heads below were confirmed on 2026-08-02. Claims for #647–#650 remain
+The descriptions and heads below were confirmed on 2026-08-02. Claims for #650 remain
 pending independent code-path and test review.
 
 | PR | Confirmed scope | Review focus / placeholder | Head |
@@ -135,9 +135,9 @@ pending independent code-path and test review.
 | #644 | Replace `Data.Iterator` line scans and avoid repeated large untracked-file work | Integrated through #652 with exact cached counts, a refresh-wide budget, and explicit incomplete state | `978b7b59` |
 | #645 | Gate Debug TCA action reflection/state-diff logging behind `PROWL_LOG_TCA_ACTIONS` | Reviewed and integrated through #653: default Debug launches bypass the expensive diagnostics; the opt-in path remains available and Release behavior is unchanged | `616bbf4b` |
 | #646 | Memoize per-surface agent screen parsing when agent and visible text are unchanged | Merged: exact agent/text cache identity preserves raw-state semantics; stabilization still runs per tick; cache lifetime follows detection/surface cleanup | `b2ac2936` |
-| #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Decide whether stale CLI `raw_state` is acceptable; trace UI/CLI ownership before merge | `e77ba660` |
-| #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Verify deepest-match and symlink semantics, cache invalidation, render-path purity, and current CI | `08773383` |
-| #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Reviewed for fork integration: per-tab coalescing now has clock-driven trailing delivery independent of agent detection, stale pending frames are discarded, and the optimized tab map is rebuilt after every structural mutation | `5c7e2a35` |
+| #647 | Deduplicate raw-state-only agent emissions and narrow sidebar invalidation | Reviewed and integrated through #654: UI emission ignores raw-only churn while `prowl agents` reads live terminal raw state; full-field guard includes Profile attribution | `e77ba660` |
+| #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Reviewed and integrated through #655: deepest-match semantics hold; canonical paths revalidate at a bounded cadence so live symlink retargets cannot stale the cache indefinitely | `08773383` |
+| #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Reviewed and integrated through #656: per-tab coalescing has clock-driven trailing delivery independent of agent detection, and stale pending frames are discarded | `b77888f3` |
 | #650 | Cache parsed transcript tails and fast-path fingerprint normalization | Verify append/mtime invalidation, cache pruning, Unicode equivalence, collision behavior, and current CI | `c97cbb4` |
 
 ## Alternatives & decisions
@@ -173,6 +173,12 @@ pending independent code-path and test review.
   [002-opt-in-debug-tca-action-logging.md](002-opt-in-debug-tca-action-logging.md).
 - Updated 2026-08-02: Merged per-surface agent screen-scan memoization from #646 — see
   [003-agent-screen-scan-memoization.md](003-agent-screen-scan-memoization.md).
+- Updated 2026-08-02: Reviewed agent-entry emission deduplication from #647 and preserved the
+  live CLI raw-state contract in the fork follow-up — see
+  [004-agent-entry-emission-dedup.md](004-agent-entry-emission-dedup.md).
+- Updated 2026-08-02: Reviewed the cached worktree directory index from #648 and added
+  bounded canonical-path revalidation — see
+  [005-worktree-directory-index.md](005-worktree-directory-index.md).
 - Updated 2026-08-02: Reviewed animated terminal-title coalescing from #649 and prepared
   fork integration with guaranteed trailing delivery — see
   [006-tab-title-coalescing.md](006-tab-title-coalescing.md).
