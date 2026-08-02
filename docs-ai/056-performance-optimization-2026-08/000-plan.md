@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-01 |
-| **Primary PRs** | #644–#650, #652–#657 |
+| **Primary PRs** | #644–#650, #652–#665 |
 | **Related** | [030-agent-status-detection](../030-agent-status-detection/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md), [037-line-diff-tracking](../037-line-diff-tracking/000-plan.md), `docs/components/diff-view.md` |
 
 ## Background
@@ -39,6 +39,11 @@ The third application, #646, memoizes the last raw agent screen scan per termina
 Polling still reads the active screen and runs process, stabilization, and session logic, but
 an identical `(agent, text)` pair reuses the previous `DetectedAgent.detectState` result. See
 [056.003](003-agent-screen-scan-memoization.md) for the cache boundary and remaining costs.
+
+The subsequent #658–#661 wave continues the same measured-path discipline: share transcript
+directory walks without weakening sole-session confirmation, memoize working-directory
+resolution without repeating batch setup, coalesce animated Active Agents titles without stale
+trailing frames, and retain reproducible profiling tools plus a truthful measurement record.
 
 ## Measured baseline for #644
 
@@ -138,6 +143,10 @@ The descriptions and heads below were confirmed and independently reviewed on 20
 | #648 | Replace per-agent worktree scans/path resolution with a cached directory index | Reviewed and integrated through #655: deepest-match semantics hold; canonical paths revalidate at a bounded cadence so live symlink retargets cannot stale the cache indefinitely | `08773383` |
 | #649 | Coalesce animated terminal-title writes and remove quadratic tab lookup | Reviewed and integrated through #656: per-tab coalescing has clock-driven trailing delivery independent of agent detection, and stale pending frames are discarded | `b77888f3` |
 | #650 | Cache parsed transcript tails and fast-path fingerprint normalization | Reviewed and integrated through #657: normalized fragments use one resolver-wide, entry- and payload-bounded LRU; the ASCII and escape-absence paths are pinned to the original Unicode-aware formulation | `c97cbb4` |
+| #658 | Share transcript directory walks and reuse derived scoring inputs | Reviewed through #662: one-second walk reuse cannot cross the narrow sole-candidate confirmation retry; grapheme-count and suffix reuse remain score-equivalent | `d5825e55` |
+| #659 | Memoize agent working-directory resolution across renders | Reviewed through #663: repository and symlink revalidation clear the bounded memo, while one row batch validates the repository signature once | `549b1c20` |
+| #660 | Coalesce Active Agents emissions driven only by animated pane titles | Reviewed through #664: semantic changes remain immediate, poll-driven trailing delivery is retained, obsolete pending frames are discarded, and Profile attribution is protected | `80f0b11c` |
+| #661 | Record the profiling wave and add reusable measurement scripts | Reviewed through #665: process selection, failure semantics, numeric inputs, output privacy, and the durable record are hardened against ambiguous or misleading captures | `0cc92c82` |
 
 ## Alternatives & decisions
 
@@ -184,3 +193,15 @@ The descriptions and heads below were confirmed and independently reviewed on 20
 - Updated 2026-08-02: Reviewed transcript-fragment reuse and fingerprint normalization from
   #650 and bounded cache lifetime independently of process cleanup — see
   [007-transcript-fragment-cache.md](007-transcript-fragment-cache.md).
+- Updated 2026-08-02: Reviewed shared transcript root scans from #658 and aligned cache lifetime
+  with sole-candidate confirmation — see
+  [008-shared-session-root-scans.md](008-shared-session-root-scans.md).
+- Updated 2026-08-02: Reviewed working-directory resolution memoization from #659 and retained
+  one repository-signature validation per render batch — see
+  [009-working-directory-resolution-memo.md](009-working-directory-resolution-memo.md).
+- Updated 2026-08-02: Reviewed Active Agents pane-title coalescing from #660 and prevented stale
+  pending frames from resurfacing — see
+  [010-agent-entry-title-coalescing.md](010-agent-entry-title-coalescing.md).
+- Updated 2026-08-02: Reviewed the profiling record and tools from #661, hardened capture
+  correctness and privacy, and reconciled the durable records — see
+  [011-profiling-method-and-tools.md](011-profiling-method-and-tools.md).
