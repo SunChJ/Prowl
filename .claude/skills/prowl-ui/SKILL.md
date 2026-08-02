@@ -31,7 +31,7 @@ Run the bundled script before opening an AX session:
 .claude/skills/prowl-ui/scripts/preflight.sh
 ```
 
-It checks `command -v agent-ctrl`, requires version 0.1.3 or newer, inspects `info --json`, and runs
+It checks `command -v agent-ctrl`, requires version 0.1.4 or newer, inspects `info --json`, and runs
 `doctor --json --quick`. Its contract is:
 
 - Exit `0` with `{"status":"READY",...}` when the macOS AX surface and Accessibility permission are ready.
@@ -90,7 +90,10 @@ An action response such as `ok method=ax-press`, `ax-value`, or `cg-event` is de
 changed state. Never report `PASS` from the action response alone. If delivery is uncertain, observe before considering a
 retry.
 
-Use refs only from the latest snapshot. `find` searches the cached snapshot; it does not walk the UI itself. For negative
+Use refs only from the latest snapshot. `find` searches the cached snapshot; it does not walk the UI itself. Structural
+containers — the window root, toolbars, dialog and sheet roots, and popover containers — carry scope-only refs (`@sN` in
+CLI output, `scope_N` in JSON). Use them with `find --in`, `get`, and `is` to bound a search to one surface; actions on a
+scope ref are rejected by design, so act on an `@eN` element ref resolved inside the scope. For negative
 scroll deltas, terminate option parsing explicitly, for example:
 
 ```bash
@@ -171,7 +174,10 @@ of treating a focus failure as proof that the window is inaccessible.
 
 `Add...` opens a named container with identifier `add-to-prowl-popover` inside the in-window `Add to Prowl` dialog.
 `Browse…` opens an `NSOpenPanel` sheet that remains embedded in the main window's AX tree; it may not appear as another
-entry in `window-list`. Inspect the pinned tree for `dialog`, `Cancel`, and `Open` before searching for a sibling window.
+entry in `window-list`. Resolve the active surface with `find --role dialog` — dialog and sheet roots carry scope-only
+refs — then scope common-control lookups such as `Cancel` or `Open` with `find --in @sN` instead of searching the whole
+window tree. Cancelling a nested `NSOpenPanel` can also dismiss the popover that opened it, so re-run `find --role dialog`
+to confirm which surfaces remain before further cleanup.
 
 Prefer `fill` on a fresh editable ref for safe text-entry checks. Keyboard `press` can fail with `AXRaise` on sheets or
 Settings. Native search fields can temporarily replace the snapshot root with a suggestions menu and may never become

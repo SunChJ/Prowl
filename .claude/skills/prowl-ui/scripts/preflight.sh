@@ -3,7 +3,7 @@
 set -u
 set -o pipefail
 
-minimum_version="0.1.3"
+minimum_version="0.1.4"
 
 skip() {
   local reason="$1"
