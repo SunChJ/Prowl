@@ -7,15 +7,11 @@ import Foundation
 nonisolated enum HandoffBriefing: String, Equatable, Sendable {
   /// Agent-authored brief supplied inline with the command (`--brief`).
   case inline
-  /// Brief collected by resuming the source session headlessly (fallback).
-  case fork
-  /// Intentionally context-only (`--no-brief`, or no resumable source).
+  /// Intentionally context-only (`--no-brief`).
   case none
-  /// A fork was attempted and failed; the transition degraded to context-only.
-  case failed
 
   /// A validated briefing was written for this outcome.
-  var wroteBriefing: Bool { self == .inline || self == .fork }
+  var wroteBriefing: Bool { self == .inline }
 }
 
 /// On-disk store for the cross-agent handoff artifact that lives under a

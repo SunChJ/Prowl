@@ -28,6 +28,14 @@ struct AgentSessionResolverTests {
           "019f4f1b-3650-7661-a56d-351f02f01139"
         )
       ),
+      (
+        .omp,
+        (
+          "/Users/me/.omp/agent/sessions/-Sync-github-App/"
+            + "2026-08-01T12-00-00-000Z_019fa3e9-d625-7000-87d0-f3b1cfbe7d49.jsonl",
+          "019fa3e9-d625-7000-87d0-f3b1cfbe7d49"
+        )
+      ),
       (.gemini, ("/Users/me/.gemini/tmp/app/chats/session-2fab0218.jsonl", "2fab0218")),
       (
         .cursor,

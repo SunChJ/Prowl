@@ -60,5 +60,7 @@ command-palette / active-agents / handoff 与 `docs/README.md` 索引。
    `AgentResumeRequest` 未增加环境字段——填充它需要 handoff 的结构化请求改造
    (正是计划明确推迟的双路径工程)。当前从绑定 pane 发起 handoff 时,briefing
    resume 会找不到 session 并优雅降级为 context-only。已知且可接受。
+   (2026-08-01 追记:[047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md)
+   已删除 briefing resume;该偏差不再存在。)
 3. **Settings 列表排序用上下移动(右键菜单)而非拖拽**:Form 内拖拽在 macOS 上
    体验不佳;顺序语义(兜底优先级)不受影响。

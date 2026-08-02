@@ -1,5 +1,9 @@
 # 047.004 — Inline-First Handoff Redesign
 
+> Current-state note (2026-08-01): the resume-fork fallback described below
+> was removed by [047.006](006-remove-fork-briefing.md). The inline source-agent
+> path remains the only briefing-producing path.
+
 | | |
 | --- | --- |
 | **Status** | Implemented |

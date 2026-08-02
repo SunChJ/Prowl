@@ -5,6 +5,8 @@ import Testing
 struct AgentClassifierTests {
   @Test func identifiesDirectAgentProcessNames() {
     #expect(identifyAgent(processName: "pi") == .pi)
+    #expect(identifyAgent(processName: "omp") == .omp)
+    #expect(identifyAgent(processName: "oh-my-pi") == .omp)
     #expect(identifyAgent(processName: "claude") == .claude)
     #expect(identifyAgent(processName: "claude-code") == .claude)
     #expect(identifyAgent(processName: "codex") == .codex)
@@ -124,8 +126,8 @@ struct AgentClassifierTests {
   }
 
   @Test func identifiesOhMyPiCommandNames() throws {
-    #expect(identifyAgent(processName: "omp") == .pi)
-    #expect(identifyAgent(processName: "oh-my-pi") == .pi)
+    #expect(identifyAgent(processName: "omp") == .omp)
+    #expect(identifyAgent(processName: "oh-my-pi") == .omp)
 
     let job = ForegroundJob(
       processGroupID: 42,
@@ -140,7 +142,7 @@ struct AgentClassifierTests {
     )
 
     let result = try #require(identifyAgentInJob(job))
-    #expect(result.agent == .pi)
+    #expect(result.agent == .omp)
     #expect(result.name == "omp")
     #expect(result.process.pid == 100)
   }

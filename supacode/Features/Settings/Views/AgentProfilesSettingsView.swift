@@ -34,7 +34,7 @@ struct AgentProfilesSettingsView: View {
       HStack(spacing: 8) {
         Menu {
           ForEach(AgentProfileRuntime.allCases) { runtime in
-            Button(AgentRuntimeAdapterRegistry.displayName(for: runtime.agent)) {
+            Button(AgentRuntimeAdapterRegistry.displayName(for: runtime)) {
               store.send(.addProfile(runtime))
             }
           }
@@ -94,7 +94,7 @@ struct AgentProfilesSettingsView: View {
           .help("Uses a dedicated home with its own account")
       }
       Spacer()
-      Text(AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent))
+      Text(AgentRuntimeAdapterRegistry.displayName(for: profile.runtime))
         .foregroundStyle(.secondary)
         .help("Edit this profile")
     }

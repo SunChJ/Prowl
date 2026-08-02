@@ -1,5 +1,9 @@
 # 047.005 — HUD Request Ownership and Commit Boundary
 
+> Current-state note (2026-08-01): [047.006](006-remove-fork-briefing.md)
+> removed the fork collection phase. Request ownership and the non-cancellable
+> persistence boundary remain; Context Only is now the sole HUD fallback.
+
 | | |
 | --- | --- |
 | **Status** | Implemented |

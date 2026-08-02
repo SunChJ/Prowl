@@ -420,3 +420,6 @@ agent 列表不变。
   action 的 Launch Agent 条目;`prowl` CLI 的 profile 感知缓行;model 与 effort 同构
   为自由字符串 + 建议列表;推荐解析不考虑 CLI 可用性(灰显示因,不静默改推);不新增
   profile 相关 analytics。
+- 2026-08-01 — Handoff 的 briefing resume/fork 已删除;Profile 环境和 home
+  只需沿 destination launch 传播,不再规划 `AgentResumeRequest` 双路径。见
+  [047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md)。
