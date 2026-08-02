@@ -18,16 +18,16 @@ struct TranscriptFragmentCacheTests {
 
     let first = cache.fragments(for: target) {
       loads += 1
-      return ["parsed fragment"]
+      return [.init(text: "parsed fragment")]
     }
     let second = cache.fragments(for: target) {
       loads += 1
-      return ["should not be reached"]
+      return [.init(text: "should not be reached")]
     }
 
     #expect(loads == 1)
-    #expect(first == ["parsed fragment"])
-    #expect(second == ["parsed fragment"])
+    #expect(first?.map(\.text) == ["parsed fragment"])
+    #expect(second?.map(\.text) == ["parsed fragment"])
   }
 
   @Test func reloadsWhenTheFileIsAppendedTo() {
@@ -36,15 +36,15 @@ struct TranscriptFragmentCacheTests {
 
     _ = cache.fragments(for: key("/tmp/a.jsonl", 100)) {
       loads += 1
-      return ["old"]
+      return [.init(text: "old")]
     }
     let updated = cache.fragments(for: key("/tmp/a.jsonl", 101)) {
       loads += 1
-      return ["new"]
+      return [.init(text: "new")]
     }
 
     #expect(loads == 2)
-    #expect(updated == ["new"])
+    #expect(updated?.map(\.text) == ["new"])
   }
 
   @Test func doesNotCacheAnUnreadableTail() {
@@ -58,27 +58,27 @@ struct TranscriptFragmentCacheTests {
     }
     let recovered = cache.fragments(for: target) {
       loads += 1
-      return ["now readable"]
+      return [.init(text: "now readable")]
     }
 
     // Caching the failure would keep a briefly unreadable transcript excluded
     // from every later match.
     #expect(loads == 2)
     #expect(missing == nil)
-    #expect(recovered == ["now readable"])
+    #expect(recovered?.map(\.text) == ["now readable"])
   }
 
   @Test func replacesAnOlderVersionOfTheSamePathImmediately() {
     var cache = TranscriptFragmentCache()
-    _ = cache.fragments(for: key("/tmp/busy.jsonl", 100)) { ["v1"] }
-    _ = cache.fragments(for: key("/tmp/busy.jsonl", 101)) { ["v2"] }
+    _ = cache.fragments(for: key("/tmp/busy.jsonl", 100)) { [.init(text: "v1")] }
+    _ = cache.fragments(for: key("/tmp/busy.jsonl", 101)) { [.init(text: "v2")] }
 
     #expect(cache.count == 1)
   }
 
   @Test func dropsAnOlderVersionWhenLoadingTheNewVersionFails() {
     var cache = TranscriptFragmentCache()
-    _ = cache.fragments(for: key("/tmp/busy.jsonl", 100)) { ["v1"] }
+    _ = cache.fragments(for: key("/tmp/busy.jsonl", 100)) { [.init(text: "v1")] }
 
     #expect(cache.fragments(for: key("/tmp/busy.jsonl", 101)) { nil } == nil)
     #expect(cache.count == 0)
@@ -89,20 +89,20 @@ struct TranscriptFragmentCacheTests {
     let first = key("/tmp/first.jsonl", 100)
     let second = key("/tmp/second.jsonl", 100)
     let third = key("/tmp/third.jsonl", 100)
-    _ = cache.fragments(for: first) { ["first"] }
-    _ = cache.fragments(for: second) { ["second"] }
-    _ = cache.fragments(for: first) { ["not reached"] }
-    _ = cache.fragments(for: third) { ["third"] }
+    _ = cache.fragments(for: first) { [.init(text: "first")] }
+    _ = cache.fragments(for: second) { [.init(text: "second")] }
+    _ = cache.fragments(for: first) { [.init(text: "not reached")] }
+    _ = cache.fragments(for: third) { [.init(text: "third")] }
 
     var firstReloads = 0
     _ = cache.fragments(for: first) {
       firstReloads += 1
-      return ["first reloaded"]
+      return [.init(text: "first reloaded")]
     }
     var secondReloads = 0
     _ = cache.fragments(for: second) {
       secondReloads += 1
-      return ["second reloaded"]
+      return [.init(text: "second reloaded")]
     }
 
     #expect(firstReloads == 0, "A cache hit must make the entry most recently used")
@@ -117,7 +117,7 @@ struct TranscriptFragmentCacheTests {
     for _ in 0..<2 {
       _ = cache.fragments(for: target) {
         loads += 1
-        return ["four"]
+        return [.init(text: "four")]
       }
     }
 
@@ -130,24 +130,41 @@ struct TranscriptFragmentCacheTests {
     let first = key("a", 100)
     let second = key("b", 100)
     let third = key("c", 100)
-    _ = cache.fragments(for: first) { ["1234"] }
-    _ = cache.fragments(for: second) { ["1234"] }
-    _ = cache.fragments(for: first) { ["not reached"] }
-    _ = cache.fragments(for: third) { ["1234"] }
+    _ = cache.fragments(for: first) { [.init(text: "1234")] }
+    _ = cache.fragments(for: second) { [.init(text: "1234")] }
+    _ = cache.fragments(for: first) { [.init(text: "not reached")] }
+    _ = cache.fragments(for: third) { [.init(text: "1234")] }
 
     var firstReloads = 0
     _ = cache.fragments(for: first) {
       firstReloads += 1
-      return ["1234"]
+      return [.init(text: "1234")]
     }
     var secondReloads = 0
     _ = cache.fragments(for: second) {
       secondReloads += 1
-      return ["1234"]
+      return [.init(text: "1234")]
     }
 
     #expect(firstReloads == 0)
     #expect(secondReloads == 1)
+  }
+
+  @Test func fragmentPrecomputesCountAndOnlyASuffixWorthTesting() {
+    let short = TranscriptFragmentCache.Fragment(text: String(repeating: "a", count: 80))
+    #expect(short.characterCount == 80)
+    // At or below the window the suffix would equal the whole fragment, so the
+    // scoring loop must not be handed a second, identical search to run.
+    #expect(short.suffix == nil)
+
+    let long = TranscriptFragmentCache.Fragment(text: String(repeating: "b", count: 81))
+    #expect(long.characterCount == 81)
+    #expect(long.suffix?.count == 80)
+
+    // `characterCount` must be the grapheme count `String.count` reports, not a
+    // byte or scalar count, because the score derives from it.
+    let emoji = TranscriptFragmentCache.Fragment(text: "e\u{0301}moji 👩‍👩‍👧‍👦 test")
+    #expect(emoji.characterCount == emoji.text.count)
   }
 
   @Test func bestMatchServesASecondCallFromTheCache() throws {

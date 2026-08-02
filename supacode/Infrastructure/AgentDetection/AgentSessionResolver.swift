@@ -85,8 +85,34 @@ nonisolated struct TranscriptFragmentCache: Sendable {
     let modifiedAt: Date
   }
 
+  /// One normalized transcript fragment, with the two derived values scoring
+  /// needs. Both are precomputed because `String.count` walks graphemes and
+  /// `suffix` allocates — costs that would otherwise be paid per fragment on
+  /// every match, for text that never changes.
+  struct Fragment: Sendable, Equatable {
+    let text: String
+    let characterCount: Int
+    /// The trailing 80 characters, present only when the fragment is longer
+    /// than that. A shorter fragment's suffix is the fragment itself, so
+    /// testing it would repeat the full-text test verbatim.
+    let suffix: String?
+
+    init(text: String) {
+      self.text = text
+      let count = text.count
+      characterCount = count
+      suffix = count > 80 ? String(text.suffix(80)) : nil
+    }
+
+    /// What this fragment costs the retention budget. `suffix` is a separate
+    /// allocation rather than a view into `text`, so it is counted too.
+    var retainedUTF8Bytes: Int {
+      text.utf8.count + (suffix?.utf8.count ?? 0)
+    }
+  }
+
   private struct Entry: Sendable {
-    let fragments: [String]
+    let fragments: [Fragment]
     let retainedUTF8Bytes: Int
     var lastAccess: UInt64
   }
@@ -110,7 +136,7 @@ nonisolated struct TranscriptFragmentCache: Sendable {
   /// Returns the cached fragments for `key`, otherwise stores and returns
   /// `load()`. A nil `load()` is deliberately not cached: an unreadable tail is
   /// transient, and caching the failure would keep a recovered file excluded.
-  mutating func fragments(for key: Key, load: () -> [String]?) -> [String]? {
+  mutating func fragments(for key: Key, load: () -> [Fragment]?) -> [Fragment]? {
     accessCounter &+= 1
     if var cached = entries[key] {
       cached.lastAccess = accessCounter
@@ -130,7 +156,7 @@ nonisolated struct TranscriptFragmentCache: Sendable {
     let byteCount =
       key.path.utf8.count
       + loaded.reduce(into: 0) { count, fragment in
-        count += fragment.utf8.count
+        count += fragment.retainedUTF8Bytes
       }
     guard maxEntryCount > 0, byteCount <= maxRetainedUTF8Bytes else { return loaded }
     entries[key] = Entry(
@@ -232,11 +258,41 @@ actor AgentSessionResolver {
     return (session, nil)
   }
 
+  /// One directory walk, reusable by every pane that scans the same root.
+  ///
+  /// Panes resolve independently but overwhelmingly share roots: every agent in
+  /// one project enumerates that project's transcript directory. The walk is the
+  /// dominant filesystem cost and grows with the number of files on disk rather
+  /// than the number of panes, so repeating it per pane is pure duplication.
+  /// Files are stored unfiltered because callers apply their own
+  /// process-start threshold.
+  private struct RootScan {
+    let scannedAt: Date
+    /// `nil` when the walk exceeded its visit limit — see `recentFiles`.
+    let files: [(url: URL, modifiedAt: Date)]?
+  }
+
+  /// The visit limit is part of the key: a walk made under a looser limit may
+  /// have kept entries a stricter caller would have refused to trust, so it
+  /// cannot answer on that caller's behalf.
+  private struct RootScanKey: Hashable {
+    let root: URL
+    let visitLimit: Int
+  }
+
+  /// How long one root's walk may be replayed. This must not outlive the narrow
+  /// one-second retry used to confirm a medium-confidence sole candidate: that
+  /// confirmation needs a fresh enumeration so a newly created competing
+  /// transcript can prevent a false attribution. One second still collapses the
+  /// burst of panes that resolve at nearly the same time.
+  private static let rootScanLifetime: TimeInterval = 1
+
   private var cache: [CacheKey: CachedResult] = [:]
   /// Transcript parsing depends only on file identity, not on the process doing
   /// the match. Sharing one bounded cache avoids retaining duplicate 128 KiB
   /// tails for every pane that consults the same candidate set.
   private var fragmentCache = TranscriptFragmentCache()
+  private var rootScans: [RootScanKey: RootScan] = [:]
   private let fileManager: FileManager
   private let homeDirectory: URL
 
@@ -465,7 +521,8 @@ actor AgentSessionResolver {
         profile: profile,
         processStartedAt: processStartedAt,
         configRoot: configRoot,
-        visitLimit: visitLimit
+        visitLimit: visitLimit,
+        now: now
       )
     else {
       // A truncated primary scan voids this whole round: the fallback tree is
@@ -487,7 +544,8 @@ actor AgentSessionResolver {
       profile: profile,
       processStartedAt: processStartedAt,
       configRoot: configRoot,
-      visitLimit: visitLimit
+      visitLimit: visitLimit,
+      now: now
     )
     return (fallback ?? [], true)
   }
@@ -508,7 +566,8 @@ actor AgentSessionResolver {
     profile: AgentSessionProfile,
     processStartedAt: Date,
     configRoot: URL? = nil,
-    visitLimit: Int = 20_000
+    visitLimit: Int = 20_000,
+    now: Date = Date()
   ) -> [AgentSessionCandidate]? {
     var collected: [AgentSessionCandidate] = []
     for root in roots {
@@ -516,7 +575,8 @@ actor AgentSessionResolver {
         let files = recentFiles(
           in: root,
           modifiedAfter: processStartedAt.addingTimeInterval(-2),
-          visitLimit: visitLimit
+          visitLimit: visitLimit,
+          now: now
         )
       else { return nil }
       for item in files {
@@ -563,11 +623,40 @@ actor AgentSessionResolver {
 
   /// Returns nil when the enumeration exceeded `visitLimit`: a partial view
   /// must void the whole scan rather than feed uniqueness checks.
+  ///
+  /// The walk itself is shared through `rootScans`; only the threshold filter is
+  /// per caller, so two panes with different process start times still reuse one
+  /// enumeration.
   private func recentFiles(
     in root: URL,
     modifiedAfter threshold: Date,
-    visitLimit: Int
+    visitLimit: Int,
+    now: Date
   ) -> [(url: URL, modifiedAt: Date)]? {
+    guard let files = scannedFiles(in: root, visitLimit: visitLimit, now: now) else { return nil }
+    return files.filter { $0.modifiedAt >= threshold }
+  }
+
+  /// Every regular file under `root` with its modification date, replayed from
+  /// `rootScans` while the previous walk is still fresh.
+  private func scannedFiles(
+    in root: URL,
+    visitLimit: Int,
+    now: Date
+  ) -> [(url: URL, modifiedAt: Date)]? {
+    let key = RootScanKey(root: root, visitLimit: visitLimit)
+    if let cached = rootScans[key], now.timeIntervalSince(cached.scannedAt) < Self.rootScanLifetime {
+      return cached.files
+    }
+    let files = enumerateFiles(in: root, visitLimit: visitLimit)
+    rootScans[key] = RootScan(scannedAt: now, files: files)
+    if rootScans.count > 64 {
+      rootScans = rootScans.filter { now.timeIntervalSince($0.value.scannedAt) < Self.rootScanLifetime }
+    }
+    return files
+  }
+
+  private func enumerateFiles(in root: URL, visitLimit: Int) -> [(url: URL, modifiedAt: Date)]? {
     guard
       let enumerator = fileManager.enumerator(
         at: root,
@@ -586,8 +675,7 @@ actor AgentSessionResolver {
       }
       guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
         values.isRegularFile == true,
-        let modifiedAt = values.contentModificationDate,
-        modifiedAt >= threshold
+        let modifiedAt = values.contentModificationDate
       else { continue }
       result.append((url, modifiedAt))
     }
@@ -629,10 +717,12 @@ nonisolated enum AgentSessionFingerprintMatcher {
           let comparable = comparableFragments(at: path, modifiedAt: candidate.modifiedAt, cache: &cache)
         else { continue }
         if !comparable.isEmpty { sessionScoreable = true }
-        let score = comparable.reduce(0) { best, normalized in
-          if screen.contains(normalized) { return max(best, min(200, normalized.count + 80)) }
-          let suffix = String(normalized.suffix(80))
-          return suffix.count >= 24 && screen.contains(suffix) ? max(best, suffix.count) : best
+        let score = comparable.reduce(0) { best, fragment in
+          if screen.contains(fragment.text) { return max(best, min(200, fragment.characterCount + 80)) }
+          // Only a fragment longer than the window has a suffix distinct from
+          // itself; for the rest the full-text test above already answered.
+          guard let suffix = fragment.suffix else { return best }
+          return screen.contains(suffix) ? max(best, 80) : best
         }
         if score > 0 { scored.append((candidate, score)) }
       }
@@ -662,7 +752,7 @@ nonisolated enum AgentSessionFingerprintMatcher {
     at path: URL,
     modifiedAt: Date,
     cache: inout TranscriptFragmentCache
-  ) -> [String]? {
+  ) -> [TranscriptFragmentCache.Fragment]? {
     cache.fragments(for: TranscriptFragmentCache.Key(path: path.path, modifiedAt: modifiedAt)) {
       guard let data = tailData(at: path) else { return nil }
       // Lossy decoding is deliberate: the tail window can start mid-character
@@ -670,8 +760,8 @@ nonisolated enum AgentSessionFingerprintMatcher {
       // whole tail instead of just the cut first line.
       // swiftlint:disable:next optional_data_string_conversion
       return transcriptStrings(String(decoding: data, as: UTF8.self))
-        .map(normalize)
-        .filter { $0.count >= 12 }
+        .map { TranscriptFragmentCache.Fragment(text: normalize($0)) }
+        .filter { $0.characterCount >= 12 }
     }
   }
 
