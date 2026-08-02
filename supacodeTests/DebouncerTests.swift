@@ -16,6 +16,7 @@ struct DebouncerTests {
     #expect(!fired)
 
     await advance(clock, by: .milliseconds(1))
+    await settle { fired }
     #expect(fired)
   }
 
@@ -33,6 +34,7 @@ struct DebouncerTests {
     #expect(!secondFired)
 
     await advance(clock, by: .milliseconds(40))
+    await settle { secondFired }
     #expect(!firstFired)
     #expect(secondFired)
   }
@@ -62,6 +64,7 @@ struct DebouncerTests {
     #expect(!debouncer.isIdle)
 
     await advance(clock, by: .milliseconds(100))
+    await settle { debouncer.isIdle }
     #expect(debouncer.isIdle)
 
     debouncer.schedule {}
@@ -84,6 +87,7 @@ struct KeyedDebouncerTests {
     debouncer.schedule("a") { fired.append("a2") }
 
     await advance(clock, by: .milliseconds(100))
+    await settle { fired.count == 2 }
     #expect(fired.sorted() == ["a2", "b"])
   }
 
@@ -94,6 +98,7 @@ struct KeyedDebouncerTests {
 
     debouncer.schedule("a", after: .milliseconds(100)) { fired = true }
     await advance(clock, by: .milliseconds(100))
+    await settle { fired }
 
     #expect(fired)
   }
@@ -107,6 +112,7 @@ struct KeyedDebouncerTests {
     debouncer.schedule("b") { fired.append("b") }
     debouncer.cancel("a")
     await advance(clock, by: .milliseconds(100))
+    await settle { !fired.isEmpty }
 
     #expect(fired == ["b"])
   }
@@ -121,6 +127,7 @@ struct KeyedDebouncerTests {
     debouncer.schedule("drop-2") { fired.append("drop-2") }
     debouncer.cancelAll { $0.hasPrefix("drop") }
     await advance(clock, by: .milliseconds(100))
+    await settle { !fired.isEmpty }
 
     #expect(fired == ["keep"])
   }
@@ -144,9 +151,25 @@ private func advance(_ clock: TestClock<Duration>, by duration: Duration) async 
   await clock.advance(by: duration)
   // Deadlines are anchored at `schedule` time, so a debounce task that starts
   // after the advance still resumes immediately — but it needs a few executor
-  // hops to run its continuation on a loaded machine. A short yield burst
-  // keeps that deterministic without real-time sleeping.
+  // hops to run its continuation. The short burst gives "never fires"
+  // assertions a fair window without real-time sleeping; positive assertions
+  // must not rely on it and wait via `settle` instead.
   for _ in 0..<10 {
     await Task.yield()
+  }
+}
+
+// Yields the main actor until `condition` holds. A fixed yield count is not
+// enough for positive assertions: when parallel suites contend for the main
+// actor, a resumed debounce task can need arbitrarily many hops before it runs
+// (the `isIdleTracksThePendingWindow` CI flake). The budget only bounds a
+// genuine regression, which then fails the following `#expect` instead of
+// hanging the test.
+@MainActor
+private func settle(until condition: () -> Bool) async {
+  var budget = 10_000
+  while budget > 0, !condition() {
+    await Task.yield()
+    budget -= 1
   }
 }
