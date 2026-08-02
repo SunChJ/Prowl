@@ -103,4 +103,6 @@ optimized settings.)
 
 ## Amendments
 
-(append `- Updated 2026-MM-DD: ... — see [00N-topic.md](00N-topic.md)` lines here)
+- Updated 2026-08-02: added the explicit-invocation `run-benchmark` skill so agents can
+  run the layers with the right comparison and a persistent report — see
+  [002-benchmark-runbook-skill.md](002-benchmark-runbook-skill.md)
