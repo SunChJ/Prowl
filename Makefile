@@ -351,6 +351,37 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 test-cli-integration: # Run CLI integration tests via SwiftPM
 	swift test --filter ProwlCLIIntegrationTests
 
+bench: ensure-ghostty embed-cli-debug embed-docs # Run performance benchmarks optimized (-O); append absolute medians to the bench log
+	@set -euo pipefail; \
+	bench_log_dir="$$HOME/Library/Logs/Prowl/measurements/bench"; \
+	mkdir -p "$$bench_log_dir"; \
+	bench_log="$$bench_log_dir/bench.jsonl"; \
+	touch "$$bench_log"; \
+	lines_before="$$(wc -l < "$$bench_log")"; \
+	TEST_RUNNER_PROWL_BENCH_REPORT=1 \
+	TEST_RUNNER_PROWL_BENCH_GIT_SHA="$$(git rev-parse --short HEAD)" \
+	TEST_RUNNER_PROWL_BENCH_LOG_DIR="$$bench_log_dir" \
+	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS,arch=$$(uname -m)" \
+		-configuration Release \
+		-only-testing:supacodeTests/PerformanceBenchmarks \
+		-parallel-testing-enabled NO \
+		-derivedDataPath "$(CURRENT_MAKEFILE_DIR)/build/bench-derived-data" \
+		CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation \
+		-clonedSourcePackagesDirPath $(SPM_CACHE_DIR) \
+		ENABLE_TESTABILITY=YES 2>&1 | mise exec -- xcsift -w --format toon; \
+	echo; \
+	echo "new bench records ($$bench_log):"; \
+	tail -n "+$$((lines_before + 1))" "$$bench_log" | jq -c .
+
+measure-cpu: # Steady-state CPU + per-symbol attribution of the running Prowl Debug app (PROWL_PID=... to target)
+	@bash scripts/measure-agent-detection-cpu.sh
+
+capture-spike: # Sample the running Prowl Debug app the moment CPU crosses a threshold (THRESHOLD=150 DURATION=10)
+	@bash scripts/capture-cpu-spike.sh $(or $(THRESHOLD),150) $(or $(DURATION),10)
+
+measure-titles: # Black-box check that animated tab titles stay coalesced to ~1 change/s (works on Release builds)
+	@bash scripts/measure-title-coalescing.sh
+
 format: # Format all Swift code with swift-format (full-tree cleanup)
 	swift-format -p --in-place --recursive --configuration ./.swift-format.json supacode supacodeTests
 
