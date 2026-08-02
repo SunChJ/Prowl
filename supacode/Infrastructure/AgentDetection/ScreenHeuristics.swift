@@ -8,6 +8,8 @@ extension DetectedAgent {
     switch self {
     case .pi:
       return detectPi(screen)
+    case .omp:
+      return detectOMP(screen)
     case .claude:
       return detectClaude(screen)
     case .codex:
@@ -58,13 +60,19 @@ nonisolated private func recentLines(_ content: String, limit: Int) -> String {
 }
 
 nonisolated private func detectPi(_ content: String) -> AgentRawState {
-  if hasPiAskPrompt(content) {
-    return .blocked
-  }
-  return hasPiWorkingLine(content) ? .working : .idle
+  content.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
+    isPiWorkingText(line.trimmingCharacters(in: .whitespaces))
+  } ? .working : .idle
 }
 
-nonisolated private func hasPiAskPrompt(_ content: String) -> Bool {
+nonisolated private func detectOMP(_ content: String) -> AgentRawState {
+  if hasOMPAskPrompt(content) {
+    return .blocked
+  }
+  return hasOMPWorkingLine(content) ? .working : .idle
+}
+
+nonisolated private func hasOMPAskPrompt(_ content: String) -> Bool {
   let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
   return lines.contains { line in
     let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -72,12 +80,12 @@ nonisolated private func hasPiAskPrompt(_ content: String) -> Bool {
   }
 }
 
-nonisolated private func hasPiWorkingLine(_ content: String) -> Bool {
+nonisolated private func hasOMPWorkingLine(_ content: String) -> Bool {
   content.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     return isPiWorkingText(trimmed)
-      || hasPiInterruptHint(trimmed)
-      || hasPiBrailleSpinner(trimmed)
+      || hasOMPInterruptHint(trimmed)
+      || hasOMPBrailleSpinner(trimmed)
   }
 }
 
@@ -85,7 +93,7 @@ nonisolated private func isPiWorkingText(_ line: String) -> Bool {
   line == "Working..." || line == "Working…" || line == "Interrupting…"
 }
 
-nonisolated private func hasPiInterruptHint(_ line: String) -> Bool {
+nonisolated private func hasOMPInterruptHint(_ line: String) -> Bool {
   let interruptHints = ["⟦esc⟧", "⟨esc⟩", "[esc]"]
   return interruptHints.contains { hint in
     guard line.hasSuffix(hint) else { return false }
@@ -93,7 +101,7 @@ nonisolated private func hasPiInterruptHint(_ line: String) -> Bool {
   }
 }
 
-nonisolated private func hasPiBrailleSpinner(_ line: String) -> Bool {
+nonisolated private func hasOMPBrailleSpinner(_ line: String) -> Bool {
   guard let first = line.unicodeScalars.first else { return false }
   let rest = String(line.unicodeScalars.dropFirst())
   return (0x2800...0x28FF).contains(Int(first.value))

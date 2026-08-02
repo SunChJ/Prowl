@@ -56,7 +56,7 @@ struct AgentProfilesFeature {
       case .addProfile(let runtime):
         let profile = AgentProfile(
           id: uuid(),
-          name: AgentRuntimeAdapterRegistry.displayName(for: runtime.agent),
+          name: AgentRuntimeAdapterRegistry.displayName(for: runtime),
           runtime: runtime
         )
         state.settings.agentProfiles.append(profile)
@@ -130,7 +130,7 @@ struct AgentProfilesFeature {
       if profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         profile.name =
           persisted.agentProfiles.first { $0.id == profile.id }?.name
-          ?? AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
+          ?? AgentRuntimeAdapterRegistry.displayName(for: profile.runtime)
       }
       return profile
     }

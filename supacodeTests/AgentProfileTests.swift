@@ -4,6 +4,13 @@ import Testing
 @testable import supacode
 
 struct AgentProfileTests {
+  private struct HomeRelocationExpectation {
+    let runtime: AgentProfileRuntime
+    let environmentName: String?
+    let relativeArguments: [String]
+    let sessionRootComponent: String
+  }
+
   private func profile(
     id: UUID = UUID(),
     name: String = "Codex · Work",
@@ -80,6 +87,20 @@ struct AgentProfileTests {
     let fallback = AgentProfile(name: "Claude Code", runtime: .claude)
     let expected = try #require(CommandIconMap.iconForFirstToken(fallback.runtime.agent.iconLookupToken))
     #expect(AgentProfileIconResolver.source(for: fallback.iconSource) == expected)
+
+    let omp = AgentProfile(name: "Oh My Pi", runtime: .omp)
+    let ompExpected = try #require(CommandIconMap.iconForFirstToken("omp"))
+    #expect(AgentProfileIconResolver.source(for: omp.iconSource) == ompExpected)
+  }
+
+  @Test func everyRuntimeRoundTripsWithIndependentPiAndOMPAgents() throws {
+    for runtime in AgentProfileRuntime.allCases {
+      let encoded = try JSONEncoder().encode(AgentProfile(name: runtime.rawValue, runtime: runtime))
+      let decoded = try JSONDecoder().decode(AgentProfile.self, from: encoded)
+      #expect(decoded.runtime == runtime)
+    }
+    #expect(AgentProfileRuntime.pi.agent == .pi)
+    #expect(AgentProfileRuntime.omp.agent == .omp)
   }
 
   // MARK: - Recommendation
@@ -157,6 +178,86 @@ struct AgentProfileTests {
   }
 
   // MARK: - Launch plan
+
+  @Test func environmentAndArgumentRelocationsCompileToManagedHomes() throws {
+    let base = URL(fileURLWithPath: "/base/agent-profiles", isDirectory: true)
+    let expected = [
+      HomeRelocationExpectation(
+        runtime: .claude, environmentName: "CLAUDE_CONFIG_DIR", relativeArguments: [], sessionRootComponent: ""),
+      HomeRelocationExpectation(
+        runtime: .codex, environmentName: "CODEX_HOME", relativeArguments: [], sessionRootComponent: ""),
+      HomeRelocationExpectation(
+        runtime: .gemini, environmentName: "GEMINI_CLI_HOME", relativeArguments: [], sessionRootComponent: ".gemini"),
+      HomeRelocationExpectation(
+        runtime: .cline, environmentName: nil,
+        relativeArguments: ["--config", "config", "--data-dir", "data", "--hooks-dir", "hooks"],
+        sessionRootComponent: "data"),
+      HomeRelocationExpectation(
+        runtime: .copilot, environmentName: "COPILOT_HOME", relativeArguments: [], sessionRootComponent: ""),
+      HomeRelocationExpectation(
+        runtime: .qoder, environmentName: nil, relativeArguments: ["--config-dir", ""], sessionRootComponent: ""),
+      HomeRelocationExpectation(
+        runtime: .qwen, environmentName: "QWEN_HOME", relativeArguments: [], sessionRootComponent: ""),
+      HomeRelocationExpectation(
+        runtime: .pi, environmentName: "PI_CODING_AGENT_DIR", relativeArguments: [], sessionRootComponent: ""),
+      HomeRelocationExpectation(
+        runtime: .omp, environmentName: "PI_CODING_AGENT_DIR", relativeArguments: [], sessionRootComponent: ""),
+    ]
+
+    for expectation in expected {
+      var bound = AgentProfile(
+        name: expectation.runtime.rawValue,
+        runtime: expectation.runtime,
+        bindsDedicatedHome: true
+      )
+      bound.extraArguments = "--config-dir /tmp/ignored"
+      let plan = try AgentProfileLaunchPlanner.plan(for: bound, homeBaseDirectory: base)
+      let home = try #require(plan.dedicatedHome)
+      let sessionRoot = try #require(plan.sessionConfigRoot)
+
+      if let environmentName = expectation.environmentName {
+        #expect(
+          plan.commandEnvironmentTokens.first
+            == "\(environmentName)=\(AgentInvocation.shellQuote(AgentProfileLaunchPlanner.pathString(home)))"
+        )
+      } else {
+        #expect(plan.commandEnvironmentTokens.isEmpty)
+      }
+      let expectedRoot =
+        expectation.sessionRootComponent.isEmpty
+        ? home
+        : home.appending(path: expectation.sessionRootComponent)
+      #expect(
+        AgentProfileLaunchPlanner.pathString(sessionRoot)
+          == AgentProfileLaunchPlanner.pathString(expectedRoot)
+      )
+
+      if !expectation.relativeArguments.isEmpty {
+        let managedArguments = expectation.relativeArguments.map { component in
+          component.hasPrefix("--") || component.isEmpty
+            ? component
+            : AgentProfileLaunchPlanner.pathString(home.appending(path: component))
+        }
+        let suffix = managedArguments.map { $0.isEmpty ? AgentProfileLaunchPlanner.pathString(home) : $0 }
+        let tuiCount = expectation.runtime == .cline ? 1 : 0
+        #expect(plan.invocation.arguments.dropLast(tuiCount).suffix(suffix.count) == suffix[...])
+      }
+    }
+  }
+
+  @Test func unsupportedDedicatedHomesAreRejectedWithoutAFalseIsolationClaim() {
+    let unsupported: [AgentProfileRuntime] = [.cursor, .opencode, .kimi, .droid, .amp, .grok]
+
+    for runtime in unsupported {
+      let bound = AgentProfile(name: runtime.rawValue, runtime: runtime, bindsDedicatedHome: true)
+      #expect(throws: AgentProfileLaunchPlanError.accountIsolationUnsupported(runtime)) {
+        try AgentProfileLaunchPlanner.plan(
+          for: bound,
+          homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+        )
+      }
+    }
+  }
 
   @Test func purePresetPlanHasNoEnvironmentAndSplitsExtraArguments() throws {
     var preset = profile(name: "Codex · Deep")
@@ -423,6 +524,18 @@ struct AgentProfileTests {
     #expect(claude.effectiveExecutionMode == .followsExtraArguments)
     claude.executionMode = .unrestricted
     #expect(claude.effectiveExecutionMode == .unrestricted)
+
+    // Advanced arguments remain authoritative and intentionally unparsed.
+    // Keep the explicit picker warning conservative even when a later flag
+    // may override the generated least-restricted request.
+    var cline = profile(name: "Cline", runtime: .cline)
+    cline.executionMode = .unrestricted
+    cline.extraArguments = "--auto-approve false"
+    #expect(cline.effectiveExecutionMode == .unrestricted)
+
+    var piProfile = profile(name: "Pi", runtime: .pi)
+    piProfile.executionMode = .unrestricted
+    #expect(piProfile.effectiveExecutionMode == .standard)
   }
 
   @Test func physicalContainmentRejectsSymlinkLeafAndEscapingTargets() throws {

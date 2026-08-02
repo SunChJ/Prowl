@@ -105,3 +105,7 @@ cwd, which is weaker than the pid-anchored, ambiguity-safe native session identi
 - Updated 2026-07-21: HUD request ownership — injected requests now need an
   atomic single-transition claim, and fallback cancellation needs a visible commit
   boundary — see [005-hud-request-ownership](005-hud-request-ownership.md).
+- Updated 2026-08-01: removed the recorded-session Fork Briefing fallback and
+  its runtime resume layer. Briefing is now explicit (`--brief` / `--no-brief`),
+  and the HUD has only the deterministic Context Only fallback — see
+  [006-remove-fork-briefing](006-remove-fork-briefing.md).

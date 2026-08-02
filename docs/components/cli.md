@@ -118,8 +118,8 @@ prowl agents --json
 ```
 Each agent contains:
 - `id`: the pane/surface UUID, suitable for `--pane`.
-- `type`, `name`: normalized detector type and displayed command name. Aliases
-  such as `omp` are preserved in `name`.
+- `type`, `name`: normalized detector type and displayed command name. Pi uses
+  `pi`; Oh My Pi uses `omp`, with `oh-my-pi` preserved as a display alias.
 - `status`, `raw_state`: detected agent state. `status` is one of `blocked`,
   `working`, `done`, `idle`; `raw_state` is the lower-level detector state.
 - `last_changed_at`: ISO-8601 timestamp for the most recent state change.
@@ -132,7 +132,7 @@ Each agent contains:
   artifact), `confidence` (`exact`, `high`, or `medium`), and the evidence
   `source` (`open_file`, `process_log`, `transcript_match`, `recent_file`, or
   `store_record`). Ambiguous sessions are omitted instead of guessed. A
-  `medium` session id must not be used for automatic resume/fork without
+  `medium` session id must not be used for automatic resume without
   additional confirmation.
 
 `prowl agents` is read-only. To jump to or operate on an agent, resolve
@@ -266,16 +266,13 @@ regardless of UI focus. Outside any Prowl pane with no selector the command
 errors with `SOURCE_REQUIRED`; the focused pane is never guessed.
 
 **Briefing.** `--brief -` reads an inline agent-authored briefing from stdin
-(heredoc) — the standard self-handoff posture, and required for one: a
-brief-less self-handoff errors (`BRIEF_REQUIRED`) with a copy-pasteable
-example, and `--no-brief` is the explicit context-only escape. A briefing must
+(heredoc). Every handoff must provide it or use `--no-brief` as the explicit
+context-only escape; otherwise the command errors (`BRIEF_REQUIRED`) with a
+copy-pasteable example and zero side effects. A briefing must
 contain at least `## Objective`, `## Current State`, and `## Next Steps`; an
-invalid inline brief errors (`INVALID_BRIEF`) with **zero side effects**. For
-third-party sources with an exact/high-confidence claude/codex session, Prowl
-falls back to a side-effect-free session fork (Claude `--fork-session`, Codex
-`--ephemeral`, bounded to 2 minutes) to collect the briefing; a failed fork
-degrades the transition to context-only (`briefing=failed`) instead of
-blocking it.
+invalid inline brief errors (`INVALID_BRIEF`) with **zero side effects**. Prowl
+never resumes the source session or starts a hidden model turn, including when
+the caller targets another pane.
 
 - **`to <agent>`** — archives the current artifact to
   `.prowl/handoff/archive/<ts>-<from>-to-<to>.md` **first**, installs the
@@ -288,7 +285,7 @@ blocking it.
   verified Claude Code and Codex adapters for the destination launch only;
   model identifiers remain with their original agent family. Interactive
   launch is verified for `claude` and `codex`; `--no-launch` still archives +
-  saves and accepts the full detected-agent list: `pi`, `claude`, `codex`,
+  saves and accepts the full detected-agent list: `pi`, `omp`, `claude`, `codex`,
   `gemini`, `cursor-agent`, `cline`, `opencode`, `copilot`, `kimi`, `droid`,
   `amp`, `qodercli`, `qwen`, `grok`.
 - **`save`** — a deferred-handoff checkpoint: installs a fresh briefing
@@ -307,14 +304,14 @@ prowl handoff to codex --brief - <<'EOF'      # self-handoff with inline briefin
 …
 EOF
 prowl handoff save --brief - --note "eod checkpoint" <<'EOF' … EOF
-prowl handoff to claude --pane p7 --json      # hand off a third pane (fork fallback)
+prowl handoff to claude --pane p7 --no-brief --json  # third pane, generated context only
 ```
 
 The outgoing agent is whatever Prowl detects in the source pane (see
 `pane.agent` in [`list`](#prowl-list)). Response payload
 (`prowl.cli.handoff.v2`) includes `action`, `artifact_path`, `outgoing_agent`,
 `to_agent`, `repos`, `changed_file_count`, `archived_path`, `session_context`,
-`briefing` (`inline` / `fork` / `none` / `failed`), `has_briefing`, and
+`briefing` (`inline` / `none`), `has_briefing`, and
 `launched_pane`. `session_context` includes the generated excerpt path plus
 native `session_id` / `transcript_path` only when the source pane has
 unambiguous native-session evidence (the same identity exposed by

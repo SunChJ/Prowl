@@ -18,7 +18,7 @@ nonisolated enum AgentProfileAvailability {
     probedAvailable: Bool?,
     isRuntimeInstalled: (AgentProfileRuntime) -> Bool = isRuntimeInstalled
   ) -> String? {
-    let name = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
+    let name = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime)
     switch probedAvailable {
     case true?:
       return nil
