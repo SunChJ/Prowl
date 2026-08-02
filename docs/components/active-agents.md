@@ -34,6 +34,8 @@ Command Palette → "Toggle Active Agents Panel".
 - **Subtitle** — the agent's pane title (if `showActiveAgentTabTitles`) or branch
   name. The pane title is the surface's own terminal title, falling back to the
   tab title, so agents in different splits of one tab keep distinct subtitles.
+  Rapid title animation is coalesced to at most one visible update per second;
+  status, session, directory, and other row changes still appear immediately.
 - **Status pill** — one of:
 
 | Status | Meaning | Look |
