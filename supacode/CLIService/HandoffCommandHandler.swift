@@ -3,8 +3,7 @@
 import Foundation
 
 /// A handoff source resolved on the main actor: the runnable root to store the
-/// artifact under, the agent currently detected in that pane, and whether the
-/// pane belongs to the calling process itself.
+/// artifact under and the agent currently detected in that pane.
 struct HandoffResolvedTarget: Sendable, Equatable {
   let worktreeID: String
   let worktreeName: String
@@ -12,10 +11,7 @@ struct HandoffResolvedTarget: Sendable, Equatable {
   let paneID: String
   let outgoingAgent: String?
   let outgoingLaunchObservation: AgentLaunchObservation?
-  let outgoingSession: AgentSession?
   let sessionContext: HandoffStore.SessionContext?
-  /// The resolved source pane is the pane the calling `prowl` process runs in.
-  let isSelfHandoff: Bool
 }
 
 enum HandoffResolveError: Error {
@@ -50,9 +46,6 @@ final class HandoffCommandHandler: CommandHandler {
   typealias ResolveProvider =
     @MainActor (TargetSelector, pid_t?) -> Result<HandoffResolvedTarget, HandoffResolveError>
   typealias LaunchProvider = @MainActor (HandoffResolvedTarget, AgentStartRequest) -> HandoffLaunchedPane?
-  /// Resumes the source session headlessly and returns its reply text
-  /// (the fork briefing fallback).
-  typealias ForkProvider = @Sendable (AgentResumeRequest, URL) async throws -> String
   /// Announces a completed transition (`from`, `to`) for the launched pane.
   typealias LaunchNotifier = @MainActor (HandoffLaunchedPane, String, String) -> Void
   /// Announces every successful save/to so the UI can observe injected requests.
@@ -65,7 +58,6 @@ final class HandoffCommandHandler: CommandHandler {
 
   private let resolveProvider: ResolveProvider
   private let launchProvider: LaunchProvider
-  private let forkProvider: ForkProvider
   private let notifyLaunch: LaunchNotifier
   private let completionObserver: CompletionObserver
   private let requestAuthorizer: RequestAuthorizer
@@ -75,7 +67,6 @@ final class HandoffCommandHandler: CommandHandler {
   init(
     resolveProvider: @escaping ResolveProvider,
     launchProvider: @escaping LaunchProvider,
-    forkProvider: @escaping ForkProvider,
     notifyLaunch: @escaping LaunchNotifier = { _, _, _ in },
     completionObserver: @escaping CompletionObserver = { _ in },
     requestAuthorizer: @escaping RequestAuthorizer = { _ in true },
@@ -84,7 +75,6 @@ final class HandoffCommandHandler: CommandHandler {
   ) {
     self.resolveProvider = resolveProvider
     self.launchProvider = launchProvider
-    self.forkProvider = forkProvider
     self.notifyLaunch = notifyLaunch
     self.completionObserver = completionObserver
     self.requestAuthorizer = requestAuthorizer
@@ -131,7 +121,7 @@ final class HandoffCommandHandler: CommandHandler {
     }
 
     let briefingSource: HandoffBriefingSource
-    switch briefingDecision(for: input, target: target) {
+    switch briefingDecision(for: input) {
     case .source(let source):
       briefingSource = source
     case .rejected(let response):
@@ -175,36 +165,21 @@ final class HandoffCommandHandler: CommandHandler {
     case rejected(CommandResponse)
   }
 
-  /// Inline when provided, context-only when explicit, error for a brief-less
-  /// self-handoff (the author is on the command line — asking it to rerun with
-  /// `--brief` is the cheapest correct outcome), fork for third-party sources,
-  /// context-only when no safe fork exists.
-  private func briefingDecision(
-    for input: HandoffInput,
-    target: HandoffResolvedTarget
-  ) -> BriefingDecision {
+  /// Every caller must either provide the source-authored briefing or choose
+  /// context-only explicitly. Handoff never starts a hidden model turn.
+  private func briefingDecision(for input: HandoffInput) -> BriefingDecision {
     if let brief = input.brief {
       return .source(.inline(brief))
     }
     if input.contextOnly {
       return .source(.none)
     }
-    if target.isSelfHandoff {
-      return .rejected(
-        errorResponse(
-          code: CLIErrorCode.briefRequired,
-          message: Self.briefRequiredMessage(action: input.action, toAgent: input.toAgent)
-        )
+    return .rejected(
+      errorResponse(
+        code: CLIErrorCode.briefRequired,
+        message: Self.briefRequiredMessage(action: input.action, toAgent: input.toAgent)
       )
-    }
-    if let request = Self.forkRequest(
-      outgoingAgent: target.outgoingAgent,
-      session: target.outgoingSession,
-      observation: target.outgoingLaunchObservation
-    ) {
-      return .source(.fork(request))
-    }
-    return .source(.none)
+    )
   }
 
   // MARK: - save
@@ -354,7 +329,7 @@ final class HandoffCommandHandler: CommandHandler {
   }
 
   private func makeCoordinator(store: HandoffStore) -> HandoffCoordinator {
-    HandoffCoordinator(store: store, resume: forkProvider)
+    HandoffCoordinator(store: store)
   }
 
   // MARK: - Kickoff prompt
@@ -376,43 +351,6 @@ final class HandoffCommandHandler: CommandHandler {
     }
   }
 
-  // MARK: - Fork briefing (fallback)
-
-  nonisolated static func forkRequest(
-    outgoingAgent: String?,
-    session: AgentSession?,
-    observation: AgentLaunchObservation?
-  ) -> AgentResumeRequest? {
-    guard
-      let outgoingAgent,
-      let agent = DetectedAgent(rawValue: outgoingAgent),
-      let session,
-      session.confidence == .exact || session.confidence == .high,
-      AgentRuntimeAdapterRegistry.canResume(agent)
-    else {
-      return nil
-    }
-    return AgentResumeRequest(
-      agent: agent,
-      session: session,
-      prompt: forkBriefingPrompt(),
-      model: observation?.model
-    )
-  }
-
-  nonisolated static func forkBriefingPrompt() -> String {
-    "Prowl handoff briefing: another agent with none of your context will take over this task, "
-      + "starting only from the document you write now. Reply with the complete contents of a fresh "
-      + ".prowl/handoff/current.md and nothing else — a markdown document titled \"# Handoff\" with the "
-      + "sections \"## Objective\", \"## Current State\", \"## What Has Been Done\", \"## Open Questions\", "
-      + "\"## Risks / Watch Out\", \"## Next Steps\", and \"## Suggested Prompt For Next Agent\". "
-      + "Write it entirely from what you know in this session — include only work and state you can "
-      + "vouch for right now; never restate earlier notes you cannot verify. Keep Next Steps ordered "
-      + "and concrete — the next agent starts there — and make Suggested Prompt For Next Agent a "
-      + "ready-to-paste instruction. Do not run commands, read files, or edit anything — Prowl writes "
-      + "the file from your reply. Be concise and answer in a single reply."
-  }
-
   // MARK: - Error messages
 
   nonisolated static func briefRequiredMessage(action: HandoffAction, toAgent: String?) -> String {
@@ -422,7 +360,7 @@ final class HandoffCommandHandler: CommandHandler {
       case .toAgent: "prowl handoff to \(toAgent ?? "<agent>") --brief -"
       }
     return """
-      Self-handoff requires an inline briefing — you are the author. Rerun with your briefing on stdin:
+      Handoff requires an inline briefing from the source agent. Rerun with the briefing on stdin:
         \(command) <<'EOF'
         # Handoff
         ## Objective

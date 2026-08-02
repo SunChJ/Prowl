@@ -130,8 +130,7 @@ struct AppFeatureHandoffTests {
             confidence: "fallback",
             excerptText: nil
           ),
-          observation: nil,
-          session: nil
+          observation: nil
         )
       }
     }
@@ -140,7 +139,6 @@ struct AppFeatureHandoffTests {
     await store.send(.openHandoffHud) {
       let hud = try #require($0.handoffHud)
       #expect(hud.source.agentToken == "codex")
-      #expect(hud.source.forkRequest == nil)
       #expect(hud.phase == .choosing)
     }
 
@@ -211,8 +209,7 @@ struct AppFeatureHandoffTests {
             confidence: "fallback",
             excerptText: nil
           ),
-          observation: nil,
-          session: nil
+          observation: nil
         )
       }
     }
@@ -302,13 +299,7 @@ struct AppFeatureHandoffTests {
             confidence: "fallback",
             excerptText: ""
           ),
-          observation: AgentLaunchObservation(model: "gpt-5.4", executionMode: .unrestricted),
-          session: AgentSession(
-            id: "9B0E3B0E-67B3-4D45-A3A0-7DD9BC713711",
-            transcriptPath: nil,
-            source: .openFile,
-            confidence: .exact
-          )
+          observation: AgentLaunchObservation(model: "gpt-5.4", executionMode: .unrestricted)
         )
       }
     }
@@ -383,8 +374,7 @@ struct AppFeatureHandoffTests {
             confidence: "fallback",
             excerptText: "focused claude context"
           ),
-          observation: nil,
-          session: nil
+          observation: nil
         )
       }
     }

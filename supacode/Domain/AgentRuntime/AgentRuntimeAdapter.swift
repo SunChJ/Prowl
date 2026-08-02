@@ -1,55 +1,115 @@
 import Foundation
 
+/// Interactive and headless launch behavior for one supported runtime.
+/// Handoff briefing is authored by the live source agent and does not resume
+/// native sessions through this adapter boundary (docs-ai 055).
 nonisolated protocol AgentRuntimeAdapter: Sendable {
-  var agent: DetectedAgent { get }
-  /// Human-readable product name for UI entry points ("Claude Code").
+  var runtime: AgentProfileRuntime { get }
   var displayName: String { get }
-  /// Environment variable that relocates the runtime's entire home for
-  /// per-profile account isolation, or nil when the runtime has no verified
-  /// mechanism. Relocation is all-or-nothing: skills, instruction files, and
-  /// session history follow the home (docs-ai 053, #617).
-  var accountHomeEnvironmentVariable: String? { get }
-  /// Known reasoning-effort values offered as editor suggestions. Any
-  /// free-form value stays accepted as a literal argument; an unknown value
-  /// fails at CLI startup, visibly in the new surface.
+  var supportsModelSelection: Bool { get }
+  var supportsReasoningEffort: Bool { get }
+  /// Empty when the runtime cannot represent both persisted modes honestly.
+  /// Adapters exposing the picker must render every listed mode, including
+  /// inverse guarded flags for CLIs whose default is auto-approved.
+  var executionModeOptions: [AgentExecutionMode] { get }
+  var accountIsolation: AgentProfileHomeRelocation? { get }
   var reasoningEffortSuggestions: [String] { get }
-  /// Known model values offered as editor suggestions. Custom values still pass
-  /// through as literal model arguments, so provider-specific deployments work.
   var modelSuggestions: [String] { get }
 
   func observe(arguments: [String]) -> AgentLaunchObservation
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation
-  /// Resume is side-effect-free by design: the invocation never renders
-  /// execution-mode flags, and it must not mutate the source session's recorded
-  /// state (fork/ephemeral variants only). The resumed agent replies with
-  /// content; Prowl persists any artifact. `replyFile`, when supported, asks the
-  /// CLI to write its final message there.
-  func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation
 }
 
 nonisolated extension AgentRuntimeAdapter {
-  var supportsAccountIsolation: Bool { accountHomeEnvironmentVariable != nil }
+  var supportsAccountIsolation: Bool { accountIsolation != nil }
+  var accountHomeEnvironmentVariable: String? { accountIsolation?.environmentVariable }
+  var supportsModelSelection: Bool { false }
+  var supportsReasoningEffort: Bool { false }
+  var executionModeOptions: [AgentExecutionMode] { [] }
+  var accountIsolation: AgentProfileHomeRelocation? { nil }
+  var reasoningEffortSuggestions: [String] { [] }
   var modelSuggestions: [String] { [] }
+
+  /// User arguments remain last-wins for ordinary options. A managed home is
+  /// appended after them because account binding is an identity invariant:
+  /// extra arguments must not silently redirect state outside the UUID home.
+  func finalizedOptions(_ generated: [String], request: AgentStartRequest) -> [String] {
+    var options = generated + request.configuration.extraArguments
+    if let home = request.dedicatedHome, let accountIsolation {
+      options += accountIsolation.arguments(for: home)
+    }
+    return options
+  }
 }
 
-nonisolated enum AgentExecutionMode: String, Codable, Equatable, Sendable {
+/// One path-valued CLI option in a managed-home relocation contract.
+nonisolated struct AgentProfileHomePathArgument: Equatable, Sendable {
+  let option: String
+  /// Empty means the managed home itself; otherwise a child path.
+  let relativePath: String
+}
+
+/// Verified full-state relocation for a runtime. Environment and CLI-argument
+/// mechanisms share one model so the planner, editor, cleanup, and session
+/// resolver agree on the same managed root (docs-ai 055).
+nonisolated struct AgentProfileHomeRelocation: Equatable, Sendable {
+  let environmentVariable: String?
+  let pathArguments: [AgentProfileHomePathArgument]
+  let sessionRootRelativePath: String
+  let reservedEnvironmentVariables: Set<String>
+
+  init(
+    environmentVariable: String? = nil,
+    pathArguments: [AgentProfileHomePathArgument] = [],
+    sessionRootRelativePath: String = "",
+    reservedEnvironmentVariables: Set<String> = []
+  ) {
+    self.environmentVariable = environmentVariable
+    self.pathArguments = pathArguments
+    self.sessionRootRelativePath = sessionRootRelativePath
+    self.reservedEnvironmentVariables = reservedEnvironmentVariables.union(
+      environmentVariable.map { [$0] } ?? []
+    )
+  }
+
+  func arguments(for home: URL) -> [String] {
+    pathArguments.flatMap { argument in
+      let url =
+        argument.relativePath.isEmpty
+        ? home
+        : home.appending(path: argument.relativePath, directoryHint: .isDirectory)
+      return [argument.option, AgentProfileLaunchPlanner.pathString(url)]
+    }
+  }
+
+  func sessionConfigRoot(for home: URL) -> URL {
+    guard !sessionRootRelativePath.isEmpty else { return home }
+    return home.appending(path: sessionRootRelativePath, directoryHint: .isDirectory)
+  }
+}
+
+nonisolated enum AgentExecutionMode: String, Codable, CaseIterable, Equatable, Identifiable, Sendable {
   case standard
   case unrestricted
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .standard: "Standard"
+    case .unrestricted: "Unrestricted"
+    }
+  }
 }
 
 /// How an agent process should begin. An empty prompt sentinel is forbidden by
 /// construction: interactive-with-no-prompt and prompted starts are distinct
 /// CLI semantics (docs-ai 053).
 nonisolated enum AgentStartIntent: Equatable, Sendable {
-  /// Launch the interactive TUI with no initial prompt.
   case interactive
-  /// Launch the interactive TUI seeded with an initial prompt.
   case prompt(String)
-  /// One-shot non-interactive execution (print/exec mode). No UI consumer in
-  /// V1; the case keeps the intent space complete for CLI/handoff waves.
   case headless(String)
 
-  /// The prompt payload for prompted or headless starts; nil for interactive.
   var promptText: String? {
     switch self {
     case .interactive: nil
@@ -63,7 +123,7 @@ nonisolated struct AgentLaunchConfiguration: Codable, Equatable, Sendable {
   var executionMode: AgentExecutionMode
   var reasoningEffort: String?
   /// Literal argv tokens appended after adapter-generated options (last-wins)
-  /// and before any positional prompt. Never shell-interpreted.
+  /// and before managed-home arguments and any positional prompt.
   var extraArguments: [String]
 
   init(
@@ -92,8 +152,8 @@ nonisolated struct AgentLaunchConfiguration: Codable, Equatable, Sendable {
   }
 }
 
-/// Options observed from a live agent process. Nil denotes an unknown effective setting,
-/// never an inferred safe default from the absence of an argv flag.
+/// Options observed from a live agent process. Nil denotes an unknown effective
+/// setting, never an inferred safe default from the absence of an argv flag.
 nonisolated struct AgentLaunchObservation: Equatable, Sendable {
   let model: String?
   let executionMode: AgentExecutionMode?
@@ -105,36 +165,33 @@ nonisolated struct AgentLaunchObservation: Equatable, Sendable {
 }
 
 nonisolated struct AgentStartRequest: Equatable, Sendable {
-  let agent: DetectedAgent
+  let runtime: AgentProfileRuntime
   let intent: AgentStartIntent
   let configuration: AgentLaunchConfiguration
+  /// Set only by Agent Profile planning. Handoff and ordinary starts are pure
+  /// invocations and therefore leave this nil.
+  let dedicatedHome: URL?
 
-  init(agent: DetectedAgent, intent: AgentStartIntent, configuration: AgentLaunchConfiguration = .init()) {
-    self.agent = agent
+  var agent: DetectedAgent { runtime.agent }
+
+  init(
+    runtime: AgentProfileRuntime,
+    intent: AgentStartIntent,
+    configuration: AgentLaunchConfiguration = .init(),
+    dedicatedHome: URL? = nil
+  ) {
+    self.runtime = runtime
     self.intent = intent
     self.configuration = configuration
+    self.dedicatedHome = dedicatedHome
   }
-}
-
-/// A headless, read-only resume of a verified native session. Unlike
-/// `AgentStartRequest` it carries no execution mode: a resume never escalates
-/// permissions, so only the same-adapter model can be inherited.
-nonisolated struct AgentResumeRequest: Equatable, Sendable {
-  let agent: DetectedAgent
-  let session: AgentSession
-  let prompt: String
-  let model: String?
 
   init(
     agent: DetectedAgent,
-    session: AgentSession,
-    prompt: String,
-    model: String? = nil
+    intent: AgentStartIntent,
+    configuration: AgentLaunchConfiguration = .init()
   ) {
-    self.agent = agent
-    self.session = session
-    self.prompt = prompt
-    self.model = model
+    self.init(runtime: AgentProfileRuntime(agent: agent), intent: intent, configuration: configuration)
   }
 }
 
@@ -147,13 +204,10 @@ nonisolated struct AgentInvocation: Equatable, Sendable {
     self.arguments = arguments
   }
 
-  /// One reviewed POSIX-shell rendering path for a command injected into a terminal surface.
   var terminalInput: String {
     ([executable] + arguments).map(Self.shellQuote).joined(separator: " ")
   }
 
-  /// The single reviewed quoting rule for anything typed into a pane's shell;
-  /// the profile launch planner reuses it for inlined `env` assignments.
   static func shellQuote(_ argument: String) -> String {
     "'" + argument.replacing("'", with: "'\"'\"'") + "'"
   }
@@ -161,23 +215,41 @@ nonisolated struct AgentInvocation: Equatable, Sendable {
 
 nonisolated enum AgentRuntimeError: Error, Equatable, Sendable {
   case unsupportedAgent(DetectedAgent)
-  case unsafeSessionConfidence(AgentSession.Confidence)
-  case resumeTimedOut
+  case unsupportedStartIntent(AgentProfileRuntime, AgentStartIntent)
 }
 
 nonisolated enum AgentRuntimeAdapterRegistry {
-  static func adapter(for agent: DetectedAgent) -> (any AgentRuntimeAdapter)? {
-    switch agent {
+  static func profileAdapter(for runtime: AgentProfileRuntime) -> (any AgentRuntimeAdapter)? {
+    switch runtime {
     case .claude: ClaudeCodeRuntimeAdapter()
     case .codex: CodexRuntimeAdapter()
-    default: nil
+    case .gemini: GeminiRuntimeAdapter()
+    case .cursor: CursorRuntimeAdapter()
+    case .cline: ClineRuntimeAdapter()
+    case .opencode: OpenCodeRuntimeAdapter()
+    case .copilot: CopilotRuntimeAdapter()
+    case .kimi: KimiRuntimeAdapter()
+    case .droid: DroidRuntimeAdapter()
+    case .amp: AmpRuntimeAdapter()
+    case .qoder: QoderRuntimeAdapter()
+    case .qwen: QwenRuntimeAdapter()
+    case .grok: GrokRuntimeAdapter()
+    case .pi: PiRuntimeAdapter()
+    case .omp: OMPRuntimeAdapter()
     }
   }
 
-  /// Agents with a verified interactive launch adapter, in catalog order.
-  /// UI entry points derive their handoff targets from this list.
+  /// Canonical launch adapter for one detected runtime.
+  static func adapter(for agent: DetectedAgent) -> (any AgentRuntimeAdapter)? {
+    profileAdapter(for: AgentProfileRuntime(agent: agent))
+  }
+
   static var launchableAgents: [DetectedAgent] {
     DetectedAgent.allCases.filter { adapter(for: $0) != nil }
+  }
+
+  static func displayName(for runtime: AgentProfileRuntime) -> String {
+    profileAdapter(for: runtime)?.displayName ?? runtime.rawValue
   }
 
   static func displayName(for agent: DetectedAgent) -> String {
@@ -188,12 +260,12 @@ nonisolated enum AgentRuntimeAdapterRegistry {
     adapter(for: agent) != nil
   }
 
-  static func canResume(_ agent: DetectedAgent) -> Bool {
-    adapter(for: agent) != nil
+  static func observe(runtime: AgentProfileRuntime, arguments: [String]) -> AgentLaunchObservation {
+    profileAdapter(for: runtime)?.observe(arguments: arguments) ?? .init()
   }
 
   static func observe(agent: DetectedAgent, arguments: [String]) -> AgentLaunchObservation {
-    adapter(for: agent)?.observe(arguments: arguments) ?? .init()
+    return adapter(for: agent)?.observe(arguments: arguments) ?? .init()
   }
 
   static func inheritedConfiguration(
@@ -208,89 +280,61 @@ nonisolated enum AgentRuntimeAdapterRegistry {
   }
 
   static func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
-    guard let adapter = adapter(for: request.agent) else {
+    guard let adapter = profileAdapter(for: request.runtime) else {
       throw AgentRuntimeError.unsupportedAgent(request.agent)
     }
     return try adapter.makeStartInvocation(request)
   }
 
-  static func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL? = nil) throws -> AgentInvocation {
-    guard request.session.confidence == .exact || request.session.confidence == .high else {
-      throw AgentRuntimeError.unsafeSessionConfidence(request.session.confidence)
-    }
-    guard let adapter = adapter(for: request.agent) else {
-      throw AgentRuntimeError.unsupportedAgent(request.agent)
-    }
-    return try adapter.makeResumeInvocation(request, replyFile: replyFile)
-  }
 }
 
+// MARK: - Launch adapters
+
 nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
-  let agent: DetectedAgent = .codex
+  let runtime: AgentProfileRuntime = .codex
   let displayName = "Codex"
-  let accountHomeEnvironmentVariable: String? = "CODEX_HOME"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(environmentVariable: "CODEX_HOME")
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
-    let explicitlyBypassesSandbox =
-      arguments.contains("--dangerously-bypass-approvals-and-sandbox")
-      || arguments.contains("--yolo")
-    return AgentLaunchObservation(
+    AgentLaunchObservation(
       model: arguments.optionValue(long: "--model", short: "-m"),
-      executionMode: explicitlyBypassesSandbox ? .unrestricted : nil
+      executionMode: arguments.containsAny("--dangerously-bypass-approvals-and-sandbox", "--yolo")
+        ? .unrestricted : nil
     )
   }
 
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
-    let options = options(for: request.configuration)
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort {
+      generated += ["-c", "model_reasoning_effort=\(effort)"]
+    }
+    if request.configuration.executionMode == .unrestricted {
+      generated.append("--dangerously-bypass-approvals-and-sandbox")
+    }
+    let options = finalizedOptions(generated, request: request)
     return switch request.intent {
-    case .interactive:
-      AgentInvocation(executable: "codex", arguments: options)
-    case .prompt(let prompt):
-      AgentInvocation(executable: "codex", arguments: options + [prompt])
-    case .headless(let prompt):
-      AgentInvocation(executable: "codex", arguments: ["exec"] + options + [prompt])
+    case .interactive: AgentInvocation(executable: "codex", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "codex", arguments: options + [prompt])
+    case .headless(let prompt): AgentInvocation(executable: "codex", arguments: ["exec"] + options + [prompt])
     }
-  }
-
-  func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation {
-    // `--ephemeral` keeps the preparation turn out of `~/.codex/sessions`, so a
-    // resume never mutates the recorded state of the live source session.
-    var arguments = ["exec", "resume", "--ephemeral"]
-    if let model = request.model {
-      arguments += ["--model", model]
-    }
-    if let replyFile {
-      arguments += ["--output-last-message", replyFile.path(percentEncoded: false)]
-    }
-    return AgentInvocation(
-      executable: "codex",
-      arguments: arguments + [request.session.id, request.prompt]
-    )
-  }
-
-  private func options(for configuration: AgentLaunchConfiguration) -> [String] {
-    var options: [String] = []
-    if let model = configuration.model {
-      options += ["--model", model]
-    }
-    if let effort = configuration.reasoningEffort {
-      // Codex parses `-c` values as TOML and falls back to a string literal,
-      // so the effort value needs no extra quoting here.
-      options += ["-c", "model_reasoning_effort=\(effort)"]
-    }
-    if configuration.executionMode == .unrestricted {
-      options.append("--dangerously-bypass-approvals-and-sandbox")
-    }
-    return options + configuration.extraArguments
   }
 }
 
 nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
-  let agent: DetectedAgent = .claude
+  let runtime: AgentProfileRuntime = .claude
   let displayName = "Claude Code"
-  let accountHomeEnvironmentVariable: String? = "CLAUDE_CONFIG_DIR"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    environmentVariable: "CLAUDE_CONFIG_DIR"
+  )
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = [
     "claude-fable-5",
@@ -300,57 +344,453 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   ]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
-    let explicitlyBypassesPermissions =
+    let bypasses =
       arguments.contains("--dangerously-skip-permissions")
       || arguments.optionValue(long: "--permission-mode") == "bypassPermissions"
     return AgentLaunchObservation(
       model: arguments.optionValue(long: "--model", short: "-m"),
-      executionMode: explicitlyBypassesPermissions ? .unrestricted : nil
+      executionMode: bypasses ? .unrestricted : nil
     )
   }
 
   func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
-    let options = options(for: request.configuration)
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--effort", effort] }
+    if request.configuration.executionMode == .unrestricted {
+      generated.append("--dangerously-skip-permissions")
+    }
+    let options = finalizedOptions(generated, request: request)
     return switch request.intent {
-    case .interactive:
-      AgentInvocation(executable: "claude", arguments: options)
+    case .interactive: AgentInvocation(executable: "claude", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "claude", arguments: options + [prompt])
+    case .headless(let prompt): AgentInvocation(executable: "claude", arguments: ["-p"] + options + [prompt])
+    }
+  }
+}
+
+nonisolated private struct GeminiRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .gemini
+  let displayName = "Gemini CLI"
+  let supportsModelSelection = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    environmentVariable: "GEMINI_CLI_HOME",
+    sessionRootRelativePath: ".gemini"
+  )
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let approves = arguments.contains("--yolo") || arguments.optionValue(long: "--approval-mode") == "yolo"
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: approves && arguments.booleanOptionIsFalse("--sandbox") ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if request.configuration.executionMode == .unrestricted {
+      generated += ["--approval-mode", "yolo", "--sandbox=false"]
+    }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "gemini", arguments: options)
     case .prompt(let prompt):
-      AgentInvocation(executable: "claude", arguments: options + [prompt])
+      AgentInvocation(executable: "gemini", arguments: options + ["--prompt-interactive", prompt])
     case .headless(let prompt):
-      AgentInvocation(executable: "claude", arguments: ["-p"] + options + [prompt])
+      AgentInvocation(executable: "gemini", arguments: options + ["--prompt", prompt])
+    }
+  }
+}
+
+nonisolated private struct CursorRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .cursor
+  let displayName = "Cursor Agent"
+  let supportsModelSelection = true
+  let executionModeOptions = AgentExecutionMode.allCases
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let approves = arguments.containsAny("--force", "--yolo")
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model"),
+      executionMode: approves && arguments.optionValue(long: "--sandbox") == "disabled" ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if request.configuration.executionMode == .unrestricted {
+      generated += ["--yolo", "--sandbox", "disabled"]
+    }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "cursor-agent", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "cursor-agent", arguments: options + [prompt])
+    case .headless(let prompt):
+      AgentInvocation(executable: "cursor-agent", arguments: options + ["--print", prompt])
+    }
+  }
+}
+
+nonisolated private struct ClineRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .cline
+  let displayName = "Cline"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    pathArguments: [
+      AgentProfileHomePathArgument(option: "--config", relativePath: "config"),
+      AgentProfileHomePathArgument(option: "--data-dir", relativePath: "data"),
+      AgentProfileHomePathArgument(option: "--hooks-dir", relativePath: "hooks"),
+    ],
+    sessionRootRelativePath: "data",
+    reservedEnvironmentVariables: ["CLINE_DATA_DIR"]
+  )
+  let reasoningEffortSuggestions = ["none", "low", "medium", "high", "xhigh"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let autoApprove = arguments.optionValue(long: "--auto-approve")
+    let executionMode: AgentExecutionMode? =
+      switch autoApprove {
+      case "true": .unrestricted
+      case "false": .standard
+      default: nil
+      }
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: executionMode
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--thinking", effort] }
+    generated += [
+      "--auto-approve",
+      request.configuration.executionMode == .unrestricted ? "true" : "false",
+    ]
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "cline", arguments: options + ["--tui"])
+    case .prompt(let prompt): AgentInvocation(executable: "cline", arguments: options + ["--tui", prompt])
+    case .headless(let prompt): AgentInvocation(executable: "cline", arguments: options + [prompt])
+    }
+  }
+}
+
+nonisolated private struct OpenCodeRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .opencode
+  let displayName = "OpenCode"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: arguments.contains("--auto") ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--variant", effort] }
+    if request.configuration.executionMode == .unrestricted { generated.append("--auto") }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "opencode", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "opencode", arguments: options + ["--prompt", prompt])
+    case .headless(let prompt): AgentInvocation(executable: "opencode", arguments: ["run"] + options + [prompt])
+    }
+  }
+}
+
+nonisolated private struct CopilotRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .copilot
+  let displayName = "GitHub Copilot"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    environmentVariable: "COPILOT_HOME"
+  )
+  let reasoningEffortSuggestions = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model"),
+      executionMode: arguments.contains("--allow-all") ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--reasoning-effort", effort] }
+    if request.configuration.executionMode == .unrestricted { generated.append("--allow-all") }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "copilot", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "copilot", arguments: options + ["--interactive", prompt])
+    case .headless(let prompt): AgentInvocation(executable: "copilot", arguments: options + ["--prompt", prompt])
+    }
+  }
+}
+
+nonisolated private struct KimiRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .kimi
+  let displayName = "Kimi CLI"
+  let supportsModelSelection = true
+  let executionModeOptions = AgentExecutionMode.allCases
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: arguments.containsAny("--yolo", "--yes") ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if request.configuration.executionMode == .unrestricted { generated.append("--yolo") }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "kimi", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "kimi", arguments: options + ["--prompt", prompt])
+    case .headless(let prompt):
+      AgentInvocation(executable: "kimi", arguments: options + ["--print", "--prompt", prompt])
+    }
+  }
+}
+
+nonisolated private struct DroidRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .droid
+  let displayName = "Droid"
+
+  func observe(arguments _: [String]) -> AgentLaunchObservation { .init() }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    let options = finalizedOptions([], request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "droid", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "droid", arguments: options + [prompt])
+    case .headless(let prompt): AgentInvocation(executable: "droid", arguments: ["exec"] + options + [prompt])
+    }
+  }
+}
+
+nonisolated private struct AmpRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .amp
+  let displayName = "Amp"
+  let supportsReasoningEffort = true
+  let reasoningEffortSuggestions = ["low", "medium", "high"]
+
+  func observe(arguments _: [String]) -> AgentLaunchObservation { .init() }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let effort = request.configuration.reasoningEffort { generated += ["--effort", effort] }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "amp", arguments: options)
+    case .prompt:
+      throw AgentRuntimeError.unsupportedStartIntent(.amp, request.intent)
+    case .headless(let prompt):
+      AgentInvocation(executable: "amp", arguments: options + ["--execute", prompt])
+    }
+  }
+}
+
+nonisolated private struct QoderRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .qoder
+  let displayName = "Qoder CLI"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    pathArguments: [AgentProfileHomePathArgument(option: "--config-dir", relativePath: "")]
+  )
+  let reasoningEffortSuggestions = ["low", "medium", "high"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let bypasses =
+      arguments.contains("--dangerously-skip-permissions")
+      || arguments.optionValue(long: "--permission-mode") == "bypass_permissions"
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: bypasses ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--reasoning-effort", effort] }
+    if request.configuration.executionMode == .unrestricted {
+      generated.append("--dangerously-skip-permissions")
+    }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "qodercli", arguments: options)
+    case .prompt(let prompt):
+      AgentInvocation(executable: "qodercli", arguments: options + ["--prompt-interactive", prompt])
+    case .headless(let prompt): AgentInvocation(executable: "qodercli", arguments: options + ["--print", prompt])
+    }
+  }
+}
+
+nonisolated private struct QwenRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .qwen
+  let displayName = "Qwen Code"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(environmentVariable: "QWEN_HOME")
+  let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let approves = arguments.contains("--yolo") || arguments.optionValue(long: "--approval-mode") == "yolo"
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: approves && arguments.booleanOptionIsFalse("--sandbox") ? .unrestricted : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--reasoning-effort", effort] }
+    if request.configuration.executionMode == .unrestricted {
+      generated += ["--approval-mode", "yolo", "--sandbox=false"]
+    }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "qwen", arguments: options)
+    case .prompt(let prompt):
+      AgentInvocation(executable: "qwen", arguments: options + ["--prompt-interactive", prompt])
+    case .headless(let prompt): AgentInvocation(executable: "qwen", arguments: options + ["--prompt", prompt])
+    }
+  }
+}
+
+nonisolated private struct GrokRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .grok
+  let displayName = "Grok Build"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let reasoningEffortSuggestions = ["low", "medium", "high"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let permissionMode = arguments.optionValue(long: "--permission-mode")
+    let bypassesPermissions =
+      permissionMode == "bypassPermissions" || arguments.contains("--always-approve")
+    let sandboxIsOff = arguments.optionValue(long: "--sandbox") == "off"
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model", short: "-m"),
+      executionMode: bypassesPermissions && sandboxIsOff
+        ? .unrestricted
+        : permissionMode == "default" ? .standard : nil
+    )
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--reasoning-effort", effort] }
+    switch request.configuration.executionMode {
+    case .standard:
+      generated += ["--permission-mode", "default"]
+    case .unrestricted:
+      generated += ["--permission-mode", "bypassPermissions", "--sandbox", "off"]
+    }
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "grok", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "grok", arguments: options + [prompt])
+    case .headless(let prompt): AgentInvocation(executable: "grok", arguments: options + ["--single", prompt])
+    }
+  }
+}
+
+nonisolated private struct PiRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .pi
+  let displayName = "Pi"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    environmentVariable: "PI_CODING_AGENT_DIR"
+  )
+  let reasoningEffortSuggestions = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    AgentLaunchObservation(model: arguments.optionValue(long: "--model"))
+  }
+
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    let options = piOptions(request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "pi", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "pi", arguments: options + [prompt])
+    case .headless(let prompt): AgentInvocation(executable: "pi", arguments: options + ["--print", prompt])
     }
   }
 
-  func makeResumeInvocation(_ request: AgentResumeRequest, replyFile: URL?) throws -> AgentInvocation {
-    // `claude -p` prints only the final reply on stdout, so no reply file is needed.
-    // `--fork-session` is load-bearing: without it `--resume` continues the same
-    // session ID and appends the preparation turn to the transcript of a session
-    // that is usually still live in the pane (dual-writer on one JSONL).
-    var arguments = ["-p", "--fork-session", "--resume", request.session.id]
-    if let model = request.model {
-      arguments += ["--model", model]
-    }
-    return AgentInvocation(executable: "claude", arguments: arguments + [request.prompt])
+  private func piOptions(_ request: AgentStartRequest) -> [String] {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--thinking", effort] }
+    return finalizedOptions(generated, request: request)
+  }
+}
+
+nonisolated private struct OMPRuntimeAdapter: AgentRuntimeAdapter {
+  let runtime: AgentProfileRuntime = .omp
+  let displayName = "Oh My Pi"
+  let supportsModelSelection = true
+  let supportsReasoningEffort = true
+  let executionModeOptions = AgentExecutionMode.allCases
+  let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
+    environmentVariable: "PI_CODING_AGENT_DIR"
+  )
+  let reasoningEffortSuggestions = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
+
+  func observe(arguments: [String]) -> AgentLaunchObservation {
+    let approvalMode = arguments.optionValue(long: "--approval-mode")
+    let bypasses = arguments.contains("--auto-approve") || approvalMode == "yolo"
+    return AgentLaunchObservation(
+      model: arguments.optionValue(long: "--model"),
+      executionMode: bypasses ? .unrestricted : approvalMode == "always-ask" ? .standard : nil
+    )
   }
 
-  private func options(for configuration: AgentLaunchConfiguration) -> [String] {
-    var options: [String] = []
-    if let model = configuration.model {
-      options += ["--model", model]
+  func makeStartInvocation(_ request: AgentStartRequest) throws -> AgentInvocation {
+    var generated: [String] = []
+    if let model = request.configuration.model { generated += ["--model", model] }
+    if let effort = request.configuration.reasoningEffort { generated += ["--thinking", effort] }
+    generated += [
+      "--approval-mode",
+      request.configuration.executionMode == .unrestricted ? "yolo" : "always-ask",
+    ]
+    let options = finalizedOptions(generated, request: request)
+    return switch request.intent {
+    case .interactive: AgentInvocation(executable: "omp", arguments: options)
+    case .prompt(let prompt): AgentInvocation(executable: "omp", arguments: options + [prompt])
+    case .headless(let prompt): AgentInvocation(executable: "omp", arguments: options + ["--print", prompt])
     }
-    if let effort = configuration.reasoningEffort {
-      options += ["--effort", effort]
-    }
-    if configuration.executionMode == .unrestricted {
-      options.append("--dangerously-skip-permissions")
-    }
-    return options + configuration.extraArguments
   }
 }
 
 nonisolated extension [String] {
   fileprivate func optionValue(long: String, short: String? = nil) -> String? {
-    for (index, argument) in enumerated() {
+    for index in indices.reversed() {
+      let argument = self[index]
       if argument == long || short == argument {
         let next = self.index(after: index)
         guard next < endIndex else { return nil }
@@ -361,5 +801,19 @@ nonisolated extension [String] {
       }
     }
     return nil
+  }
+
+  fileprivate func containsAny(_ values: String...) -> Bool {
+    values.contains(where: contains)
+  }
+
+  fileprivate func booleanOptionIsFalse(_ option: String) -> Bool {
+    contains("\(option)=false") || optionValue(long: option) == "false"
+  }
+}
+
+nonisolated extension String {
+  fileprivate var lastPathComponent: String {
+    URL(fileURLWithPath: self).lastPathComponent
   }
 }

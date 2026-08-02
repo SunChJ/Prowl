@@ -110,7 +110,6 @@ struct AppFeature {
   @Dependency(SystemNotificationClient.self) var systemNotificationClient
   @Dependency(DockClient.self) var dockClient
   @Dependency(TerminalClient.self) var terminalClient
-  @Dependency(AgentRuntimeClient.self) var agentRuntimeClient
   @Dependency(WorktreeInfoWatcherClient.self) var worktreeInfoWatcher
   @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
   @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient

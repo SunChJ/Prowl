@@ -55,7 +55,9 @@ UUID 派生 home 的双重包含闸、单一 launch action、三层推荐、root
    - 手动 split 绑定 pane → 新 surface 无 env 无身份,pane 内手敲 agent 落到默认账号;
    - handoff 接收端走无 `additionalEnvironment` 的 `createTab` overload;
    - 布局恢复不重放 env、不恢复 `launchProfilesBySurface`,重启后绑定 pane 检测回落默认 home;
-   - resume(`AgentResumeRequest`/`ShellClient.runLogin`)无 env 缝(001-action 已知推迟)。
+   - resume(`AgentResumeRequest`/`ShellClient.runLogin`)无 env 缝(001-action 已知推迟;
+     2026-08-01 已由 [047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md)
+     随整条 briefing resume 路径删除)。
 9. **Profile home 生命周期不完整**:绑定 agent 仍在运行时可 "Remove and Trash
    Files",无活跃 surface 检查;删除保留文件后 UUID 永久悬空,无 orphan home
    管理入口。

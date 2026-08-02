@@ -3,7 +3,8 @@ import Foundation
 /// Known agent install/launcher binary names (lowercased). Aliases map to the
 /// same agent; extend this table when onboarding a new CLI.
 private let knownAgentBinaries: [String: DetectedAgent] = [
-  "pi": .pi, "omp": .pi, "oh-my-pi": .pi,
+  "pi": .pi,
+  "omp": .omp, "oh-my-pi": .omp,
   "claude": .claude, "claude-code": .claude,
   "codex": .codex, "omx": .codex, "oh-my-codex": .codex,
   "gemini": .gemini,

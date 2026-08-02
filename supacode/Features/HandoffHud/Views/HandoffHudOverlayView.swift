@@ -7,8 +7,8 @@ import SwiftUI
 /// (waiting for the live agent to run the hand-off) the panel is non-modal:
 /// the keyboard stays with the terminal — the source agent may need the user
 /// to approve a permission prompt — and clicking outside collapses the panel
-/// (the hand-off completes headlessly and notifies). Only the short
-/// fork/context-only fallbacks keep the panel modal.
+/// (the hand-off completes headlessly and notifies). The context-only fallback
+/// crosses directly into the non-cancellable finishing stage.
 struct HandoffHudOverlayView: View {
   let store: StoreOf<HandoffHudFeature>
 
@@ -58,8 +58,6 @@ private struct HandoffHudCard: View {
         HandoffHudRunView(
           run: run,
           sourceDisplayName: store.source.displayName,
-          canFork: store.canFork,
-          onFork: { store.send(.fallbackForkTapped) },
           onContextOnly: { store.send(.fallbackContextOnlyTapped) },
           onCancel: { store.send(.cancelTapped) }
         )
@@ -73,7 +71,7 @@ private struct HandoffHudCard: View {
       // Capture keys only while the panel truly owns the interaction
       // (choosing / finished). While requesting, the keyboard must stay with
       // the terminal so the user can approve the source agent's permission
-      // prompts; the fallbacks are button-driven.
+      // prompts; the context-only fallback is button-driven.
       if capturesKeyboard {
         HandoffHudKeyCaptureView(
           onMove: { delta in store.send(.moveSelection(delta: delta)) },
@@ -129,8 +127,6 @@ private struct HandoffHudCard: View {
       switch run.stage {
       case .requesting:
         return "Waiting for \(store.source.displayName) to write its briefing and run the hand-off"
-      case .forking:
-        return "Collecting a briefing from \(store.source.displayName)'s recorded session"
       case .finishing:
         return "Finishing the hand-off"
       }
@@ -147,8 +143,8 @@ private struct HandoffHudCard: View {
     switch store.phase {
     case .choosing, .finished:
       return true
-    case .running(let run):
-      return run.stage == .forking
+    case .running:
+      return false
     }
   }
 
@@ -299,8 +295,6 @@ private struct HandoffTargetRow: View {
 private struct HandoffHudRunView: View {
   let run: HandoffHudRun
   let sourceDisplayName: String
-  let canFork: Bool
-  let onFork: () -> Void
   let onContextOnly: () -> Void
   let onCancel: () -> Void
 
@@ -323,12 +317,6 @@ private struct HandoffHudRunView: View {
           .foregroundStyle(.secondary)
         Spacer()
         if run.stage == .requesting {
-          if canFork {
-            Button("Fork Briefing") {
-              onFork()
-            }
-            .help("Don't wait: collect the briefing by resuming \(sourceDisplayName)'s recorded session")
-          }
           Button("Context Only") {
             onContextOnly()
           }
@@ -355,8 +343,6 @@ private struct HandoffHudRunView: View {
       case .briefOnly:
         return "Asked \(sourceDisplayName) to write a briefing checkpoint"
       }
-    case .forking:
-      return "Collecting a briefing from \(sourceDisplayName)'s recorded session"
     case .finishing:
       return "Finishing the hand-off"
     }
@@ -366,8 +352,6 @@ private struct HandoffHudRunView: View {
     switch run.stage {
     case .requesting:
       return "The request is queued if \(sourceDisplayName) is busy."
-    case .forking:
-      return "This can take a moment; the live session is untouched."
     case .finishing:
       return "This hand-off has started and will finish in the background."
     }
@@ -377,8 +361,6 @@ private struct HandoffHudRunView: View {
     switch run.stage {
     case .requesting:
       return "Close this panel; if \(sourceDisplayName) still hands off, it completes in the background"
-    case .forking:
-      return "Stop this hand-off; nothing is changed"
     case .finishing:
       return ""
     }
