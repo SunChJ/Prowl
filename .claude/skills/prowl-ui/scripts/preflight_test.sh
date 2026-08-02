@@ -16,7 +16,7 @@ cat >"$mock" <<'EOF'
 #!/bin/bash
 case "${1:-}" in
   --version)
-    printf 'agent-ctrl %s\n' "${MOCK_VERSION:-0.1.3}"
+    printf 'agent-ctrl %s\n' "${MOCK_VERSION:-0.1.4}"
     ;;
   info)
     printf '%s\n' "${MOCK_INFO_JSON:-}"
@@ -39,7 +39,7 @@ run_preflight() {
   set +e
   output="$(
     AGENT_CTRL_BIN="${AGENT_CTRL_BIN_OVERRIDE:-$mock}" \
-      MOCK_VERSION="${MOCK_VERSION_OVERRIDE:-0.1.3}" \
+      MOCK_VERSION="${MOCK_VERSION_OVERRIDE:-0.1.4}" \
       MOCK_INFO_JSON="${MOCK_INFO_OVERRIDE:-}" \
       MOCK_DOCTOR_JSON="${MOCK_DOCTOR_OVERRIDE:-}" \
       /bin/bash "$preflight" 2>&1
@@ -72,13 +72,13 @@ assert_status 2 "missing binary"
 assert_json '.status == "SKIPPED" and .reason == "agent_ctrl_not_installed"' "missing binary"
 
 AGENT_CTRL_BIN_OVERRIDE="$mock"
-MOCK_VERSION_OVERRIDE="0.1.2"
+MOCK_VERSION_OVERRIDE="0.1.3"
 run_preflight
 assert_status 2 "old version"
-assert_json '.status == "SKIPPED" and .reason == "unsupported_version" and .minimum_version == "0.1.3"' \
+assert_json '.status == "SKIPPED" and .reason == "unsupported_version" and .minimum_version == "0.1.4"' \
   "old version"
 
-MOCK_VERSION_OVERRIDE="0.1.3"
+MOCK_VERSION_OVERRIDE="0.1.4"
 MOCK_INFO_OVERRIDE='{"os":"macos","recommended_surface":"ax","surfaces":[{"kind":"ax","status":"ready"}],"macos_accessibility":"denied"}'
 MOCK_DOCTOR_OVERRIDE='{"success":false,"checks":[{"id":"env.surface.ax","status":"pass"},{"id":"perm.accessibility","status":"fail"}]}'
 run_preflight
@@ -89,12 +89,12 @@ MOCK_INFO_OVERRIDE='{"os":"macos","recommended_surface":"ax","surfaces":[{"kind"
 MOCK_DOCTOR_OVERRIDE='{"success":true,"checks":[{"id":"env.surface.ax","status":"pass"},{"id":"perm.accessibility","status":"pass"}]}'
 run_preflight
 assert_status 0 "ready"
-assert_json '.status == "READY" and .version == "0.1.3" and .surface == "ax"' "ready"
+assert_json '.status == "READY" and .version == "0.1.4" and .surface == "ax"' "ready"
 
-MOCK_VERSION_OVERRIDE="0.1.3+local"
+MOCK_VERSION_OVERRIDE="0.1.4+local"
 run_preflight
 assert_status 0 "build metadata version"
-assert_json '.status == "READY" and .version == "0.1.3+local"' "build metadata version"
+assert_json '.status == "READY" and .version == "0.1.4+local"' "build metadata version"
 
 MOCK_DOCTOR_OVERRIDE='not-json'
 run_preflight
