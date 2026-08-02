@@ -280,10 +280,12 @@ actor AgentSessionResolver {
     let visitLimit: Int
   }
 
-  /// How long one root's walk may be replayed. Short enough that a newly written
-  /// transcript is picked up well inside the resolver's own retry cadence, long
-  /// enough to collapse the burst of panes that resolve at nearly the same time.
-  private static let rootScanLifetime: TimeInterval = 2
+  /// How long one root's walk may be replayed. This must not outlive the narrow
+  /// one-second retry used to confirm a medium-confidence sole candidate: that
+  /// confirmation needs a fresh enumeration so a newly created competing
+  /// transcript can prevent a false attribution. One second still collapses the
+  /// burst of panes that resolve at nearly the same time.
+  private static let rootScanLifetime: TimeInterval = 1
 
   private var cache: [CacheKey: CachedResult] = [:]
   /// Transcript parsing depends only on file identity, not on the process doing

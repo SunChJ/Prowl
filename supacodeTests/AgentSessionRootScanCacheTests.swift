@@ -61,7 +61,7 @@ struct AgentSessionRootScanCacheTests {
 
     // A second transcript lands, as a newly started agent would produce.
     try writeTranscript(in: layout.root)
-    let replayed = await scan(resolver, root: layout.root, startedAt: started, now: now.addingTimeInterval(1))
+    let replayed = await scan(resolver, root: layout.root, startedAt: started, now: now.addingTimeInterval(0.5))
     #expect(replayed?.count == 1, "The shared walk is replayed, so the new file is not yet visible")
   }
 
@@ -80,6 +80,29 @@ struct AgentSessionRootScanCacheTests {
     // moments ago still becomes resolvable.
     let refreshed = await scan(resolver, root: layout.root, startedAt: started, now: now.addingTimeInterval(5))
     #expect(refreshed?.count == 2)
+  }
+
+  @Test func aWalkExpiresBeforeSoleCandidateConfirmationRetries() async throws {
+    let layout = try makeLayout()
+    defer { try? FileManager.default.removeItem(at: layout.home) }
+    try writeTranscript(in: layout.root)
+    let resolver = AgentSessionResolver(fileManager: .default, homeDirectory: layout.home)
+    let started = Date(timeIntervalSince1970: 1_000)
+    let now = Date()
+
+    _ = await scan(resolver, root: layout.root, startedAt: started, now: now)
+    try writeTranscript(in: layout.root)
+
+    // A medium-confidence sole candidate is confirmed on the next fresh resolver pass, whose
+    // narrow retry interval is one second. Replaying an older walk at that point could confirm
+    // the first transcript after the new agent's own transcript has already appeared.
+    let confirmationPass = await scan(
+      resolver,
+      root: layout.root,
+      startedAt: started,
+      now: now.addingTimeInterval(1.01)
+    )
+    #expect(confirmationPass?.count == 2)
   }
 
   @Test func callersWithDifferentThresholdsShareOneWalk() async throws {
