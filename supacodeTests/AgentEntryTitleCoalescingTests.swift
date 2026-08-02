@@ -78,6 +78,27 @@ struct AgentEntryTitleCoalescingTests {
     #expect(received.count == 1, "Coalescing must not turn into a periodic re-emit")
   }
 
+  @Test func returningToTheVisibleTitleDiscardsThePendingFrame() {
+    let fixture = makeFixture()
+    var received: [ActiveAgentEntry] = []
+    fixture.state.onAgentEntryChanged = { received.append($0) }
+    let working = PaneAgentState(detectedAgent: .claude, state: .working)
+
+    fixture.setTitle("A")
+    fixture.emit(working, at: start)
+    fixture.setTitle("B")
+    fixture.emit(working, at: start.addingTimeInterval(0.2))
+
+    // The title returns to what the consumer already displays before the interval ends. The
+    // withheld B is now obsolete and must not flash back onto the row during the trailing flush.
+    fixture.setTitle("A")
+    fixture.emit(working, at: start.addingTimeInterval(0.4))
+    fixture.flush(at: start.addingTimeInterval(1.2))
+
+    #expect(received.count == 1)
+    #expect(received.last?.paneTitle == "A")
+  }
+
   @Test func aSettledTitleIsFlushedByTheNextPoll() {
     let fixture = makeFixture()
     var received: [ActiveAgentEntry] = []
@@ -136,6 +157,7 @@ struct AgentEntryTitleCoalescingTests {
       ("paneIndex", makeEntry(paneIndex: 2)),
       ("iconLookupToken", makeEntry(iconLookupToken: "codex")),
       ("agent", makeEntry(agent: .codex)),
+      ("launchProfileName", makeEntry(launchProfileName: "Review Profile")),
       // Carries the resume target `prowl agents` reports; a suppressed change
       // would keep pointing at the previous session's transcript.
       ("session", makeEntry(session: Self.otherSession)),
@@ -171,7 +193,8 @@ struct AgentEntryTitleCoalescingTests {
     session: AgentSession? = baseSession,
     rawState: AgentRawState = .working,
     displayState: AgentDisplayState = .working,
-    lastChangedAt: Date = Date(timeIntervalSince1970: 0)
+    lastChangedAt: Date = Date(timeIntervalSince1970: 0),
+    launchProfileName: String? = nil
   ) -> ActiveAgentEntry {
     ActiveAgentEntry(
       id: id,
@@ -187,7 +210,8 @@ struct AgentEntryTitleCoalescingTests {
       session: session,
       rawState: rawState,
       displayState: displayState,
-      lastChangedAt: lastChangedAt
+      lastChangedAt: lastChangedAt,
+      launchProfileName: launchProfileName
     )
   }
 

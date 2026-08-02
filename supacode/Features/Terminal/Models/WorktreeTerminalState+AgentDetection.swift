@@ -352,7 +352,12 @@ extension WorktreeTerminalState {
     if let previous = lastEmittedAgentEntriesBySurface[surfaceID] {
       // `rawState` flickers every poll while an agent animates and drives no UI,
       // so it never justifies an emission on its own.
-      if previous.equalsIgnoringRawState(entry) { return }
+      if previous.equalsIgnoringRawState(entry) {
+        // A title sequence can return to the value the consumer already displays before the
+        // interval ends. Any withheld intermediate frame is obsolete at that point.
+        pendingAgentEntryBySurface.removeValue(forKey: surfaceID)
+        return
+      }
       // Only the animated title moved. Hold it back until the interval elapses;
       // the suppressed entry is not recorded, so the next emission carries the
       // title as of that moment rather than a stale frame.
