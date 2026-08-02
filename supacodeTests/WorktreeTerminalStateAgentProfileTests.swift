@@ -57,6 +57,33 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.launchProfilesBySurface[surfaceID] == nil)
   }
 
+  @Test func launchTabWearsTheRuntimeIconInsteadOfTheTerminalGlyph() {
+    #expect(
+      WorktreeTerminalState.launchTabIcon(for: .claude)
+        == CommandIconMap.iconForFirstToken("claude")?.storageString
+    )
+    #expect(WorktreeTerminalState.launchTabIcon(for: .claude) != "terminal")
+    #expect(WorktreeTerminalState.launchTabIcon(for: .codex) != "terminal")
+    #expect(
+      WorktreeTerminalState.launchTabIcon(for: .claude)
+        != WorktreeTerminalState.launchTabIcon(for: .codex)
+    )
+  }
+
+  @Test func launchCreatesTheTabWithTheRuntimeIcon() {
+    let state = makeState()
+
+    _ = state.launchAgentProfile(makePlan(dedicatedHome: nil))
+
+    // Guards the call site, not just the helper: a hardcoded glyph here is the
+    // original bug, and it survives a helper-only assertion.
+    #expect(state.tabManager.tabs.count == 1)
+    #expect(state.tabManager.tabs.first?.icon == WorktreeTerminalState.launchTabIcon(for: .codex))
+    #expect(state.tabManager.tabs.first?.icon != "terminal")
+    // Left claimable, so a later command in the same tab still wins the slot.
+    #expect(state.tabManager.tabs.first?.iconLock == .auto)
+  }
+
   private func makeState() -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),

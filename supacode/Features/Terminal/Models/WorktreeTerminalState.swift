@@ -495,7 +495,7 @@ final class WorktreeTerminalState {
     let tabId = createTab(
       TabCreation(
         title: plan.profileName,
-        icon: "terminal",
+        icon: Self.launchTabIcon(for: plan.runtime),
         isTitleLocked: false,
         initialInput: runScriptInput(plan.terminalInput),
         focusing: true,
@@ -508,6 +508,16 @@ final class WorktreeTerminalState {
     guard let tabId, let surfaceID = trees[tabId]?.root?.leftmostLeaf().id else { return nil }
     launchProfilesBySurface[surfaceID] = identity
     return surfaceID
+  }
+
+  /// Icon for a profile-launched tab. The launch path knows its runtime, so it
+  /// resolves the brand icon directly instead of waiting for `CommandIconMap`
+  /// to recognise the shell title: the launch command is `env VAR=… claude`,
+  /// whose first token is `env`, and an unmatched token leaves the icon
+  /// untouched. The lock stays `.auto`, so a later command in the same tab can
+  /// still take the slot, exactly as it does for a hand-typed agent.
+  static func launchTabIcon(for runtime: AgentProfileRuntime) -> String {
+    CommandIconMap.iconForFirstToken(runtime.agent.iconLookupToken)?.storageString ?? "terminal"
   }
 
   @discardableResult
