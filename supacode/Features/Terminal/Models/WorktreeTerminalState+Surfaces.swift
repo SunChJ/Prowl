@@ -47,13 +47,16 @@ extension WorktreeTerminalState {
     target: TerminalCloseConfirmationTarget,
     decision: TerminalCloseConfirmationDecision
   ) -> Bool {
-    let alert = NSAlert()
-    alert.messageText = target.messageText
-    alert.informativeText = closeConfirmationMessage(for: decision)
-    alert.alertStyle = .warning
-    alert.addButton(withTitle: target.confirmButtonTitle)
-    alert.addButton(withTitle: "Cancel")
-    return alert.runModal() == .alertFirstButtonReturn
+    let confirmed = TerminalCloseConfirmationGate.run {
+      let alert = NSAlert()
+      alert.messageText = target.messageText
+      alert.informativeText = closeConfirmationMessage(for: decision)
+      alert.alertStyle = .warning
+      alert.addButton(withTitle: target.confirmButtonTitle)
+      alert.addButton(withTitle: "Cancel")
+      return alert.runModal() == .alertFirstButtonReturn
+    }
+    return confirmed ?? false
   }
 
   func closeConfirmationMessage(for decision: TerminalCloseConfirmationDecision) -> String {
