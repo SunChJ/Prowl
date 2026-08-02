@@ -82,10 +82,9 @@ Advanced section 内、Extra Arguments 之下:紧凑两列表格——表头(Nam
 
 ## 已知边界(与 053 既有推迟一致,本波不扩)
 
-- **resume/handoff 不携带环境补丁**:`AgentResumeRequest` 无 env 字段、
-  `ShellClient.runLogin` 无 env 缝。dedicatedHome 在 001-action.md 偏差 2 已推迟至
-  handoff 波次,自定义 env 继承同一缺口——绑定/覆盖 pane 的 briefing resume 降级
-  为 context-only。
+- **resume/handoff 环境补丁(已关闭)**:本修订当时记录的 `AgentResumeRequest`
+  缺口已随 [047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md) 删除;
+  Handoff 不再恢复 source session。Profile 环境补丁只属于 destination launch。
 - **布局恢复不重放补丁**:`WorktreeTerminalState+LayoutSnapshot` 重建 surface 时
   不带 `additionalEnvironment`,dedicatedHome 已有同样缺口,一并留待后续波次。
 - **明文存储(边界的显式放宽)**:000-plan.md:56 原本把"裸 API key 进 Prowl

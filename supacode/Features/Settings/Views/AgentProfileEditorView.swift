@@ -47,7 +47,7 @@ struct AgentProfileEditorView: View {
         )
       ) {
         ForEach(AgentProfileRuntime.allCases) { runtime in
-          Text(AgentRuntimeAdapterRegistry.displayName(for: runtime.agent)).tag(runtime)
+          Text(AgentRuntimeAdapterRegistry.displayName(for: runtime)).tag(runtime)
         }
       }
       iconRow
@@ -56,21 +56,30 @@ struct AgentProfileEditorView: View {
 
   private var detailsSection: some View {
     Section("Details") {
-      suggestedTextRow(
-        title: "Model",
-        prompt: "Runtime default",
-        text: $store.profile.model,
-        suggestions: modelSuggestions
-      )
-      suggestedTextRow(
-        title: "Reasoning Effort",
-        prompt: "Runtime default",
-        text: $store.profile.reasoningEffort,
-        suggestions: effortSuggestions
-      )
-      Picker("Execution Mode", selection: $store.profile.executionMode) {
-        Text("Standard").tag(AgentExecutionMode.standard)
-        Text("Unrestricted").tag(AgentExecutionMode.unrestricted)
+      if runtimeAdapter?.supportsModelSelection == true {
+        suggestedTextRow(
+          title: "Model",
+          prompt: "Runtime default",
+          text: $store.profile.model,
+          suggestions: modelSuggestions
+        )
+      }
+      if runtimeAdapter?.supportsReasoningEffort == true {
+        suggestedTextRow(
+          title: "Reasoning Effort",
+          prompt: "Runtime default",
+          text: $store.profile.reasoningEffort,
+          suggestions: effortSuggestions
+        )
+      }
+      if let executionModeOptions = runtimeAdapter?.executionModeOptions,
+        !executionModeOptions.isEmpty
+      {
+        Picker("Execution Mode", selection: $store.profile.executionMode) {
+          ForEach(executionModeOptions) { mode in
+            Text(mode.title).tag(mode)
+          }
+        }
       }
       switch store.profile.effectiveExecutionMode {
       case .standard:
@@ -78,8 +87,9 @@ struct AgentProfileEditorView: View {
       case .unrestricted:
         Text(
           store.profile.executionMode == .unrestricted
-            ? "Runs without permission prompts or sandboxing."
-            : "Extra arguments enable unrestricted execution — no permission prompts or sandboxing."
+            ? "Requests the runtime's least-restricted mode. "
+              + "It may execute commands and modify files without prompting."
+            : "Extra arguments request the runtime's least-restricted mode."
         )
         .font(.caption)
         .foregroundStyle(.red)
@@ -119,9 +129,11 @@ struct AgentProfileEditorView: View {
           id: override.id
         )
       }
-      Toggle("Use Dedicated Home", isOn: $store.profile.bindsDedicatedHome)
-        .help("Keep a separate login, usage, and configuration for this profile")
-      if store.profile.bindsDedicatedHome {
+      if runtimeAdapter?.supportsAccountIsolation == true {
+        Toggle("Use Dedicated Home", isOn: $store.profile.bindsDedicatedHome)
+          .help("Keep a separate login, usage, and configuration for this profile")
+      }
+      if runtimeAdapter?.supportsAccountIsolation == true, store.profile.bindsDedicatedHome {
         Text(
           "This profile gets its own runtime home: separate login and usage, "
             + "but also separate skills, global instructions, and session history. "
@@ -246,7 +258,7 @@ struct AgentProfileEditorView: View {
           .font(.headline)
         Text(
           store.profile.icon == nil
-            ? "\(AgentRuntimeAdapterRegistry.displayName(for: store.profile.runtime.agent)) brand icon"
+            ? "\(AgentRuntimeAdapterRegistry.displayName(for: store.profile.runtime)) brand icon"
             : "Custom SF Symbol"
         )
         .font(.caption)
@@ -360,11 +372,14 @@ struct AgentProfileEditorView: View {
   }
 
   private var effortSuggestions: [String] {
-    AgentRuntimeAdapterRegistry.adapter(for: store.profile.runtime.agent)?.reasoningEffortSuggestions
-      ?? []
+    runtimeAdapter?.reasoningEffortSuggestions ?? []
   }
 
   private var modelSuggestions: [String] {
-    AgentRuntimeAdapterRegistry.adapter(for: store.profile.runtime.agent)?.modelSuggestions ?? []
+    runtimeAdapter?.modelSuggestions ?? []
+  }
+
+  private var runtimeAdapter: (any AgentRuntimeAdapter)? {
+    AgentRuntimeAdapterRegistry.profileAdapter(for: store.profile.runtime)
   }
 }

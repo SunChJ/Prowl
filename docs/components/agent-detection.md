@@ -21,10 +21,11 @@ Kimi, Droid, Amp, Pi (`pi`), Oh My Pi (`omp`, `oh-my-pi`), Qoder CLI (`qodercli`
 Qwen Code (`qwen`), and Grok Build (`grok`).
 Detection covers
 common wrappers (node, python, bun, bash, etc.) so agents launched indirectly are
-still found. Oh My Pi reuses Pi-derived screen heuristics but uses its own command
-icon where Prowl shows detected command icons, including terminal tabs. Grok Build
-also ships an `agent` symlink; Prowl only treats that name as Grok when the path
-points at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
+still found. Pi and Oh My Pi are independent detected agents. Pi uses only its
+own minimal working/idle cues; Oh My Pi owns its richer spinner and interactive
+Ask-prompt heuristics, plus its own session layout and icon. Grok Build also
+ships an `agent` symlink; Prowl only treats that name as Grok when the path points
+at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
 
 ## How detection works (two stages)
 

@@ -49,10 +49,9 @@ collect briefing → archive outgoing state → install fresh current.md
   click to jump) fires unless you are already watching that worktree — there,
   the appearing tab is the signal.
 
-## The briefing: inline first
+## The briefing: explicit input
 
-The briefing is always **agent-authored**; the difference between the paths is
-only whether the author is present:
+The briefing is always **agent-authored** and supplied explicitly:
 
 - **Inline (`--brief`) — the primary path.** The outgoing agent hands itself
   off as its final action and writes the briefing in the same breath:
@@ -82,21 +81,14 @@ only whether the author is present:
   stubs), plus the *intent* of the handoff itself — which is exactly what
   "Suggested Prompt For Next Agent" needs. Inline costs no extra model call
   and no waiting.
-- **Fork — the explicit fallback.** When the author is not on the command
-  line (you are handing off a third pane, or rescuing a wedged agent), Prowl
-  resumes the source's recorded session headlessly and asks it to reply with
-  the briefing. The resume is side-effect-free by construction: Claude Code
-  runs with `--fork-session`, Codex with `--ephemeral`, so the live session's
-  recorded state is never touched; no permission flags are ever passed. One
-  fork turn is bounded to **2 minutes**.
-- **Context-only.** With `--no-brief` (or when no safe fork exists) the
+- **Context-only.** With an explicit `--no-brief`, the
   transition carries `context.md` and the archive chain only.
 
-Validation is uniform: a briefing must contain at least `## Objective`,
+Every command must choose one of those inputs; Prowl never resumes a recorded
+session or starts a hidden model turn to synthesize a briefing. A briefing must
+contain at least `## Objective`,
 `## Current State`, and `## Next Steps` (chat preamble and code fences are
-stripped). An invalid inline brief errors with guidance and **zero side
-effects**; an unusable fork reply degrades the transition to context-only
-(`briefing=failed` in the log).
+stripped). An invalid inline brief errors with guidance and **zero side effects**.
 
 ## The artifact
 
@@ -131,7 +123,7 @@ prowl handoff save       [target] [--brief -|--no-brief] [--note "…"]
 - **`to <agent>`** runs the full transition and launches the receiver in a
   background tab. Interactive launch is verified for `claude` and `codex`;
   `--no-launch` still archives + saves and accepts every detected-agent
-  token (`pi`, `claude`, `codex`, `gemini`, `cursor-agent`, `cline`,
+  token (`pi`, `omp`, `claude`, `codex`, `gemini`, `cursor-agent`, `cline`,
   `opencode`, `copilot`, `kimi`, `droid`, `amp`, `qodercli`, `qwen`, `grok`).
 - **`save`** is the deferred-handoff checkpoint: install a fresh briefing and
   regenerate context, with no destination and no launch. Use it when you stop
@@ -149,11 +141,10 @@ prowl handoff save       [target] [--brief -|--no-brief] [--note "…"]
 - Run outside any Prowl pane with no selector, the command errors
   (`SOURCE_REQUIRED`). The focused pane is never guessed at.
 
-Self-handoffs require `--brief` (or an explicit `--no-brief`): the author is
-right there, so asking it to rerun with its own briefing is the cheapest
-correct outcome — the error message contains a copy-pasteable heredoc. For
-third-party sources the fork fallback applies automatically, and a failed
-fork degrades to context-only rather than blocking a rescue.
+Every handoff requires `--brief` or an explicit `--no-brief`, including commands
+that target another pane. A missing choice errors with a copy-pasteable heredoc
+and zero side effects; Prowl never makes an implicit paid model call on behalf
+of a third-party caller.
 
 The receiving agent's kickoff prompt adapts: with a briefing it starts from
 `current.md`'s Next Steps; without one it orients from `context.md` and the
@@ -188,24 +179,21 @@ The HUD is a trigger and an observer for the same CLI transition:
    keyboard stays with the terminal (the request may trigger permission
    prompts you need to approve), and clicking outside collapses the panel —
    the hand-off still completes headlessly and notifies.
-3. **Fallbacks while waiting** — **Fork Briefing** (only for a resumable
-   exact/high-confidence claude/codex session) collects the briefing from the
-   recorded session instead; **Context Only** hands off without one;
+3. **Fallback while waiting** — **Context Only** hands off without a briefing;
    **Cancel** closes the panel (an already-injected request can't be unsent —
-   if the agent still hands off, it completes headlessly and notifies).
+   if the agent still hands off, it completes headlessly and notifies). If the
+   request cannot be delivered to the source pane, Prowl takes the context-only
+   path automatically.
 
 Because the request is plain language, **any detected agent can be a
-source** — the pane-injection path is not limited to claude/codex; only the
-fork fallback is.
+source** — the pane-injection path is not limited to claude/codex.
 
 ## Safety
 
 - Handoff never commits, pushes, or runs destructive git — saving only
   **reads** git state (`status` / `diff --stat`).
-- The fork resume is side-effect-free by construction: `--fork-session` /
-  `--ephemeral`, never a `--dangerously-*` flag, regardless of how the source
-  was launched. Unrestricted-mode inheritance applies only to the interactive
-  destination launch.
+- Unrestricted-mode inheritance applies only to the interactive destination
+  launch; briefing collection never starts another agent process.
 - Archive-before-write is a global invariant: no rewrite of `current.md` can
   destroy the only copy of the previous round.
 - `to` only **adds** a background tab; it never closes the outgoing agent's
@@ -219,8 +207,8 @@ fork fallback is.
   regular repository or worktree covers just that repo; a plain folder omits
   git branch and diff details.
 - The HUD's injected request lands in the agent's input queue; a busy agent
-  answers it after its current step. Use the fork/context-only fallbacks if
-  you cannot wait — or Cancel, and the handoff completes in the background
+  answers it after its current step. Use **Context Only** if you cannot wait —
+  or Cancel, and the handoff completes in the background
   when the agent gets to it.
 - Launching uses the interactive receiving agent (so you can step in); don't
   use `--capture` against it — read its screen with `prowl read --wait-stable`.

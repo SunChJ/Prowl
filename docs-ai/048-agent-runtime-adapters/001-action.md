@@ -1,5 +1,10 @@
 # 048 — Agent Runtime Adapters: Action
 
+> Current-state note (2026-08-01): the headless resume client and adapter
+> described below were removed by
+> [047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md). The shared
+> runtime layer now covers launch and launch observation only.
+
 | | |
 | --- | --- |
 | **Status** | Completed |

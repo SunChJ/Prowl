@@ -223,6 +223,16 @@ struct AgentProfilesFeatureTests {
     // A different agent started manually in the same pane uses its default
     // home; handing it the profile home would break session attribution.
     #expect(identity.configRoot(forDetected: .claude) == nil)
+
+    let geminiRoot = home.appending(path: ".gemini", directoryHint: .isDirectory)
+    let nestedIdentity = WorktreeTerminalState.SurfaceLaunchProfile(
+      profileID: UUID(),
+      name: "Gemini · Work",
+      runtime: .gemini,
+      dedicatedHome: home,
+      sessionConfigRoot: geminiRoot
+    )
+    #expect(nestedIdentity.configRoot(forDetected: .gemini) == geminiRoot)
   }
 
   @Test(.dependencies) func moveReordersFallbackPriority() async {
