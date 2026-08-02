@@ -5,6 +5,12 @@ import UniformTypeIdentifiers
 
 nonisolated let ghosttyLogger = SupaLogger("GhosttyRuntime")
 
+// Explicitly isolated rather than relying on the module's MainActor default:
+// when a Release (whole-module) build's swiftmodule is deserialized by the test
+// target, default-isolation inference is lost for the `isolated deinit` check
+// and compilation fails with "containing class is not isolated to an actor".
+// The explicit attribute is semantically identical and serializes correctly.
+@MainActor
 final class GhosttyRuntime {
   nonisolated static let ghosttyExecutableCandidates = [
     "/Applications/Ghostty.app/Contents/MacOS/ghostty",

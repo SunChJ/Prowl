@@ -55,16 +55,20 @@ struct CLISocketServerTests {
     #expect(canConnect(to: socketPath))
   }
 
-  @Test func ownedDescriptorsAreClosedOnExec() throws {
-    let socketPath = temporarySocketPath(suffix: "cloexec")
-    let server = CLISocketServer(router: CLICommandRouter(), socketPath: socketPath)
-    try server.start()
-    defer { server.stop() }
+  // `debugFileDescriptors` exists only in Debug builds, and so does this test —
+  // `make bench` compiles this target under the Release configuration.
+  #if DEBUG
+    @Test func ownedDescriptorsAreClosedOnExec() throws {
+      let socketPath = temporarySocketPath(suffix: "cloexec")
+      let server = CLISocketServer(router: CLICommandRouter(), socketPath: socketPath)
+      try server.start()
+      defer { server.stop() }
 
-    let descriptors = server.debugFileDescriptors
-    #expect(isCloseOnExec(descriptors.server))
-    #expect(isCloseOnExec(descriptors.lock))
-  }
+      let descriptors = server.debugFileDescriptors
+      #expect(isCloseOnExec(descriptors.server))
+      #expect(isCloseOnExec(descriptors.lock))
+    }
+  #endif
 
   @Test func socketFilesAreOwnerOnly() throws {
     let socketPath = temporarySocketPath(suffix: "permissions")

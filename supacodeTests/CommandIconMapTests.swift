@@ -93,18 +93,22 @@ struct CommandIconMapTests {
 
   // MARK: - Debug catalog
 
-  @Test func debugAllEntriesIsSorted() {
-    let tokens = CommandIconMap.debugAllEntries.map(\.token)
-    #expect(tokens == tokens.sorted())
-  }
+  // `debugAllEntries` exists only in Debug builds, and so do these tests —
+  // `make bench` compiles this target under the Release configuration.
+  #if DEBUG
+    @Test func debugAllEntriesIsSorted() {
+      let tokens = CommandIconMap.debugAllEntries.map(\.token)
+      #expect(tokens == tokens.sorted())
+    }
 
-  @Test func debugAllEntriesCoversWellKnownTokens() {
-    let tokens = Set(CommandIconMap.debugAllEntries.map(\.token))
-    // Spot-check that the debug surface actually exposes the tokens
-    // a user is most likely to hunt for.
-    let mustHave: Set<String> = [
-      "git", "docker", "claude", "vim", "ssh", "npm", "swift",
-    ]
-    #expect(mustHave.isSubset(of: tokens))
-  }
+    @Test func debugAllEntriesCoversWellKnownTokens() {
+      let tokens = Set(CommandIconMap.debugAllEntries.map(\.token))
+      // Spot-check that the debug surface actually exposes the tokens
+      // a user is most likely to hunt for.
+      let mustHave: Set<String> = [
+        "git", "docker", "claude", "vim", "ssh", "npm", "swift",
+      ]
+      #expect(mustHave.isSubset(of: tokens))
+    }
+  #endif
 }

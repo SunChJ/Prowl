@@ -13,6 +13,10 @@ make format                      # Run full-tree swift-format cleanup
 make lint                        # Run swiftlint only
 make check                       # Run changed-file format, swift-format lint, and swiftlint
 make test                        # Run all tests
+make bench                       # Run performance benchmarks with -O; append absolute medians to ~/Library/Logs/Prowl/measurements/bench/
+make measure-cpu                 # Steady-state CPU + per-symbol attribution of the running Prowl Debug app
+make capture-spike               # Sample the running Prowl Debug app when CPU crosses a threshold
+make measure-titles              # Black-box check that animated tab titles stay coalesced (~1 change/s)
 make log-stream                  # Stream app logs (subsystem: com.onevcat.prowl)
 make build-cli                   # Build CLI (prowl) via SwiftPM
 make test-cli-smoke              # Run CLI smoke tests (unit-level)
