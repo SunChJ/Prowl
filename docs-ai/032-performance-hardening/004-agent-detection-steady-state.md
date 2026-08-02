@@ -385,7 +385,9 @@ fork-owned follow-up that preserves the author's commits:
 Related changes outside the eight numbered fixes are #646 (per-surface screen-scan memoization),
 #648/#655 (the cached worktree directory index that Fix 8 extends), and #645/#653 (opt-in Debug
 TCA action logging). The August review and final per-PR boundaries are recorded in
-[056-performance-optimization-2026-08](../056-performance-optimization-2026-08/000-plan.md).
+[056-performance-optimization-2026-08](../056-performance-optimization-2026-08/000-plan.md). This
+measurement narrative and its two reusable scripts originate in #661 and are integrated through
+#665.
 
 ## Tests
 
