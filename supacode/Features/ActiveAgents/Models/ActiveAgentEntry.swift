@@ -16,7 +16,8 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   /// The title of the agent's own pane: the surface's live title when it has one,
   /// falling back to the tab's display title. Kept per-pane so agents in different
   /// splits of one tab don't all mirror the focused pane's title.
-  let paneTitle: String
+  /// A `var` so `equalsIgnoringRawStateAndPaneTitle` can normalize it.
+  var paneTitle: String
   let surfaceID: UUID
   let paneIndex: Int
   /// Command/process token used for row icon lookup. This can be more specific than
@@ -47,6 +48,18 @@ struct ActiveAgentEntry: Identifiable, Equatable, Sendable {
   func equalsIgnoringRawState(_ other: ActiveAgentEntry) -> Bool {
     var normalized = self
     normalized.rawState = other.rawState
+    return normalized == other
+  }
+
+  /// Equality ignoring `rawState` and `paneTitle`. Agent TUIs animate a spinner
+  /// glyph inside the terminal title (`⠦ spx-h` → `⠧ spx-h`), so the title
+  /// changes several times a second while nothing a user would call a change has
+  /// happened. Callers use this to recognize a title-only difference and space
+  /// those emissions out instead of forwarding every animation frame.
+  func equalsIgnoringRawStateAndPaneTitle(_ other: ActiveAgentEntry) -> Bool {
+    var normalized = self
+    normalized.rawState = other.rawState
+    normalized.paneTitle = other.paneTitle
     return normalized == other
   }
 
