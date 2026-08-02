@@ -7,7 +7,56 @@
 # agent mix and the host load average next to the per-symbol attribution. Treat
 # a sample taken above roughly one runnable process per core as unusable:
 # starvation inflates every number, and it inflates them unevenly.
-set -uo pipefail
+set -euo pipefail
+umask 077
+
+# Set PROWL_PID when several Debug app instances are running or an exact process
+# has already been selected for an isolated measurement.
+usage_error() {
+  echo "$1" >&2
+  exit 64
+}
+
+require_positive_integer() {
+  local name=$1
+  local value=$2
+  case "$value" in
+    '' | *[!0-9]*) usage_error "$name must be a positive integer." ;;
+  esac
+  [ "$value" -gt 0 ] || usage_error "$name must be greater than zero."
+}
+
+resolve_prowl_pid() {
+  if [ -n "${PROWL_PID:-}" ]; then
+    require_positive_integer PROWL_PID "$PROWL_PID"
+    kill -0 "$PROWL_PID" 2>/dev/null || {
+      echo "PROWL_PID $PROWL_PID is not running." >&2
+      return 1
+    }
+    printf '%s\n' "$PROWL_PID"
+    return
+  fi
+
+  local matches
+  local count
+  matches=$(ps -Ao pid=,comm= | awk '/\/Prowl Debug\.app\/Contents\/MacOS\/ProwlApp$/ { print $1 }')
+  count=$(printf '%s\n' "$matches" | awk 'NF { count += 1 } END { print count + 0 }')
+  case "$count" in
+    0)
+      echo "Prowl Debug is not running." >&2
+      return 1
+      ;;
+    1)
+      printf '%s\n' "$matches"
+      ;;
+    *)
+      printf 'Several Prowl Debug processes are running (%s). Set PROWL_PID explicitly.\n' "$matches" >&2
+      return 1
+      ;;
+  esac
+}
+
+PID=$(resolve_prowl_pid)
 
 # Each run gets its own directory so earlier samples stay comparable.
 # ~/Library/Logs is where macOS keeps user-visible diagnostics, so runs survive a
@@ -15,18 +64,12 @@ set -uo pipefail
 # periodically and on reboot, which silently discards the baseline a later run is
 # meant to be compared against. ~/Library/Caches would be worse still, since the
 # system may evict it under disk pressure.
-RUN_ID=$(date +%Y%m%d-%H%M%S)
+RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 OUT="${PROWL_MEASURE_DIR:-$HOME/Library/Logs/Prowl/measurements}/$RUN_ID"
 mkdir -p "$OUT"
 
 # Keep the console output and the on-disk record identical.
 exec > >(tee "$OUT/summary.txt") 2>&1
-
-PID=$(ps -Ao pid,comm | grep "Prowl Debug.app/Contents/MacOS/ProwlApp" | grep -v grep | awk '{print $1}' | head -1)
-if [ -z "$PID" ]; then
-  echo "Prowl Debug is not running." >&2
-  exit 1
-fi
 
 echo "pid: $PID  (up $(ps -o etime= -p "$PID" | tr -d ' '))"
 echo "load: $(uptime | sed 's/.*load averages*: //')   cores: $(sysctl -n hw.ncpu)"
@@ -35,7 +78,7 @@ echo
 echo "=== agent mix ==="
 # Working agents drive the expensive detection path, so the mix is needed to
 # compare two runs honestly.
-prowl agents --json 2>/dev/null > "$OUT/agents.json" || true
+prowl agents --json 2>/dev/null > "$OUT/agents.json" || printf '{"ok":false}\n' > "$OUT/agents.json"
 jq -r 'if .ok then "total=\(.data.agents|length)   " + (.data.agents|group_by(.status)|map("\(.[0].status)=\(length)")|join("  ")) else "CLI unavailable" end' \
   < "$OUT/agents.json" 2>/dev/null || echo "CLI unavailable"
 echo
