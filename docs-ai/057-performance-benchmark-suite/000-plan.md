@@ -4,7 +4,7 @@
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Status**      | Implemented                                                                                                                                              |
 | **Anchor date** | 2026-08-02                                                                                                                                               |
-| **Primary PRs** | (fill in as they merge)                                                                                                                                  |
+| **Primary PRs** | #668                                                                                                                                                     |
 | **Related**     | [056-performance-optimization-2026-08](../056-performance-optimization-2026-08/000-plan.md), [032-performance-hardening](../032-performance-hardening/000-plan.md) |
 
 ## Background

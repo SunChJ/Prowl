@@ -5,9 +5,9 @@
 | Date | Change | Ref |
 | --- | --- | --- |
 | 2026-08-02 | Independent reproduction of the #644/#652 scan benchmark, the #650/#657 normalize ratios, and the #649/#656 title-coalescing rate (0.99 changes/s live) confirmed the wave's headline claims | (scratchpad, results recorded in 000-plan) |
-| 2026-08-02 | Four ratio-assertion benchmark suites plus shared measurement support added under `supacodeTests/` | PR TBD |
-| 2026-08-02 | `make bench` (Release + testability, pinned arch, serial), `make measure-cpu`, `make capture-spike`, `make measure-titles` added | PR TBD |
-| 2026-08-02 | `scripts/measure-title-coalescing.sh` added; verified live (animating tab 0.90/s, static tabs 0, exit 0) | PR TBD |
+| 2026-08-02 | Four ratio-assertion benchmark suites plus shared measurement support added under `supacodeTests/` | #668 |
+| 2026-08-02 | `make bench` (Release + testability, pinned arch, serial), `make measure-cpu`, `make capture-spike`, `make measure-titles` added | #668 |
+| 2026-08-02 | `scripts/measure-title-coalescing.sh` added; verified live (animating tab 0.90/s, static tabs 0, exit 0) | #668 |
 
 ## Outcome & current state (as of 2026-08-02)
 
