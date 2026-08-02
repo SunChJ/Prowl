@@ -82,9 +82,10 @@ cache and the cost was recomputation. Every pane re-read, re-parsed, and re-norm
 same bytes each time its 5-second session cache expired.
 
 `TranscriptFragmentCache` keys parsed, normalized fragments on the transcript's path and
-modification date. Entries not consulted in a round are pruned, which bounds a cache whose
-keys would otherwise grow with every append. Matching behavior is unchanged: identical
-fragments produce identical scores.
+modification date. One resolver-wide LRU retains at most 128 entries and 8 MiB of normalized
+UTF-8 payload; observing a newer version removes older keys for the same path immediately.
+Matching behavior is unchanged: identical fragments produce identical scores, while process
+churn cannot multiply retention by the number of panes.
 
 ## Fix 4 — Normalization cost
 
@@ -143,7 +144,8 @@ title along, so a state transition is never delayed.
 Coalescing alone would strand the final frame of a spinner that stops animating, since no
 further title change would arrive to carry it. A suppressed entry is therefore retained and
 flushed by the next detection poll once the interval elapses — no timer, and the stale
-window is bounded to one poll.
+window is bounded to one poll. If the title returns to the value already visible before the
+interval ends, the obsolete pending frame is discarded instead of being flashed later.
 
 **Rejected:** stripping the glyphs instead. It would require maintaining a list of every
 agent's spinner alphabet, and an unrecognized style would silently regress to per-frame
@@ -169,10 +171,13 @@ swallowed the gains. The walk scales with files on disk, not pane count: this ho
 5,483 transcripts totalling 3.9 GB, and that number grows as the agents work.
 
 Panes resolve independently but overwhelmingly share roots — every agent in one project
-enumerates that project's transcript directory. One walk per root is now retained for two
-seconds and replayed for whatever panes arrive inside that window. The stored list is
+enumerates that project's transcript directory. One walk per root is now retained for one
+second and replayed for whatever panes arrive inside that window. The stored list is
 unfiltered so callers keep applying their own process-start threshold, which lets panes with
-unrelated start times share a single enumeration.
+unrelated start times share a single enumeration. The lifetime deliberately does not exceed
+the resolver's one-second narrow retry: a medium-confidence sole-candidate confirmation must
+observe a fresh directory snapshot so a newly created competing transcript can block a false
+attribution.
 
 The visit limit is part of the cache key. A walk made under a looser limit may hold entries a
 stricter caller would refuse to trust, so it must not answer for one; the existing
@@ -219,9 +224,11 @@ defect" hypothesis the previous section recorded, confirmed.
 
 `updateTitle` now drops no-op writes outright and holds a changed title that arrives inside a
 one-second window, newest-wins. As with Fix 5, a spinner that stops animating would strand its
-final frame, so `flushPendingTitles` lands it from the detection poll — no timer, because the
-poll is already running for precisely the panes that animate. `@ObservationIgnored` on both
-bookkeeping dictionaries keeps the coalescing from defeating itself.
+final frame, so a clock-driven trailing task lands it independently of agent detection. That
+independence matters for non-agent programs, whose detection schedule can go cold while a
+terminal title is still pending. A sequence that returns to the visible title discards its
+obsolete pending frame, and `@ObservationIgnored` on the bookkeeping keeps coalescing from
+defeating itself.
 
 **A second defect in the same view.** `TerminalTabsRowView` looked each row up with
 `manager.tabs.first(where:)` *inside* a `ForEach` over that same array — 1,024 comparisons per
@@ -238,10 +245,12 @@ directory being asked about, and `PathPolicy.normalizeURL` is a `fileExists` che
 whenever any agent's state changes, so unchanged directories were re-normalized every frame.
 
 `WorktreeDirectoryIndexCache` now memoizes resolutions keyed by the directory as asked for. A
-resolution is a pure function of that directory and the index, so it stays valid until the
-index is rebuilt; rebuilding clears it in the same step, ordered so a stale answer cannot
-outlive its index. A pane can `cd` anywhere, so the memo is capped at 256 entries rather than
-assumed bounded by pane count.
+resolution is a pure function of that directory and the canonical index. Repository-set changes
+and the one-second canonical-path revalidation both clear the memo before a lookup can reuse it,
+so a symlink retarget has the same bounded stale window as the index itself. A pane can `cd`
+anywhere, so the memo is capped at 256 entries rather than assumed bounded by pane count. The
+overlay resolves each render batch after validating the repository signature once; CLI and
+single-lookup callers retain their throwaway-index behavior.
 
 Measured at 0.11–0.16% of a core before the fix and 1.13% in the post-fix sample — the figure
 went *up* in absolute terms because the sample that produced it carried a far heavier
@@ -289,6 +298,12 @@ working/blocked mix, host load, and files on disk all moved between runs, and ea
 the number independently. `scripts/measure-agent-detection-cpu.sh` records the agent mix, load
 average, and per-symbol attribution together for this reason — a CPU percentage without its
 workload is not a measurement.
+
+Both measurement scripts select the sole running `Prowl Debug.app` process by default. When
+several Debug builds run, `PROWL_PID` is required so a capture cannot silently target the wrong
+instance. Output directories are unique per process and created with user-only permissions;
+invalid numeric inputs, missing processes, and failed required sampling steps return failure
+instead of leaving an apparently successful partial measurement.
 
 ## Verification of Fixes 7 and 8
 
@@ -355,58 +370,41 @@ Neither is worth attacking without first establishing that the current cost is a
 
 ## Refs
 
-All branches are off `main` and unmerged at time of writing. The fixes do not map one-to-one
-onto branches: two pairs share a commit, and the branches form three stacks.
+The original contributions were reviewed independently and, where needed, integrated through a
+fork-owned follow-up that preserves the author's commits:
 
-**Stack A** — `perf/agent-entry-churn`, then `perf/agent-title-coalescing` on top of it:
+| Fix | Original PR | Fork result | Final scope |
+| --- | --- | --- | --- |
+| 1–2 | #647 | #654 | Raw-only emission dedup, sidebar observation isolation, and live CLI raw state |
+| 3–4 | #650 | #657 | Resolver-wide bounded fragment LRU and normalization equivalence guards |
+| 5 | #660 | #664 | Pane-title emission coalescing with stale-pending cancellation and full-field protection |
+| 6 | #658 | #662 | Shared one-second root scans plus scoring derivation reuse |
+| 7 | #649 | #656 | Clock-driven tab-title trailing delivery and one indexed tab lookup per render |
+| 8 | #659 | #663 | Bounded resolution memo, symlink revalidation, and one signature check per row batch |
 
-| commit     | subject                                                          | fix   |
-| ---------- | ---------------------------------------------------------------- | ----- |
-| `eee5a988` | Stop agent-state churn from re-rendering the whole sidebar       | 1 + 2 |
-| `ad6e10e2` | Drop dead try/throws from the emission dedup fixture             | —     |
-| `4c7725ad` | Space out Active Agents emissions driven by animated pane titles | 5     |
-
-**Stack B** — `perf/session-fingerprint-cache`, then `perf/session-scan-cache`:
-
-| commit     | subject                                                                 | fix   |
-| ---------- | ----------------------------------------------------------------------- | ----- |
-| `2d33d2e3` | Cut agent session resolution CPU by reusing parsed transcript tails     | 3 + 4 |
-| `a06a0b31` | Skip escape stripping when a fragment holds no escape byte              | 4     |
-| `eae28144` | Share transcript directory walks across panes and cut redundant scoring | 6     |
-
-**Stack C** — `perf/sidebar-worktree-resolution`, then `perf/worktree-directory-query-memo`.
-`3420844c` is [003](003-sidebar-agent-row-resolution.md)'s fix rather than one of these eight;
-`c1c0b1d0` and `1aa1096a` are its documentation:
-
-| commit     | subject                                                      | fix |
-| ---------- | ------------------------------------------------------------ | --- |
-| `3420844c` | Resolve agent rows through a cached worktree directory index | 003 |
-| `2a7090cb` | Memoize agent working-directory resolution across renders    | 8   |
-
-**Standalone:** `perf/tab-title-coalescing` (`8662264d`) carries fix 7.
-`perf/agent-detection-scan-cache` (`9648f2ea`, "Memoize agent screen scans to skip re-parsing
-unchanged terminals") is part of this wave but is not one of the numbered fixes — it is covered
-only by `AgentScreenScanCacheTests` below. `perf/tca-action-log-gating` (`51cdab5b`) gates
-per-action TCA logging behind `PROWL_LOG_TCA_ACTIONS` and is a logging change, not a fix.
-
-`perf/combined-verify` stacks everything for local verification and is not a PR candidate.
+Related changes outside the eight numbered fixes are #646 (per-surface screen-scan memoization),
+#648/#655 (the cached worktree directory index that Fix 8 extends), and #645/#653 (opt-in Debug
+TCA action logging). The August review and final per-PR boundaries are recorded in
+[056-performance-optimization-2026-08](../056-performance-optimization-2026-08/000-plan.md).
 
 ## Tests
 
 - `AgentEntryEmissionDedupTests` — `rawState` and bookkeeping churn do not re-emit.
 - `AgentEntryTitleCoalescingTests` — spinner frames coalesce, visible changes bypass the
-  interval, a settled title is flushed by the next poll.
+  interval, a settled title is flushed by the next poll, obsolete pending frames are discarded,
+  and every non-coalesced field (including Profile attribution) still forces emission.
 - `AgentScreenScanCacheTests` — unchanged screens are not re-scanned.
-- `TranscriptFragmentCacheTests` — reuse, invalidation on append, unreadable tails are not
-  cached, pruning is bounded, precomputed count and suffix.
+- `TranscriptFragmentCacheTests` — reuse, append invalidation, unreadable-tail recovery,
+  entry/payload LRU bounds, superseded-key removal, and precomputed count and suffix.
 - `AgentSessionRootScanCacheTests` — walks are shared within the window, redone after it,
-  shared across differing thresholds, and kept separate per root.
+  refreshed before sole-candidate confirmation, shared across differing thresholds, and kept
+  separate per root.
 - `AgentSessionFingerprintNormalizeTests` — both optimized paths reproduce the original
   formulation over a corpus and 2,000 seeded random inputs.
-- `TerminalTabTitleCoalescingTests` — 11 tests: frames inside the interval never reach `tabs`,
-  the flush lands only the most recent suppressed title, coalescing is per-tab rather than
-  global, a locked title is neither written nor held, a custom title masks a flushed live one,
-  and closing a tab drops its coalescing state.
+- `TerminalTabTitleCoalescingTests` — 16 tests: frames inside the interval never reach `tabs`,
+  clock-driven trailing delivery lands the newest title, coalescing is per-tab, obsolete pending
+  frames are discarded, a locked or custom title preserves its contract, and cleanup drops all
+  coalescing state.
 - `WorktreeDirectoryIndexTests` — the memo is proven by revoking the symlink a first lookup
   resolved through: an answer that survives that can only have been memoized. Plus
   invalidation on a repository-set change and eviction past the 256-entry cap.
