@@ -28,7 +28,7 @@ bounded canonical revalidation, and obsolete unmerged branch hashes.
 ## Refs
 
 - Original PR #661
-- Fork integration PR #665
+- Merged fork integration PR #665
 - Detailed measurement narrative:
   [032.004](../032-performance-hardening/004-agent-detection-steady-state.md)
 
@@ -48,4 +48,3 @@ the structural paths and the tools, not the original long captures.
   completed the full 20-second CPU plus 20-second stack-sample parser path.
 - Generated directories and samples were verified as `0700` and `0600` respectively.
 - `make check` and `make build-app` passed for #665 with no warnings.
-

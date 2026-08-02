@@ -26,7 +26,7 @@ even when the new agent's own transcript appeared between them.
 ## Refs
 
 - Original PR #658
-- Fork integration PR #662
+- Merged fork integration PR #662
 - Original implementation commit `d5825e55`
 
 ## Current state
@@ -46,4 +46,3 @@ a small, non-blocking retention follow-up rather than a correctness risk.
 - The focused root-scan, fragment-cache, profile, resolver, and normalization suites passed 65
   tests after integration with current `main`.
 - `make check` and `make build-app` passed for #662 with no warnings.
-

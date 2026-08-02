@@ -22,7 +22,7 @@ filesystem lookup should not remain proportional to agent rows in a main-thread 
 ## Refs
 
 - Original PR #659
-- Fork integration PR #663
+- Merged fork integration PR #663
 - Original implementation commit `549b1c20`
 
 ## Current state
@@ -38,4 +38,3 @@ degrades to the pre-memo lookup cost without changing resolution results.
 - The focused index, row-display, working-directory, and CLI suites passed 35 tests after merging
   current `main`. The Xcode dependency scan emitted five third-party package warnings; the final
   `make check` and `make build-app` runs completed with no warnings or errors.
-

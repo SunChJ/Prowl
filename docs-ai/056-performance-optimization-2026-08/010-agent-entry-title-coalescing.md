@@ -24,7 +24,7 @@ terminal event stream, replaced the TCA entry, and invalidated the Active Agents
 ## Refs
 
 - Original PR #660
-- Fork integration PR #664
+- Merged fork integration PR #664
 - Original implementation commits `2a026b07`, `ffe2673b`, and `80f0b11c`
 
 ## Current state
@@ -40,4 +40,3 @@ sequence that returns to the visible value cannot resurrect an intermediate fram
 - The focused entry-title, emission-dedup, pane-title, screen-scan, and tab-title suites passed 36
   tests after merging current `main`.
 - `make check` and `make build-app` passed for #664 with no warnings.
-
