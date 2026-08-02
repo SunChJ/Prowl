@@ -3,6 +3,7 @@ import Foundation
 public enum HandoffAgentSupport {
   public static let supportedAgents = [
     "pi",
+    "omp",
     "claude",
     "codex",
     "gemini",

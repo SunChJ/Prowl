@@ -10,34 +10,38 @@ struct ScreenHeuristicsTests {
 
   @Test func piDetection() {
     #expect(DetectedAgent.pi.detectState(in: "Working...") == .working)
-    #expect(DetectedAgent.pi.detectState(in: "Working… ⟦esc⟧") == .working)
-    #expect(DetectedAgent.pi.detectState(in: "Reading files ⟨esc⟩") == .working)
     #expect(DetectedAgent.pi.detectState(in: "Interrupting…") == .working)
     #expect(DetectedAgent.pi.detectState(in: "Done") == .idle)
   }
 
-  @Test func piAskPromptIsBlocked() {
-    #expect(
-      DetectedAgent.pi.detectState(
-        in: """
-          ⠏ Clarifying combined list order ⟨esc⟩
-
-          ╭─ Ask ─────────────────────────────────────────────────────────────────────╮
-          │ Which order should the combined list use?                                  │
-          ├────────────────────────────────────────────────────────────────────────────┤
-          │   Repo first                                                             │
-          │    Global first                                                           │
-          ├────────────────────────────────────────────────────────────────────────────┤
-          │ Enter select · n note · ↑/↓ move · Esc cancel                              │
-          ╰────────────────────────────────────────────────────────────────────────────╯
-          """
-      ) == .blocked
-    )
+  @Test func ompDetectionUsesItsOwnRuntimeChrome() {
+    #expect(DetectedAgent.omp.detectState(in: "Working… ⟦esc⟧") == .working)
+    #expect(DetectedAgent.omp.detectState(in: "Reading files ⟨esc⟩") == .working)
+    #expect(DetectedAgent.omp.detectState(in: "Done") == .idle)
   }
 
-  @Test func piIgnoresStaleWorkingMentionInCompletedOutput() {
+  @Test func ompAskPromptIsBlockedWithoutChangingPiSemantics() {
+    let prompt = """
+      ⠏ Clarifying combined list order ⟨esc⟩
+
+      ╭─ Ask ─────────────────────────────────────────────────────────────────────╮
+      │ Which order should the combined list use?                                  │
+      ├────────────────────────────────────────────────────────────────────────────┤
+      │   Repo first                                                             │
+      │    Global first                                                           │
+      ├────────────────────────────────────────────────────────────────────────────┤
+      │ Enter select · n note · ↑/↓ move · Esc cancel                              │
+      ╰────────────────────────────────────────────────────────────────────────────╯
+      """
     #expect(
-      DetectedAgent.pi.detectState(
+      DetectedAgent.omp.detectState(in: prompt) == .blocked
+    )
+    #expect(DetectedAgent.pi.detectState(in: prompt) == .idle)
+  }
+
+  @Test func ompIgnoresStaleWorkingMentionInCompletedOutput() {
+    #expect(
+      DetectedAgent.omp.detectState(
         in: """
           2. 增强 Pi / Oh My Pi 的屏幕状态判断
              - 原来 Pi 只认 Working...
@@ -58,9 +62,9 @@ struct ScreenHeuristicsTests {
     )
   }
 
-  @Test func piDetectsActiveSpinnerEvenWhenStatusPanelFollows() {
+  @Test func ompDetectsActiveSpinnerEvenWhenStatusPanelFollows() {
     #expect(
-      DetectedAgent.pi.detectState(
+      DetectedAgent.omp.detectState(
         in: """
           After I add a failing test case, I should edit the code accordingly.
           It’s important to reproduce the error first, then run the Swift tests after the edits.

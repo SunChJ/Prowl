@@ -24,9 +24,9 @@ Command Palette → "Toggle Active Agents Panel".
         pane title or branch (secondary)
 ```
 
-- **Icon** — the detected command/agent icon (for example `omp` keeps the OMP
-  icon even though it reports as the Pi agent; unknown wrappers fall back to the
-  agent icon, then a sparkle).
+- **Icon** — the detected command/agent icon. Aliases such as `oh-my-pi` use
+  their canonical runtime icon; unknown wrappers fall back to the agent icon,
+  then a sparkle.
 - **Title** — detected command/agent name + repository (repo color-coded);
   command aliases such as `omp` are shown directly. Panes Prowl launched from
   an [agent profile](agent-profiles.md) show the profile's display name

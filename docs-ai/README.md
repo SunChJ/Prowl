@@ -106,4 +106,5 @@ agent-facing manual for that).
 | 052 | [sidebar-context-menus](052-sidebar-context-menus/000-plan.md) | 2026-07-27 | Sidebar context menu overhaul: worktree terminal actions, header/workspace path actions, PR click-through |
 | 053 | [agent-profiles](053-agent-profiles/000-plan.md) | 2026-07-29 | Agent Profile V1: preset-first Claude Code/Codex launch profiles, opt-in account isolation, path routing, and future handoff seam |
 | 054 | [native-settings-navigation](054-native-settings-navigation/000-plan.md) | 2026-07-30 | SwiftUI-owned singleton Settings window, native sidebar/detail navigation, and Agent Profile drill-ins |
+| 055 | [agent-profile-runtimes](055-agent-profile-runtimes/000-plan.md) | 2026-08-01 | Capability-based runtime adapters and Agent Profile support across Prowl's recognized agent catalog |
 | 056 | [performance-optimization-2026-08](056-performance-optimization-2026-08/000-plan.md) | 2026-08-01 | August performance review series: exact cached line counts, opt-in Debug TCA logging, and agent screen-scan memoization |

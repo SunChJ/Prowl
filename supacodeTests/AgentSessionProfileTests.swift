@@ -53,6 +53,58 @@ struct AgentSessionProfileTests {
     )
   }
 
+  @Test func additionalAccountBoundRuntimesDefineRootedSessionLayouts() throws {
+    let root = URL(fileURLWithPath: "/Users/me/.prowl/agent-profiles/ABC", isDirectory: true)
+    let cwd = URL(fileURLWithPath: "/tmp/repo", isDirectory: true)
+    let uuid = "3f19a50a-2bd5-49b0-a071-1f59970ebcdf"
+
+    let gemini = AgentSessionProfile.profile(for: .gemini)
+    let geminiRoots = try #require(gemini.rootedCandidateRoots?(root, cwd, now, now))
+    #expect(
+      geminiRoots.last?.path
+        == "\(root.path)/tmp/b6fe87a9b936bea650481980f473639b9dd1934ddab7f48221cd6b9ab5ffc1f4/chats")
+    #expect(
+      gemini.rootedParsePath?("\(root.path)/tmp/project/chats/session-2026-08-01-3f19a50a.jsonl", root)?.id
+        == "3f19a50a"
+    )
+
+    let cline = AgentSessionProfile.profile(for: .cline)
+    #expect(cline.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/tasks"])
+    #expect(cline.rootedParsePath?("\(root.path)/tasks/1783800000000/events.jsonl", root)?.id == "1783800000000")
+    let clineRootWithMarkerAncestor = URL(fileURLWithPath: "/Users/tasks/agent-profile/data", isDirectory: true)
+    #expect(
+      cline.rootedParsePath?(
+        "\(clineRootWithMarkerAncestor.path)/tasks/1783800000001/events.jsonl",
+        clineRootWithMarkerAncestor
+      )?.id == "1783800000001"
+    )
+
+    let piProfile = AgentSessionProfile.profile(for: .pi)
+    #expect(piProfile.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/sessions/--tmp-repo--"])
+    #expect(piProfile.rootedParsePath?("\(root.path)/sessions/--tmp-repo--/\(uuid).jsonl", root)?.id == uuid)
+
+    let ompProfile = AgentSessionProfile.profile(for: .omp)
+    #expect(ompProfile.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/sessions/--tmp-repo--"])
+    #expect(
+      ompProfile.rootedParsePath?("\(root.path)/sessions/--tmp-repo--/2026-08-01T12-00-00-000Z_\(uuid).jsonl", root)?.id
+        == uuid
+    )
+
+    let copilot = AgentSessionProfile.profile(for: .copilot)
+    #expect(copilot.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/session-state"])
+    #expect(copilot.rootedParsePath?("\(root.path)/session-state/\(uuid)/events.jsonl", root)?.id == uuid)
+    #expect(copilot.rootedPIDKeyedSession != nil)
+
+    let qoder = AgentSessionProfile.profile(for: .qoder)
+    #expect(qoder.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/projects/-tmp-repo"])
+    #expect(qoder.rootedParsePath?("\(root.path)/projects/-tmp-repo/\(uuid).jsonl", root)?.id == uuid)
+
+    let qwen = AgentSessionProfile.profile(for: .qwen)
+    #expect(qwen.rootedCandidateRoots?(root, cwd, now, now).map(\.path) == ["\(root.path)/projects/-tmp-repo/chats"])
+    #expect(qwen.rootedParsePath?("\(root.path)/projects/-tmp-repo/chats/\(uuid).jsonl", root)?.id == uuid)
+    #expect(qwen.rootedPIDKeyedSession != nil)
+  }
+
   // MARK: - Working-directory encoders
 
   @Test func claudeRootSanitizesEveryNonAlphanumericCharacter() {
@@ -97,10 +149,12 @@ struct AgentSessionProfileTests {
     #expect(profile.parsePath("/Users/me/.claude/projects/-Users-me-Sync-github-Prowl/\(id).jsonl") == nil)
   }
 
-  @Test func piAndDroidRootsKeepDotsAndSpaces() {
+  @Test func piOmpAndDroidUseIndependentSessionLayouts() {
     let cwd = URL(fileURLWithPath: "/Users/me/.prowl/repos/My App", isDirectory: true)
     let piRoots = AgentSessionProfile.profile(for: .pi).candidateRoots(home, cwd, now, now)
     #expect(piRoots.map(\.path) == ["/Users/me/.pi/agent/sessions/--Users-me-.prowl-repos-My App--"])
+    let ompRoots = AgentSessionProfile.profile(for: .omp).candidateRoots(home, cwd, now, now)
+    #expect(ompRoots.map(\.path) == ["/Users/me/.omp/agent/sessions/-.prowl-repos-My App"])
     let droidRoots = AgentSessionProfile.profile(for: .droid).candidateRoots(home, cwd, now, now)
     #expect(droidRoots.map(\.path) == ["/Users/me/.factory/sessions/-Users-me-.prowl-repos-My App"])
   }

@@ -25,7 +25,7 @@ enum AgentProfileIconResolver {
       return TabIconSource(systemSymbol: overrideSymbol)
     }
 
-    return CommandIconMap.iconForFirstToken(iconSource.runtime.agent.iconLookupToken)
+    return CommandIconMap.iconForFirstToken(iconSource.runtime.iconLookupToken)
       ?? TabIconSource(systemSymbol: "sparkles")
   }
 }

@@ -46,7 +46,7 @@ enum AgentProfileSeeder {
     guard !settings.didSeedAgentProfiles else { return }
     let seeded = AgentProfileRuntime.allCases.filter(isRuntimeInstalled).map { runtime in
       AgentProfile(
-        name: AgentRuntimeAdapterRegistry.displayName(for: runtime.agent),
+        name: AgentRuntimeAdapterRegistry.displayName(for: runtime),
         runtime: runtime
       )
     }

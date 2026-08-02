@@ -567,7 +567,7 @@ func agentProfileLaunchItems(
     (lhs.id == recommendedID ? 0 : 1) < (rhs.id == recommendedID ? 0 : 1)
   }
   return ordered.map { profile in
-    let runtimeName = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime.agent)
+    let runtimeName = AgentRuntimeAdapterRegistry.displayName(for: profile.runtime)
     let placement = profile.id == recommendedID ? "Recommended · " : ""
     // Same soft availability judgment as the Agents popover — surfaced in the
     // subtitle, never blocking activation (docs-ai 053/005).
