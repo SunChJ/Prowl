@@ -590,11 +590,13 @@ struct SidebarListView: View {
     // normalization is a filesystem round-trip. This view re-runs whenever an agent's state
     // changes, so re-resolving unchanged directories put N `stat`s plus N symlink walks on the
     // main thread per frame.
+    let resolvedWorktreeIDs = WorktreeDirectoryIndexCache.worktreeIDs(
+      forWorkingDirectories: entries.compactMap(\.workingDirectory),
+      in: repositories
+    )
     var displays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay] = [:]
     for entry in entries {
-      let resolvedWorktreeID = entry.workingDirectory.flatMap {
-        WorktreeDirectoryIndexCache.worktreeID(forWorkingDirectory: $0, in: repositories)
-      }
+      let resolvedWorktreeID = entry.workingDirectory.flatMap { resolvedWorktreeIDs[$0] }
       displays[entry.id] = activeAgentRowDisplay(
         for: entry,
         repositories: repositories,
@@ -674,7 +676,8 @@ struct SidebarListView: View {
     forWorkingDirectory workingDirectory: URL,
     in repositories: IdentifiedArrayOf<Repository>
   ) -> Worktree.ID? {
-    WorktreeDirectoryIndexCache.worktreeID(forWorkingDirectory: workingDirectory, in: repositories)
+    WorktreeDirectoryIndex(repositories: repositories)
+      .worktreeID(forWorkingDirectory: workingDirectory)
   }
 
   /// Directory of the surface's owning worktree, used when the agent hasn't

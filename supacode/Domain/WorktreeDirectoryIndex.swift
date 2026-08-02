@@ -146,6 +146,29 @@ enum WorktreeDirectoryIndexCache {
     // Ordered first: a repository-set change or a due revalidation clears the memo, so a stale
     // resolution can never be returned for an index that has moved on.
     let index = index(for: repositories, now: now)
+    return worktreeID(forWorkingDirectory: directory, in: index)
+  }
+
+  /// Resolves one render batch after validating the repository signature once.
+  static func worktreeIDs(
+    forWorkingDirectories directories: some Sequence<URL>,
+    in repositories: IdentifiedArrayOf<Repository>,
+    now: ContinuousClock.Instant = ContinuousClock.now
+  ) -> [URL: Worktree.ID] {
+    let index = index(for: repositories, now: now)
+    var resolved: [URL: Worktree.ID] = [:]
+    for directory in directories {
+      if let id = worktreeID(forWorkingDirectory: directory, in: index) {
+        resolved[directory] = id
+      }
+    }
+    return resolved
+  }
+
+  private static func worktreeID(
+    forWorkingDirectory directory: URL,
+    in index: WorktreeDirectoryIndex
+  ) -> Worktree.ID? {
     if let memoized = cachedResolutions[directory] {
       return memoized
     }

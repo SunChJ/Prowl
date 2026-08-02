@@ -244,6 +244,30 @@ struct WorktreeDirectoryIndexTests {
     )
   }
 
+  /// The Active Agents overlay resolves every visible row as one render batch. The cache API
+  /// should validate the repository signature once for that batch, then reuse the resulting
+  /// index and resolution memo for every distinct directory.
+  @Test func batchLookupResolvesAllDirectories() {
+    WorktreeDirectoryIndexCache.reset()
+    let mainWorktree = makeWorktree(repoRoot: "/tmp/repo", path: "/tmp/repo", branch: "main")
+    let nested = makeWorktree(repoRoot: "/tmp/repo", path: "/tmp/repo/worktrees/feature", branch: "feature")
+    let repositories: IdentifiedArrayOf<Repository> = [
+      makeRepository(id: "/tmp/repo", worktrees: [mainWorktree, nested])
+    ]
+    let mainDirectory = URL(fileURLWithPath: "/tmp/repo/Sources")
+    let nestedDirectory = URL(fileURLWithPath: "/tmp/repo/worktrees/feature/Tests")
+    let outsideDirectory = URL(fileURLWithPath: "/tmp/elsewhere")
+
+    let resolved = WorktreeDirectoryIndexCache.worktreeIDs(
+      forWorkingDirectories: [mainDirectory, nestedDirectory, outsideDirectory, nestedDirectory],
+      in: repositories
+    )
+
+    #expect(resolved[mainDirectory] == mainWorktree.id)
+    #expect(resolved[nestedDirectory] == nested.id)
+    #expect(resolved[outsideDirectory] == nil)
+  }
+
   /// A pane can `cd` anywhere, so the memo must not grow without bound.
   @Test func memoIsBoundedAndEvictsOldEntries() throws {
     let fixture = try SymlinkedWorktreeFixture()
