@@ -1,10 +1,12 @@
 import Clocks
+import ConcurrencyExtras
 import Foundation
 import Testing
 
 @testable import supacode
 
 @MainActor
+@Suite(.serialized)
 struct DebouncerTests {
   @Test func actionFiresAfterInterval() async {
     let clock = TestClock()
@@ -74,6 +76,7 @@ struct DebouncerTests {
 }
 
 @MainActor
+@Suite(.serialized)
 struct KeyedDebouncerTests {
   @Test func keysDebounceIndependently() async {
     let clock = TestClock()
@@ -159,17 +162,14 @@ private func advance(_ clock: TestClock<Duration>, by duration: Duration) async 
   }
 }
 
-// Yields the main actor until `condition` holds. A fixed yield count is not
-// enough for positive assertions: when parallel suites contend for the main
-// actor, a resumed debounce task can need arbitrarily many hops before it runs
-// (the `isIdleTracksThePendingWindow` CI flake). The budget only bounds a
+// Yields the executor until `condition` holds. Plain `Task.yield()` can keep
+// rescheduling the test ahead of the debouncer task under full-suite load, so
+// use detached mega-yields to break that priority tie. The bound only guards a
 // genuine regression, which then fails the following `#expect` instead of
 // hanging the test.
 @MainActor
 private func settle(until condition: () -> Bool) async {
-  var budget = 10_000
-  while budget > 0, !condition() {
-    await Task.yield()
-    budget -= 1
+  for _ in 0..<50 where !condition() {
+    await Task.megaYield()
   }
 }

@@ -1,4 +1,5 @@
 import Clocks
+import ConcurrencyExtras
 import GhosttyKit
 import Testing
 
@@ -97,7 +98,9 @@ struct GhosttySurfaceBridgeTests {
     #expect(bridge.state.progressState == GHOSTTY_PROGRESS_STATE_INDETERMINATE)
 
     // No further reports: the driver synthesizes a REMOVE once the window lapses.
-    await advanceProgressClock(clock, by: .milliseconds(200))
+    await advanceProgressClock(clock, by: .milliseconds(200)) {
+      bridge.state.progressState == nil
+    }
     #expect(bridge.state.progressState == nil)
     #expect(lastState == GHOSTTY_PROGRESS_STATE_REMOVE)
   }
@@ -218,5 +221,18 @@ struct GhosttySurfaceBridgeTests {
     await Task.yield()
     await clock.advance(by: duration)
     await Task.yield()
+  }
+
+  private func advanceProgressClock(
+    _ clock: TestClock<Duration>,
+    by duration: Duration,
+    until condition: () -> Bool
+  ) async {
+    // A freshly spawned task can register its sleep after the first advance under load.
+    // Keep advancing until the observable effect lands; the bound guards regressions.
+    for _ in 0..<50 where !condition() {
+      await Task.megaYield()
+      await clock.advance(by: duration)
+    }
   }
 }
