@@ -125,8 +125,8 @@ struct PullRequestRefreshCoordinatorTests {
     coordinator.enqueue(request(repo: "beta"))
 
     await advanceCoordinatorClock(clock, by: .milliseconds(250))
-    await Task.yield()
-    await Task.yield()
+    await waitUntil { await probe.legacyCalls().count == 1 }
+    await waitUntil { await outcomes.refreshedRepositories().count == 2 }
 
     let legacyCalls = await probe.legacyCalls()
     #expect(legacyCalls.count == 1)
@@ -672,7 +672,7 @@ private func makeCoordinator(
 @MainActor
 private func waitUntil(
   _ condition: @MainActor @escaping () async -> Bool,
-  maxIterations: Int = 500
+  maxIterations: Int = 10_000
 ) async {
   for _ in 0..<maxIterations {
     if await condition() {
