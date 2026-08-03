@@ -90,6 +90,13 @@ Tabs get an auto-detected icon based on what's running (e.g. an agent's icon),
 which you can override (Change Tab Icon) or which a script can set. Icon
 precedence is `auto < script < user`.
 
+An Agent Profile launch applies that runtime's brand icon itself instead of
+waiting for detection — to the new tab, or to the containing tab when the
+profile opens in a split. Auto-detection reads the first token of the command,
+and a profile that sets launch-scoped environment variables runs as
+`env VAR=… claude`, whose first token is `env`. The slot stays claimable, so a
+later recognised command in the same tab still takes it over.
+
 ## Shell integration & status (OSC sequences)
 
 Ghostty's shell integration drives several Prowl features via terminal escape

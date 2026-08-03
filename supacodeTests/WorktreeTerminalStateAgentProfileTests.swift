@@ -57,6 +57,88 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.launchProfilesBySurface[surfaceID] == nil)
   }
 
+  @Test func launchTabWearsTheRuntimeIconInsteadOfTheTerminalGlyph() {
+    // No runtime falls back to the generic glyph: a new case added without a
+    // `CommandIconMap` entry would otherwise launch unbranded and silently.
+    for runtime in AgentProfileRuntime.allCases {
+      #expect(WorktreeTerminalState.launchTabIcon(for: runtime) != nil, "\(runtime) has no icon")
+    }
+    #expect(WorktreeTerminalState.launchTabIcon(for: .claude)?.storageString != "terminal")
+    #expect(WorktreeTerminalState.launchTabIcon(for: .codex)?.storageString != "terminal")
+    #expect(
+      WorktreeTerminalState.launchTabIcon(for: .claude)?.storageString
+        != WorktreeTerminalState.launchTabIcon(for: .codex)?.storageString
+    )
+  }
+
+  @Test func launchCreatesTheTabWithTheRuntimeIcon() {
+    let state = makeState()
+
+    _ = state.launchAgentProfile(makePlan(dedicatedHome: nil))
+
+    // Guards the call site, not just the helper: a hardcoded glyph here is the
+    // original bug, and it survives a helper-only assertion.
+    #expect(state.tabManager.tabs.count == 1)
+    #expect(
+      state.tabManager.tabs.first?.icon
+        == WorktreeTerminalState.launchTabIcon(for: .codex)?.storageString
+    )
+    #expect(state.tabManager.tabs.first?.icon != "terminal")
+    // Left claimable, so a later command in the same tab still wins the slot.
+    #expect(state.tabManager.tabs.first?.iconLock == .auto)
+  }
+
+  @Test func splitLaunchRebrandsTheContainingTab() throws {
+    let state = makeState()
+    _ = state.launchAgentProfile(makePlan(dedicatedHome: nil))
+    let tabID = try #require(state.tabManager.tabs.first?.id)
+    state.tabManager.updateIcon(tabID, icon: "@asset:Git")
+
+    let surfaceID = state.launchAgentProfile(
+      makePlan(dedicatedHome: nil, runtime: .claude, placement: .split)
+    )
+
+    // The split becomes the focused surface, so its runtime owns the tab icon;
+    // its `env …` title never reaches `CommandIconMap`.
+    #expect(state.tabID(containing: try #require(surfaceID)) == tabID)
+    #expect(state.tabManager.tabs.count == 1)
+    #expect(
+      state.tabManager.tabs.first?.icon
+        == WorktreeTerminalState.launchTabIcon(for: .claude)?.storageString
+    )
+    #expect(state.tabManager.tabs.first?.iconLock == .auto)
+  }
+
+  @Test func splitLaunchLeavesAClaimedIconAlone() throws {
+    let state = makeState()
+    _ = state.launchAgentProfile(makePlan(dedicatedHome: nil))
+    let tabID = try #require(state.tabManager.tabs.first?.id)
+    state.tabManager.overrideIcon(tabID, icon: "@asset:Git")
+
+    _ = state.launchAgentProfile(
+      makePlan(dedicatedHome: nil, runtime: .claude, placement: .split)
+    )
+
+    #expect(state.tabManager.tabs.first?.icon == "@asset:Git")
+    #expect(state.tabManager.tabs.first?.iconLock == .user)
+  }
+
+  @Test func splitLaunchLeavesAScriptIconAlone() throws {
+    let state = makeState()
+    _ = state.launchAgentProfile(makePlan(dedicatedHome: nil))
+    let tabID = try #require(state.tabManager.tabs.first?.id)
+    state.tabManager.setScriptIcon(tabID, icon: "@asset:Git")
+
+    _ = state.launchAgentProfile(
+      makePlan(dedicatedHome: nil, runtime: .claude, placement: .split)
+    )
+
+    // A launch is auto-detection's peer, not a script: it yields to `.script`
+    // just as `CommandIconMap` does.
+    #expect(state.tabManager.tabs.first?.icon == "@asset:Git")
+    #expect(state.tabManager.tabs.first?.iconLock == .script)
+  }
+
   private func makeState() -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),
@@ -70,14 +152,18 @@ struct WorktreeTerminalStateAgentProfileTests {
     )
   }
 
-  private func makePlan(dedicatedHome: URL?) -> AgentProfileLaunchPlan {
+  private func makePlan(
+    dedicatedHome: URL?,
+    runtime: AgentProfileRuntime = .codex,
+    placement: AgentProfilePlacement = .tab
+  ) -> AgentProfileLaunchPlan {
     AgentProfileLaunchPlan(
       profileID: UUID(),
       profileName: "Codex · Bound",
-      runtime: .codex,
-      invocation: AgentInvocation(executable: "codex", arguments: []),
+      runtime: runtime,
+      invocation: AgentInvocation(executable: runtime.agent.iconLookupToken, arguments: []),
       commandEnvironmentTokens: [],
-      placement: .tab,
+      placement: placement,
       splitDirection: .right,
       surfaceEnvironment: [:],
       dedicatedHome: dedicatedHome
