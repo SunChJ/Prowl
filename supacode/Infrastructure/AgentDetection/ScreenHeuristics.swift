@@ -349,7 +349,7 @@ nonisolated private func claudeCurrentInteractionRegion(_ content: String) -> St
 nonisolated private func codexCurrentInteractionRegion(_ content: String) -> String {
   let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
   guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
-    return content
+    return ""
   }
   return lines[promptIndex..<lines.endIndex].joined(separator: "\n")
 }

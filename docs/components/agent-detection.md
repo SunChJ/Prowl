@@ -37,10 +37,11 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    state. Structured confirmation/permission chrome is **Blocked**; status rows and
    spinners are **Working**. Claude working rows are scoped to the lines immediately above
    its prompt box. Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to
-   interrupt)` footer fallback, while its confirmation detector requires current strong
-   footer text or explicit Yes/No choice structure. Ordinary response prose that merely
-   quotes those phrases is not state evidence. Other agent families keep their own patterns
-   (including Oh My Pi's `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
+   interrupt)` footer fallback, while its confirmation detector requires a recognized prompt
+   line followed by strong footer text or explicit Yes/No choice structure. Without that prompt
+   boundary, confirmation-like text is treated as transcript prose rather than current state.
+   Other agent families keep their own patterns (including Oh My Pi's
+   `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
    hexagons, Kimi's moon phases, etc.).
    For Claude, a running **background workflow** keeps a status line *below* the
    input box (e.g. `3/5 agents done · 7m 29s · ↓ 288.5k tokens`) after the turn has

@@ -31,9 +31,9 @@ as equally live:
 3. Claude working evidence is limited to the status rows immediately above its prompt box.
    Current spinner glyphs remain supported; PR #673's `● <word>… (<elapsed> · …)` shape is
    accepted only there and only with a complete elapsed token.
-4. Codex confirmation evidence comes from strong current-interaction footer text or an
-   explicit Yes/No choice structure. The generic `hasConfirmationPrompt` transcript search
-   is no longer used for Codex.
+4. Codex confirmation evidence comes from strong footer text after a recognized prompt line
+   or an explicit Yes/No choice structure around that prompt. If the prompt boundary is absent,
+   confirmation vocabulary fails closed instead of falling back to a transcript-wide search.
 5. Codex screen fallback accepts only the current `•`/`◦ Working (... esc to interrupt)`
    footer in the bottom three non-empty lines. Arbitrary reworded elapsed bullets are not a
    Codex signal.

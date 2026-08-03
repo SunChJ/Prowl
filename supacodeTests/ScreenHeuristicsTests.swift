@@ -422,7 +422,14 @@ struct ScreenHeuristicsTests {
   }
 
   @Test func codexDetection() {
-    #expect(DetectedAgent.codex.detectState(in: "press enter to confirm or esc to cancel") == .blocked)
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › 1. Yes, proceed (y)
+          Press enter to confirm or esc to cancel
+          """
+      ) == .blocked
+    )
     #expect(DetectedAgent.codex.detectState(in: "• Working (12s • esc to interrupt)") == .working)
     #expect(DetectedAgent.codex.detectState(in: "Ready for input") == .idle)
   }
@@ -458,6 +465,17 @@ struct ScreenHeuristicsTests {
             2. No
           › Run /review on my current changes
           gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexConfirmationVocabularyWithoutPromptIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          • The previous prompt said: press enter to confirm or esc to cancel.
+            It also mentioned allow command? and [y/n].
           """
       ) == .idle
     )
