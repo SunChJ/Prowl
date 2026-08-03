@@ -490,12 +490,15 @@ final class WorktreeTerminalState {
       )
     {
       launchProfilesBySurface[surfaceID] = identity
+      if let icon = Self.launchTabIcon(for: plan.runtime), let tabID = tabID(containing: surfaceID) {
+        applyResolvedIcon(icon, surfaceId: surfaceID, tabId: tabID)
+      }
       return surfaceID
     }
     let tabId = createTab(
       TabCreation(
         title: plan.profileName,
-        icon: Self.launchTabIcon(for: plan.runtime),
+        icon: Self.launchTabIcon(for: plan.runtime)?.storageString ?? "terminal",
         isTitleLocked: false,
         initialInput: runScriptInput(plan.terminalInput),
         focusing: true,
@@ -510,14 +513,16 @@ final class WorktreeTerminalState {
     return surfaceID
   }
 
-  /// Icon for a profile-launched tab. The launch path knows its runtime, so it
+  /// Icon for a profile launch. The launch path knows its runtime, so it
   /// resolves the brand icon directly instead of waiting for `CommandIconMap`
-  /// to recognise the shell title: the launch command is `env VAR=… claude`,
-  /// whose first token is `env`, and an unmatched token leaves the icon
-  /// untouched. The lock stays `.auto`, so a later command in the same tab can
-  /// still take the slot, exactly as it does for a hand-typed agent.
-  static func launchTabIcon(for runtime: AgentProfileRuntime) -> String {
-    CommandIconMap.iconForFirstToken(runtime.agent.iconLookupToken)?.storageString ?? "terminal"
+  /// to recognise the shell title: a profile that sets launch-scoped
+  /// environment variables runs as `env VAR=… claude`, whose first token is
+  /// `env`, and an unmatched token leaves the icon untouched. The lock stays
+  /// `.auto`, so a later recognised command in the same tab can still take the
+  /// slot, exactly as it does for a hand-typed agent. `nil` means the runtime
+  /// has no mapping, in which case the tab keeps whatever icon it has.
+  static func launchTabIcon(for runtime: AgentProfileRuntime) -> TabIconSource? {
+    CommandIconMap.iconForFirstToken(runtime.agent.iconLookupToken)
   }
 
   @discardableResult
