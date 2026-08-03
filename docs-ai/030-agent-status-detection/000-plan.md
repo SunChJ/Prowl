@@ -113,3 +113,6 @@ the failed attempt to extend the first signal to plain commands is
 - Updated 2026-06-23: plain-command running-indicator fallback (#484) merged, then
   reverted; successor design tracked in issue #495 — see
   [003-plain-command-running-indicator.md](003-plain-command-running-indicator.md)
+- Updated 2026-08-03: Codex and Claude screen evidence was bounded to live UI regions
+  so transcript prose no longer impersonates confirmation or working chrome — see
+  [004-live-region-evidence.md](004-live-region-evidence.md)

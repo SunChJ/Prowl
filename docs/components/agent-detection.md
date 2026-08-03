@@ -32,12 +32,16 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
 1. **Process probe.** Prowl reads the pane's foreground process group and matches
    process names / argv against known agent executables, scoring argv[0] highest,
    then process name, then command-line tokens.
-2. **Screen heuristics.** It scans the last ~24 non-blank lines of the pane for
-   agent-specific UI cues — e.g. "Esc to interrupt", Oh My Pi's
-   `Working… ⟦esc⟧` loader or braille spinner status line (working), its
-   interactive `Ask` choice prompt (blocked), confirmation/permission prompts
-   (blocked), idle prompts. Each agent family has its own patterns (including spinner
-   glyphs: braille frames, symbol cycles, Cursor's hexagons, Kimi's moon phases, etc.).
+2. **Screen heuristics.** It starts from the last ~24 non-blank lines, then selects
+   agent-specific live UI regions rather than treating every transcript line as current
+   state. Structured confirmation/permission chrome is **Blocked**; status rows and
+   spinners are **Working**. Claude working rows are scoped to the lines immediately above
+   its prompt box. Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to
+   interrupt)` footer fallback, while its confirmation detector requires current strong
+   footer text or explicit Yes/No choice structure. Ordinary response prose that merely
+   quotes those phrases is not state evidence. Other agent families keep their own patterns
+   (including Oh My Pi's `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
+   hexagons, Kimi's moon phases, etc.).
    For Claude, a running **background workflow** keeps a status line *below* the
    input box (e.g. `3/5 agents done · 7m 29s · ↓ 288.5k tokens`) after the turn has
    ended; Prowl reads that footer as **Working**, so a churning workflow isn't
