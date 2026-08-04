@@ -344,13 +344,17 @@ test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 test-cli-smoke: build-cli # Smoke test CLI executable
 	@set -euo pipefail; \
 	bin="$$(swift build --show-bin-path)/prowl"; \
+	tmp_root="$${TMPDIR:-/tmp}"; \
+	tmp_dir="$$(mktemp -d "$${tmp_root%/}/prowl-smoke.XXXXXX")"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
 	help_output="$$("$$bin" --help)"; \
 	version_output="$$("$$bin" --version)"; \
 	echo "$$help_output" | grep -q "USAGE:"; \
 	echo "$$version_output" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$$'; \
-	socket="/tmp/prowl-cli-smoke-$$RANDOM.sock"; \
-	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >/tmp/prowl-cli-smoke.json || true; \
-	jq -e '.error.code == "APP_NOT_RUNNING"' /tmp/prowl-cli-smoke.json >/dev/null
+	socket="$$tmp_dir/cli.sock"; \
+	response="$$tmp_dir/response.json"; \
+	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >"$$response" || true; \
+	jq -e '.error.code == "APP_NOT_RUNNING"' "$$response" >/dev/null
 
 test-cli-integration: # Run CLI integration tests via SwiftPM
 	@test_list="$$(swift test list)"; \

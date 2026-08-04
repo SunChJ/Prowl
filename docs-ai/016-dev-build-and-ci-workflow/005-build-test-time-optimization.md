@@ -136,7 +136,9 @@ PR #678 implemented the planned build graph and cache changes:
   inference outside `#expect`; rerunning the 500 ms diagnostics reported neither hotspot.
 - `test-app` validates the successful `.xcresult` contains a passing, non-empty test run;
   `test-cli-integration` lists tests first and rejects a filter matching zero tests. These
-  guards close SwiftPM/Xcode's otherwise-successful empty-test false-negative path.
+  guards close SwiftPM/Xcode's otherwise-successful empty-test false-negative path. CLI
+  smoke output uses a unique temporary directory so parallel integration cleanup cannot
+  remove its response file.
 
 Local M2 Pro / Xcode 26.6 verification after implementation:
 
