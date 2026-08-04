@@ -116,3 +116,6 @@ the failed attempt to extend the first signal to plain commands is
 - Updated 2026-08-03: Codex and Claude screen evidence was bounded to live UI regions
   so transcript prose no longer impersonates confirmation or working chrome — see
   [004-live-region-evidence.md](004-live-region-evidence.md)
+- Updated 2026-08-04: confirmation live regions were anchored to numbered selections so
+  ordinary prompts and short completed responses cannot impersonate blocked UI — see
+  [005-confirmation-live-structure.md](005-confirmation-live-structure.md)

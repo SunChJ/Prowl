@@ -341,17 +341,19 @@ nonisolated private func claudeCurrentInteractionRegion(_ content: String) -> St
   guard let promptIndex = lines.lastIndex(where: { $0.contains("❯") }) else {
     return lines.suffix(18).joined(separator: "\n")
   }
+  guard isClaudeNumberedSelectionLine(lines[promptIndex]) else {
+    return ""
+  }
 
   let lowerBound = max(lines.startIndex, promptIndex - 10)
   return lines[lowerBound..<lines.endIndex].joined(separator: "\n")
 }
 
-nonisolated private func codexCurrentInteractionRegion(_ content: String) -> String {
-  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
-    return ""
-  }
-  return lines[promptIndex..<lines.endIndex].joined(separator: "\n")
+nonisolated private func isClaudeNumberedSelectionLine(_ line: String) -> Bool {
+  let trimmed = line.trimmingCharacters(in: .whitespaces)
+  guard trimmed.first == "❯" else { return false }
+  let option = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+  return isNumberedChoice(option)
 }
 
 nonisolated private func isCodexPromptLine(_ line: String) -> Bool {
@@ -362,16 +364,25 @@ nonisolated private func isCodexPromptLine(_ line: String) -> Bool {
 }
 
 nonisolated private func hasCodexBlockedPrompt(_ content: String) -> Bool {
-  let currentLower = codexCurrentInteractionRegion(content).lowercased()
-  if currentLower.contains("press enter to confirm or esc to cancel")
-    || currentLower.contains("enter to submit answer")
-    || currentLower.contains("allow command?")
-    || currentLower.contains("[y/n]")
-    || currentLower.contains("yes (y)")
-  {
-    return true
+  hasCodexConfirmationFooter(content) || hasCodexConfirmationChoices(content)
+}
+
+nonisolated private func hasCodexConfirmationFooter(_ content: String) -> Bool {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
+    return false
   }
-  return hasCodexConfirmationChoices(content)
+  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
+  guard isNumberedChoice(selectedChoice) else { return false }
+
+  let footerStart = lines.index(after: promptIndex)
+  guard footerStart < lines.endIndex else { return false }
+  let footerLower = recentLines(lines[footerStart...].joined(separator: "\n"), limit: 3).lowercased()
+  return footerLower.contains("press enter to confirm or esc to cancel")
+    || footerLower.contains("enter to submit answer")
+    || footerLower.contains("allow command?")
+    || footerLower.contains("[y/n]")
+    || footerLower.contains("yes (y)")
 }
 
 nonisolated private func hasCodexConfirmationChoices(_ content: String) -> Bool {
@@ -380,7 +391,7 @@ nonisolated private func hasCodexConfirmationChoices(_ content: String) -> Bool 
     return false
   }
   let selectedChoice = normalizedCodexChoice(lines[promptIndex])
-  guard isNumberedCodexChoice(selectedChoice) else { return false }
+  guard isNumberedChoice(selectedChoice) else { return false }
 
   let lowerBound = max(lines.startIndex, promptIndex - 6)
   let interactionLines = lines[lowerBound..<lines.endIndex]
@@ -405,7 +416,7 @@ nonisolated private func normalizedCodexChoice(_ line: String) -> String {
   return withoutSelection.trimmingCharacters(in: .whitespaces)
 }
 
-nonisolated private func isNumberedCodexChoice(_ option: String) -> Bool {
+nonisolated private func isNumberedChoice(_ option: String) -> Bool {
   guard let firstToken = option.split(whereSeparator: { $0.isWhitespace }).first,
     firstToken.last == "."
   else {
@@ -433,12 +444,7 @@ nonisolated private func hasClaudeBlockedPrompt(content: String, lower: String) 
 }
 
 nonisolated private func hasClaudeSelectionPrompt(_ content: String) -> Bool {
-  content.split(separator: "\n").contains { line in
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    return trimmed.hasPrefix("❯")
-      && trimmed.contains(".")
-      && trimmed.contains(where: \.isNumber)
-  }
+  content.split(separator: "\n").contains { isClaudeNumberedSelectionLine(String($0)) }
 }
 
 nonisolated private func hasClaudeYesNoChoice(_ content: String) -> Bool {

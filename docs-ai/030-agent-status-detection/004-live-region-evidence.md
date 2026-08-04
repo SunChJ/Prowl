@@ -26,22 +26,24 @@ Screen evidence is now selected and ranked per agent instead of treating every r
 as equally live:
 
 1. Claude viewer/overlay detection remains the strongest no-signal state.
-2. Structured confirmation UI in the current interaction region remains blocked and
-   outranks working evidence.
+2. Structured confirmation UI remains blocked and outranks working evidence. For Claude,
+   only a current numbered selection row opens the surrounding confirmation region; a bare
+   input prompt severs the completed transcript above it.
 3. Claude working evidence is limited to the status rows immediately above its prompt box.
    Current spinner glyphs remain supported; PR #673's `● <word>… (<elapsed> · …)` shape is
    accepted only there and only with a complete elapsed token.
-4. Codex confirmation evidence comes from strong footer text after a recognized prompt line
-   or an explicit Yes/No choice structure around that prompt. If the prompt boundary is absent,
-   confirmation vocabulary fails closed instead of falling back to a transcript-wide search.
+4. Codex confirmation evidence comes from strong footer text after a numbered selected row,
+   while that footer is still in the bottom live region, or from an explicit Yes/No choice
+   structure around the selected row. Ordinary user prompts are not confirmation boundaries.
 5. Codex screen fallback accepts only the current `•`/`◦ Working (... esc to interrupt)`
    footer in the bottom three non-empty lines. Arbitrary reworded elapsed bullets are not a
    Codex signal.
 
 Pure fixtures in `supacodeTests/ScreenHeuristicsTests.swift` cover live working rows, idle
-prose quoting detector vocabulary, real permission dialogs, blocker/working conflicts,
-strict elapsed-token boundaries, and status-shaped transcript text outside the live region.
-Current behavior is documented in `docs/components/agent-detection.md`.
+prose quoting detector vocabulary, refresh gaps before the next prompt appears, real
+permission dialogs, blocker/working conflicts, strict elapsed-token boundaries, and
+status-shaped transcript text outside the live region. Current behavior is documented in
+`docs/components/agent-detection.md`.
 
 ## Decisions and follow-ups
 

@@ -157,6 +157,28 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func claudeShortCompletedResponseQuestionBeforeIdlePromptIsIdle() {
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ⏺ The completed response explains: Do you want to proceed?
+          ─────────
+          ❯
+          ─────────
+          ? for shortcuts
+          """
+      ) == .idle
+    )
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ❯ Quote the phrase Do you want to proceed?
+          ─────────
+          """
+      ) == .idle
+    )
+  }
+
   @Test func claudeIgnoresStalePermissionPromptOutsideRecentTail() {
     #expect(
       DetectedAgent.claude.detectState(
@@ -476,6 +498,49 @@ struct ScreenHeuristicsTests {
         in: """
           • The previous prompt said: press enter to confirm or esc to cancel.
             It also mentioned allow command? and [y/n].
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexUserPromptConfirmationVocabularyIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › Explain why the UI says press enter to confirm or esc to cancel.
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          Press enter to confirm or esc to cancel
+          › 1. Explain this footer ordering.
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexCompletedResponseConfirmationVocabularyBeforeNextPromptIsIdle() {
+    let completedResponse = """
+      › Describe the confirmation footer.
+      • The footer says: Press enter to confirm or esc to cancel.
+      """
+    #expect(DetectedAgent.codex.detectState(in: completedResponse) == .idle)
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          \(completedResponse)
+          • Working (2s • esc to interrupt)
+          """
+      ) == .working
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          \(completedResponse)
+          ›
           """
       ) == .idle
     )

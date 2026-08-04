@@ -36,10 +36,12 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    agent-specific live UI regions rather than treating every transcript line as current
    state. Structured confirmation/permission chrome is **Blocked**; status rows and
    spinners are **Working**. Claude working rows are scoped to the lines immediately above
-   its prompt box. Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to
-   interrupt)` footer fallback, while its confirmation detector requires a recognized prompt
-   line followed by strong footer text or explicit Yes/No choice structure. Without that prompt
-   boundary, confirmation-like text is treated as transcript prose rather than current state.
+   its prompt box, while confirmation text is consulted only around a current numbered
+   selection row such as `❯ 1. Yes`; a bare input prompt cuts off the preceding transcript.
+   Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to interrupt)` footer
+   fallback. Its confirmation detector requires a numbered selected row such as `› 1. Yes`
+   paired with a live bottom footer or an explicit Yes/No choice structure. Ordinary prompt
+   text and completed responses are not confirmation boundaries.
    Other agent families keep their own patterns (including Oh My Pi's
    `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
    hexagons, Kimi's moon phases, etc.).
