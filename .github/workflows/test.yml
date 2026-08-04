@@ -25,8 +25,9 @@ jobs:
           submodules: recursive
       - uses: ./.github/actions/setup-macos
       - run: make lint
-      - run: make build-app
-      - name: Run tests in parallel
+      - name: Stage debug app resources
+        run: make embed-cli-debug embed-docs
+      - name: Build app and run tests in parallel
         shell: bash
         run: |
           set -euo pipefail

@@ -156,8 +156,10 @@ struct ShellClientStreamingTests {
       #expect(shellError.command.contains("/bin/sh"))
     }
 
-    #expect(streamedLines.contains(where: { $0.source == .stdout && $0.text == "out" }))
-    #expect(streamedLines.contains(where: { $0.source == .stderr && $0.text == "err" }))
+    let expectedStdoutLine = ShellStreamLine(source: .stdout, text: "out")
+    let expectedStderrLine = ShellStreamLine(source: .stderr, text: "err")
+    #expect(streamedLines.contains(expectedStdoutLine))
+    #expect(streamedLines.contains(expectedStderrLine))
   }
 
   @Test func cancellingRunStreamConsumerTerminatesProcessQuickly() async throws {

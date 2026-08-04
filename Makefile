@@ -27,6 +27,9 @@ CLI_SOURCE_INPUTS := \
 VERSION ?=
 BUILD ?=
 XCODEBUILD_FLAGS ?=
+BUILD_BENCHMARK_SCENARIO ?= ci
+BUILD_BENCHMARK_SAMPLES ?= 1
+CLI_INTEGRATION_TEST_FILTER ?= ProwlCLIIntegrationTests
 FORMAT_BASE_REF ?= origin/main
 BUILD_SETTINGS_CACHE := $(CURRENT_MAKEFILE_DIR)/.build_settings_cache.json
 PBXPROJ_PATH := $(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj
@@ -39,7 +42,7 @@ PROWL_POSTHOG_API_KEY ?=
 PROWL_POSTHOG_HOST ?=
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration bump-version log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration benchmark-build bump-version log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -334,22 +337,40 @@ test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	set -e; \
 	if [ "$$xcodebuild_status" -ne 0 ]; then \
 		bash "$(CURRENT_MAKEFILE_DIR)/scripts/print-xcresult-failures.sh" "$$result_bundle" || true; \
+		exit "$$xcodebuild_status"; \
 	fi; \
-	exit "$$xcodebuild_status"
+	bash "$(CURRENT_MAKEFILE_DIR)/scripts/assert-xcresult-tests.sh" "$$result_bundle"
 
 test-cli-smoke: build-cli # Smoke test CLI executable
 	@set -euo pipefail; \
 	bin="$$(swift build --show-bin-path)/prowl"; \
+	tmp_root="$${TMPDIR:-/tmp}"; \
+	tmp_dir="$$(mktemp -d "$${tmp_root%/}/prowl-smoke.XXXXXX")"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
 	help_output="$$("$$bin" --help)"; \
 	version_output="$$("$$bin" --version)"; \
 	echo "$$help_output" | grep -q "USAGE:"; \
 	echo "$$version_output" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$$'; \
-	socket="/tmp/prowl-cli-smoke-$$RANDOM.sock"; \
-	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >/tmp/prowl-cli-smoke.json || true; \
-	jq -e '.error.code == "APP_NOT_RUNNING"' /tmp/prowl-cli-smoke.json >/dev/null
+	socket="$$tmp_dir/cli.sock"; \
+	response="$$tmp_dir/response.json"; \
+	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >"$$response" || true; \
+	jq -e '.error.code == "APP_NOT_RUNNING"' "$$response" >/dev/null
 
 test-cli-integration: # Run CLI integration tests via SwiftPM
-	swift test --filter ProwlCLIIntegrationTests
+	@test_list="$$(swift test list)"; \
+	matching_test_count="$$(printf '%s\n' "$$test_list" | grep -Ec '$(CLI_INTEGRATION_TEST_FILTER)' || true)"; \
+	if [ "$$matching_test_count" -eq 0 ]; then \
+		echo "error: CLI integration filter matched zero tests: $(CLI_INTEGRATION_TEST_FILTER)" >&2; \
+		exit 1; \
+	fi; \
+	echo "CLI integration filter matched $$matching_test_count test(s)."; \
+	swift test --skip-build --filter '$(CLI_INTEGRATION_TEST_FILTER)'
+
+benchmark-build: ensure-ghostty embed-cli-debug embed-docs # Benchmark clean and compilation-cache build/test time
+	@BUILD_BENCHMARK_ROOT="$(CURRENT_MAKEFILE_DIR)/.build-benchmark/build-time" \
+		SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		bash "$(CURRENT_MAKEFILE_DIR)/scripts/benchmark-build.sh" \
+		"$(BUILD_BENCHMARK_SCENARIO)" "$(BUILD_BENCHMARK_SAMPLES)"
 
 bench: ensure-ghostty embed-cli-debug embed-docs # Run performance benchmarks optimized (-O); append absolute medians to the bench log
 	@set -euo pipefail; \

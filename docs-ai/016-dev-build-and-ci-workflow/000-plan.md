@@ -91,3 +91,6 @@ Anchor wave, all landed 2026-04-04/05:
 - Updated 2026-06-20: Debug app identity at project level + local dev-loop acceleration
   (`run-app` guard removal, content-aware build inputs, build-settings cache, incremental
   compilation) — see [004-debug-identity-and-dev-loop.md](004-debug-identity-and-dev-loop.md)
+- Updated 2026-08-05: fixed-path build benchmarks, rotating toolchain-scoped caches, an
+  integrated CI build/test graph, and measured type-checker hotspot cleanup — see
+  [005-build-test-time-optimization.md](005-build-test-time-optimization.md)

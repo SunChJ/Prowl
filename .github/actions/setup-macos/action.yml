@@ -18,6 +18,27 @@ runs:
     - run: mise install
       shell: bash
 
+    - name: Xcode cache identity
+      shell: bash
+      run: |
+        set -euo pipefail
+        XCODE_CACHE_ID="$(xcodebuild -version | awk '/Build version/ { print $3 }')"
+        if [[ -z "$XCODE_CACHE_ID" ]]; then
+          echo "error: failed to resolve Xcode build version" >&2
+          exit 1
+        fi
+        printf '%s\n' "XCODE_CACHE_ID=$XCODE_CACHE_ID" >> "$GITHUB_ENV"
+        echo "Xcode cache identity: $XCODE_CACHE_ID"
+
+    - name: CLI SwiftPM build cache
+      uses: actions/cache@v4
+      with:
+        path: .build
+        key: ${{ runner.os }}-${{ runner.arch }}-cli-spm-v1-${{ env.XCODE_CACHE_ID }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ hashFiles('ProwlCLI/**/*.swift', 'ProwlCLITests/**/*.swift', 'supacode/CLIService/Shared/**/*.swift') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-cli-spm-v1-${{ env.XCODE_CACHE_ID }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+          ${{ runner.os }}-${{ runner.arch }}-cli-spm-v1-${{ env.XCODE_CACHE_ID }}-
+
     - name: Ghostty cache key
       shell: bash
       run: |
@@ -60,12 +81,11 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
-        # Rotate when SPM deps or the Xcode project itself changes (target add/remove,
-        # build setting tweaks). Day-to-day .swift edits keep the same primary key, so
-        # `actions/cache` restores without re-uploading — the cache is content-addressed
-        # by file hash, so unchanged files still hit; changed files miss and recompile
-        # locally without invalidating the saved snapshot.
-        key: ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v1-${{ hashFiles('Package.resolved', 'supacode.xcodeproj/project.pbxproj') }}
+        # GitHub cache entries are immutable. A source-state suffix guarantees that a
+        # successful changed build saves newly compiled objects; restore-keys select the
+        # newest compatible CAS. Never restore across Xcode builds because compiler cache
+        # keys and storage formats are toolchain-specific.
+        key: ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v2-${{ env.XCODE_CACHE_ID }}-${{ hashFiles('Package.resolved', 'supacode.xcodeproj/project.pbxproj') }}-${{ hashFiles('supacode/**/*.swift', 'supacodeTests/**/*.swift') }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v1-
-          ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-
+          ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v2-${{ env.XCODE_CACHE_ID }}-${{ hashFiles('Package.resolved', 'supacode.xcodeproj/project.pbxproj') }}-
+          ${{ runner.os }}-${{ runner.arch }}-xcode-compilation-cache-v2-${{ env.XCODE_CACHE_ID }}-

@@ -240,7 +240,8 @@ struct AgentProfileTests {
         }
         let suffix = managedArguments.map { $0.isEmpty ? AgentProfileLaunchPlanner.pathString(home) : $0 }
         let tuiCount = expectation.runtime == .cline ? 1 : 0
-        #expect(plan.invocation.arguments.dropLast(tuiCount).suffix(suffix.count) == suffix[...])
+        let invocationSuffix = Array(plan.invocation.arguments.dropLast(tuiCount).suffix(suffix.count))
+        #expect(invocationSuffix == suffix)
       }
     }
   }
