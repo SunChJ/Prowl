@@ -134,6 +134,9 @@ PR #678 implemented the planned build graph and cache changes:
   scenarios with JSONL history and retained raw/xcsift logs.
 - `ShellClientStreamingTests.swift` and `AgentProfileTests.swift` move expensive collection
   inference outside `#expect`; rerunning the 500 ms diagnostics reported neither hotspot.
+- `test-app` validates the successful `.xcresult` contains a passing, non-empty test run;
+  `test-cli-integration` lists tests first and rejects a filter matching zero tests. These
+  guards close SwiftPM/Xcode's otherwise-successful empty-test false-negative path.
 
 Local M2 Pro / Xcode 26.6 verification after implementation:
 
@@ -144,7 +147,9 @@ Local M2 Pro / Xcode 26.6 verification after implementation:
 | Integrated test, warm CAS sample 2 | 48.443 s |
 
 All three benchmark runs passed 2,263 App tests. `make check`, `make build-app`, `make test`,
-`make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` also passed.
+`make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` also passed. Negative-path
+checks injected exit 23 from both `xcodebuild` and `swift test`, and used a zero-match CLI filter;
+all three made their Make target fail, while the workflow's parallel wait harness returned 1.
 
 GitHub Actions run `30925147131` supplied one cache-population and two warm samples on the
 same Xcode 26.6 runner image family:

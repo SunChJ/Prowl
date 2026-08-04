@@ -29,6 +29,7 @@ BUILD ?=
 XCODEBUILD_FLAGS ?=
 BUILD_BENCHMARK_SCENARIO ?= ci
 BUILD_BENCHMARK_SAMPLES ?= 1
+CLI_INTEGRATION_TEST_FILTER ?= ProwlCLIIntegrationTests
 FORMAT_BASE_REF ?= origin/main
 BUILD_SETTINGS_CACHE := $(CURRENT_MAKEFILE_DIR)/.build_settings_cache.json
 PBXPROJ_PATH := $(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj
@@ -336,8 +337,9 @@ test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	set -e; \
 	if [ "$$xcodebuild_status" -ne 0 ]; then \
 		bash "$(CURRENT_MAKEFILE_DIR)/scripts/print-xcresult-failures.sh" "$$result_bundle" || true; \
+		exit "$$xcodebuild_status"; \
 	fi; \
-	exit "$$xcodebuild_status"
+	bash "$(CURRENT_MAKEFILE_DIR)/scripts/assert-xcresult-tests.sh" "$$result_bundle"
 
 test-cli-smoke: build-cli # Smoke test CLI executable
 	@set -euo pipefail; \
@@ -351,7 +353,14 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 	jq -e '.error.code == "APP_NOT_RUNNING"' /tmp/prowl-cli-smoke.json >/dev/null
 
 test-cli-integration: # Run CLI integration tests via SwiftPM
-	swift test --filter ProwlCLIIntegrationTests
+	@test_list="$$(swift test list)"; \
+	matching_test_count="$$(printf '%s\n' "$$test_list" | grep -Ec '$(CLI_INTEGRATION_TEST_FILTER)' || true)"; \
+	if [ "$$matching_test_count" -eq 0 ]; then \
+		echo "error: CLI integration filter matched zero tests: $(CLI_INTEGRATION_TEST_FILTER)" >&2; \
+		exit 1; \
+	fi; \
+	echo "CLI integration filter matched $$matching_test_count test(s)."; \
+	swift test --skip-build --filter '$(CLI_INTEGRATION_TEST_FILTER)'
 
 benchmark-build: ensure-ghostty embed-cli-debug embed-docs # Benchmark clean and compilation-cache build/test time
 	@BUILD_BENCHMARK_ROOT="$(CURRENT_MAKEFILE_DIR)/.build-benchmark/build-time" \
