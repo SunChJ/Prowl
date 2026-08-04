@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026.8.5](https://github.com/onevcat/Prowl/releases/tag/v2026.8.5)
+
+### New
+- Agent Profiles now cover the full 15-runtime catalog, with per-runtime controls for model, reasoning effort, approval mode, and Dedicated Home shown only when that runtime actually supports them.
+
+### Changed
+- `prowl handoff` now always requires an explicit briefing choice: pass `--brief -` with agent-authored content, or `--no-brief` for a context-only handoff. The automatic recorded-session fallback briefing has been removed.
+
+### Fixed
+- Fixed a crash that could occur when two close-confirmation dialogs tried to appear at the same time.
+- Pi's animated braille "Working..." loader is now recognized, so its status no longer gets stuck showing idle or blocked while it's actually working.
+- Agent status detection (working/idle/blocked) no longer gets confused by old response text left on screen; only the live status region is checked.
+- Tabs and splits launched from the Agents menu now show the correct runtime icon right away instead of a generic terminal icon.
+
+### Improved
+- Reduced CPU usage from idle-agent monitoring and sidebar updates, and removed tab-bar flicker caused by animated agent titles.
+- Uncommitted line-change badges no longer silently undercount large untracked files; when some files can't be counted, the badge shows `+N…` and explains what was omitted.
+
 ## [2026.8.1](https://github.com/onevcat/Prowl/releases/tag/v2026.8.1)
 
 This release introduces Agent Profiles — reusable presets for launching coding agents — along with related launcher and Settings improvements.
