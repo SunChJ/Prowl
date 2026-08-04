@@ -13,6 +13,7 @@ make format                      # Run full-tree swift-format cleanup
 make lint                        # Run swiftlint only
 make check                       # Run changed-file format, swift-format lint, and swiftlint
 make test                        # Run all tests
+make benchmark-build             # Benchmark CI-like clean/warm-CAS build and test time
 make bench                       # Run performance benchmarks with -O; append absolute medians to ~/Library/Logs/Prowl/measurements/bench/
 make measure-cpu                 # Steady-state CPU + per-symbol attribution of the running Prowl Debug app
 make capture-spike               # Sample the running Prowl Debug app when CPU crosses a threshold

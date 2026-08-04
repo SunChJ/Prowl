@@ -27,6 +27,8 @@ CLI_SOURCE_INPUTS := \
 VERSION ?=
 BUILD ?=
 XCODEBUILD_FLAGS ?=
+BUILD_BENCHMARK_SCENARIO ?= ci
+BUILD_BENCHMARK_SAMPLES ?= 1
 FORMAT_BASE_REF ?= origin/main
 BUILD_SETTINGS_CACHE := $(CURRENT_MAKEFILE_DIR)/.build_settings_cache.json
 PBXPROJ_PATH := $(CURRENT_MAKEFILE_DIR)/supacode.xcodeproj/project.pbxproj
@@ -39,7 +41,7 @@ PROWL_POSTHOG_API_KEY ?=
 PROWL_POSTHOG_HOST ?=
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration bump-version log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-cli-smoke test-cli-integration benchmark-build bump-version log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -350,6 +352,12 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 
 test-cli-integration: # Run CLI integration tests via SwiftPM
 	swift test --filter ProwlCLIIntegrationTests
+
+benchmark-build: ensure-ghostty embed-cli-debug embed-docs # Benchmark clean and compilation-cache build/test time
+	@BUILD_BENCHMARK_ROOT="$(CURRENT_MAKEFILE_DIR)/.build-benchmark/build-time" \
+		SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		bash "$(CURRENT_MAKEFILE_DIR)/scripts/benchmark-build.sh" \
+		"$(BUILD_BENCHMARK_SCENARIO)" "$(BUILD_BENCHMARK_SAMPLES)"
 
 bench: ensure-ghostty embed-cli-debug embed-docs # Run performance benchmarks optimized (-O); append absolute medians to the bench log
 	@set -euo pipefail; \
