@@ -89,8 +89,20 @@ nonisolated private func hasOMPWorkingLine(_ content: String) -> Bool {
   }
 }
 
+nonisolated private let piWorkingMessages: Set<String> = ["Working...", "Working…", "Interrupting…"]
+
 nonisolated private func isPiWorkingText(_ line: String) -> Bool {
-  line == "Working..." || line == "Working…" || line == "Interrupting…"
+  if piWorkingMessages.contains(line) {
+    return true
+  }
+
+  guard let spinner = line.unicodeScalars.first,
+    (0x2800...0x28FF).contains(Int(spinner.value))
+  else {
+    return false
+  }
+  let message = String(line.unicodeScalars.dropFirst()).trimmingCharacters(in: .whitespaces)
+  return piWorkingMessages.contains(message)
 }
 
 nonisolated private func hasOMPInterruptHint(_ line: String) -> Bool {
