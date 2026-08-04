@@ -2,8 +2,8 @@
 
 | | |
 | --- | --- |
-| **Status** | Planned |
-| **Primary PRs** | TBD |
+| **Status** | Implemented |
+| **Primary PRs** | #678 |
 | **Related** | [003-ci-throughput-and-caching.md](003-ci-throughput-and-caching.md), [004-debug-identity-and-dev-loop.md](004-debug-identity-and-dev-loop.md) |
 
 ## Context
@@ -120,13 +120,54 @@ do not split files or add modules based on line count alone.
 - Disabling compiler features, tests, lint rules, or signing/release checks to manufacture
   a faster result.
 
-## Verification plan
+## Outcome
 
-- Repeat fixed-path local clean and warm-CAS scenarios after each material change.
-- Confirm type-checker diagnostics no longer report the targeted expressions.
-- Run `make check`, `make build-app`, all App tests, `make build-cli`,
-  `make test-cli-smoke`, and `make test-cli-integration`.
-- Push the branch and collect at least three GitHub Actions samples where practical;
-  compare phase medians and cache hit/save behavior against the 60-run baseline.
-- Record runner image and Xcode build identity so infrastructure changes are not mistaken
-  for source regressions.
+PR #678 implemented the planned build graph and cache changes:
+
+- `.github/workflows/test.yml` stages the CLI/docs once, then runs the integrated App
+  build/test alongside CLI smoke and integration tests. The separate `make build-app` CI
+  step is gone; `xcodebuild test` remains a complete App build correctness check.
+- `.github/actions/setup-macos/action.yml` records the Xcode build identity, restores/saves
+  the compilation CAS by toolchain/project/source state, and caches CLI SwiftPM products
+  by their complete source inputs.
+- `scripts/benchmark-build.sh` and `make benchmark-build` provide fixed-path clean/warm-CAS
+  scenarios with JSONL history and retained raw/xcsift logs.
+- `ShellClientStreamingTests.swift` and `AgentProfileTests.swift` move expensive collection
+  inference outside `#expect`; rerunning the 500 ms diagnostics reported neither hotspot.
+
+Local M2 Pro / Xcode 26.6 verification after implementation:
+
+| Scenario | Result |
+| --- | ---: |
+| Integrated test, cold CAS | 99.472 s |
+| Integrated test, warm CAS sample 1 | 48.424 s |
+| Integrated test, warm CAS sample 2 | 48.443 s |
+
+All three benchmark runs passed 2,263 App tests. `make check`, `make build-app`, `make test`,
+`make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` also passed.
+
+GitHub Actions run `30925147131` supplied one cache-population and two warm samples on the
+same Xcode 26.6 runner image family:
+
+| Sample | Setup | Resource staging | Integrated build/tests | Whole job |
+| --- | ---: | ---: | ---: | ---: |
+| Empty new cache namespace | 60 s | 52 s | 510 s | 11m44s |
+| Warm attempt 2 | 37 s | 21 s | 140 s | 3m46s |
+| Warm attempt 3 | 77 s | 28 s | 167 s | 5m08s |
+
+The cold sample spent another 49 s uploading the initial Xcode/CLI caches after tests. Its
+integrated build/test step was still 3m19s faster than PR #677's separate 7m13s build plus
+4m36s test steps. The two warm whole-job samples had a 4m27s median, 56% below the 608 s
+pre-change median, and both were below the requested five-to-six-minute steady-state goal.
+
+## Current state and caveats
+
+- A new Xcode build version intentionally starts a new compilation-cache namespace. The
+  first successful `main` run for that toolchain populates the default-branch cache; later
+  PRs can restore it, and changed PR source states save updated entries.
+- An exact-source rerun is the upper-bound cache case. Ordinary source changes restore the
+  newest compatible CAS through the toolchain/project prefix, then compile affected files.
+- GitHub runner/network variance remains visible: the two equivalent warm jobs differed by
+  82 s. Trend decisions should continue to use multiple samples and step-level timings.
+- Full DerivedData remains uncached; only compiler CAS and deterministic dependency/build
+  inputs are persisted.
