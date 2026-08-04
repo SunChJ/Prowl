@@ -157,6 +157,28 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func claudeShortCompletedResponseQuestionBeforeIdlePromptIsIdle() {
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ⏺ The completed response explains: Do you want to proceed?
+          ─────────
+          ❯
+          ─────────
+          ? for shortcuts
+          """
+      ) == .idle
+    )
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ❯ Quote the phrase Do you want to proceed?
+          ─────────
+          """
+      ) == .idle
+    )
+  }
+
   @Test func claudeIgnoresStalePermissionPromptOutsideRecentTail() {
     #expect(
       DetectedAgent.claude.detectState(
@@ -300,6 +322,85 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func claudeCurrentStatusRowsAreWorking() {
+    let statusRows = [
+      "· Vibing…",
+      "✻ Vibing…",
+      "✽ Tinkering… (4s · ↓ 157 tokens · thought for 1s)",
+      "✶ Philosophising… (6s · thinking with xhigh effort)",
+    ]
+    for statusRow in statusRows {
+      #expect(
+        DetectedAgent.claude.detectState(
+          in: """
+            \(statusRow)
+            ─────────
+            ❯
+            ─────────
+            """
+        ) == .working
+      )
+    }
+  }
+
+  @Test func claudeQuotedInterruptHintInIdleResponseIsIdle() {
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ⏺ The live status row includes the phrase "esc to interrupt".
+          ─────────
+          ❯
+          ─────────
+          [Fable 5 | Max] Prowl git:(main)
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func claudeElapsedStatusLineIsScopedAndRequiresACompleteToken() {
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ● Forging… (10s · thinking with high effort)
+          ─────────
+          ❯
+          ─────────
+          """
+      ) == .working
+    )
+
+    let invalidRows = [
+      "● Retry… (1st attempt)",
+      "● Retry… (10seconds)",
+    ]
+    for statusRow in invalidRows {
+      #expect(
+        DetectedAgent.claude.detectState(
+          in: """
+            \(statusRow)
+            ─────────
+            ❯
+            ─────────
+            """
+        ) == .idle
+      )
+    }
+
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ● Retrying… (10s · thinking with high effort)
+          Completed line 1
+          Completed line 2
+          Completed line 3
+          ─────────
+          ❯
+          ─────────
+          """
+      ) == .idle
+    )
+  }
+
   @Test func claudeDetectsRunningWorkflowFooterBelowPrompt() {
     // A running background workflow: the turn has ended (no spinner / "esc to
     // interrupt" above the prompt), but Claude keeps a status line BELOW the
@@ -343,9 +444,144 @@ struct ScreenHeuristicsTests {
   }
 
   @Test func codexDetection() {
-    #expect(DetectedAgent.codex.detectState(in: "press enter to confirm or esc to cancel") == .blocked)
-    #expect(DetectedAgent.codex.detectState(in: "• Working (12s)\nesc to interrupt") == .working)
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › 1. Yes, proceed (y)
+          Press enter to confirm or esc to cancel
+          """
+      ) == .blocked
+    )
+    #expect(DetectedAgent.codex.detectState(in: "• Working (12s • esc to interrupt)") == .working)
     #expect(DetectedAgent.codex.detectState(in: "Ready for input") == .idle)
+  }
+
+  @Test func codexTranscriptConfirmationVocabularyDoesNotOverrideLiveState() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › Reply with two lines containing do you want and yes.
+          • Working (2s • esc to interrupt)
+          › Improve documentation in @filename
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .working
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › Reply with two lines containing do you want and yes.
+          • The parser looks for do you want.
+            The parser later accepts yes.
+          › Improve documentation in @filename
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › Explain a confirmation dialog without opening one.
+          • A dialog might say: Would you like to run the command?
+            1. Yes
+            2. No
+          › Run /review on my current changes
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexConfirmationVocabularyWithoutPromptIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          • The previous prompt said: press enter to confirm or esc to cancel.
+            It also mentioned allow command? and [y/n].
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexUserPromptConfirmationVocabularyIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          › Explain why the UI says press enter to confirm or esc to cancel.
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          Press enter to confirm or esc to cancel
+          › 1. Explain this footer ordering.
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexCompletedResponseConfirmationVocabularyBeforeNextPromptIsIdle() {
+    let completedResponse = """
+      › Describe the confirmation footer.
+      • The footer says: Press enter to confirm or esc to cancel.
+      """
+    #expect(DetectedAgent.codex.detectState(in: completedResponse) == .idle)
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          \(completedResponse)
+          • Working (2s • esc to interrupt)
+          """
+      ) == .working
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          \(completedResponse)
+          ›
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexCurrentConfirmationOutranksRetainedWorkingFooter() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          • Working (4s • esc to interrupt)
+          Would you like to run the following command?
+          › 1. Yes, proceed (y)
+            2. No, and tell Codex what to do differently (esc)
+          Press enter to confirm or esc to cancel
+          """
+      ) == .blocked
+    )
+  }
+
+  @Test func codexWorkingFooterMustBeInTheLiveBottomRegion() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          • Working (4s • esc to interrupt)
+          • Completed line 1
+            Completed line 2
+            Completed line 3
+          › Improve documentation in @filename
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+
+    let transcriptBullets = [
+      "• Retry (1st attempt)",
+      "• Retrying… (10seconds)",
+      "• Retrying… (10s)",
+    ]
+    for bullet in transcriptBullets {
+      #expect(DetectedAgent.codex.detectState(in: bullet) == .idle)
+    }
   }
 
   @Test func geminiDetection() {

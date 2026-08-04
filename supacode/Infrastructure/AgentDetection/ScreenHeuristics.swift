@@ -118,12 +118,8 @@ nonisolated private func detectClaude(_ content: String) -> AgentRawState {
     return .blocked
   }
 
-  let above = contentAbovePromptBox(content)
-  let aboveLower = above.lowercased()
-  if aboveLower.contains("esc to interrupt") || aboveLower.contains("ctrl+c to interrupt") {
-    return .working
-  }
-  if hasSpinnerActivity(above) {
+  let liveStatus = recentLines(contentAbovePromptBox(content), limit: 3)
+  if hasSpinnerActivity(liveStatus) || hasClaudeElapsedStatusLine(liveStatus) {
     return .working
   }
   if hasClaudeBackgroundWork(content) {
@@ -133,17 +129,10 @@ nonisolated private func detectClaude(_ content: String) -> AgentRawState {
 }
 
 nonisolated private func detectCodex(_ content: String) -> AgentRawState {
-  let lower = content.lowercased()
-  if lower.contains("press enter to confirm or esc to cancel")
-    || lower.contains("enter to submit answer")
-    || lower.contains("allow command?")
-    || lower.contains("[y/n]")
-    || lower.contains("yes (y)")
-    || hasConfirmationPrompt(lower)
-  {
+  if hasCodexBlockedPrompt(content) {
     return .blocked
   }
-  if hasInterruptPattern(lower) || hasCodexWorkingHeader(content) {
+  if hasCodexWorkingFooter(content) {
     return .working
   }
   return .idle
@@ -352,9 +341,89 @@ nonisolated private func claudeCurrentInteractionRegion(_ content: String) -> St
   guard let promptIndex = lines.lastIndex(where: { $0.contains("❯") }) else {
     return lines.suffix(18).joined(separator: "\n")
   }
+  guard isClaudeNumberedSelectionLine(lines[promptIndex]) else {
+    return ""
+  }
 
   let lowerBound = max(lines.startIndex, promptIndex - 10)
   return lines[lowerBound..<lines.endIndex].joined(separator: "\n")
+}
+
+nonisolated private func isClaudeNumberedSelectionLine(_ line: String) -> Bool {
+  let trimmed = line.trimmingCharacters(in: .whitespaces)
+  guard trimmed.first == "❯" else { return false }
+  let option = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+  return isNumberedChoice(option)
+}
+
+nonisolated private func isCodexPromptLine(_ line: String) -> Bool {
+  let trimmed = line.trimmingCharacters(in: .whitespaces)
+  guard trimmed.first == "›" else { return false }
+  let remainder = trimmed.dropFirst()
+  return remainder.isEmpty || remainder.first?.isWhitespace == true
+}
+
+nonisolated private func hasCodexBlockedPrompt(_ content: String) -> Bool {
+  hasCodexConfirmationFooter(content) || hasCodexConfirmationChoices(content)
+}
+
+nonisolated private func hasCodexConfirmationFooter(_ content: String) -> Bool {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
+    return false
+  }
+  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
+  guard isNumberedChoice(selectedChoice) else { return false }
+
+  let footerStart = lines.index(after: promptIndex)
+  guard footerStart < lines.endIndex else { return false }
+  let footerLower = recentLines(lines[footerStart...].joined(separator: "\n"), limit: 3).lowercased()
+  return footerLower.contains("press enter to confirm or esc to cancel")
+    || footerLower.contains("enter to submit answer")
+    || footerLower.contains("allow command?")
+    || footerLower.contains("[y/n]")
+    || footerLower.contains("yes (y)")
+}
+
+nonisolated private func hasCodexConfirmationChoices(_ content: String) -> Bool {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
+    return false
+  }
+  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
+  guard isNumberedChoice(selectedChoice) else { return false }
+
+  let lowerBound = max(lines.startIndex, promptIndex - 6)
+  let interactionLines = lines[lowerBound..<lines.endIndex]
+  let lower = interactionLines.joined(separator: "\n").lowercased()
+  guard lower.contains("do you want") || lower.contains("would you like") else {
+    return false
+  }
+
+  let options = interactionLines.map(normalizedCodexChoice)
+  let hasYes = options.contains { option in
+    option == "yes" || option.hasPrefix("1. yes") || option.hasPrefix("2. yes")
+  }
+  let hasNo = options.contains { option in
+    option == "no" || option.hasPrefix("2. no") || option.hasPrefix("3. no")
+  }
+  return hasYes && hasNo
+}
+
+nonisolated private func normalizedCodexChoice(_ line: String) -> String {
+  let trimmed = line.trimmingCharacters(in: .whitespaces).lowercased()
+  let withoutSelection = trimmed.hasPrefix("›") ? trimmed.dropFirst() : trimmed[...]
+  return withoutSelection.trimmingCharacters(in: .whitespaces)
+}
+
+nonisolated private func isNumberedChoice(_ option: String) -> Bool {
+  guard let firstToken = option.split(whereSeparator: { $0.isWhitespace }).first,
+    firstToken.last == "."
+  else {
+    return false
+  }
+  let number = firstToken.dropLast()
+  return !number.isEmpty && number.allSatisfy(\.isNumber)
 }
 
 nonisolated private func hasClaudeBlockedPrompt(content: String, lower: String) -> Bool {
@@ -375,12 +444,7 @@ nonisolated private func hasClaudeBlockedPrompt(content: String, lower: String) 
 }
 
 nonisolated private func hasClaudeSelectionPrompt(_ content: String) -> Bool {
-  content.split(separator: "\n").contains { line in
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    return trimmed.hasPrefix("❯")
-      && trimmed.contains(".")
-      && trimmed.contains(where: \.isNumber)
-  }
+  content.split(separator: "\n").contains { isClaudeNumberedSelectionLine(String($0)) }
 }
 
 nonisolated private func hasClaudeYesNoChoice(_ content: String) -> Bool {
@@ -471,9 +535,15 @@ nonisolated private func hasInterruptPattern(_ lower: String) -> Bool {
     || (lower.contains("esc") && lower.contains("interrupt"))
 }
 
-nonisolated private func hasCodexWorkingHeader(_ content: String) -> Bool {
-  content.split(separator: "\n").contains { line in
-    line.trimmingCharacters(in: .whitespaces).hasPrefix("• Working (")
+nonisolated private func hasCodexWorkingFooter(_ content: String) -> Bool {
+  recentLines(content, limit: 3).split(separator: "\n").contains { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.first == "•" || trimmed.first == "◦" else { return false }
+    let body = trimmed.dropFirst()
+    guard body.hasPrefix(" Working (") else { return false }
+    guard let hint = body.range(of: "esc to interrupt)") else { return false }
+    let trailing = body[hint.upperBound...]
+    return trailing.isEmpty || trailing.hasPrefix(" · ")
   }
 }
 
@@ -491,6 +561,30 @@ nonisolated private func hasSpinnerActivity(_ content: String) -> Bool {
       && rest.hasPrefix(" ")
       && rest.contains("…")
       && rest.contains(where: \.isLetter)
+  }
+}
+
+nonisolated private func hasClaudeElapsedStatusLine(_ content: String) -> Bool {
+  content.split(separator: "\n").contains { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.first == "●" else { return false }
+    let body = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+    guard let open = body.firstIndex(of: "(") else { return false }
+
+    let label = body[..<open].trimmingCharacters(in: .whitespaces)
+    guard label.hasSuffix("…"), label.split(whereSeparator: { $0.isWhitespace }).count == 1 else {
+      return false
+    }
+
+    let elapsed = body[body.index(after: open)...]
+    let digits = elapsed.prefix(while: \.isNumber)
+    guard !digits.isEmpty else { return false }
+    let afterDigits = elapsed.dropFirst(digits.count)
+    guard let unit = afterDigits.first, unit == "s" || unit == "m" || unit == "h" else {
+      return false
+    }
+    let trailing = afterDigits.dropFirst()
+    return trailing.hasPrefix(")") || trailing.hasPrefix(" · ")
   }
 }
 
