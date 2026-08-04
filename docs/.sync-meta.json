@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "300aa699fb831f6415a4d7d4a63fc6442940fc29",
-  "last_synced_date": "2026-08-01",
-  "note": "Verified the Agent Profiles range (PRs #620-#640): feature docs were maintained in-branch; this sync only noted the agent-profile fields now sharing the custom-command JSON files in reference/settings-fields.md."
+  "last_synced_commit": "ba944bca534aa757e36f772cdc0dfa0c4ddac8f8",
+  "last_synced_date": "2026-08-05",
+  "note": "Verified the runtime-expansion + performance range (PRs #641-#678): all user-facing changes (agent profile runtimes, handoff fork-briefing removal, Pi/OMP split, profile tab icons, untracked line-count badges) had docs maintained in-branch; no doc edits needed, baseline bump only."
 }
