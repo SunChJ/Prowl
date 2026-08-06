@@ -7,7 +7,8 @@ import ProwlCLIShared
 
 enum CLIRunner {
   /// Execute a command envelope by sending it to the running app
-  /// and rendering the response.
+  /// and rendering the response. A response validator must throw `ExitError`
+  /// so contract failures retain the command's error code instead of becoming transport failures.
   static func execute(
     _ envelope: CommandEnvelope,
     validateResponse: ((CommandResponse) throws -> Void)? = nil

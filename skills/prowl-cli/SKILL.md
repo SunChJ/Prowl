@@ -157,14 +157,18 @@ done
 prowl read --pane "$pane" --last 200 --wait-stable --json
 ```
 
-The default read source follows the viewport. Only when diagnosing agent-state detection or collecting a sanitized detector fixture, request the exact active-screen detector input and verify the returned source before trusting it:
+The default read source follows the viewport. Only when diagnosing agent-state detection or collecting a sanitized detector fixture, request the exact active-screen detector input and verify the returned source before trusting it. An older running app that does not honor `detection` fails with `READ_FAILED`; update or restart Prowl rather than accepting viewport text.
+
+Run the capture from the Prowl source checkout so its canonical private staging path is covered by `.gitignore`:
 
 ```bash
-mkdir -p .local/agent-screen-captures
+repo_root="$(git rev-parse --show-toplevel)"
+test -f "$repo_root/supacode.xcodeproj/project.pbxproj"
+staging="$repo_root/.local/agent-screen-captures"
+mkdir -p "$staging"
 capture="$(prowl read --pane "$pane" --source detection --json)"
 printf '%s\n' "$capture" | jq -e '.data.source == "detection"' >/dev/null
-printf '%s\n' "$capture" | jq -j '.data.text' \
-  > .local/agent-screen-captures/raw-capture.txt
+printf '%s\n' "$capture" | jq -j '.data.text' > "$staging/raw-capture.txt"
 ```
 
 Omit `--last` for detector captures. A scrolled pane's detection source can differ from its viewport. Treat the raw capture as private and redact it before committing any fixture.

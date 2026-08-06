@@ -155,7 +155,9 @@ Read a pane's content.
 - `--last <n>` — last N lines (scrollback + screen); omit for a full snapshot.
 - `--source <viewport|detection>` — `viewport` preserves the normal read behavior
   (default); `detection` reads the exact active-screen buffer used by agent-state
-  detection, which can differ from the viewport when a pane is scrolled.
+  detection, which can differ from the viewport when a pane is scrolled. If the
+  running app is too old to honor `detection`, the CLI fails with `READ_FAILED`
+  instead of returning viewport text; update or restart Prowl and retry.
 - `--wait-stable` — re-read until the screen stops changing (best for live TUIs).
 - `--stable-interval <50–5000ms>` (default 200), `--stable-period <100–60000ms>`
   (default 800), `--wait-timeout <1–300s>` (default 10) — tune the stable wait.
@@ -173,11 +175,14 @@ For detector regression captures, omit `--last`, require the returned source, an
 extract the JSON string without adding a newline:
 
 ```bash
-mkdir -p .local/agent-screen-captures
+# Run from the Prowl source checkout so the private staging path is ignored.
+repo_root="$(git rev-parse --show-toplevel)"
+test -f "$repo_root/supacode.xcodeproj/project.pbxproj"
+staging="$repo_root/.local/agent-screen-captures"
+mkdir -p "$staging"
 capture="$(prowl read --pane "$pane" --source detection --json)"
 printf '%s\n' "$capture" | jq -e '.data.source == "detection"' >/dev/null
-printf '%s\n' "$capture" | jq -j '.data.text' \
-  > .local/agent-screen-captures/raw-capture.txt
+printf '%s\n' "$capture" | jq -j '.data.text' > "$staging/raw-capture.txt"
 ```
 
 This is a diagnostic/capture source, not a more complete terminal-history read;

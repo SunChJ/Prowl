@@ -52,8 +52,9 @@ implementation:
 
 - `CLIReadCommandHandlerTests`: 18 passed, including exact trailing-newline preservation,
   detection-only `--last`, mismatched-source rejection, and legacy request decoding.
-- SwiftPM: 76 passed.
-- CLI integration filter: 66 passed.
+- SwiftPM: 77 passed.
+- CLI integration filter: 67 passed, including JSON/text stale-app rejection without
+  returning viewport text.
 - Full app suite: xcsift reported 2,272 passed; the xcresult backstop independently
   verified 2,275 tests and zero failures.
 - `make test-cli-smoke`, `make build-cli`, `make test-cli-integration`, `make check`, and
