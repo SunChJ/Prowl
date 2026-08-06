@@ -33,8 +33,10 @@ profile protocol, or shared priority table.
 
 `AgentScreenScan` now caches the complete `AgentScreenDetection` for the same exact
 `(agent, active-screen text)` identity. Cache hits preserve both state and reason; changing
-either the screen or detected runtime recomputes both. Stabilization, the 3-second working
-hold, `.unknown` handling, polling cadence, and UI state remain untouched.
+either the screen or detected runtime recomputes both. Agent release removes the scan
+before its asynchronous roster entry disappears, so the CLI cannot expose a stale reason
+in that window. Stabilization, the 3-second working hold, `.unknown` handling, polling
+cadence, and UI state remain untouched.
 
 Existing transition diagnostics append only the stable reason identifier. They never log
 screen text.
@@ -72,8 +74,8 @@ Executed verification:
   tests passed after it;
 - complete captured corpus remains green with unchanged current classification for all 15
   fixtures;
-- full app suite: xcsift reported 2,281 passed; xcresult independently verified 2,283
-  tests and zero failures;
+- full app suite after review fixes: xcsift reported 2,282 passed; xcresult independently
+  verified 2,284 tests and zero failures;
 - `make build-cli`, `make test-cli-smoke`, and `make test-cli-integration`: 68 integration
   tests passed;
 - `make check` and `make build-app` passed after final diagnostic plumbing;

@@ -42,6 +42,7 @@ enum TerminalCloseConfirmationTarget {
   }
 }
 
+/// Transition metadata only. Never carry rendered screen text in diagnostics.
 struct AgentDetectionDiagnostic {
   let tabId: TerminalTabID
   let childPID: pid_t?

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import supacode
@@ -65,6 +66,31 @@ struct AgentScreenScanCacheTests {
 
     #expect(detection == DetectedAgent.claude.detectScreen(in: "new"))
     #expect(scan.text == "new")
+  }
+
+  @MainActor
+  @Test func exitingAgentClearsCachedScreenDetection() {
+    let state = WorktreeTerminalState(
+      runtime: GhosttyRuntime(),
+      worktree: Worktree(
+        id: "/tmp/repo/wt-1",
+        name: "wt-1",
+        detail: "",
+        workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
+        repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
+      )
+    )
+    let surfaceID = UUID()
+    state.surfaceAgentStates[surfaceID] = PaneAgentState(detectedAgent: .codex)
+    state.lastAgentScreenScanBySurface[surfaceID] = WorktreeTerminalState.AgentScreenScan(
+      agent: .codex,
+      text: "screen",
+      detection: AgentScreenDetection(state: .working, reason: .legacyDetector)
+    )
+
+    state.removeAgentEntryIfNeeded(surfaceID: surfaceID)
+
+    #expect(state.lastAgentScreenScanBySurface[surfaceID] == nil)
   }
 
   /// A different detected agent invalidates the cache even when the text is

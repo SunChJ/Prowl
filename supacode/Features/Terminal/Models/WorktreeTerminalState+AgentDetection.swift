@@ -282,6 +282,7 @@ extension WorktreeTerminalState {
     guard surfaceAgentStates[surfaceID]?.detectedAgent != nil else { return }
     surfaceAgentStates[surfaceID] = PaneAgentState(lastChangedAt: Date())
     lastWorkingAtBySurface.removeValue(forKey: surfaceID)
+    lastAgentScreenScanBySurface.removeValue(forKey: surfaceID)
     lastEmittedAgentEntriesBySurface.removeValue(forKey: surfaceID)
     // The launch identity lives exactly as long as the launched agent
     // (docs-ai 053/006): once the pane is a bare shell again, a manually
