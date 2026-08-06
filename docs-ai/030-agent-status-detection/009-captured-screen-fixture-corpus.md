@@ -77,11 +77,11 @@ alternate classifier path.
 input. `make bench` runs 20 corpora per timed sample, reports the median normalized to one
 corpus, and applies no absolute CI threshold.
 
-Baseline at `b5420f17` on this M-series host:
+Final reviewed baseline at `cf6e6f04` on this M-series host:
 
-- complete 15-fixture corpus: **3.146 ms median**;
-- arithmetic per-fixture cost: **0.210 ms**;
-- 15 Release timing samples; benchmark suite completed in 6.16 s after the initial build.
+- complete 15-fixture corpus: **3.142 ms median**;
+- arithmetic per-fixture cost: **0.209 ms**;
+- 15 Release timing samples; benchmark suite completed in 6.17 s on the warm build.
 
 The first attempted 2,000-corpus sample was deliberately aborted after proving unsuitable
 for a per-PR gate; the committed workload uses 20 and remains well above clock noise.
