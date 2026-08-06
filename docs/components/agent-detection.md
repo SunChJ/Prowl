@@ -53,6 +53,11 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    ended; Prowl reads that footer as **Working**, so a churning workflow isn't
    mistaken for idle.
 
+For diagnostics and sanitized regression captures, `prowl read --source detection`
+returns the exact active-screen buffer used by stage 2. It is explicitly requested
+because it can differ from the visible viewport when a pane is scrolled; the default
+`prowl read` behavior is unchanged.
+
 To avoid flicker, detection **stabilizes**: it tolerates several consecutive
 misses before declaring an agent gone, and a working agent gets a short (~3s)
 hold so brief pauses between thinking and output don't drop it out of

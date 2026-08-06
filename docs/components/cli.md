@@ -153,6 +153,9 @@ It prints a pane handle such as `p7` for each agent; use it as
 Read a pane's content.
 
 - `--last <n>` — last N lines (scrollback + screen); omit for a full snapshot.
+- `--source <viewport|detection>` — `viewport` preserves the normal read behavior
+  (default); `detection` reads the exact active-screen buffer used by agent-state
+  detection, which can differ from the viewport when a pane is scrolled.
 - `--wait-stable` — re-read until the screen stops changing (best for live TUIs).
 - `--stable-interval <50–5000ms>` (default 200), `--stable-period <100–60000ms>`
   (default 800), `--wait-timeout <1–300s>` (default 10) — tune the stable wait.
@@ -160,11 +163,23 @@ Read a pane's content.
 ```bash
 prowl read --pane "$pane" --last 200 --wait-stable --json
 ```
-Response includes `mode` (snapshot|last), `source` (screen|scrollback|mixed),
-`truncated`, `line_count`, `text`, and (when waiting) `stabilized`, `waited_ms`,
-`samples`. **`truncated: false` with fewer lines than `--last` just means the pane
-has less history — don't retry.** `truncated: true` flags a possibly-incomplete
-read.
+Response includes `mode` (snapshot|last), `source`
+(screen|scrollback|mixed|detection), `truncated`, `line_count`, `text`, and (when
+waiting) `stabilized`, `waited_ms`, `samples`. **`truncated: false` with fewer
+lines than `--last` just means the pane has less history — don't retry.**
+`truncated: true` flags a possibly-incomplete read.
+
+For detector regression captures, omit `--last`, require the returned source, and
+extract the JSON string without adding a newline:
+
+```bash
+capture="$(prowl read --pane "$pane" --source detection --json)"
+printf '%s\n' "$capture" | jq -e '.data.source == "detection"' >/dev/null
+printf '%s\n' "$capture" | jq -j '.data.text' > /path/to/private/raw-capture.txt
+```
+
+This is a diagnostic/capture source, not a more complete terminal-history read;
+normal pane inspection should keep the default viewport source.
 
 ### `prowl send [target] [text]`
 Type into a pane, optionally wait for completion and capture output.

@@ -3,6 +3,18 @@
 import ArgumentParser
 import ProwlCLIShared
 
+private enum ReadSourceOption: String, ExpressibleByArgument {
+  case viewport
+  case detection
+
+  var inputSource: ReadInputSource {
+    switch self {
+    case .viewport: .viewport
+    case .detection: .detection
+    }
+  }
+}
+
 struct ReadCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "read",
@@ -14,6 +26,12 @@ struct ReadCommand: ParsableCommand {
 
   @Option(name: .long, help: "Number of recent lines to read (omit for snapshot).")
   var last: Int?
+
+  @Option(
+    name: .long,
+    help: "Content source: viewport, or detection for the exact active-screen agent detector input."
+  )
+  private var source: ReadSourceOption = .viewport
 
   @Flag(name: .long, help: "Re-read the pane until its output stops changing before returning (good for live TUIs).")
   var waitStable = false
@@ -57,6 +75,7 @@ struct ReadCommand: ParsableCommand {
         command: .read(ReadInput(
           selector: sel,
           last: last,
+          source: source.inputSource,
           waitStable: waitStable,
           stableIntervalMs: stableInterval,
           stablePeriodMs: stablePeriod,
