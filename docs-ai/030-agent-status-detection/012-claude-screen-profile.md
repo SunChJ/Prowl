@@ -5,7 +5,7 @@
 | **Status** | Implemented |
 | **Date** | 2026-08-07 |
 | **Branch** | `feat/claude-screen-profile` |
-| **PR** | TBD (stacked on #687) |
+| **PR** | #688 (stacked on #687) |
 | **Plan** | [007-screen-profile-migration-plan.md](007-screen-profile-migration-plan.md), Phase 5 |
 
 ## Result

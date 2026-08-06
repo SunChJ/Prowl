@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | Approved — implementation in progress |
+| **Status** | Implemented — stacked PR review in progress |
 | **Anchor date** | 2026-08-06 |
-| **Primary PRs** | #684 (Phase 1), #685 (Phase 2), #686 (Phase 3), #687 (Phase 4); Phase 5 TBD |
+| **Primary PRs** | #684 (Phase 1), #685 (Phase 2), #686 (Phase 3), #687 (Phase 4), #688 (Phase 5) |
 | **Sources** | Issue #676, PRs #674/#683, herdr `fae0b236` (v0.8.0-era) |
 | **Related** | [000-plan.md](000-plan.md), [004-live-region-evidence.md](004-live-region-evidence.md), [005-confirmation-live-structure.md](005-confirmation-live-structure.md), [006-current-cli-pre-session-blockers.md](006-current-cli-pre-session-blockers.md), `docs/components/agent-detection.md` |
 
