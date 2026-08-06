@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-07 |
-| **Primary PR** | TBD |
+| **Primary PR** | [#685](https://github.com/onevcat/Prowl/pull/685) |
 | **Plan** | [007-screen-profile-migration-plan.md](007-screen-profile-migration-plan.md), Phase 2 |
 | **Prerequisite** | [008-detector-faithful-cli-capture.md](008-detector-faithful-cli-capture.md) |
 
