@@ -440,17 +440,31 @@ nonisolated private func hasCodexSelectedChoice(
 nonisolated private func hasCodexSignInPrompt(_ content: String) -> Bool {
   let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
   let recent = lines.suffix(18)
-  let lower = recent.joined(separator: "\n").lowercased()
-  let hasSelectedChoice = recent.contains { line in
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    guard trimmed.first == "›" || trimmed.first == ">" else { return false }
-    let choice = trimmed.dropFirst().trimmingCharacters(in: .whitespaces).lowercased()
-    return choice.hasPrefix("1. sign in with chatgpt")
+  // The live sign-in menu renders no composer below it, so its selected option
+  // is the last `›`/`>` marker line on screen. A later marker line means the
+  // menu text above is stale transcript (or a quotation), not the current
+  // interaction.
+  guard
+    let selected = recent.last(where: { line in
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      return trimmed.first == "›" || trimmed.first == ">"
+    })
+  else {
+    return false
+  }
+  let choice = selected.trimmingCharacters(in: .whitespaces)
+    .dropFirst()
+    .trimmingCharacters(in: .whitespaces)
+    .lowercased()
+  guard
+    choice.hasPrefix("1. sign in with chatgpt")
       || choice.hasPrefix("2. sign in with device code")
       || choice.hasPrefix("3. provide your own api key")
+  else {
+    return false
   }
-  return hasSelectedChoice
-    && lower.contains("welcome to codex, openai's command-line coding agent")
+  let lower = recent.joined(separator: "\n").lowercased()
+  return lower.contains("welcome to codex, openai's command-line coding agent")
     && lower.contains("2. sign in with device code")
     && lower.contains("3. provide your own api key")
     && lower.contains("press enter to continue")

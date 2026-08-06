@@ -574,6 +574,25 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func codexStaleSignInMenuBeforeCurrentInputIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+            Welcome to Codex, OpenAI's command-line coding agent
+
+            1. Sign in with ChatGPT
+          > 2. Sign in with Device Code
+            3. Provide your own API key
+
+            Press enter to continue
+
+          › Explain the sign-in menu above without acting on it.
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+  }
+
   @Test func codexTranscriptConfirmationVocabularyDoesNotOverrideLiveState() {
     #expect(
       DetectedAgent.codex.detectState(

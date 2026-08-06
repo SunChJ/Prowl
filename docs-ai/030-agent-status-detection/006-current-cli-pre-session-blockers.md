@@ -23,15 +23,18 @@ to `idle`:
 
 Added narrowly scoped Codex screen rules for the three observed dialog structures.
 Directory trust and hook review require a current selected choice plus their adjacent
-options and footer. Sign-in requires Codex's startup heading and its complete three-way
-choice menu. This keeps transcript text from becoming a blocker merely by quoting a
-single confirmation phrase.
+options and footer, anchored to the last `›` prompt line on screen. Sign-in requires
+Codex's startup heading, its complete three-way choice menu, and its selected option as
+the last `›`/`>` selection-marker line on screen — the live menu renders no composer
+below it, so a later marker line means the menu text is stale transcript or a
+quotation. This keeps transcript text from becoming a blocker merely by quoting a
+confirmation phrase or a full menu.
 
 Normalized excerpts from the live captures are inline regression fixtures in
 `supacodeTests/ScreenHeuristicsTests.swift`, following the existing test convention.
-The fixture also proves a stale directory-trust transcript followed by an ordinary input
-remains `idle`. `docs/components/agent-detection.md` documents the recognized Codex
-pre-session blockers.
+The fixtures also prove stale directory-trust and sign-in screens followed by an
+ordinary input remain `idle`. `docs/components/agent-detection.md` documents the
+recognized Codex pre-session blockers.
 
 ## Non-goals
 
@@ -45,6 +48,8 @@ pre-session blockers.
 
 - The three new Codex fixtures failed against the pre-change detector because all fell
   through to `idle`.
+- The stale sign-in fixture failed against the unanchored sign-in rule (classified
+  `blocked`) and passes with the last-marker anchor.
 - Focused and complete `ScreenHeuristicsTests` passed after the change.
 - `make check` passed.
 - `make build-app` passed with 0 errors and 0 warnings.
