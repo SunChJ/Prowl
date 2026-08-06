@@ -135,3 +135,6 @@ the failed attempt to extend the first signal to plain commands is
   caches the complete result, records stable transition reasons, and exposes an optional
   JSON-only `detection_reason` — see
   [010-explainable-screen-detection-results.md](010-explainable-screen-detection-results.md)
+- Updated 2026-08-07: Codex state detection moved to a runtime-owned typed profile with
+  explicit regions, ordered rules, stable reason IDs, and legacy-parity proof — see
+  [011-codex-screen-profile.md](011-codex-screen-profile.md)
