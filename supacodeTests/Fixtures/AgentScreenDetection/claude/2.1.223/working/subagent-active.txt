@@ -2,7 +2,7 @@
 
   Ran 1 shell command
 
-⏺ 好的喵～ permission-probe.txt 已创建。
+⏺ <MODEL_OUTPUT>
 
 ✻ Baked for 10s
 

@@ -11,6 +11,7 @@
     "temporary capture root replaced with a synthetic equal-width path",
     "account and organization identifiers replaced with synthetic values",
     "usage balances and plan labels replaced with placeholders",
+    "private persona-styled model output replaced with <MODEL_OUTPUT>",
     "prompt history entries replaced with <HISTORY_ENTRY>",
     "terminal right-edge padding removed without changing line wrapping"
   ],

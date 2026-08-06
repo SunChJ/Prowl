@@ -1,4 +1,3 @@
-import Foundation
 import Testing
 
 @testable import supacode
@@ -33,38 +32,7 @@ extension PerformanceBenchmarks {
     }
 
     private static func loadFixtures() throws -> [(agent: DetectedAgent, text: String)] {
-      let root = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .appending(path: "Fixtures/AgentScreenDetection", directoryHint: .isDirectory)
-      guard
-        let enumerator = FileManager.default.enumerator(
-          at: root,
-          includingPropertiesForKeys: [.isRegularFileKey],
-          options: [.skipsHiddenFiles]
-        )
-      else {
-        throw ScreenHeuristicsBenchmarkError.fixtureRootUnavailable
-      }
-
-      return
-        try enumerator
-        .compactMap { $0 as? URL }
-        .filter { $0.pathExtension == "txt" }
-        .sorted { $0.path() < $1.path() }
-        .map { url in
-          let relativePath = String(url.path().dropFirst(root.path().count))
-          guard let runtime = relativePath.split(separator: "/").first,
-            let agent = DetectedAgent(rawValue: String(runtime))
-          else {
-            throw ScreenHeuristicsBenchmarkError.invalidFixturePath(relativePath)
-          }
-          return (agent, try String(contentsOf: url, encoding: .utf8))
-        }
+      try AgentScreenFixtureCorpus.load().map { ($0.agent, $0.text) }
     }
   }
-}
-
-private enum ScreenHeuristicsBenchmarkError: Error {
-  case fixtureRootUnavailable
-  case invalidFixturePath(String)
 }

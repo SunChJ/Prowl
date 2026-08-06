@@ -13,7 +13,7 @@
 › Run a shell command that sleeps for 8 seconds, then reply exactly DONE.
 
 
-• Starting the 8-second wait now喵～
+• <MODEL_OUTPUT>
 
 • Ran sleep 8
   └ (no output)

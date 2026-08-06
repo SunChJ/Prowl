@@ -6,7 +6,7 @@
 
 ⏺ Agent "Run sleep 8, return DONE" finished · 25s
 
-⏺ Subagent 已跑完喵～ 它执行了 sleep 8，返回结果是：DONE
+⏺ <MODEL_OUTPUT>
 
 ✻ Brewed for 32s
 

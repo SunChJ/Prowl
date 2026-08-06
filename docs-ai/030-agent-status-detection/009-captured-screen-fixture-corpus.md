@@ -28,13 +28,17 @@ private temporary workspaces. The terminal was 52 rows high and 106–132 column
 Raw captures stayed under ignored `.local/agent-screen-captures/`; copied authentication
 and state databases were removed after capture.
 
-Each `.txt` is the canonical production tail: it starts at the 24th non-empty line from
-the bottom while preserving internal/trailing blank terminal rows. Same-basename metadata
+Each `.txt` is the canonical production tail produced by the shared
+`agentDetectionRecentText` helper: it starts at the 24th non-empty line from the bottom
+when at least 24 exist, otherwise retaining the whole screen, while preserving
+internal/trailing blank terminal rows. Same-basename metadata
 records schema version, exact CLI version, UTC capture timestamp from the raw file,
 `prowl-read-detection` source, terminal geometry, and an explicit redaction summary.
-Paths, account/organization identifiers, usage balances, prompt history, and session IDs
-were replaced with synthetic placeholders. Right-edge terminal padding was removed without
-changing leading columns or wraps. A corpus-specific `.gitattributes` rule preserves
+Paths, account/organization identifiers, usage balances, real prompt history, private
+persona output, and session IDs were replaced with synthetic placeholders. Purpose-built
+probe prompts/output remain only where they provide conversational regression structure.
+Right-edge terminal padding was removed without changing leading columns or wraps. A
+corpus-specific `.gitattributes` rule preserves
 intentional trailing blank screen rows without weakening whitespace checks elsewhere.
 
 Reconstructed and synthetic screens remain inline in `ScreenHeuristicsTests`; no existing
@@ -46,8 +50,10 @@ literal was relabeled as a captured/versioned fixture.
 
 - discovers fixtures relative to `#filePath` and asserts at least one ran;
 - validates path layout, runtime/state tokens, metadata schema/source/version/timestamp,
-  terminal geometry, redaction summary, matching sidecars, and no orphan metadata;
-- verifies each committed text is already the canonical 24-non-empty-line tail;
+  explicit issue key, terminal geometry, redaction summary, matching sidecars, no orphan
+  metadata, and rejects every unexpected regular file;
+- verifies each committed text is already the canonical detector tail through the same
+  production helper used by `detectState(in:)`;
 - runs every normal fixture through the current detector;
 - asserts initial Claude/Codex blocked/working/idle lifecycle coverage;
 - treats `known-misdetection/<expected>/<current>/...` as an executable quarantine.
@@ -84,9 +90,10 @@ cache, so this measures changed-frame classifier cost rather than steady-state p
 
 ## Validation
 
-- Corpus tests: 2 passed; 15 screen fixtures and 15 metadata sidecars executed.
+- Corpus tests: 4 passed; 15 screen fixtures and 15 metadata sidecars executed, plus
+  unexpected-file and missing-issue-key failure paths.
 - Screen benchmark Debug smoke: 1 passed.
-- Full app suite: xcsift reported 2,275 passed; xcresult independently verified 2,278
+- Full app suite: xcsift reported 2,278 passed; xcresult independently verified 2,280
   tests and zero failures.
 - `make bench`: 6 benchmark tests passed; four existing Ghostty symbol-index warnings,
   zero errors/failures; screen corpus record appended successfully.

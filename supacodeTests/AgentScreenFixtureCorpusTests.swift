@@ -16,15 +16,49 @@ struct AgentScreenFixtureCorpusTests {
       #expect(states.contains(.working))
       #expect(states.contains(.idle))
     }
+  }
 
-    #expect(
-      fixtures.contains {
-        $0.agent == .claude
-          && $0.isQuarantined
-          && $0.expectedState == .unknown
-          && $0.currentState == .idle
-      }
+  @Test func corpusRejectsUnexpectedRegularFiles() throws {
+    let temporaryRoot = FileManager.default.temporaryDirectory
+      .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+    try Data().write(to: temporaryRoot.appending(path: "README.md"))
+    try Data().write(to: temporaryRoot.appending(path: "raw-capture.json"))
+
+    #expect(throws: CorpusError.self) {
+      try AgentScreenFixtureCorpus.load(from: temporaryRoot)
+    }
+  }
+
+  @Test func corpusRequiresExplicitIssueMetadataKey() throws {
+    let temporaryRoot = FileManager.default.temporaryDirectory
+      .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let fixtureDirectory = temporaryRoot.appending(path: "claude/1.0/idle", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: fixtureDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+    try "idle".write(to: fixtureDirectory.appending(path: "composer.txt"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "schema_version": 1,
+      "captured_at": "2026-08-07T00:00:00Z",
+      "cli_version": "1.0",
+      "capture_source": "prowl-read-detection",
+      "terminal": { "columns": 80, "rows": 24 },
+      "redactions": ["none required"]
+    }
+    """.write(
+      to: fixtureDirectory.appending(path: "composer.metadata.json"),
+      atomically: true,
+      encoding: .utf8
     )
+
+    do {
+      _ = try AgentScreenFixtureCorpus.load(from: temporaryRoot)
+    } catch is DecodingError {
+      return
+    }
+    Issue.record("Fixture metadata without an explicit issue key was accepted.")
   }
 
   @Test func capturedFixturesMatchCurrentDetector() throws {
@@ -59,34 +93,48 @@ struct AgentScreenFixtureCorpusTests {
   }
 }
 
-private enum AgentScreenFixtureCorpus {
-  static let recentNonEmptyLineLimit = 24
+enum AgentScreenFixtureCorpus {
   static let root = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
     .appending(path: "Fixtures/AgentScreenDetection", directoryHint: .isDirectory)
 
-  static func load() throws -> [AgentScreenFixture] {
+  static func load(from fixtureRoot: URL = root) throws -> [AgentScreenFixture] {
+    let fixtureRoot = fixtureRoot.standardizedFileURL.resolvingSymlinksInPath()
     let fileManager = FileManager.default
     guard
       let enumerator = fileManager.enumerator(
-        at: root,
+        at: fixtureRoot,
         includingPropertiesForKeys: [.isRegularFileKey],
         options: [.skipsHiddenFiles]
       )
     else {
-      throw CorpusError("Fixture root is unavailable: \(root.path())")
+      throw CorpusError("Fixture root is unavailable: \(fixtureRoot.path(percentEncoded: false))")
     }
 
-    let urls = enumerator.compactMap { $0 as? URL }
+    let urls = enumerator.compactMap { ($0 as? URL)?.standardizedFileURL.resolvingSymlinksInPath() }
+    let regularFileURLs = try urls.filter {
+      try $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+    }
+    let readmeURL = fixtureRoot.appending(path: "README.md")
+    let unexpectedURLs = regularFileURLs.filter { url in
+      url != readmeURL
+        && url.pathExtension != "txt"
+        && !url.lastPathComponent.hasSuffix(".metadata.json")
+    }
+    guard unexpectedURLs.isEmpty else {
+      let unexpectedPaths = unexpectedURLs.map { relativePath(for: $0, root: fixtureRoot) }.sorted()
+      throw CorpusError("Unexpected files in fixture corpus: \(unexpectedPaths)")
+    }
+
     let screenURLs =
-      urls
+      regularFileURLs
       .filter { $0.pathExtension == "txt" }
       .sorted { $0.path() < $1.path() }
-    let metadataURLs = Set(urls.filter { $0.lastPathComponent.hasSuffix(".metadata.json") })
+    let metadataURLs = Set(regularFileURLs.filter { $0.lastPathComponent.hasSuffix(".metadata.json") })
 
     var consumedMetadataURLs: Set<URL> = []
     let fixtures = try screenURLs.map { screenURL in
-      let fixture = try loadFixture(at: screenURL)
+      let fixture = try loadFixture(at: screenURL, root: fixtureRoot)
       consumedMetadataURLs.insert(fixture.metadataURL)
       return fixture
     }
@@ -101,28 +149,16 @@ private enum AgentScreenFixtureCorpus {
   }
 
   static func canonicalTail(_ content: String) -> String {
-    let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    var remainingNonEmptyLines = recentNonEmptyLineLimit
-    var startIndex = lines.startIndex
-
-    for index in lines.indices.reversed() {
-      guard !lines[index].trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-      remainingNonEmptyLines -= 1
-      if remainingNonEmptyLines == 0 {
-        startIndex = index
-        break
-      }
-    }
-    return lines[startIndex...].joined(separator: "\n")
+    agentDetectionRecentText(content)
   }
 
-  private static func loadFixture(at screenURL: URL) throws -> AgentScreenFixture {
-    let relativePath = relativePath(for: screenURL)
+  private static func loadFixture(at screenURL: URL, root: URL) throws -> AgentScreenFixture {
+    let relativePath = relativePath(for: screenURL, root: root)
     let components = relativePath.split(separator: "/").map(String.init)
     let layout = try FixtureLayout(components: components, relativePath: relativePath)
     let metadataURL = screenURL.deletingPathExtension().appendingPathExtension("metadata.json")
 
-    guard FileManager.default.fileExists(atPath: metadataURL.path()) else {
+    guard FileManager.default.fileExists(atPath: metadataURL.path(percentEncoded: false)) else {
       throw CorpusError("Missing metadata for \(relativePath)")
     }
 
@@ -169,13 +205,15 @@ private enum AgentScreenFixtureCorpus {
     }
   }
 
-  private static func relativePath(for url: URL) -> String {
-    let path = String(url.path().dropFirst(root.path().count))
+  private static func relativePath(for url: URL, root: URL) -> String {
+    let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
+    let urlPath = url.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
+    let path = String(urlPath.dropFirst(rootPath.count))
     return path.hasPrefix("/") ? String(path.dropFirst()) : path
   }
 }
 
-private struct AgentScreenFixture {
+struct AgentScreenFixture {
   let relativePath: String
   let metadataURL: URL
   let agent: DetectedAgent
@@ -186,7 +224,7 @@ private struct AgentScreenFixture {
   let metadata: AgentScreenFixtureMetadata
 }
 
-private struct AgentScreenFixtureMetadata: Decodable {
+struct AgentScreenFixtureMetadata: Decodable {
   struct Terminal: Decodable {
     let columns: Int
     let rows: Int
@@ -208,6 +246,26 @@ private struct AgentScreenFixtureMetadata: Decodable {
     case terminal
     case redactions
     case issue
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.issue) else {
+      throw DecodingError.keyNotFound(
+        CodingKeys.issue,
+        DecodingError.Context(
+          codingPath: container.codingPath,
+          debugDescription: "Fixture metadata must include issue as a URL or explicit null."
+        )
+      )
+    }
+    self.schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    self.capturedAt = try container.decode(String.self, forKey: .capturedAt)
+    self.cliVersion = try container.decode(String.self, forKey: .cliVersion)
+    self.captureSource = try container.decode(String.self, forKey: .captureSource)
+    self.terminal = try container.decode(Terminal.self, forKey: .terminal)
+    self.redactions = try container.decode([String].self, forKey: .redactions)
+    self.issue = try container.decodeIfPresent(String.self, forKey: .issue)
   }
 }
 
@@ -249,7 +307,7 @@ private struct FixtureLayout {
   }
 }
 
-private struct CorpusError: Error, CustomStringConvertible {
+struct CorpusError: Error, CustomStringConvertible {
   let description: String
 
   init(_ description: String) {
