@@ -10,7 +10,7 @@ extension PerformanceBenchmarks {
   struct ScreenHeuristicsBenchmarks {
     @Test func capturedCorpusChangedFrameCost() throws {
       let fixtures = try Self.loadFixtures()
-      let repeats = BenchmarkMeasurement.isFullMode ? 2_000 : 20
+      let repeats = BenchmarkMeasurement.isFullMode ? 20 : 2
       var checksum = 0
 
       let median = BenchmarkMeasurement.repeatedMedian {
@@ -27,7 +27,8 @@ extension PerformanceBenchmarks {
       BenchmarkMeasurement.reportAbsolute(
         suite: "ScreenHeuristics",
         name: "captured-claude-codex-corpus",
-        median: median
+        median: median,
+        normalizingBy: repeats
       )
     }
 

@@ -90,14 +90,20 @@ nonisolated enum BenchmarkMeasurement {
     milliseconds(medians.reference) / milliseconds(medians.shipped)
   }
 
-  static func reportAbsolute(suite: String, name: String, median: Duration) {
+  static func reportAbsolute(
+    suite: String,
+    name: String,
+    median: Duration,
+    normalizingBy workloadCount: Int = 1
+  ) {
     guard isFullMode else { return }
     let environment = ProcessInfo.processInfo.environment
     let record = AbsoluteRecord(
       date: Date.now.ISO8601Format(),
       suite: suite,
       name: name,
-      medianMilliseconds: milliseconds(median),
+      medianMilliseconds: milliseconds(median) / Double(workloadCount),
+      normalizationDivisor: workloadCount,
       iterations: iterations,
       gitSHA: environment["PROWL_BENCH_GIT_SHA"]
     )
@@ -146,6 +152,7 @@ nonisolated enum BenchmarkMeasurement {
     let suite: String
     let name: String
     let medianMilliseconds: Double
+    let normalizationDivisor: Int
     let iterations: Int
     let gitSHA: String?
   }
