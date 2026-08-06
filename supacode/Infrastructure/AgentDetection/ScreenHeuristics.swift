@@ -51,10 +51,10 @@ extension DetectedAgent {
 }
 
 nonisolated func agentDetectionRecentText(_ content: String) -> String {
-  recentLines(content, limit: agentDetectionRecentLineLimit)
+  agentDetectionRecentLines(content, limit: agentDetectionRecentLineLimit)
 }
 
-nonisolated private func recentLines(_ content: String, limit: Int) -> String {
+nonisolated func agentDetectionRecentLines(_ content: String, limit: Int) -> String {
   let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
   var remainingNonBlankLines = limit
   var startIndex = lines.startIndex
@@ -144,7 +144,7 @@ nonisolated private func detectClaude(_ content: String) -> AgentRawState {
     return .blocked
   }
 
-  let liveStatus = recentLines(contentAbovePromptBox(content), limit: 3)
+  let liveStatus = agentDetectionRecentLines(contentAbovePromptBox(content), limit: 3)
   if hasSpinnerActivity(liveStatus) || hasClaudeElapsedStatusLine(liveStatus) {
     return .working
   }
@@ -498,7 +498,7 @@ nonisolated private func hasCodexConfirmationFooter(_ content: String) -> Bool {
 
   let footerStart = lines.index(after: promptIndex)
   guard footerStart < lines.endIndex else { return false }
-  let footerLower = recentLines(lines[footerStart...].joined(separator: "\n"), limit: 3).lowercased()
+  let footerLower = agentDetectionRecentLines(lines[footerStart...].joined(separator: "\n"), limit: 3).lowercased()
   return footerLower.contains("press enter to confirm or esc to cancel")
     || footerLower.contains("enter to submit answer")
     || footerLower.contains("allow command?")
@@ -537,7 +537,7 @@ nonisolated private func normalizedCodexChoice(_ line: String) -> String {
   return withoutSelection.trimmingCharacters(in: .whitespaces)
 }
 
-nonisolated private func isNumberedChoice(_ option: String) -> Bool {
+nonisolated func isNumberedChoice(_ option: String) -> Bool {
   guard let firstToken = option.split(whereSeparator: { $0.isWhitespace }).first,
     firstToken.last == "."
   else {
@@ -657,7 +657,7 @@ nonisolated private func hasInterruptPattern(_ lower: String) -> Bool {
 }
 
 nonisolated private func hasCodexWorkingFooter(_ content: String) -> Bool {
-  recentLines(content, limit: 3).split(separator: "\n").contains { line in
+  agentDetectionRecentLines(content, limit: 3).split(separator: "\n").contains { line in
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     guard trimmed.first == "•" || trimmed.first == "◦" else { return false }
     let body = trimmed.dropFirst()

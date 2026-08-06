@@ -1,7 +1,7 @@
 struct AgentScreenRuleID: Equatable, Hashable, Sendable {
   let rawValue: String
 
-  init(_ rawValue: String) {
+  nonisolated init(_ rawValue: String) {
     precondition(!rawValue.isEmpty, "Agent screen rule IDs must not be empty.")
     self.rawValue = rawValue
   }
