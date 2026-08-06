@@ -77,7 +77,8 @@ Executed verification:
 - `make build-cli`, `make test-cli-smoke`, and `make test-cli-integration`: 68 integration
   tests passed;
 - `make check` and `make build-app` passed after final diagnostic plumbing;
-- final Release corpus benchmark: pending committed code SHA.
+- `make bench`: 6 passed; at `e1e09444` the 15-fixture corpus measured 3.116 ms
+  median versus Phase 2's 3.142 ms (-0.8%, within run-to-run noise).
 
 A second Debug app successfully served the new CLI socket, but the host was at the locked
 `loginwindow`; Ghostty surfaces therefore never became active and no live
