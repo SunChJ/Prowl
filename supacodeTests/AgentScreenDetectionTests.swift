@@ -7,7 +7,7 @@ struct AgentScreenDetectionTests {
   @Test func unmigratedDetectorsReturnTheirExistingStateWithAStableReason() {
     let screen = "screen without a live rule"
 
-    for agent in DetectedAgent.allCases where agent != .codex {
+    for agent in DetectedAgent.allCases where agent != .codex && agent != .claude {
       let detection = agent.detectScreen(in: screen)
 
       #expect(detection.state == agent.detectState(in: screen))

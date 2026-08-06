@@ -15,5 +15,5 @@
     "prompt history entries replaced with <HISTORY_ENTRY>",
     "terminal right-edge padding removed without changing line wrapping"
   ],
-  "issue": "https://github.com/onevcat/Prowl/issues/676"
+  "issue": null
 }

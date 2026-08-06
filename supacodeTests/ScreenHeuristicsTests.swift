@@ -97,7 +97,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeDetection() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Reading file
           ✽ Tempering…
@@ -108,7 +108,7 @@ struct ScreenHeuristicsTests {
       ) == .working
     )
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Do you want to proceed?
           ❯ 1. Yes
@@ -119,7 +119,7 @@ struct ScreenHeuristicsTests {
       ) == .blocked
     )
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Task complete.
           ─────────
@@ -132,7 +132,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeCurrentTrustAndSubagentScreensRemainClassified() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Accessing workspace:
 
@@ -147,7 +147,7 @@ struct ScreenHeuristicsTests {
       ) == .blocked
     )
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ✢ Manifesting… (5s · ↓ 180 tokens · thought for 1s)
           ─────────
@@ -162,7 +162,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeIgnoresStalePermissionPromptNearCurrentIdlePrompt() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Do you want to proceed?
           ❯ 1. Yes
@@ -191,7 +191,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeShortCompletedResponseQuestionBeforeIdlePromptIsIdle() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ⏺ The completed response explains: Do you want to proceed?
           ─────────
@@ -202,7 +202,7 @@ struct ScreenHeuristicsTests {
       ) == .idle
     )
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ❯ Quote the phrase Do you want to proceed?
           ─────────
@@ -213,7 +213,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeIgnoresStalePermissionPromptOutsideRecentTail() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Do you want to proceed?
           ❯ 1. Yes
@@ -254,7 +254,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeDetectsBlockedWhenFirstOptionSelectedInLongMenu() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           需要决策：/release 跳进去发现 APK 没有链时，怎么走接？
 
@@ -282,7 +282,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeDoesNotTreatHistoryInputAndBranchNameAsPermissionPrompt() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ✻ Crunched for 10s
 
@@ -313,7 +313,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeViewerChromeAtBottomCarriesNoSignal() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ✻ Tempering… (12s · esc to interrupt)
           older transcript content
@@ -322,7 +322,7 @@ struct ScreenHeuristicsTests {
       ) == .unknown
     )
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Task complete.
           ⌕ Search…
@@ -336,7 +336,7 @@ struct ScreenHeuristicsTests {
     // Regression: a chat message quoting "ctrl+r to toggle" used to force
     // idle while the spinner below showed Claude still working.
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ⏺ 收尾完成,现状如下:
 
@@ -363,7 +363,7 @@ struct ScreenHeuristicsTests {
     ]
     for statusRow in statusRows {
       #expect(
-        claudeLegacyParityState(
+        claudeProfileState(
           in: """
             \(statusRow)
             ─────────
@@ -377,7 +377,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeQuotedInterruptHintInIdleResponseIsIdle() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ⏺ The live status row includes the phrase "esc to interrupt".
           ─────────
@@ -391,7 +391,7 @@ struct ScreenHeuristicsTests {
 
   @Test func claudeElapsedStatusLineIsScopedAndRequiresACompleteToken() {
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ● Forging… (10s · thinking with high effort)
           ─────────
@@ -407,7 +407,7 @@ struct ScreenHeuristicsTests {
     ]
     for statusRow in invalidRows {
       #expect(
-        claudeLegacyParityState(
+        claudeProfileState(
           in: """
             \(statusRow)
             ─────────
@@ -419,7 +419,7 @@ struct ScreenHeuristicsTests {
     }
 
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ● Retrying… (10s · thinking with high effort)
           Completed line 1
@@ -438,7 +438,7 @@ struct ScreenHeuristicsTests {
     // interrupt" above the prompt), but Claude keeps a status line BELOW the
     // input box. The "<done>/<total> agents done" segment marks active work.
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ⏺ Kicked off the scout workflow in the background.
           ─────────
@@ -450,7 +450,7 @@ struct ScreenHeuristicsTests {
     )
     // Idle with an ordinary footer (no workflow line) stays idle.
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           Task complete.
           ─────────
@@ -463,7 +463,7 @@ struct ScreenHeuristicsTests {
     // The marker quoted in conversation (above the prompt) must NOT force
     // working — the check is anchored to the below-prompt footer.
     #expect(
-      claudeLegacyParityState(
+      claudeProfileState(
         in: """
           ⏺ The run showed 3/5 agents done before it wrapped up.
           ─────────
@@ -475,13 +475,10 @@ struct ScreenHeuristicsTests {
     )
   }
 
-  private func claudeLegacyParityState(in screen: String) -> AgentRawState {
-    let legacy = DetectedAgent.claude.detectState(in: screen)
-    let profile = ClaudeScreenProfile.detect(
-      in: AgentScreenSnapshot(canonicalText: agentDetectionRecentText(screen))
-    )
-    #expect(profile.state == legacy)
-    return legacy
+  private func claudeProfileState(in screen: String) -> AgentRawState {
+    let detection = DetectedAgent.claude.detectScreen(in: screen)
+    #expect(detection.reason != .legacyDetector)
+    return detection.state
   }
 
   @Test func codexDetection() {

@@ -22,7 +22,7 @@ struct ClaudeScreenProfileTests {
       "claude/2.1.223/idle/quoted-permission.txt": .matched(
         ClaudeScreenProfile.RuleID.idleComposer
       ),
-      "claude/2.1.223/known-misdetection/unknown/idle/676-history-search-viewer.txt": .matched(
+      "claude/2.1.223/unknown/676-history-search-viewer.txt": .matched(
         ClaudeScreenProfile.RuleID.viewer
       ),
       "claude/2.1.223/working/backgrounded-subagent.txt": .matched(
@@ -39,9 +39,7 @@ struct ClaudeScreenProfileTests {
 
     #expect(fixtures.count == expectedReasons.count)
     for fixture in fixtures {
-      let detection = ClaudeScreenProfile.detect(
-        in: AgentScreenSnapshot(canonicalText: fixture.text)
-      )
+      let detection = DetectedAgent.claude.detectScreen(in: fixture.text)
       #expect(detection.state == fixture.expectedState)
       #expect(detection.reason == expectedReasons[fixture.relativePath])
     }
@@ -100,23 +98,5 @@ struct ClaudeScreenProfileTests {
 
     #expect(detection.state == .idle)
     #expect(detection.reason == .noRuleMatched)
-  }
-
-  /// Temporary migration harness. The one quarantined viewer is the only
-  /// capture-backed intentional difference; all other fixtures stay in parity.
-  @Test func capturedCorpusMatchesLegacyExceptViewerFix() throws {
-    for fixture in try AgentScreenFixtureCorpus.load() where fixture.agent == .claude {
-      let legacy = DetectedAgent.claude.detectState(in: fixture.text)
-      let profile = ClaudeScreenProfile.detect(
-        in: AgentScreenSnapshot(canonicalText: fixture.text)
-      )
-
-      if fixture.isQuarantined {
-        #expect(legacy == fixture.currentState)
-        #expect(profile.state == fixture.expectedState)
-      } else {
-        #expect(profile.state == legacy)
-      }
-    }
   }
 }
