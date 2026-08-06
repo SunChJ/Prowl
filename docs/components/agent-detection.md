@@ -58,6 +58,10 @@ returns the exact active-screen buffer used by stage 2. It is explicitly request
 because it can differ from the visible viewport when a pane is scrolled; the default
 `prowl read` behavior is unchanged.
 
+`prowl agents --json` may also include `detection_reason`, a stable classifier rule or
+fallback identifier for the latest screen scan. It does not include screen text, and the
+text-mode command and app UI remain unchanged.
+
 To avoid flicker, detection **stabilizes**: it tolerates several consecutive
 misses before declaring an agent gone, and a working agent gets a short (~3s)
 hold so brief pauses between thinking and output don't drop it out of

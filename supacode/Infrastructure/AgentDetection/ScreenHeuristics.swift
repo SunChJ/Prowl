@@ -4,7 +4,17 @@ nonisolated let agentDetectionRecentLineLimit = 24
 
 extension DetectedAgent {
   nonisolated func detectState(in screen: String) -> AgentRawState {
-    let screen = agentDetectionRecentText(screen)
+    detectScreen(in: screen).state
+  }
+
+  nonisolated func detectScreen(in screen: String) -> AgentScreenDetection {
+    AgentScreenDetection(
+      state: detectLegacyState(in: agentDetectionRecentText(screen)),
+      reason: .legacyDetector
+    )
+  }
+
+  nonisolated private func detectLegacyState(in screen: String) -> AgentRawState {
     switch self {
     case .pi:
       return detectPi(screen)
