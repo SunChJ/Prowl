@@ -141,7 +141,7 @@ nonisolated private func detectClaude(_ content: String) -> AgentRawState {
 }
 
 nonisolated private func detectCodex(_ content: String) -> AgentRawState {
-  if hasCodexBlockedPrompt(content) {
+  if hasCodexPreSessionBlockedPrompt(content) || hasCodexBlockedPrompt(content) {
     return .blocked
   }
   if hasCodexWorkingFooter(content) {
@@ -373,6 +373,87 @@ nonisolated private func isCodexPromptLine(_ line: String) -> Bool {
   guard trimmed.first == "›" else { return false }
   let remainder = trimmed.dropFirst()
   return remainder.isEmpty || remainder.first?.isWhitespace == true
+}
+
+nonisolated private func hasCodexPreSessionBlockedPrompt(_ content: String) -> Bool {
+  hasCodexDirectoryTrustPrompt(content) || hasCodexHookReviewPrompt(content) || hasCodexSignInPrompt(content)
+}
+
+nonisolated private func hasCodexDirectoryTrustPrompt(_ content: String) -> Bool {
+  hasCodexSelectedChoice(
+    content,
+    matchingAnyOf: ["1. yes, continue", "2. no, quit"],
+    withBefore: ["do you trust the contents of this directory?"],
+    andAround: ["1. yes, continue", "2. no, quit"],
+    andAfter: ["press enter to continue"]
+  )
+}
+
+nonisolated private func hasCodexHookReviewPrompt(_ content: String) -> Bool {
+  hasCodexSelectedChoice(
+    content,
+    matchingAnyOf: [
+      "1. review hooks",
+      "2. trust all and continue",
+      "3. continue without trusting (hooks won't run)",
+    ],
+    withBefore: ["hooks need review"],
+    andAround: ["1. review hooks", "2. trust all and continue", "3. continue without trusting"],
+    andAfter: ["press enter to confirm or esc to go back"]
+  )
+}
+
+nonisolated private func hasCodexSelectedChoice(
+  _ content: String,
+  matchingAnyOf options: Set<String>,
+  withBefore beforeNeedles: [String],
+  andAround aroundNeedles: [String],
+  andAfter afterNeedles: [String]
+) -> Bool {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
+    return false
+  }
+
+  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
+  guard options.contains(selectedChoice) else {
+    return false
+  }
+
+  let lowerBound = max(lines.startIndex, promptIndex - 6)
+  let before = lines[lowerBound..<promptIndex].joined(separator: "\n").lowercased()
+  guard beforeNeedles.allSatisfy(before.contains) else {
+    return false
+  }
+
+  let afterStart = lines.index(after: promptIndex)
+  let afterEnd = min(lines.endIndex, afterStart + 6)
+  let around = lines[lowerBound..<afterEnd].joined(separator: "\n").lowercased()
+  guard aroundNeedles.allSatisfy(around.contains) else {
+    return false
+  }
+
+  let after = lines[afterStart..<afterEnd].joined(separator: "\n").lowercased()
+  return afterNeedles.allSatisfy(after.contains)
+}
+
+nonisolated private func hasCodexSignInPrompt(_ content: String) -> Bool {
+  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  let recent = lines.suffix(18)
+  let lower = recent.joined(separator: "\n").lowercased()
+  let hasSelectedChoice = recent.contains { line in
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.first == "›" || trimmed.first == ">" else { return false }
+    let choice = trimmed.dropFirst().trimmingCharacters(in: .whitespaces).lowercased()
+    return choice.hasPrefix("1. sign in with chatgpt")
+      || choice.hasPrefix("2. sign in with device code")
+      || choice.hasPrefix("3. provide your own api key")
+  }
+  return hasSelectedChoice
+    && lower.contains("welcome to codex, openai's command-line coding agent")
+    && lower.contains("2. sign in with device code")
+    && lower.contains("3. provide your own api key")
+    && lower.contains("press enter to continue")
 }
 
 nonisolated private func hasCodexBlockedPrompt(_ content: String) -> Bool {
