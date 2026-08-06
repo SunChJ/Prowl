@@ -477,20 +477,20 @@ struct ScreenHeuristicsTests {
 
   @Test func codexDetection() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           › 1. Yes, proceed (y)
           Press enter to confirm or esc to cancel
           """
       ) == .blocked
     )
-    #expect(codexLegacyParityState(in: "• Working (12s • esc to interrupt)") == .working)
-    #expect(codexLegacyParityState(in: "Ready for input") == .idle)
+    #expect(codexProfileState(in: "• Working (12s • esc to interrupt)") == .working)
+    #expect(codexProfileState(in: "Ready for input") == .idle)
   }
 
   @Test func codexCurrentPreSessionBlockersAreBlocked() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           > You are in /tmp/detection-workspace
 
@@ -505,7 +505,7 @@ struct ScreenHeuristicsTests {
       ) == .blocked
     )
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
             Hooks need review
             1 hook is new or changed.
@@ -520,7 +520,7 @@ struct ScreenHeuristicsTests {
       ) == .blocked
     )
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
             Welcome to Codex, OpenAI's command-line coding agent
 
@@ -544,7 +544,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexSignInAlternativeSelectedChoiceIsBlocked() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
             Welcome to Codex, OpenAI's command-line coding agent
 
@@ -560,7 +560,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexStalePreSessionPromptBeforeCurrentInputIsIdle() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
             Do you trust the contents of this directory?
           › 1. Yes, continue
@@ -576,7 +576,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexStaleSignInMenuBeforeCurrentInputIsIdle() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
             Welcome to Codex, OpenAI's command-line coding agent
 
@@ -595,7 +595,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexTranscriptConfirmationVocabularyDoesNotOverrideLiveState() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           › Reply with two lines containing do you want and yes.
           • Working (2s • esc to interrupt)
@@ -605,7 +605,7 @@ struct ScreenHeuristicsTests {
       ) == .working
     )
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           › Reply with two lines containing do you want and yes.
           • The parser looks for do you want.
@@ -616,7 +616,7 @@ struct ScreenHeuristicsTests {
       ) == .idle
     )
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           › Explain a confirmation dialog without opening one.
           • A dialog might say: Would you like to run the command?
@@ -631,7 +631,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexConfirmationVocabularyWithoutPromptIsIdle() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           • The previous prompt said: press enter to confirm or esc to cancel.
             It also mentioned allow command? and [y/n].
@@ -642,7 +642,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexUserPromptConfirmationVocabularyIsIdle() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           › Explain why the UI says press enter to confirm or esc to cancel.
           gpt-5.6-terra xhigh · Context 5% used
@@ -650,7 +650,7 @@ struct ScreenHeuristicsTests {
       ) == .idle
     )
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           Press enter to confirm or esc to cancel
           › 1. Explain this footer ordering.
@@ -664,9 +664,9 @@ struct ScreenHeuristicsTests {
       › Describe the confirmation footer.
       • The footer says: Press enter to confirm or esc to cancel.
       """
-    #expect(codexLegacyParityState(in: completedResponse) == .idle)
+    #expect(codexProfileState(in: completedResponse) == .idle)
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           \(completedResponse)
           • Working (2s • esc to interrupt)
@@ -674,7 +674,7 @@ struct ScreenHeuristicsTests {
       ) == .working
     )
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           \(completedResponse)
           ›
@@ -685,7 +685,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexCurrentConfirmationOutranksRetainedWorkingFooter() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           • Working (4s • esc to interrupt)
           Would you like to run the following command?
@@ -699,7 +699,7 @@ struct ScreenHeuristicsTests {
 
   @Test func codexWorkingFooterMustBeInTheLiveBottomRegion() {
     #expect(
-      codexLegacyParityState(
+      codexProfileState(
         in: """
           • Working (4s • esc to interrupt)
           • Completed line 1
@@ -717,17 +717,14 @@ struct ScreenHeuristicsTests {
       "• Retrying… (10s)",
     ]
     for bullet in transcriptBullets {
-      #expect(codexLegacyParityState(in: bullet) == .idle)
+      #expect(codexProfileState(in: bullet) == .idle)
     }
   }
 
-  private func codexLegacyParityState(in screen: String) -> AgentRawState {
-    let legacy = DetectedAgent.codex.detectState(in: screen)
-    let profile = CodexScreenProfile.detect(
-      in: AgentScreenSnapshot(canonicalText: agentDetectionRecentText(screen))
-    )
-    #expect(profile.state == legacy)
-    return legacy
+  private func codexProfileState(in screen: String) -> AgentRawState {
+    let detection = DetectedAgent.codex.detectScreen(in: screen)
+    #expect(detection.reason != .legacyDetector)
+    return detection.state
   }
 
   @Test func geminiDetection() {

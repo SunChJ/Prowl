@@ -30,9 +30,7 @@ struct CodexScreenProfileTests {
 
     #expect(fixtures.count == expectedReasons.count)
     for fixture in fixtures {
-      let detection = CodexScreenProfile.detect(
-        in: AgentScreenSnapshot(canonicalText: fixture.text)
-      )
+      let detection = DetectedAgent.codex.detectScreen(in: fixture.text)
       #expect(detection.state == fixture.currentState)
       #expect(detection.reason == expectedReasons[fixture.relativePath])
     }
@@ -51,16 +49,5 @@ struct CodexScreenProfileTests {
 
     #expect(detection.state == .blocked)
     #expect(detection.reason == .matched(CodexScreenProfile.RuleID.confirmationChoices))
-  }
-
-  /// Temporary migration harness. Removed when production switches to the
-  /// profile and the legacy Codex detector is deleted.
-  @Test func capturedCorpusMatchesLegacyDetector() throws {
-    for fixture in try AgentScreenFixtureCorpus.load() where fixture.agent == .codex {
-      let profile = CodexScreenProfile.detect(
-        in: AgentScreenSnapshot(canonicalText: fixture.text)
-      )
-      #expect(profile.state == DetectedAgent.codex.detectState(in: fixture.text))
-    }
   }
 }

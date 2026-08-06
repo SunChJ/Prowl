@@ -4,10 +4,10 @@ import Testing
 @testable import supacode
 
 struct AgentScreenDetectionTests {
-  @Test func legacyDetectorsReturnTheirExistingStateWithAStableReason() {
+  @Test func unmigratedDetectorsReturnTheirExistingStateWithAStableReason() {
     let screen = "screen without a live rule"
 
-    for agent in DetectedAgent.allCases {
+    for agent in DetectedAgent.allCases where agent != .codex {
       let detection = agent.detectScreen(in: screen)
 
       #expect(detection.state == agent.detectState(in: screen))
