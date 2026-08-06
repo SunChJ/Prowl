@@ -5,7 +5,7 @@
 | **Status** | Implemented |
 | **Date** | 2026-08-07 |
 | **Branch** | `feat/codex-screen-profile` |
-| **PR** | TBD (stacked on #686) |
+| **PR** | #687 (stacked on #686) |
 | **Plan** | [007-screen-profile-migration-plan.md](007-screen-profile-migration-plan.md), Phase 4 |
 
 ## Result
