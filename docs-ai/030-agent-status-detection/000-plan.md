@@ -138,3 +138,7 @@ the failed attempt to extend the first signal to plain commands is
 - Updated 2026-08-07: Codex state detection moved to a runtime-owned typed profile with
   explicit regions, ordered rules, stable reason IDs, and legacy-parity proof — see
   [011-codex-screen-profile.md](011-codex-screen-profile.md)
+- Updated 2026-08-07: Claude state detection moved to its typed profile, current
+  history-search viewer chrome was fixed from captured evidence, and the third-runtime
+  adoption gate stopped further migration — see
+  [012-claude-screen-profile.md](012-claude-screen-profile.md)
