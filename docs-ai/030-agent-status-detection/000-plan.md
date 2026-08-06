@@ -128,3 +128,6 @@ the failed attempt to extend the first signal to plain commands is
 - Updated 2026-08-06: `prowl read --source detection` now captures the exact active-screen
   buffer used by production state detection — see
   [008-detector-faithful-cli-capture.md](008-detector-faithful-cli-capture.md)
+- Updated 2026-08-07: a 15-screen Claude/Codex captured corpus, executable quarantine,
+  provenance validation, and Release classifier baseline are in place — see
+  [009-captured-screen-fixture-corpus.md](009-captured-screen-fixture-corpus.md)
