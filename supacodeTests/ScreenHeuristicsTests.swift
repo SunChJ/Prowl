@@ -130,6 +130,36 @@ struct ScreenHeuristicsTests {
     )
   }
 
+  @Test func claudeCurrentTrustAndSubagentScreensRemainClassified() {
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          Accessing workspace:
+
+          Quick safety check: Is this a project you created or one you trust?
+          Claude Code'll be able to read, edit, and execute files here.
+
+          ❯ 1. Yes, I trust this folder
+            2. No, exit
+
+          Enter to confirm · Esc to cancel
+          """
+      ) == .blocked
+    )
+    #expect(
+      DetectedAgent.claude.detectState(
+        in: """
+          ✢ Manifesting… (5s · ↓ 180 tokens · thought for 1s)
+          ─────────
+          ❯
+          ─────────
+            ⏺ main
+            ◯ general-purpose  Answer a simple question  0s
+          """
+      ) == .working
+    )
+  }
+
   @Test func claudeIgnoresStalePermissionPromptNearCurrentIdlePrompt() {
     #expect(
       DetectedAgent.claude.detectState(
@@ -456,6 +486,111 @@ struct ScreenHeuristicsTests {
     )
     #expect(DetectedAgent.codex.detectState(in: "• Working (12s • esc to interrupt)") == .working)
     #expect(DetectedAgent.codex.detectState(in: "Ready for input") == .idle)
+  }
+
+  @Test func codexCurrentPreSessionBlockersAreBlocked() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+          > You are in /tmp/detection-workspace
+
+            Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of
+            prompt injection. Trusting the directory allows project-local config, hooks, and exec policies to load.
+
+          › 1. Yes, continue
+            2. No, quit
+
+            Press enter to continue
+          """
+      ) == .blocked
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+            Hooks need review
+            1 hook is new or changed.
+            Hooks can run outside the sandbox after you trust them.
+
+          › 1. Review hooks
+            2. Trust all and continue
+            3. Continue without trusting (hooks won't run)
+
+            Press enter to confirm or esc to go back
+          """
+      ) == .blocked
+    )
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+            Welcome to Codex, OpenAI's command-line coding agent
+
+            Sign in with ChatGPT to use Codex as part of your paid plan
+            or connect an API key for usage-based billing
+
+          > 1. Sign in with ChatGPT
+              Usage included with Plus, Pro, Business, and Enterprise plans
+
+            2. Sign in with Device Code
+              Sign in from another device with a one-time code
+
+            3. Provide your own API key
+              Pay for what you use
+
+            Press enter to continue
+          """
+      ) == .blocked
+    )
+  }
+
+  @Test func codexSignInAlternativeSelectedChoiceIsBlocked() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+            Welcome to Codex, OpenAI's command-line coding agent
+
+            1. Sign in with ChatGPT
+          > 2. Sign in with Device Code
+            3. Provide your own API key
+
+            Press enter to continue
+          """
+      ) == .blocked
+    )
+  }
+
+  @Test func codexStalePreSessionPromptBeforeCurrentInputIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+            Do you trust the contents of this directory?
+          › 1. Yes, continue
+            2. No, quit
+            Press enter to continue
+
+          › Explain the prompt above without opening it.
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
+  }
+
+  @Test func codexStaleSignInMenuBeforeCurrentInputIsIdle() {
+    #expect(
+      DetectedAgent.codex.detectState(
+        in: """
+            Welcome to Codex, OpenAI's command-line coding agent
+
+            1. Sign in with ChatGPT
+          > 2. Sign in with Device Code
+            3. Provide your own API key
+
+            Press enter to continue
+
+          › Explain the sign-in menu above without acting on it.
+          gpt-5.6-terra xhigh · Context 5% used
+          """
+      ) == .idle
+    )
   }
 
   @Test func codexTranscriptConfirmationVocabularyDoesNotOverrideLiveState() {

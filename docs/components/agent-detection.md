@@ -41,8 +41,10 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    selection row such as `❯ 1. Yes`; a bare input prompt cuts off the preceding transcript.
    Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to interrupt)` footer
    fallback. Its confirmation detector requires a numbered selected row such as `› 1. Yes`
-   paired with a live bottom footer or an explicit Yes/No choice structure. Ordinary prompt
-   text and completed responses are not confirmation boundaries.
+   paired with a live bottom footer or an explicit Yes/No choice structure. It also recognizes
+   the current directory-trust, hook-review, and initial sign-in menus as **Blocked** from
+   their complete selected-choice and footer structures. Ordinary prompt text and completed
+   responses are not confirmation boundaries.
    Other agent families keep their own patterns (including Oh My Pi's
    `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
    hexagons, Kimi's moon phases, etc.).
