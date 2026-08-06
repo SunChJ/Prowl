@@ -173,9 +173,11 @@ For detector regression captures, omit `--last`, require the returned source, an
 extract the JSON string without adding a newline:
 
 ```bash
+mkdir -p .local/agent-screen-captures
 capture="$(prowl read --pane "$pane" --source detection --json)"
 printf '%s\n' "$capture" | jq -e '.data.source == "detection"' >/dev/null
-printf '%s\n' "$capture" | jq -j '.data.text' > /path/to/private/raw-capture.txt
+printf '%s\n' "$capture" | jq -j '.data.text' \
+  > .local/agent-screen-captures/raw-capture.txt
 ```
 
 This is a diagnostic/capture source, not a more complete terminal-history read;

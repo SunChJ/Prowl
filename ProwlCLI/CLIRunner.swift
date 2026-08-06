@@ -8,11 +8,17 @@ import ProwlCLIShared
 enum CLIRunner {
   /// Execute a command envelope by sending it to the running app
   /// and rendering the response.
-  static func execute(_ envelope: CommandEnvelope) throws {
+  static func execute(
+    _ envelope: CommandEnvelope,
+    validateResponse: ((CommandResponse) throws -> Void)? = nil
+  ) throws {
     do {
       let responseData = try SocketTransportClient.send(envelope)
       let decoder = JSONDecoder()
       let response = try decoder.decode(CommandResponse.self, from: responseData)
+      if response.ok {
+        try validateResponse?(response)
+      }
       switch envelope.output {
       case .json:
         renderJSONData(responseData)

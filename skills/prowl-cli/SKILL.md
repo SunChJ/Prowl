@@ -160,9 +160,11 @@ prowl read --pane "$pane" --last 200 --wait-stable --json
 The default read source follows the viewport. Only when diagnosing agent-state detection or collecting a sanitized detector fixture, request the exact active-screen detector input and verify the returned source before trusting it:
 
 ```bash
+mkdir -p .local/agent-screen-captures
 capture="$(prowl read --pane "$pane" --source detection --json)"
 printf '%s\n' "$capture" | jq -e '.data.source == "detection"' >/dev/null
-printf '%s\n' "$capture" | jq -j '.data.text' > /path/to/private/raw-capture.txt
+printf '%s\n' "$capture" | jq -j '.data.text' \
+  > .local/agent-screen-captures/raw-capture.txt
 ```
 
 Omit `--last` for detector captures. A scrolled pane's detection source can differ from its viewport. Treat the raw capture as private and redact it before committing any fixture.

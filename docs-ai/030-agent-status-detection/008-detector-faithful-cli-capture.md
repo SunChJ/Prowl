@@ -27,8 +27,9 @@ prowl read --pane "$pane" --source detection --json
 - `viewport` is the default and preserves all existing snapshot/scrollback behavior.
 - `detection` reads `GhosttySurfaceView.readActiveContentsForCLI()`, the same method
   reached by production `readActiveText()`.
-- The success payload reports `source: "detection"`; fixture tooling must verify this
-  value before accepting text.
+- The success payload reports `source: "detection"`; the CLI rejects a successful
+  response that does not honor the requested source (for example, from an older running
+  app), and fixture tooling must still verify the value before accepting text.
 - Omitting `--last` returns the complete active buffer unchanged. `--last` remains a
   supported line projection but is not used for detector fixture capture.
 - `--wait-stable` polls only the requested source. Normal reads do not pay for an extra
@@ -40,8 +41,9 @@ a mismatched provider result. The response schema remains `prowl.cli.read.v1`; t
 source value appears only when explicitly requested.
 
 Raw screen content is returned only to the explicit `read` caller. It is not logged,
-added to status payloads, or committed automatically. CLI/component/skill documentation
-requires private staging, source verification, and redaction before a fixture is added.
+added to status payloads, or committed automatically. `.local/agent-screen-captures/` is
+the canonical ignored private staging directory; CLI/component/skill documentation
+requires source verification and redaction before a fixture is added.
 
 ## Validation
 
@@ -50,8 +52,8 @@ implementation:
 
 - `CLIReadCommandHandlerTests`: 18 passed, including exact trailing-newline preservation,
   detection-only `--last`, mismatched-source rejection, and legacy request decoding.
-- SwiftPM: 75 passed.
-- CLI integration filter: 65 passed.
+- SwiftPM: 76 passed.
+- CLI integration filter: 66 passed.
 - Full app suite: xcsift reported 2,272 passed; the xcresult backstop independently
   verified 2,275 tests and zero failures.
 - `make test-cli-smoke`, `make build-cli`, `make test-cli-integration`, `make check`, and

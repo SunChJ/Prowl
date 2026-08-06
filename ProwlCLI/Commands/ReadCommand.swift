@@ -70,19 +70,38 @@ struct ReadCommand: ParsableCommand {
 
       try validateStabilityOptions()
 
+      let requestedSource = source.inputSource
       let envelope = CommandEnvelope(
         output: options.outputMode,
         command: .read(ReadInput(
           selector: sel,
           last: last,
-          source: source.inputSource,
+          source: requestedSource,
           waitStable: waitStable,
           stableIntervalMs: stableInterval,
           stablePeriodMs: stablePeriod,
           waitTimeoutSeconds: waitTimeout
         ))
       )
-      try CLIRunner.execute(envelope)
+      try CLIRunner.execute(envelope) { response in
+        try Self.validate(response: response, requestedSource: requestedSource)
+      }
+    }
+  }
+
+  private static func validate(
+    response: CommandResponse,
+    requestedSource: ReadInputSource
+  ) throws {
+    guard requestedSource == .detection else { return }
+    guard let data = response.data,
+      let payload = try? data.decode(as: ReadCommandPayload.self),
+      payload.source == .detection
+    else {
+      throw ExitError(
+        code: CLIErrorCode.readFailed,
+        message: "The running Prowl app did not honor --source detection. Update or restart Prowl, then retry."
+      )
     }
   }
 
