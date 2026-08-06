@@ -9,6 +9,7 @@ enum CodexScreenProfile {
     nonisolated static let confirmationChoices = AgentScreenRuleID("codex.confirmationChoices")
     nonisolated static let workingFooter = AgentScreenRuleID("codex.workingFooter")
 
+    // Keep exhaustive so prefix and uniqueness tests cover every emitted ID.
     nonisolated static let all = [
       directoryTrust,
       hookReview,

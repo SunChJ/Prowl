@@ -471,7 +471,7 @@ nonisolated private func hasKimiToolSpinner(content: String, lower: String) -> B
   }
 }
 
-nonisolated private func hasConfirmationPrompt(_ lower: String) -> Bool {
+nonisolated func hasConfirmationPrompt(_ lower: String) -> Bool {
   guard
     let range = lower.range(of: "do you want") ?? lower.range(of: "would you like")
   else {
@@ -487,7 +487,7 @@ nonisolated private func hasInterruptPattern(_ lower: String) -> Bool {
     || (lower.contains("esc") && lower.contains("interrupt"))
 }
 
-nonisolated private func hasSpinnerActivity(_ content: String) -> Bool {
+nonisolated func hasSpinnerActivity(_ content: String) -> Bool {
   let spinnerScalars: Set<UnicodeScalar> = [
     "·", "✱", "✲", "✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽", "✾", "✿",
     "❀", "❁", "❂", "❃", "❇", "❈", "❉", "❊", "❋", "✢", "✣", "✤", "✥", "✦", "✧", "✨",
