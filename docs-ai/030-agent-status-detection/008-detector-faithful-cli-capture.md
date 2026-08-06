@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-06 |
-| **Primary PR** | TBD |
+| **Primary PR** | [#684](https://github.com/onevcat/Prowl/pull/684) |
 | **Plan** | [007-screen-profile-migration-plan.md](007-screen-profile-migration-plan.md), Phase 1 |
 | **Related** | `docs/components/cli.md`, `docs/components/agent-detection.md` |
 
