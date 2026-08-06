@@ -5,7 +5,7 @@
 | **Status** | Implemented |
 | **Date** | 2026-08-07 |
 | **Branch** | `feat/agent-detection-reasons` |
-| **PR** | TBD (stacked on #685) |
+| **PR** | #686 (stacked on #685) |
 | **Plan** | [007-screen-profile-migration-plan.md](007-screen-profile-migration-plan.md), Phase 3 |
 
 ## Result
