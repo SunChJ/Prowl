@@ -92,6 +92,9 @@ struct ContentView: View {
       promptStore in
       WorkspaceCreationPromptView(store: promptStore)
     }
+    .sheet(isPresented: renameBranchPromptPresented) {
+      renameBranchPrompt
+    }
     .sheet(isPresented: deleteWorktreeConfirmationPresented) {
       if let confirmation = repositoriesStore.deleteWorktreeConfirmation {
         DeleteWorktreeConfirmationView(
@@ -163,6 +166,34 @@ struct ContentView: View {
       }
     }
     .background(WindowTabbingDisabler())
+  }
+
+  private var renameBranchPromptPresented: Binding<Bool> {
+    Binding(
+      get: { repositoriesStore.pendingRenameBranchRequest != nil },
+      set: { isPresented in
+        guard !isPresented, let request = repositoriesStore.pendingRenameBranchRequest else { return }
+        repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
+      }
+    )
+  }
+
+  @ViewBuilder
+  private var renameBranchPrompt: some View {
+    if let request = repositoriesStore.pendingRenameBranchRequest,
+      let worktree = repositoriesStore.state.worktree(for: request.worktreeID)
+    {
+      RenameBranchPromptView(
+        currentName: worktree.name,
+        onCancel: {
+          repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
+        },
+        onSubmit: { newName in
+          repositoriesStore.send(.requestRenameBranch(request.worktreeID, newName))
+          repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
+        }
+      )
+    }
   }
 
   private var mainSplitView: some View {

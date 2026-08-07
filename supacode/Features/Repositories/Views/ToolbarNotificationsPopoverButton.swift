@@ -1,10 +1,16 @@
 import SwiftUI
 
 struct ToolbarNotificationsPopoverButton: View {
+  enum Style {
+    case automatic
+    case standaloneNavigation
+  }
+
   let groups: [ToolbarNotificationRepositoryGroup]
   let unseenWorktreeCount: Int
   let onSelectNotification: (Worktree.ID, WorktreeTerminalNotification) -> Void
   let onDismissAll: () -> Void
+  var style: Style = .automatic
   @State private var isPresented = false
   @State private var isPinnedOpen = false
   @State private var isHoveringButton = false
@@ -21,6 +27,56 @@ struct ToolbarNotificationsPopoverButton: View {
   }
 
   var body: some View {
+    styledButton
+      .help("Notifications. Hover or click to show all notifications.")
+      .accessibilityLabel("Notifications")
+      .onHover { hovering in
+        isHoveringButton = hovering
+        updatePresentation()
+      }
+      .popover(isPresented: $isPresented) {
+        ToolbarNotificationsPopoverView(
+          groups: groups,
+          onSelectNotification: { worktreeID, notification in
+            onSelectNotification(worktreeID, notification)
+            closePopover()
+          },
+          onDismissAll: {
+            onDismissAll()
+            closePopover()
+          }
+        )
+        .onHover { hovering in
+          isHoveringPopover = hovering
+          updatePresentation()
+        }
+        .onDisappear {
+          isHoveringPopover = false
+          isPinnedOpen = false
+        }
+      }
+      .onChange(of: groups) { _, newValue in
+        if newValue.isEmpty {
+          closePopover()
+        }
+      }
+      .onDisappear {
+        closeTask?.cancel()
+      }
+  }
+
+  @ViewBuilder
+  private var styledButton: some View {
+    if style == .standaloneNavigation {
+      button
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Capsule())
+    } else {
+      button
+    }
+  }
+
+  private var button: some View {
     Button {
       togglePresentation()
     } label: {
@@ -28,46 +84,18 @@ struct ToolbarNotificationsPopoverButton: View {
         Image(systemName: unseenWorktreeCount > 0 ? "bell.badge.fill" : "bell.fill")
           .foregroundStyle(unseenWorktreeCount > 0 ? .orange : .secondary)
           .accessibilityHidden(true)
+          .frame(
+            width: style == .standaloneNavigation ? 20 : nil,
+            height: style == .standaloneNavigation ? 20 : nil
+          )
         if notificationCount > 0 {
           Text(notificationCount, format: .number)
             .font(.caption.monospacedDigit())
         }
       }
-    }
-    .help("Notifications. Hover or click to show all notifications.")
-    .accessibilityLabel("Notifications")
-    .onHover { hovering in
-      isHoveringButton = hovering
-      updatePresentation()
-    }
-    .popover(isPresented: $isPresented) {
-      ToolbarNotificationsPopoverView(
-        groups: groups,
-        onSelectNotification: { worktreeID, notification in
-          onSelectNotification(worktreeID, notification)
-          closePopover()
-        },
-        onDismissAll: {
-          onDismissAll()
-          closePopover()
-        }
-      )
-      .onHover { hovering in
-        isHoveringPopover = hovering
-        updatePresentation()
-      }
-      .onDisappear {
-        isHoveringPopover = false
-        isPinnedOpen = false
-      }
-    }
-    .onChange(of: groups) { _, newValue in
-      if newValue.isEmpty {
-        closePopover()
-      }
-    }
-    .onDisappear {
-      closeTask?.cancel()
+      .font(style == .standaloneNavigation ? .title3.weight(.medium) : nil)
+      .padding(.horizontal, style == .standaloneNavigation ? 10 : 0)
+      .padding(.vertical, style == .standaloneNavigation ? 8 : 0)
     }
   }
 

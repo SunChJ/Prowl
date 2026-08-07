@@ -155,9 +155,10 @@ same agent family. Full flag/payload reference: [cli](cli.md#prowl-handoff).
 
 ## In the app: the Agents capsule and the Hand Off HUD
 
-A capsule button left of the branch title identifies the selected pane's
-detected agent. Clicking it opens a popover whose hand-off row explains the
-action — "Pass this task to another agent in a new tab; <agent> writes its own
+A capsule button leads the top toolbar and identifies the selected pane's
+detected agent; the notifications bell follows it in every view mode. Clicking
+it opens a popover whose hand-off row explains the action — "Pass this task to
+another agent in a new tab; <agent> writes its own
 briefing first" — and opens a centered HUD. The popover is always available:
 below the hand-off row it lists launchable
 [agent profiles](agent-profiles.md) (Recommended first) and a

@@ -247,7 +247,6 @@ private struct WorktreeToolbarPreview: View {
 
   init() {
     toolbarState = WorktreeDetailView.WorktreeToolbarState(
-      title: DetailToolbarTitle(kind: .branch(name: "feature/toolbar-preview")),
       agentsCapsule: AgentsCapsuleState(
         displayName: "codex",
         iconSource: CommandIconMap.iconForFirstToken("codex"),
@@ -296,9 +295,6 @@ private struct WorktreeToolbarPreview: View {
     .toolbar {
       WorktreeDetailView.WorktreeToolbarContent(
         toolbarState: toolbarState,
-        onRenameBranch: { _ in },
-        externalRenamePrompt: nil,
-        onConsumeExternalRenamePrompt: { _ in },
         onOpenWorktree: { _ in },
         onOpenActionSelectionChanged: { _ in },
         onResetOpenActionToAutomatic: {},
@@ -336,15 +332,19 @@ private struct CanvasToolbarPreview: View {
       Text("Canvas Content")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Canvas")
+        .toolbar(removing: .title)
         .toolbar {
-          ToolbarItem(placement: .primaryAction) {
-            ToolbarNotificationsPopoverButton(
-              groups: [],
-              unseenWorktreeCount: 0,
-              onSelectNotification: { _, _ in },
-              onDismissAll: {}
-            )
-          }
+          WorktreeDetailView.AgentNotificationsToolbarContent(
+            agentsCapsule: nil,
+            agentsLauncherItems: [],
+            notificationGroups: [],
+            unseenNotificationWorktreeCount: 0,
+            onHandOff: {},
+            onLaunchProfile: { _ in },
+            onManageProfiles: {},
+            onSelectNotification: { _, _ in },
+            onDismissAllNotifications: {}
+          )
         }
     }
     .frame(width: 900, height: 300)

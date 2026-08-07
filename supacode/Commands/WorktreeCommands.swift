@@ -66,6 +66,13 @@ struct WorktreeCommands: Commands {
         worktreeMenuButton(entry: entry)
       }
       Divider()
+      Button("Rename Branch…") {
+        guard let worktreeID = repositories.selectedWorktreeID else { return }
+        store.send(.repositories(.requestRenameBranchPrompt(worktreeID)))
+      }
+      .modifier(KeyboardShortcutModifier(shortcut: keyboardShortcut(for: AppShortcuts.CommandID.renameBranch)))
+      .help(helpText(title: "Rename Branch", commandID: AppShortcuts.CommandID.renameBranch))
+      .disabled(repositories.selectedWorktreeID == nil)
       Button(store.state.repositories.isShowingArchivedWorktrees ? "Exit Archived Worktrees" : "Archived Worktrees") {
         store.send(.repositories(.selectArchivedWorktrees))
       }

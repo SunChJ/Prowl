@@ -492,6 +492,7 @@ struct WorktreeRowsView: View {
       }
     }
     Divider()
+    renameBranchContextMenuItem(for: row, isBulkSelection: isBulkSelection)
     Button("Copy Path") {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(worktree.workingDirectory.path, forType: .string)
@@ -535,6 +536,16 @@ struct WorktreeRowsView: View {
       }
       .help(deleteTitle)
       .disabled(deleteTargets.isEmpty)
+    }
+  }
+
+  @ViewBuilder
+  private func renameBranchContextMenuItem(for row: WorktreeRowModel, isBulkSelection: Bool) -> some View {
+    if !isBulkSelection {
+      Button("Rename Branch…") {
+        store.send(.requestRenameBranchPrompt(row.id))
+      }
+      .help("Rename this branch")
     }
   }
 

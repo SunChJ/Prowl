@@ -6,7 +6,7 @@ import SwiftUI
 struct WorktreeDetailView: View {
   private struct ToolbarStateInput {
     let repositories: RepositoriesFeature.State
-    let selectedWorktree: Worktree?
+    let actionTargetWorktree: Worktree?
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
     let openActionSelection: OpenWorktreeAction
@@ -23,6 +23,8 @@ struct WorktreeDetailView: View {
   }
 
   private struct CanvasToolbarState {
+    let agentsCapsule: AgentsCapsuleState?
+    let agentsLauncherItems: [AgentsLauncherItem]
     let statusToast: RepositoriesFeature.StatusToast?
     let pullRequest: GithubPullRequest?
     let codeHost: CodeHost
@@ -100,7 +102,7 @@ struct WorktreeDetailView: View {
       selectedWorktreeSummaries: selectedWorktreeSummaries
     )
     .navigationTitle(WindowTitle.compute(repositories: repositories, terminalManager: terminalManager))
-    .toolbar(removing: repositories.isShowingCanvas ? nil : .title)
+    .toolbar(removing: .title)
     .toolbar {
       if repositories.isShowingCanvas {
         canvasToolbarContent(
@@ -116,33 +118,28 @@ struct WorktreeDetailView: View {
             )
           )
         )
-      } else if hasActiveTerminalTarget,
-        let toolbarState = toolbarState(
-          input: ToolbarStateInput(
-            repositories: repositories,
-            selectedWorktree: selectedWorktree,
-            notificationGroups: notificationGroups,
-            unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
-            openActionSelection: state.openActionSelection,
-            openActionIsAutomatic: state.openActionIsAutomatic,
-            showExtras: commandKeyObserver.isPressed,
-            runScriptEnabled: runScriptEnabled,
-            runScriptIsRunning: runScriptIsRunning,
-            customCommands: customCommands,
-            isUpdateAvailable: state.updates.isUpdateAvailable,
-            isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
-            availableUpdateVersion: state.updates.availableVersion,
-            showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar,
-            showDefaultEditorInToolbar: settingsFile.global.showDefaultEditorInToolbar
-          )
-        )
-      {
+      } else if hasActiveTerminalTarget {
         worktreeToolbarContent(
-          toolbarState: toolbarState,
-          repositories: repositories,
-          selectedWorktree: selectedWorktree,
-          actionTargetWorktree: actionTargetWorktree,
-          notificationGroups: notificationGroups
+          toolbarState: toolbarState(
+            input: ToolbarStateInput(
+              repositories: repositories,
+              actionTargetWorktree: actionTargetWorktree,
+              notificationGroups: notificationGroups,
+              unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
+              openActionSelection: state.openActionSelection,
+              openActionIsAutomatic: state.openActionIsAutomatic,
+              showExtras: commandKeyObserver.isPressed,
+              runScriptEnabled: runScriptEnabled,
+              runScriptIsRunning: runScriptIsRunning,
+              customCommands: customCommands,
+              isUpdateAvailable: state.updates.isUpdateAvailable,
+              isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
+              availableUpdateVersion: state.updates.availableVersion,
+              showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar,
+              showDefaultEditorInToolbar: settingsFile.global.showDefaultEditorInToolbar
+            )
+          ),
+          actionTargetWorktree: actionTargetWorktree
         )
       }
     }
@@ -167,24 +164,10 @@ struct WorktreeDetailView: View {
   @ToolbarContentBuilder
   private func worktreeToolbarContent(
     toolbarState: WorktreeToolbarState,
-    repositories: RepositoriesFeature.State,
-    selectedWorktree: Worktree?,
-    actionTargetWorktree: Worktree?,
-    notificationGroups: [ToolbarNotificationRepositoryGroup]
+    actionTargetWorktree: Worktree?
   ) -> some ToolbarContent {
     WorktreeToolbarContent(
       toolbarState: toolbarState,
-      onRenameBranch: { newBranch in
-        guard let selectedWorktree else { return }
-        store.send(.repositories(.requestRenameBranch(selectedWorktree.id, newBranch)))
-      },
-      externalRenamePrompt: repositories.pendingRenameBranchRequest
-        .flatMap { request in
-          request.worktreeID == selectedWorktree?.id ? request : nil
-        },
-      onConsumeExternalRenamePrompt: { requestID in
-        store.send(.repositories(.consumePendingRenameBranchRequest(requestID)))
-      },
       onOpenWorktree: { action in
         store.send(.openWorktree(action))
       },
@@ -200,7 +183,9 @@ struct WorktreeDetailView: View {
         NSPasteboard.general.setString(actionTargetWorktree.workingDirectory.path, forType: .string)
       },
       onSelectNotification: selectToolbarNotification,
-      onDismissAllNotifications: { dismissAllToolbarNotifications(in: notificationGroups) },
+      onDismissAllNotifications: {
+        dismissAllToolbarNotifications(in: toolbarState.notificationGroups)
+      },
       onRunScript: { store.send(.runScript) },
       onStopRunScript: { store.send(.stopRunScript) },
       onRunCustomCommand: { index in
@@ -217,6 +202,8 @@ struct WorktreeDetailView: View {
     input: CanvasToolbarStateInput
   ) -> CanvasToolbarState {
     CanvasToolbarState(
+      agentsCapsule: agentsCapsuleState(for: input.actionTargetWorktree),
+      agentsLauncherItems: agentsLauncherItems(for: input.actionTargetWorktree),
       statusToast: input.appState.repositories.statusToast,
       pullRequest: matchedPullRequest(
         for: input.actionTargetWorktree,
@@ -239,6 +226,20 @@ struct WorktreeDetailView: View {
   private func canvasToolbarContent(
     state: CanvasToolbarState
   ) -> some ToolbarContent {
+    AgentNotificationsToolbarContent(
+      agentsCapsule: state.agentsCapsule,
+      agentsLauncherItems: state.agentsLauncherItems,
+      notificationGroups: state.notificationGroups,
+      unseenNotificationWorktreeCount: state.unseenNotificationWorktreeCount,
+      onHandOff: { store.send(.openHandoffHud) },
+      onLaunchProfile: { store.send(.launchAgentProfile($0)) },
+      onManageProfiles: { store.send(.openAgentProfilesSettings) },
+      onSelectNotification: selectToolbarNotification,
+      onDismissAllNotifications: {
+        dismissAllToolbarNotifications(in: state.notificationGroups)
+      }
+    )
+
     ToolbarItem(placement: .principal) {
       ToolbarStatusView(
         toast: state.statusToast,
@@ -248,14 +249,8 @@ struct WorktreeDetailView: View {
       .padding(.horizontal)
     }
 
-    ToolbarItemGroup(placement: .primaryAction) {
-      ToolbarNotificationsPopoverButton(
-        groups: state.notificationGroups,
-        unseenWorktreeCount: state.unseenNotificationWorktreeCount,
-        onSelectNotification: selectToolbarNotification,
-        onDismissAll: { dismissAllToolbarNotifications(in: state.notificationGroups) }
-      )
-      if state.isUpdateAvailable {
+    if state.isUpdateAvailable {
+      ToolbarItem(placement: .primaryAction) {
         ToolbarUpdateButton(
           availableVersion: state.availableUpdateVersion,
           isReadyToInstall: state.isUpdateReadyToInstall
@@ -270,8 +265,8 @@ struct WorktreeDetailView: View {
       && (state.runScriptIsRunning || state.runScriptEnabled)
     let inlineCommands = Array(state.customCommands.enumerated().prefix(3))
     let overflowCommands = Array(state.customCommands.enumerated().dropFirst(3))
-    // A fixed separator splits the Run + Custom Command cluster from the
-    // notification group, mirroring the Normal toolbar.
+    // A fixed separator keeps the Run + Custom Command cluster distinct from
+    // the trailing update control, mirroring the Normal toolbar.
     //
     // INTENTIONAL DIVERGENCE FROM THE NORMAL TOOLBAR: the whole cluster is a
     // single `ToolbarItem` (an HStack) here, whereas `commandToolbarItems`
@@ -347,25 +342,16 @@ struct WorktreeDetailView: View {
     }
   }
 
-  private func toolbarState(input: ToolbarStateInput) -> WorktreeToolbarState? {
-    guard
-      let title = DetailToolbarTitle.forSelection(
-        worktree: input.selectedWorktree,
-        repository: input.repositories.selectedRepository
-      )
-    else {
-      return nil
-    }
-    return WorktreeToolbarState(
-      title: title,
-      agentsCapsule: agentsCapsuleState(repositories: input.repositories),
-      agentsLauncherItems: agentsLauncherItems(repositories: input.repositories),
+  private func toolbarState(input: ToolbarStateInput) -> WorktreeToolbarState {
+    WorktreeToolbarState(
+      agentsCapsule: agentsCapsuleState(for: input.actionTargetWorktree),
+      agentsLauncherItems: agentsLauncherItems(for: input.actionTargetWorktree),
       statusToast: input.repositories.statusToast,
       pullRequest: matchedPullRequest(
-        for: input.selectedWorktree,
+        for: input.actionTargetWorktree,
         repositories: input.repositories
       ),
-      codeHost: input.repositories.codeHost(forWorktreeID: input.selectedWorktree?.id),
+      codeHost: input.repositories.codeHost(forWorktreeID: input.actionTargetWorktree?.id),
       notificationGroups: input.notificationGroups,
       unseenNotificationWorktreeCount: input.unseenNotificationWorktreeCount,
       openActionSelection: input.openActionSelection,
@@ -382,11 +368,11 @@ struct WorktreeDetailView: View {
     )
   }
 
-  /// The selected pane's detected agent, feeding the Agents capsule. nil
+  /// The target pane's detected agent, feeding the Agents capsule. nil
   /// (no detected agent) renders the capsule in its generic form; the
   /// popover still hosts the profile launcher (docs-ai 053).
-  private func agentsCapsuleState(repositories: RepositoriesFeature.State) -> AgentsCapsuleState? {
-    guard let worktree = repositories.selectedTerminalWorktree,
+  private func agentsCapsuleState(for worktree: Worktree?) -> AgentsCapsuleState? {
+    guard let worktree,
       let state = terminalManager.stateIfExists(for: worktree.id),
       let tabID = state.tabManager.selectedTabId,
       let surfaceID = state.activeSurfaceID(for: tabID),
@@ -421,12 +407,12 @@ struct WorktreeDetailView: View {
   /// order. Availability (CLI installed) is presentation-only — a missing
   /// runtime grays the row with a reason instead of silently recommending
   /// another profile (docs-ai 053).
-  private func agentsLauncherItems(repositories: RepositoriesFeature.State) -> [AgentsLauncherItem] {
+  private func agentsLauncherItems(for worktree: Worktree?) -> [AgentsLauncherItem] {
     @Shared(.userGlobalSettings) var globalSettings
     let profiles = globalSettings.agentProfiles
     guard !profiles.isEmpty else { return [] }
     var recommendedID: AgentProfile.ID?
-    if let worktree = repositories.selectedTerminalWorktree {
+    if let worktree {
       @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repositorySettings
       recommendedID =
         AgentProfileRecommendation.recommendedProfile(
@@ -872,7 +858,6 @@ struct WorktreeDetailView: View {
   }
 
   struct WorktreeToolbarState {
-    let title: DetailToolbarTitle
     let agentsCapsule: AgentsCapsuleState?
     var agentsLauncherItems: [AgentsLauncherItem] = []
     let statusToast: RepositoriesFeature.StatusToast?
@@ -893,11 +878,49 @@ struct WorktreeDetailView: View {
     let showDefaultEditorInToolbar: Bool
   }
 
+  /// Shared leading toolbar cluster for Normal, Shelf, and Canvas. Agents and
+  /// Quick Launch share one native group; the notifications button stays in a
+  /// separate capsule with the same gap the former branch item used.
+  struct AgentNotificationsToolbarContent: ToolbarContent {
+    let agentsCapsule: AgentsCapsuleState?
+    let agentsLauncherItems: [AgentsLauncherItem]
+    let notificationGroups: [ToolbarNotificationRepositoryGroup]
+    let unseenNotificationWorktreeCount: Int
+    let onHandOff: () -> Void
+    let onLaunchProfile: (AgentProfile.ID) -> Void
+    let onManageProfiles: () -> Void
+    let onSelectNotification: (Worktree.ID, WorktreeTerminalNotification) -> Void
+    let onDismissAllNotifications: () -> Void
+
+    var body: some ToolbarContent {
+      ToolbarItemGroup(placement: .navigation) {
+        AgentsToolbarButton(
+          capsule: agentsCapsule,
+          launcherItems: agentsLauncherItems,
+          onHandOff: onHandOff,
+          onLaunchProfile: onLaunchProfile,
+          onManageProfiles: onManageProfiles
+        )
+        if let quickLaunchItem = agentsLauncherItems.first {
+          AgentsQuickLaunchButton(item: quickLaunchItem, onLaunch: onLaunchProfile)
+        }
+      }
+
+      ToolbarItem(placement: .navigation) {
+        ToolbarNotificationsPopoverButton(
+          groups: notificationGroups,
+          unseenWorktreeCount: unseenNotificationWorktreeCount,
+          onSelectNotification: onSelectNotification,
+          onDismissAll: onDismissAllNotifications,
+          style: .standaloneNavigation
+        )
+      }
+      .sharedBackgroundVisibility(.hidden)
+    }
+  }
+
   struct WorktreeToolbarContent: ToolbarContent {
     let toolbarState: WorktreeToolbarState
-    let onRenameBranch: (String) -> Void
-    let externalRenamePrompt: PendingRenameBranchRequest?
-    let onConsumeExternalRenamePrompt: (Int) -> Void
     let onOpenWorktree: (OpenWorktreeAction) -> Void
     let onOpenActionSelectionChanged: (OpenWorktreeAction) -> Void
     let onResetOpenActionToAutomatic: () -> Void
@@ -914,35 +937,17 @@ struct WorktreeDetailView: View {
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
-      // The Agents button and its quick-launch segment share the navigation
-      // group's glass background, which renders them as one system split
-      // control (like the trailing Open In + chevron pair). Nothing can split
-      // that group — a fixed ToolbarSpacer is ignored even with an explicit
-      // `.navigation` placement (re-verified 2026-08; docs-ai 049) — so the
-      // branch title opts out via `.sharedBackgroundVisibility(.hidden)` and
-      // draws its own glass capsule instead.
-      ToolbarItemGroup(placement: .navigation) {
-        AgentsToolbarButton(
-          capsule: toolbarState.agentsCapsule,
-          launcherItems: toolbarState.agentsLauncherItems,
-          onHandOff: onHandOff,
-          onLaunchProfile: onLaunchProfile,
-          onManageProfiles: onManageProfiles
-        )
-        if let quickLaunchItem = toolbarState.agentsLauncherItems.first {
-          AgentsQuickLaunchButton(item: quickLaunchItem, onLaunch: onLaunchProfile)
-        }
-      }
-
-      ToolbarItem(placement: .navigation) {
-        WorktreeDetailTitleView(
-          title: toolbarState.title,
-          onSubmit: toolbarState.title.supportsRename ? onRenameBranch : nil,
-          externalRenamePrompt: externalRenamePrompt,
-          onConsumeExternalRenamePrompt: onConsumeExternalRenamePrompt
-        )
-      }
-      .sharedBackgroundVisibility(.hidden)
+      AgentNotificationsToolbarContent(
+        agentsCapsule: toolbarState.agentsCapsule,
+        agentsLauncherItems: toolbarState.agentsLauncherItems,
+        notificationGroups: toolbarState.notificationGroups,
+        unseenNotificationWorktreeCount: toolbarState.unseenNotificationWorktreeCount,
+        onHandOff: onHandOff,
+        onLaunchProfile: onLaunchProfile,
+        onManageProfiles: onManageProfiles,
+        onSelectNotification: onSelectNotification,
+        onDismissAllNotifications: onDismissAllNotifications
+      )
 
       ToolbarItem(placement: .principal) {
         ToolbarStatusView(
@@ -953,14 +958,8 @@ struct WorktreeDetailView: View {
         .padding(.horizontal)
       }
 
-      ToolbarItemGroup {
-        ToolbarNotificationsPopoverButton(
-          groups: toolbarState.notificationGroups,
-          unseenWorktreeCount: toolbarState.unseenNotificationWorktreeCount,
-          onSelectNotification: onSelectNotification,
-          onDismissAll: onDismissAllNotifications
-        )
-        if toolbarState.isUpdateAvailable {
+      if toolbarState.isUpdateAvailable {
+        ToolbarItem(placement: .primaryAction) {
           ToolbarUpdateButton(
             availableVersion: toolbarState.availableUpdateVersion,
             isReadyToInstall: toolbarState.isUpdateReadyToInstall,
@@ -1061,9 +1060,9 @@ struct WorktreeDetailView: View {
       let overflowEntries = Array(entries.dropFirst(3))
 
       // One fixed separator in front of the whole Run + Custom Command cluster
-      // keeps it distinct from the Open Editor / notification groups no matter
-      // which items are hidden. Run and the custom commands share one group (no
-      // spacer between them), matching the grouping before the toolbar toggles.
+      // keeps it distinct from the Open Editor / update controls no matter which
+      // items are hidden. Run and the custom commands share one group (no spacer
+      // between them), matching the grouping before the toolbar toggles.
       if showRunButton || !inlineEntries.isEmpty || !overflowEntries.isEmpty {
         ToolbarSpacer(.fixed)
       }

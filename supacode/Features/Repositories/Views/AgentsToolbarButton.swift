@@ -28,7 +28,7 @@ struct AgentsLauncherItem: Equatable, Identifiable {
   let availabilityWarning: String?
 }
 
-/// Toolbar entry point for agent-scoped actions, left of the branch title.
+/// Leading toolbar entry point for agent-scoped actions.
 /// The capsule identifies the selected pane's agent (the hand-off source);
 /// clicking it opens a popover that hosts the agent actions — hand-off when
 /// an agent is detected, plus the profile launcher and the manage entry
@@ -40,12 +40,9 @@ struct AgentsLauncherItem: Equatable, Identifiable {
 /// the popover is the durable container here.
 ///
 /// The button carries no background of its own: it sits in a shared-glass
-/// toolbar group next to `AgentsQuickLaunchButton`, which renders the pair
-/// as one system split control — the same look as the trailing Open In +
-/// chevron pair. The branch title stays out of that capsule by opting out of
-/// the group background itself (see the toolbar site): a fixed
-/// `ToolbarSpacer` cannot split the navigation group, even with an explicit
-/// `.navigation` placement.
+/// toolbar group next to `AgentsQuickLaunchButton`. Notifications follow as
+/// a separate capsule, preserving the visual gap previously occupied by the
+/// branch item. Normal, Shelf, and Canvas share this leading structure.
 struct AgentsToolbarButton: View {
   let capsule: AgentsCapsuleState?
   let launcherItems: [AgentsLauncherItem]
@@ -83,8 +80,8 @@ struct AgentsToolbarButton: View {
     }
   }
 
-  /// Mirrors `WorktreeDetailTitleView`'s label metrics (title3 medium,
-  /// 20pt icon slot) so the two neighboring pills read as one family.
+  /// Uses the established toolbar metrics (title3 medium, 20pt icon slot)
+  /// so the capsule stays aligned with its neighboring controls.
   @ViewBuilder
   private var label: some View {
     HStack(spacing: 6) {
