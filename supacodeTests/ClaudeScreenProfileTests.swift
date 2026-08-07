@@ -34,6 +34,12 @@ struct ClaudeScreenProfileTests {
       "claude/2.1.223/working/subagent-active.txt": .matched(
         ClaudeScreenProfile.RuleID.spinner
       ),
+      "claude/2.1.224/working/676-background-agent-wait.txt": .matched(
+        ClaudeScreenProfile.RuleID.backgroundWork
+      ),
+      "claude/2.1.224/working/676-compound-elapsed-status.txt": .matched(
+        ClaudeScreenProfile.RuleID.elapsedStatus
+      ),
     ]
     let fixtures = try AgentScreenFixtureCorpus.load().filter { $0.agent == .claude }
 

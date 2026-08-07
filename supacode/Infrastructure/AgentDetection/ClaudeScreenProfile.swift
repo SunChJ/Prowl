@@ -35,7 +35,9 @@ enum ClaudeScreenProfile {
     if hasElapsedStatusLine(regions.liveStatus) {
       return AgentScreenDetection(state: .working, reason: .matched(RuleID.elapsedStatus))
     }
-    if regions.belowPromptLower.contains("agents done") {
+    if hasBackgroundAgentWait(regions.liveStatus)
+      || regions.belowPromptLines.joined(separator: "\n").lowercased().contains("agents done")
+    {
       return AgentScreenDetection(state: .working, reason: .matched(RuleID.backgroundWork))
     }
     if regions.hasIdleComposer {
@@ -99,6 +101,13 @@ enum ClaudeScreenProfile {
     }
   }
 
+  // Claude's live status row is "● <label>… (<elapsed> · <detail>)". The label is
+  // free text and is not always a single word — "Running gates and merge
+  // lifecycle…" is as common as "Forging…" — so only the trailing ellipsis is
+  // structural. The elapsed segment grows with the turn and becomes several
+  // tokens once it passes a minute: "45s", "28m 34s", "1h 4m 2s". Both parts stay
+  // strict about completeness so transcript prose such as "(1st attempt)" or
+  // "(10seconds)" still cannot pass as a live status row.
   nonisolated private static func hasElapsedStatusLine(_ content: String) -> Bool {
     content.split(separator: "\n").contains { line in
       let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -107,19 +116,55 @@ enum ClaudeScreenProfile {
       guard let open = body.firstIndex(of: "(") else { return false }
 
       let label = body[..<open].trimmingCharacters(in: .whitespaces)
-      guard label.hasSuffix("…"), label.split(whereSeparator: { $0.isWhitespace }).count == 1 else {
-        return false
-      }
+      guard label.hasSuffix("…") else { return false }
 
-      let elapsed = body[body.index(after: open)...]
-      let digits = elapsed.prefix(while: \.isNumber)
-      guard !digits.isEmpty else { return false }
-      let afterDigits = elapsed.dropFirst(digits.count)
-      guard let unit = afterDigits.first, unit == "s" || unit == "m" || unit == "h" else {
+      return hasCompleteElapsedSegment(body[body.index(after: open)...])
+    }
+  }
+
+  // One or more "<digits><unit>" tokens separated by single spaces, terminated by
+  // the closing paren or by the " · " that separates elapsed from the rest of the
+  // row. A partial token ("10seconds", "1st") fails the terminator check.
+  nonisolated private static func hasCompleteElapsedSegment(_ elapsed: Substring) -> Bool {
+    var remainder = elapsed
+    var tokenCount = 0
+
+    while true {
+      let digits = remainder.prefix(while: \.isNumber)
+      guard !digits.isEmpty else { break }
+      let afterDigits = remainder.dropFirst(digits.count)
+      guard let unit = afterDigits.first, unit == "s" || unit == "m" || unit == "h" else { break }
+      tokenCount += 1
+      remainder = afterDigits.dropFirst()
+      guard remainder.hasPrefix(" "), remainder.dropFirst().first?.isNumber == true else { break }
+      remainder = remainder.dropFirst()
+    }
+
+    guard tokenCount > 0 else { return false }
+    return remainder.hasPrefix(")") || remainder.hasPrefix(" · ")
+  }
+
+  // When Claude delegates to a background agent, its own turn ends first: the
+  // spinner above the prompt is replaced by "✻ Waiting for 1 background agent to
+  // finish". That row carries a spinner glyph but no "…", so hasSpinnerActivity
+  // rejects it and the pane reports finished while the agent is still running.
+  //
+  // The agent switcher block below the input box ("⏺ main" plus one "◯" row per
+  // agent) looks like a better signal but is not one. A subagent that returns
+  // control while still awaiting collection keeps its row, with the elapsed value
+  // frozen — a single screen cannot separate that from a running agent, so
+  // matching the row shape would hold the pane at working after the work stopped.
+  // The wait row is only painted while Claude is genuinely blocked on an agent,
+  // and it is scoped to the live status region so a transcript quoting it cannot
+  // trip the rule.
+  nonisolated private static func hasBackgroundAgentWait(_ liveStatus: String) -> Bool {
+    liveStatus.split(separator: "\n").contains { line in
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      guard let first = trimmed.unicodeScalars.first, isAgentSpinnerScalar(first) else {
         return false
       }
-      let trailing = afterDigits.dropFirst()
-      return trailing.hasPrefix(")") || trailing.hasPrefix(" · ")
+      let lower = trimmed.lowercased()
+      return lower.contains("waiting for") && lower.contains("background agent")
     }
   }
 }
@@ -128,7 +173,7 @@ private struct ClaudeScreenRegions: Sendable {
   let currentInteractionLines: [String]
   let currentInteractionLower: String
   let liveStatus: String
-  let belowPromptLower: String
+  let belowPromptLines: [String]
   let bottomChromeLines: [String]
   let bottomViewerLines: [String]
   let hasIdleComposer: Bool
@@ -146,8 +191,9 @@ private struct ClaudeScreenRegions: Sendable {
       Self.contentAbovePrompt(screenLines: lines, promptIndex: promptIndex),
       limit: 3
     )
-    self.belowPromptLower = Self.contentBelowPrompt(screenLines: lines, promptIndex: promptIndex)
-      .lowercased()
+    self.belowPromptLines = Self.contentBelowPrompt(screenLines: lines, promptIndex: promptIndex)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
 
     let nonEmptyLines = lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     self.bottomChromeLines = Array(nonEmptyLines.suffix(3))
