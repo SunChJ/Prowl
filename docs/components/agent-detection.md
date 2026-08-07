@@ -59,10 +59,13 @@ because it can differ from the visible viewport when a pane is scrolled; the def
 `prowl read` behavior is unchanged.
 
 `prowl agents --json` may also include `detection_reason`, a stable classifier rule or
-fallback identifier for the latest screen scan. Codex currently reports runtime-owned IDs
-for directory trust, hook review, sign-in, confirmation, and working-footer matches; an
-ordinary Codex miss reports `fallback.noRuleMatched`. It does not include screen text, and
-the text-mode command and app UI remain unchanged.
+fallback identifier for the latest screen scan. Codex reports runtime-owned IDs for trust,
+hook, sign-in, confirmation, and working-footer matches. Claude does the same for viewer,
+blocker, spinner, elapsed-status, background-work, and current-composer regions; current
+history-search chrome such as `⌕ Filter history…` reports `claude.viewer` and preserves
+the last trusted state. An ordinary migrated-profile miss reports
+`fallback.noRuleMatched`. Reasons never include screen text, and the text-mode command and
+app UI remain unchanged.
 
 To avoid flicker, detection **stabilizes**: it tolerates several consecutive
 misses before declaring an agent gone, and a working agent gets a short (~3s)
