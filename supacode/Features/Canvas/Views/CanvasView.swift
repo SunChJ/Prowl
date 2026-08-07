@@ -256,11 +256,22 @@ struct CanvasView: View {
     .onDisappear { deactivateCanvas() }
   }
 
-  func showsSelectionShield(for tabID: TerminalTabID) -> Bool {
-    if commandKeyObserver.isPressed { return true }
-    if selectionState.isSelecting { return true }
-    if selectionState.isBroadcasting, selectionState.primaryTabID != tabID { return true }
-    return false
+  func showsSelectionShield(
+    for tabID: TerminalTabID,
+    in tree: SplitTree<GhosttySurfaceView>
+  ) -> Bool {
+    let hasHoveredLink = tree.leaves().contains {
+      $0.bridge.state.mouseOverLink?.isEmpty == false
+    }
+    return CanvasInteractionPolicy.showsSelectionShield(
+      commandSelectionActive: commandKeyObserver.isPressed,
+      selectionModeActive: selectionState.isSelecting,
+      broadcastFollower: selectionState.isBroadcasting && selectionState.primaryTabID != tabID,
+      linkActivationRequested: CanvasInteractionPolicy.linkActivationRequested(
+        hasHoveredLink: hasHoveredLink,
+        isCommandModifierActive: NSEvent.modifierFlags.contains(.command)
+      )
+    )
   }
 
   // MARK: - Cards Layer
@@ -358,7 +369,7 @@ struct CanvasView: View {
         isExpanded: isCardExpanded,
         expandHelp: expandHelp,
         canvasScale: isCardExpanded ? 1 : canvasScale,
-        showsSelectionShield: showsSelectionShield(for: tab.id),
+        showsSelectionShield: showsSelectionShield(for: tab.id, in: tree),
         onTap: {
           let cmdHeld = NSEvent.modifierFlags.contains(.command)
           if cmdHeld {
