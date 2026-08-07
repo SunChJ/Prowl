@@ -59,8 +59,10 @@ because it can differ from the visible viewport when a pane is scrolled; the def
 `prowl read` behavior is unchanged.
 
 `prowl agents --json` may also include `detection_reason`, a stable classifier rule or
-fallback identifier for the latest screen scan. It does not include screen text, and the
-text-mode command and app UI remain unchanged.
+fallback identifier for the latest screen scan. Codex currently reports runtime-owned IDs
+for directory trust, hook review, sign-in, confirmation, and working-footer matches; an
+ordinary Codex miss reports `fallback.noRuleMatched`. It does not include screen text, and
+the text-mode command and app UI remain unchanged.
 
 To avoid flicker, detection **stabilizes**: it tolerates several consecutive
 misses before declaring an agent gone, and a working agent gets a short (~3s)

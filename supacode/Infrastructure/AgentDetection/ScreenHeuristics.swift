@@ -8,53 +8,49 @@ extension DetectedAgent {
   }
 
   nonisolated func detectScreen(in screen: String) -> AgentScreenDetection {
-    AgentScreenDetection(
-      state: detectLegacyState(in: agentDetectionRecentText(screen)),
-      reason: .legacyDetector
-    )
-  }
-
-  nonisolated private func detectLegacyState(in screen: String) -> AgentRawState {
+    let text = agentDetectionRecentText(screen)
+    let state: AgentRawState
     switch self {
     case .pi:
-      return detectPi(screen)
+      state = detectPi(text)
     case .omp:
-      return detectOMP(screen)
+      state = detectOMP(text)
     case .claude:
-      return detectClaude(screen)
+      state = detectClaude(text)
     case .codex:
-      return detectCodex(screen)
+      return CodexScreenProfile.detect(in: AgentScreenSnapshot(canonicalText: text))
     case .gemini:
-      return detectGemini(screen)
+      state = detectGemini(text)
     case .cursor:
-      return detectCursor(screen)
+      state = detectCursor(text)
     case .cline:
-      return detectCline(screen)
+      state = detectCline(text)
     case .opencode:
-      return detectOpenCode(screen)
+      state = detectOpenCode(text)
     case .copilot:
-      return detectCopilot(screen)
+      state = detectCopilot(text)
     case .kimi:
-      return detectKimi(screen)
+      state = detectKimi(text)
     case .droid:
-      return detectDroid(screen)
+      state = detectDroid(text)
     case .amp:
-      return detectAmp(screen)
+      state = detectAmp(text)
     case .qoder:
-      return detectQoder(screen)
+      state = detectQoder(text)
     case .qwen:
-      return detectQwen(screen)
+      state = detectQwen(text)
     case .grok:
-      return detectGrok(screen)
+      state = detectGrok(text)
     }
+    return AgentScreenDetection(state: state, reason: .legacyDetector)
   }
 }
 
 nonisolated func agentDetectionRecentText(_ content: String) -> String {
-  recentLines(content, limit: agentDetectionRecentLineLimit)
+  agentDetectionRecentLines(content, limit: agentDetectionRecentLineLimit)
 }
 
-nonisolated private func recentLines(_ content: String, limit: Int) -> String {
+nonisolated func agentDetectionRecentLines(_ content: String, limit: Int) -> String {
   let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
   var remainingNonBlankLines = limit
   var startIndex = lines.startIndex
@@ -144,21 +140,11 @@ nonisolated private func detectClaude(_ content: String) -> AgentRawState {
     return .blocked
   }
 
-  let liveStatus = recentLines(contentAbovePromptBox(content), limit: 3)
+  let liveStatus = agentDetectionRecentLines(contentAbovePromptBox(content), limit: 3)
   if hasSpinnerActivity(liveStatus) || hasClaudeElapsedStatusLine(liveStatus) {
     return .working
   }
   if hasClaudeBackgroundWork(content) {
-    return .working
-  }
-  return .idle
-}
-
-nonisolated private func detectCodex(_ content: String) -> AgentRawState {
-  if hasCodexPreSessionBlockedPrompt(content) || hasCodexBlockedPrompt(content) {
-    return .blocked
-  }
-  if hasCodexWorkingFooter(content) {
     return .working
   }
   return .idle
@@ -382,162 +368,7 @@ nonisolated private func isClaudeNumberedSelectionLine(_ line: String) -> Bool {
   return isNumberedChoice(option)
 }
 
-nonisolated private func isCodexPromptLine(_ line: String) -> Bool {
-  let trimmed = line.trimmingCharacters(in: .whitespaces)
-  guard trimmed.first == "›" else { return false }
-  let remainder = trimmed.dropFirst()
-  return remainder.isEmpty || remainder.first?.isWhitespace == true
-}
-
-nonisolated private func hasCodexPreSessionBlockedPrompt(_ content: String) -> Bool {
-  hasCodexDirectoryTrustPrompt(content) || hasCodexHookReviewPrompt(content) || hasCodexSignInPrompt(content)
-}
-
-nonisolated private func hasCodexDirectoryTrustPrompt(_ content: String) -> Bool {
-  hasCodexSelectedChoice(
-    content,
-    matchingAnyOf: ["1. yes, continue", "2. no, quit"],
-    withBefore: ["do you trust the contents of this directory?"],
-    andAround: ["1. yes, continue", "2. no, quit"],
-    andAfter: ["press enter to continue"]
-  )
-}
-
-nonisolated private func hasCodexHookReviewPrompt(_ content: String) -> Bool {
-  hasCodexSelectedChoice(
-    content,
-    matchingAnyOf: [
-      "1. review hooks",
-      "2. trust all and continue",
-      "3. continue without trusting (hooks won't run)",
-    ],
-    withBefore: ["hooks need review"],
-    andAround: ["1. review hooks", "2. trust all and continue", "3. continue without trusting"],
-    andAfter: ["press enter to confirm or esc to go back"]
-  )
-}
-
-nonisolated private func hasCodexSelectedChoice(
-  _ content: String,
-  matchingAnyOf options: Set<String>,
-  withBefore beforeNeedles: [String],
-  andAround aroundNeedles: [String],
-  andAfter afterNeedles: [String]
-) -> Bool {
-  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
-    return false
-  }
-
-  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
-  guard options.contains(selectedChoice) else {
-    return false
-  }
-
-  let lowerBound = max(lines.startIndex, promptIndex - 6)
-  let before = lines[lowerBound..<promptIndex].joined(separator: "\n").lowercased()
-  guard beforeNeedles.allSatisfy(before.contains) else {
-    return false
-  }
-
-  let afterStart = lines.index(after: promptIndex)
-  let afterEnd = min(lines.endIndex, afterStart + 6)
-  let around = lines[lowerBound..<afterEnd].joined(separator: "\n").lowercased()
-  guard aroundNeedles.allSatisfy(around.contains) else {
-    return false
-  }
-
-  let after = lines[afterStart..<afterEnd].joined(separator: "\n").lowercased()
-  return afterNeedles.allSatisfy(after.contains)
-}
-
-nonisolated private func hasCodexSignInPrompt(_ content: String) -> Bool {
-  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-  let recent = lines.suffix(18)
-  // The live sign-in menu renders no composer below it, so its selected option
-  // is the last `›`/`>` marker line on screen. A later marker line means the
-  // menu text above is stale transcript (or a quotation), not the current
-  // interaction.
-  guard
-    let selected = recent.last(where: { line in
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      return trimmed.first == "›" || trimmed.first == ">"
-    })
-  else {
-    return false
-  }
-  let choice = selected.trimmingCharacters(in: .whitespaces)
-    .dropFirst()
-    .trimmingCharacters(in: .whitespaces)
-    .lowercased()
-  guard
-    choice.hasPrefix("1. sign in with chatgpt")
-      || choice.hasPrefix("2. sign in with device code")
-      || choice.hasPrefix("3. provide your own api key")
-  else {
-    return false
-  }
-  let lower = recent.joined(separator: "\n").lowercased()
-  return lower.contains("welcome to codex, openai's command-line coding agent")
-    && lower.contains("2. sign in with device code")
-    && lower.contains("3. provide your own api key")
-    && lower.contains("press enter to continue")
-}
-
-nonisolated private func hasCodexBlockedPrompt(_ content: String) -> Bool {
-  hasCodexConfirmationFooter(content) || hasCodexConfirmationChoices(content)
-}
-
-nonisolated private func hasCodexConfirmationFooter(_ content: String) -> Bool {
-  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
-    return false
-  }
-  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
-  guard isNumberedChoice(selectedChoice) else { return false }
-
-  let footerStart = lines.index(after: promptIndex)
-  guard footerStart < lines.endIndex else { return false }
-  let footerLower = recentLines(lines[footerStart...].joined(separator: "\n"), limit: 3).lowercased()
-  return footerLower.contains("press enter to confirm or esc to cancel")
-    || footerLower.contains("enter to submit answer")
-    || footerLower.contains("allow command?")
-    || footerLower.contains("[y/n]")
-    || footerLower.contains("yes (y)")
-}
-
-nonisolated private func hasCodexConfirmationChoices(_ content: String) -> Bool {
-  let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-  guard let promptIndex = lines.lastIndex(where: isCodexPromptLine) else {
-    return false
-  }
-  let selectedChoice = normalizedCodexChoice(lines[promptIndex])
-  guard isNumberedChoice(selectedChoice) else { return false }
-
-  let lowerBound = max(lines.startIndex, promptIndex - 6)
-  let interactionLines = lines[lowerBound..<lines.endIndex]
-  let lower = interactionLines.joined(separator: "\n").lowercased()
-  guard lower.contains("do you want") || lower.contains("would you like") else {
-    return false
-  }
-
-  let options = interactionLines.map(normalizedCodexChoice)
-  let hasYes = options.contains { option in
-    option == "yes" || option.hasPrefix("1. yes") || option.hasPrefix("2. yes")
-  }
-  let hasNo = options.contains { option in
-    option == "no" || option.hasPrefix("2. no") || option.hasPrefix("3. no")
-  }
-  return hasYes && hasNo
-}
-
-nonisolated private func normalizedCodexChoice(_ line: String) -> String {
-  let trimmed = line.trimmingCharacters(in: .whitespaces).lowercased()
-  let withoutSelection = trimmed.hasPrefix("›") ? trimmed.dropFirst() : trimmed[...]
-  return withoutSelection.trimmingCharacters(in: .whitespaces)
-}
-
-nonisolated private func isNumberedChoice(_ option: String) -> Bool {
+nonisolated func isNumberedChoice(_ option: String) -> Bool {
   guard let firstToken = option.split(whereSeparator: { $0.isWhitespace }).first,
     firstToken.last == "."
   else {
@@ -654,18 +485,6 @@ nonisolated private func hasInterruptPattern(_ lower: String) -> Bool {
   lower.contains("esc to interrupt")
     || lower.contains("ctrl+c to interrupt")
     || (lower.contains("esc") && lower.contains("interrupt"))
-}
-
-nonisolated private func hasCodexWorkingFooter(_ content: String) -> Bool {
-  recentLines(content, limit: 3).split(separator: "\n").contains { line in
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    guard trimmed.first == "•" || trimmed.first == "◦" else { return false }
-    let body = trimmed.dropFirst()
-    guard body.hasPrefix(" Working (") else { return false }
-    guard let hint = body.range(of: "esc to interrupt)") else { return false }
-    let trailing = body[hint.upperBound...]
-    return trailing.isEmpty || trailing.hasPrefix(" · ")
-  }
 }
 
 nonisolated private func hasSpinnerActivity(_ content: String) -> Bool {
