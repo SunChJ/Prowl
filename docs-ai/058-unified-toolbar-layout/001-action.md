@@ -4,11 +4,11 @@
 
 | Date | Change | Ref |
 | --- | --- | --- |
-| 2026-08-07 | Removed the persistent branch/folder/workspace toolbar title and hid the visible Canvas title | — |
-| 2026-08-07 | Unified Normal, Shelf, and Canvas around one leading Agents + Quick Launch cluster followed by a separately surfaced notifications capsule | — |
-| 2026-08-07 | Moved Rename Branch to the worktree row context menu and app-level sheet while retaining the command/shortcut path | — |
-| 2026-08-07 | Made Hand Off resolve the focused Canvas card through the shared action-target resolver; added a reducer regression test | — |
-| 2026-08-07 | Updated user documentation and corrected superseded toolbar references in earlier `docs-ai` entries | — |
+| 2026-08-07 | Removed the persistent branch/folder/workspace toolbar title and hid the visible Canvas title | #689 |
+| 2026-08-07 | Unified Normal, Shelf, and Canvas around one leading Agents + Quick Launch cluster followed by a separately surfaced notifications capsule | #689 |
+| 2026-08-07 | Moved Rename Branch to the worktree row context menu and app-level sheet while retaining the command/shortcut path | #689 |
+| 2026-08-07 | Made Hand Off resolve the focused Canvas card through the shared action-target resolver; added a reducer regression test | #689 |
+| 2026-08-07 | Updated user documentation and corrected superseded toolbar references in earlier `docs-ai` entries | #689 |
 
 ## Outcome & current state (as of 2026-08-07)
 

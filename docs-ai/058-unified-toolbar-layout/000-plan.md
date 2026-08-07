@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-07 |
-| **Primary PRs** | — |
+| **Primary PRs** | #689 |
 | **Related** | [049-agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [052-sidebar-context-menus](../052-sidebar-context-menus/000-plan.md), [`docs/components/notifications.md`](../../docs/components/notifications.md), [`docs/components/repositories-and-worktrees.md`](../../docs/components/repositories-and-worktrees.md) |
 
 ## Background
