@@ -96,3 +96,20 @@ Update current behavior under `docs/` and cross-link this decision from the earl
 - Verify notification, update, editor, run, and custom-command controls still behave as before.
 
 ## Amendments
+
+### 2026-08-07 — Review hardening
+
+A deep review of #689 identified lifecycle and command-target drift introduced when Rename Branch moved from a
+window-scoped toolbar popover to an app-level sheet and menu command. The follow-up keeps the original product
+direction while hardening its implementation:
+
+- Present rename from an identifiable, self-contained request and invalidate the request whenever its worktree
+  disappears.
+- Resolve the keyboard command through one Canvas-aware target query that rejects bulk selection, pending worktrees,
+  and competing modal presentations. Sidebar context menus continue to target their explicit row.
+- Remove dead Canvas launcher rows when no card is focused, while retaining the Agents entry for profile management.
+- Assemble toolbar state once for Normal, Shelf, and Canvas, preserving only the documented `ToolbarContent`
+  divergence needed to avoid Canvas relayout animation.
+- Remove the notifications style branch and share leading-control metrics between Agents and Bell.
+- Restore rename prompt submit/tooltip semantics and advertise the configurable shortcut from the context menu.
+- Verify the reported first-focus timing risk at runtime before changing it; do not add speculative focus workarounds.

@@ -40,9 +40,11 @@ struct RenameBranchPromptView: View {
         Spacer()
         Button("Cancel", role: .cancel) { onCancel() }
           .keyboardShortcut(.cancelAction)
+          .help("Cancel (Esc)")
         Button("Rename") { submit() }
           .keyboardShortcut(.defaultAction)
-          .disabled(trimmedDraftName.isEmpty || trimmedDraftName == currentName)
+          .help("Rename (↩)")
+          .disabled(trimmedDraftName.isEmpty)
       }
     }
     .padding()
@@ -55,7 +57,11 @@ struct RenameBranchPromptView: View {
   }
 
   private func submit() {
-    guard !trimmedDraftName.isEmpty, trimmedDraftName != currentName else { return }
+    guard !trimmedDraftName.isEmpty else { return }
+    guard trimmedDraftName != currentName else {
+      onCancel()
+      return
+    }
     onSubmit(trimmedDraftName)
   }
 }

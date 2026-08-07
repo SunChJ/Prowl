@@ -1,8 +1,17 @@
 import SwiftUI
 
+enum LeadingToolbarControlMetrics {
+  static let labelSpacing: CGFloat = 6
+  static let iconSize: CGFloat = 20
+  static let font: Font = .title3.weight(.medium)
+  static let standaloneHorizontalPadding: CGFloat = 10
+  static let standaloneVerticalPadding: CGFloat = 8
+}
+
 /// What the Agents capsule shows for the selected pane's detected agent.
 /// nil means no detected agent: the capsule renders its generic form and the
-/// popover becomes the profile launcher (docs-ai 053).
+/// popover offers launch rows when a target exists, otherwise management only
+/// (docs-ai 053/058).
 struct AgentsCapsuleState: Equatable {
   let displayName: String
   /// Resolved branded icon; nil falls back to a generic symbol. Resolved by
@@ -32,8 +41,9 @@ struct AgentsLauncherItem: Equatable, Identifiable {
 /// The capsule identifies the selected pane's agent (the hand-off source);
 /// clicking it opens a popover that hosts the agent actions — hand-off when
 /// an agent is detected, plus the profile launcher and the manage entry
-/// (docs-ai 049/053). The popover is always available: the launcher must not
-/// require a detected agent. Live status stays with the terminal, the Active
+/// (docs-ai 049/053). The popover is always available: launch rows require a
+/// target worktree but never a detected agent, while profile management remains
+/// available without either. Live status stays with the terminal, the Active
 /// Agents panel, and the central status toast — the capsule deliberately
 /// carries no state indicator. A `Menu` cannot host this control: macOS
 /// toolbars flatten custom menu labels to their text, dropping the badge, so
@@ -84,20 +94,26 @@ struct AgentsToolbarButton: View {
   /// so the capsule stays aligned with its neighboring controls.
   @ViewBuilder
   private var label: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: LeadingToolbarControlMetrics.labelSpacing) {
       if let capsule {
         agentIcon(capsule)
-          .frame(width: 20, height: 20)
+          .frame(
+            width: LeadingToolbarControlMetrics.iconSize,
+            height: LeadingToolbarControlMetrics.iconSize
+          )
         Text(capsule.displayName)
       } else {
         Image(systemName: "sparkles")
           .foregroundStyle(.secondary)
           .accessibilityHidden(true)
-          .frame(width: 20, height: 20)
+          .frame(
+            width: LeadingToolbarControlMetrics.iconSize,
+            height: LeadingToolbarControlMetrics.iconSize
+          )
         Text("Agents")
       }
     }
-    .font(.title3.weight(.medium))
+    .font(LeadingToolbarControlMetrics.font)
   }
 
   @ViewBuilder
@@ -112,7 +128,9 @@ struct AgentsToolbarButton: View {
 
   private var helpText: String {
     guard let capsule else {
-      return "Launch an agent profile in this worktree"
+      return launcherItems.isEmpty
+        ? "Manage agent profiles"
+        : "Launch an agent profile in this worktree"
     }
     return "Agent actions for \(capsule.displayName)"
   }
@@ -138,7 +156,7 @@ struct AgentsQuickLaunchButton: View {
       onLaunch(item.id)
     } label: {
       Image(systemName: "play.circle")
-        .font(.title3.weight(.medium))
+        .font(LeadingToolbarControlMetrics.font)
         .foregroundStyle(.secondary)
     }
     .help("Launch \(item.name) in this worktree")
@@ -190,7 +208,9 @@ private struct AgentsPopoverContent: View {
           )
         }
       }
-      Divider().padding(.vertical, 4)
+      if capsule != nil || !launcherItems.isEmpty {
+        Divider().padding(.vertical, 4)
+      }
       AgentsPopoverRow(
         title: "Manage Agent Profiles…",
         subtitle: "Add presets, models, and accounts in Settings",

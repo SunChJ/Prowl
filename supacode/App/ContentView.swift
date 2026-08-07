@@ -92,8 +92,18 @@ struct ContentView: View {
       promptStore in
       WorkspaceCreationPromptView(store: promptStore)
     }
-    .sheet(isPresented: renameBranchPromptPresented) {
-      renameBranchPrompt
+    .sheet(item: renameBranchPromptRequest) { request in
+      RenameBranchPromptView(
+        currentName: request.currentName,
+        onCancel: {
+          repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
+        },
+        onSubmit: { newName in
+          repositoriesStore.send(.requestRenameBranch(request.worktreeID, newName))
+          repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
+        }
+      )
+      .id(request.id)
     }
     .sheet(isPresented: deleteWorktreeConfirmationPresented) {
       if let confirmation = repositoriesStore.deleteWorktreeConfirmation {
@@ -144,6 +154,7 @@ struct ContentView: View {
     .focusedSceneAction(\.toggleLeftSidebarAction, enabled: true) {
       toggleLeftSidebar()
     }
+    .focusedSceneValue(\.renameBranchAction, renameBranchAction)
     .focusedSceneValue(\.revealInSidebarAction, revealInSidebarAction.asFocusedAction())
     .overlay {
       CommandPaletteOverlayView(
@@ -168,31 +179,27 @@ struct ContentView: View {
     .background(WindowTabbingDisabler())
   }
 
-  private var renameBranchPromptPresented: Binding<Bool> {
+  private var renameBranchPromptRequest: Binding<PendingRenameBranchRequest?> {
     Binding(
-      get: { repositoriesStore.pendingRenameBranchRequest != nil },
-      set: { isPresented in
-        guard !isPresented, let request = repositoriesStore.pendingRenameBranchRequest else { return }
+      get: { repositoriesStore.pendingRenameBranchRequest },
+      set: { newRequest in
+        guard newRequest == nil, let request = repositoriesStore.pendingRenameBranchRequest else { return }
         repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
       }
     )
   }
 
-  @ViewBuilder
-  private var renameBranchPrompt: some View {
-    if let request = repositoriesStore.pendingRenameBranchRequest,
-      let worktree = repositoriesStore.state.worktree(for: request.worktreeID)
-    {
-      RenameBranchPromptView(
-        currentName: worktree.name,
-        onCancel: {
-          repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
-        },
-        onSubmit: { newName in
-          repositoriesStore.send(.requestRenameBranch(request.worktreeID, newName))
-          repositoriesStore.send(.consumePendingRenameBranchRequest(request.id))
-        }
+  private var renameBranchAction: FocusedAction<Void>? {
+    guard
+      let worktreeID = renameBranchCommandTargetID(
+        appState: store.state,
+        canvasFocusedWorktreeID: terminalManager.canvasFocusedWorktreeID
       )
+    else {
+      return nil
+    }
+    return FocusedAction(isEnabled: true, token: worktreeID) {
+      repositoriesStore.send(.requestRenameBranchPrompt(worktreeID))
     }
   }
 

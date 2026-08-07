@@ -1,16 +1,10 @@
 import SwiftUI
 
 struct ToolbarNotificationsPopoverButton: View {
-  enum Style {
-    case automatic
-    case standaloneNavigation
-  }
-
   let groups: [ToolbarNotificationRepositoryGroup]
   let unseenWorktreeCount: Int
   let onSelectNotification: (Worktree.ID, WorktreeTerminalNotification) -> Void
   let onDismissAll: () -> Void
-  var style: Style = .automatic
   @State private var isPresented = false
   @State private var isPinnedOpen = false
   @State private var isHoveringButton = false
@@ -27,7 +21,9 @@ struct ToolbarNotificationsPopoverButton: View {
   }
 
   var body: some View {
-    styledButton
+    button
+      .buttonStyle(.plain)
+      .glassEffect(.regular.interactive(), in: Capsule())
       .help("Notifications. Hover or click to show all notifications.")
       .accessibilityLabel("Notifications")
       .onHover { hovering in
@@ -65,37 +61,26 @@ struct ToolbarNotificationsPopoverButton: View {
       }
   }
 
-  @ViewBuilder
-  private var styledButton: some View {
-    if style == .standaloneNavigation {
-      button
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Capsule())
-    } else {
-      button
-    }
-  }
-
   private var button: some View {
     Button {
       togglePresentation()
     } label: {
-      HStack(spacing: 6) {
+      HStack(spacing: LeadingToolbarControlMetrics.labelSpacing) {
         Image(systemName: unseenWorktreeCount > 0 ? "bell.badge.fill" : "bell.fill")
           .foregroundStyle(unseenWorktreeCount > 0 ? .orange : .secondary)
           .accessibilityHidden(true)
           .frame(
-            width: style == .standaloneNavigation ? 20 : nil,
-            height: style == .standaloneNavigation ? 20 : nil
+            width: LeadingToolbarControlMetrics.iconSize,
+            height: LeadingToolbarControlMetrics.iconSize
           )
         if notificationCount > 0 {
           Text(notificationCount, format: .number)
             .font(.caption.monospacedDigit())
         }
       }
-      .font(style == .standaloneNavigation ? .title3.weight(.medium) : nil)
-      .padding(.horizontal, style == .standaloneNavigation ? 10 : 0)
-      .padding(.vertical, style == .standaloneNavigation ? 8 : 0)
+      .font(LeadingToolbarControlMetrics.font)
+      .padding(.horizontal, LeadingToolbarControlMetrics.standaloneHorizontalPadding)
+      .padding(.vertical, LeadingToolbarControlMetrics.standaloneVerticalPadding)
     }
   }
 

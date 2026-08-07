@@ -4,14 +4,11 @@ import Sharing
 import SwiftUI
 
 struct WorktreeDetailView: View {
-  private struct ToolbarStateInput {
+  private struct ToolbarSharedStateInput {
     let repositories: RepositoriesFeature.State
     let actionTargetWorktree: Worktree?
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
-    let openActionSelection: OpenWorktreeAction
-    let openActionIsAutomatic: Bool
-    let showExtras: Bool
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
     let customCommands: [EffectiveCustomCommand]
@@ -19,34 +16,6 @@ struct WorktreeDetailView: View {
     let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
     let showRunButtonInToolbar: Bool
-    let showDefaultEditorInToolbar: Bool
-  }
-
-  private struct CanvasToolbarState {
-    let agentsCapsule: AgentsCapsuleState?
-    let agentsLauncherItems: [AgentsLauncherItem]
-    let statusToast: RepositoriesFeature.StatusToast?
-    let pullRequest: GithubPullRequest?
-    let codeHost: CodeHost
-    let notificationGroups: [ToolbarNotificationRepositoryGroup]
-    let unseenNotificationWorktreeCount: Int
-    let runScriptEnabled: Bool
-    let runScriptIsRunning: Bool
-    let customCommands: [EffectiveCustomCommand]
-    let isUpdateAvailable: Bool
-    let isUpdateReadyToInstall: Bool
-    let availableUpdateVersion: String?
-    let showRunButtonInToolbar: Bool
-  }
-
-  private struct CanvasToolbarStateInput {
-    let appState: AppFeature.State
-    let actionTargetWorktree: Worktree?
-    let notificationGroups: [ToolbarNotificationRepositoryGroup]
-    let unseenNotificationWorktreeCount: Int
-    let runScriptEnabled: Bool
-    let runScriptIsRunning: Bool
-    let customCommands: [EffectiveCustomCommand]
   }
 
   @Bindable var store: StoreOf<AppFeature>
@@ -94,6 +63,21 @@ struct WorktreeDetailView: View {
     let unseenNotificationWorktreeCount = notificationGroups.reduce(0) { count, repository in
       count + repository.unseenWorktreeCount
     }
+    let sharedToolbarState = toolbarSharedState(
+      input: ToolbarSharedStateInput(
+        repositories: repositories,
+        actionTargetWorktree: actionTargetWorktree,
+        notificationGroups: notificationGroups,
+        unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
+        runScriptEnabled: runScriptEnabled,
+        runScriptIsRunning: runScriptIsRunning,
+        customCommands: customCommands,
+        isUpdateAvailable: state.updates.isUpdateAvailable,
+        isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
+        availableUpdateVersion: state.updates.availableVersion,
+        showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar
+      )
+    )
     let content = detailContent(
       repositories: repositories,
       loadingInfo: loadingInfo,
@@ -105,39 +89,15 @@ struct WorktreeDetailView: View {
     .toolbar(removing: .title)
     .toolbar {
       if repositories.isShowingCanvas {
-        canvasToolbarContent(
-          state: canvasToolbarState(
-            input: CanvasToolbarStateInput(
-              appState: state,
-              actionTargetWorktree: actionTargetWorktree,
-              notificationGroups: notificationGroups,
-              unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
-              runScriptEnabled: runScriptEnabled,
-              runScriptIsRunning: runScriptIsRunning,
-              customCommands: customCommands
-            )
-          )
-        )
+        canvasToolbarContent(state: sharedToolbarState)
       } else if hasActiveTerminalTarget {
         worktreeToolbarContent(
-          toolbarState: toolbarState(
-            input: ToolbarStateInput(
-              repositories: repositories,
-              actionTargetWorktree: actionTargetWorktree,
-              notificationGroups: notificationGroups,
-              unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
-              openActionSelection: state.openActionSelection,
-              openActionIsAutomatic: state.openActionIsAutomatic,
-              showExtras: commandKeyObserver.isPressed,
-              runScriptEnabled: runScriptEnabled,
-              runScriptIsRunning: runScriptIsRunning,
-              customCommands: customCommands,
-              isUpdateAvailable: state.updates.isUpdateAvailable,
-              isUpdateReadyToInstall: state.updates.isUpdateReadyToInstall,
-              availableUpdateVersion: state.updates.availableVersion,
-              showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar,
-              showDefaultEditorInToolbar: settingsFile.global.showDefaultEditorInToolbar
-            )
+          toolbarState: WorktreeToolbarState(
+            shared: sharedToolbarState,
+            openActionSelection: state.openActionSelection,
+            openActionIsAutomatic: state.openActionIsAutomatic,
+            showExtras: commandKeyObserver.isPressed,
+            showDefaultEditorInToolbar: settingsFile.global.showDefaultEditorInToolbar
           ),
           actionTargetWorktree: actionTargetWorktree
         )
@@ -184,7 +144,7 @@ struct WorktreeDetailView: View {
       },
       onSelectNotification: selectToolbarNotification,
       onDismissAllNotifications: {
-        dismissAllToolbarNotifications(in: toolbarState.notificationGroups)
+        dismissAllToolbarNotifications(in: toolbarState.shared.notificationGroups)
       },
       onRunScript: { store.send(.runScript) },
       onStopRunScript: { store.send(.stopRunScript) },
@@ -198,33 +158,33 @@ struct WorktreeDetailView: View {
     )
   }
 
-  private func canvasToolbarState(
-    input: CanvasToolbarStateInput
-  ) -> CanvasToolbarState {
-    CanvasToolbarState(
+  private func toolbarSharedState(
+    input: ToolbarSharedStateInput
+  ) -> ToolbarSharedState {
+    ToolbarSharedState(
       agentsCapsule: agentsCapsuleState(for: input.actionTargetWorktree),
       agentsLauncherItems: agentsLauncherItems(for: input.actionTargetWorktree),
-      statusToast: input.appState.repositories.statusToast,
+      statusToast: input.repositories.statusToast,
       pullRequest: matchedPullRequest(
         for: input.actionTargetWorktree,
-        repositories: input.appState.repositories
+        repositories: input.repositories
       ),
-      codeHost: input.appState.repositories.codeHost(forWorktreeID: input.actionTargetWorktree?.id),
+      codeHost: input.repositories.codeHost(forWorktreeID: input.actionTargetWorktree?.id),
       notificationGroups: input.notificationGroups,
       unseenNotificationWorktreeCount: input.unseenNotificationWorktreeCount,
       runScriptEnabled: input.runScriptEnabled,
       runScriptIsRunning: input.runScriptIsRunning,
       customCommands: input.customCommands,
-      isUpdateAvailable: input.appState.updates.isUpdateAvailable,
-      isUpdateReadyToInstall: input.appState.updates.isUpdateReadyToInstall,
-      availableUpdateVersion: input.appState.updates.availableVersion,
-      showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar
+      isUpdateAvailable: input.isUpdateAvailable,
+      isUpdateReadyToInstall: input.isUpdateReadyToInstall,
+      availableUpdateVersion: input.availableUpdateVersion,
+      showRunButtonInToolbar: input.showRunButtonInToolbar
     )
   }
 
   @ToolbarContentBuilder
   private func canvasToolbarContent(
-    state: CanvasToolbarState
+    state: ToolbarSharedState
   ) -> some ToolbarContent {
     AgentNotificationsToolbarContent(
       agentsCapsule: state.agentsCapsule,
@@ -342,35 +302,9 @@ struct WorktreeDetailView: View {
     }
   }
 
-  private func toolbarState(input: ToolbarStateInput) -> WorktreeToolbarState {
-    WorktreeToolbarState(
-      agentsCapsule: agentsCapsuleState(for: input.actionTargetWorktree),
-      agentsLauncherItems: agentsLauncherItems(for: input.actionTargetWorktree),
-      statusToast: input.repositories.statusToast,
-      pullRequest: matchedPullRequest(
-        for: input.actionTargetWorktree,
-        repositories: input.repositories
-      ),
-      codeHost: input.repositories.codeHost(forWorktreeID: input.actionTargetWorktree?.id),
-      notificationGroups: input.notificationGroups,
-      unseenNotificationWorktreeCount: input.unseenNotificationWorktreeCount,
-      openActionSelection: input.openActionSelection,
-      openActionIsAutomatic: input.openActionIsAutomatic,
-      showExtras: input.showExtras,
-      runScriptEnabled: input.runScriptEnabled,
-      runScriptIsRunning: input.runScriptIsRunning,
-      customCommands: input.customCommands,
-      isUpdateAvailable: input.isUpdateAvailable,
-      isUpdateReadyToInstall: input.isUpdateReadyToInstall,
-      availableUpdateVersion: input.availableUpdateVersion,
-      showRunButtonInToolbar: input.showRunButtonInToolbar,
-      showDefaultEditorInToolbar: input.showDefaultEditorInToolbar
-    )
-  }
-
   /// The target pane's detected agent, feeding the Agents capsule. nil
-  /// (no detected agent) renders the capsule in its generic form; the
-  /// popover still hosts the profile launcher (docs-ai 053).
+  /// (no detected agent) renders the capsule in its generic form; launcher
+  /// availability is resolved separately from the target worktree (docs-ai 053).
   private func agentsCapsuleState(for worktree: Worktree?) -> AgentsCapsuleState? {
     guard let worktree,
       let state = terminalManager.stateIfExists(for: worktree.id),
@@ -410,17 +344,14 @@ struct WorktreeDetailView: View {
   private func agentsLauncherItems(for worktree: Worktree?) -> [AgentsLauncherItem] {
     @Shared(.userGlobalSettings) var globalSettings
     let profiles = globalSettings.agentProfiles
-    guard !profiles.isEmpty else { return [] }
-    var recommendedID: AgentProfile.ID?
-    if let worktree {
-      @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repositorySettings
-      recommendedID =
-        AgentProfileRecommendation.recommendedProfile(
-          profiles: profiles,
-          designatedID: repositorySettings.defaultAgentProfileID,
-          lastLaunchedID: repositorySettings.lastLaunchedAgentProfileID
-        )?.id
-    }
+    guard let worktree, !profiles.isEmpty else { return [] }
+    @Shared(.userRepositorySettings(worktree.repositoryRootURL)) var repositorySettings
+    let recommendedID =
+      AgentProfileRecommendation.recommendedProfile(
+        profiles: profiles,
+        designatedID: repositorySettings.defaultAgentProfileID,
+        lastLaunchedID: repositorySettings.lastLaunchedAgentProfileID
+      )?.id
     let enabled = profiles.filter(\.isEnabled)
     let ordered = enabled.sorted { lhs, rhs in
       (lhs.id == recommendedID ? 0 : 1) < (rhs.id == recommendedID ? 0 : 1)
@@ -857,17 +788,14 @@ struct WorktreeDetailView: View {
     let stopRunScript: (() -> Void)?
   }
 
-  struct WorktreeToolbarState {
+  struct ToolbarSharedState {
     let agentsCapsule: AgentsCapsuleState?
-    var agentsLauncherItems: [AgentsLauncherItem] = []
+    let agentsLauncherItems: [AgentsLauncherItem]
     let statusToast: RepositoriesFeature.StatusToast?
     let pullRequest: GithubPullRequest?
     let codeHost: CodeHost
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
-    let openActionSelection: OpenWorktreeAction
-    let openActionIsAutomatic: Bool
-    let showExtras: Bool
     let runScriptEnabled: Bool
     let runScriptIsRunning: Bool
     let customCommands: [EffectiveCustomCommand]
@@ -875,6 +803,13 @@ struct WorktreeDetailView: View {
     let isUpdateReadyToInstall: Bool
     let availableUpdateVersion: String?
     let showRunButtonInToolbar: Bool
+  }
+
+  struct WorktreeToolbarState {
+    let shared: ToolbarSharedState
+    let openActionSelection: OpenWorktreeAction
+    let openActionIsAutomatic: Bool
+    let showExtras: Bool
     let showDefaultEditorInToolbar: Bool
   }
 
@@ -911,8 +846,7 @@ struct WorktreeDetailView: View {
           groups: notificationGroups,
           unseenWorktreeCount: unseenNotificationWorktreeCount,
           onSelectNotification: onSelectNotification,
-          onDismissAll: onDismissAllNotifications,
-          style: .standaloneNavigation
+          onDismissAll: onDismissAllNotifications
         )
       }
       .sharedBackgroundVisibility(.hidden)
@@ -938,10 +872,10 @@ struct WorktreeDetailView: View {
 
     var body: some ToolbarContent {
       AgentNotificationsToolbarContent(
-        agentsCapsule: toolbarState.agentsCapsule,
-        agentsLauncherItems: toolbarState.agentsLauncherItems,
-        notificationGroups: toolbarState.notificationGroups,
-        unseenNotificationWorktreeCount: toolbarState.unseenNotificationWorktreeCount,
+        agentsCapsule: toolbarState.shared.agentsCapsule,
+        agentsLauncherItems: toolbarState.shared.agentsLauncherItems,
+        notificationGroups: toolbarState.shared.notificationGroups,
+        unseenNotificationWorktreeCount: toolbarState.shared.unseenNotificationWorktreeCount,
         onHandOff: onHandOff,
         onLaunchProfile: onLaunchProfile,
         onManageProfiles: onManageProfiles,
@@ -951,18 +885,18 @@ struct WorktreeDetailView: View {
 
       ToolbarItem(placement: .principal) {
         ToolbarStatusView(
-          toast: toolbarState.statusToast,
-          pullRequest: toolbarState.pullRequest,
-          codeHost: toolbarState.codeHost
+          toast: toolbarState.shared.statusToast,
+          pullRequest: toolbarState.shared.pullRequest,
+          codeHost: toolbarState.shared.codeHost
         )
         .padding(.horizontal)
       }
 
-      if toolbarState.isUpdateAvailable {
+      if toolbarState.shared.isUpdateAvailable {
         ToolbarItem(placement: .primaryAction) {
           ToolbarUpdateButton(
-            availableVersion: toolbarState.availableUpdateVersion,
-            isReadyToInstall: toolbarState.isUpdateReadyToInstall,
+            availableVersion: toolbarState.shared.availableUpdateVersion,
+            isReadyToInstall: toolbarState.shared.isUpdateReadyToInstall,
             onActivate: onActivateUpdateButton
           )
         }
@@ -1053,8 +987,8 @@ struct WorktreeDetailView: View {
     @ToolbarContentBuilder
     private var commandToolbarItems: some ToolbarContent {
       let showRunButton =
-        toolbarState.showRunButtonInToolbar
-        && (toolbarState.runScriptIsRunning || toolbarState.runScriptEnabled)
+        toolbarState.shared.showRunButtonInToolbar
+        && (toolbarState.shared.runScriptIsRunning || toolbarState.shared.runScriptEnabled)
       let entries = customCommandEntries
       let inlineEntries = Array(entries.prefix(3))
       let overflowEntries = Array(entries.dropFirst(3))
@@ -1070,8 +1004,8 @@ struct WorktreeDetailView: View {
       if showRunButton {
         ToolbarItem {
           RunScriptToolbarButton(
-            isRunning: toolbarState.runScriptIsRunning,
-            isEnabled: toolbarState.runScriptEnabled,
+            isRunning: toolbarState.shared.runScriptIsRunning,
+            isEnabled: toolbarState.shared.runScriptEnabled,
             runHelpText: AppShortcuts.helpText(
               title: "Run Script",
               commandID: AppShortcuts.CommandID.runScript,
@@ -1110,7 +1044,7 @@ struct WorktreeDetailView: View {
     }
 
     private var customCommandEntries: [EffectiveCustomCommand] {
-      toolbarState.customCommands
+      toolbarState.shared.customCommands
     }
 
     private func customCommandButton(_ command: EffectiveCustomCommand) -> some View {

@@ -247,39 +247,42 @@ private struct WorktreeToolbarPreview: View {
 
   init() {
     toolbarState = WorktreeDetailView.WorktreeToolbarState(
-      agentsCapsule: AgentsCapsuleState(
-        displayName: "codex",
-        iconSource: CommandIconMap.iconForFirstToken("codex"),
-        infoLine: "Pass this task to another agent in a new tab. codex will summarize its progress first."
+      shared: WorktreeDetailView.ToolbarSharedState(
+        agentsCapsule: AgentsCapsuleState(
+          displayName: "codex",
+          iconSource: CommandIconMap.iconForFirstToken("codex"),
+          infoLine: "Pass this task to another agent in a new tab. codex will summarize its progress first."
+        ),
+        agentsLauncherItems: [],
+        statusToast: nil,
+        pullRequest: nil,
+        codeHost: .github,
+        notificationGroups: [],
+        unseenNotificationWorktreeCount: 0,
+        runScriptEnabled: true,
+        runScriptIsRunning: false,
+        customCommands: [
+          EffectiveCustomCommand(
+            source: .repository,
+            command: UserCustomCommand(
+              title: "Test",
+              systemImage: "checkmark.circle.fill",
+              command: "swift test",
+              execution: .shellScript,
+              shortcut: UserCustomShortcut(
+                key: "u",
+                modifiers: UserCustomShortcutModifiers()
+              )
+            ))
+        ],
+        isUpdateAvailable: true,
+        isUpdateReadyToInstall: false,
+        availableUpdateVersion: "2026.5.1",
+        showRunButtonInToolbar: true
       ),
-      statusToast: nil,
-      pullRequest: nil,
-      codeHost: .github,
-      notificationGroups: [],
-      unseenNotificationWorktreeCount: 0,
       openActionSelection: .finder,
       openActionIsAutomatic: true,
       showExtras: false,
-      runScriptEnabled: true,
-      runScriptIsRunning: false,
-      customCommands: [
-        EffectiveCustomCommand(
-          source: .repository,
-          command: UserCustomCommand(
-            title: "Test",
-            systemImage: "checkmark.circle.fill",
-            command: "swift test",
-            execution: .shellScript,
-            shortcut: UserCustomShortcut(
-              key: "u",
-              modifiers: UserCustomShortcutModifiers()
-            )
-          ))
-      ],
-      isUpdateAvailable: true,
-      isUpdateReadyToInstall: false,
-      availableUpdateVersion: "2026.5.1",
-      showRunButtonInToolbar: true,
       showDefaultEditorInToolbar: true
     )
     let observer = CommandKeyObserver()

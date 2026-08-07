@@ -185,8 +185,11 @@ CLion, PhpStorm, RubyMine), GitHub Desktop
 and terminals (Alacritty, Ghostty, iTerm2, Kitty, Warp, WezTerm). If the
 chosen app isn't installed, Prowl shows an alert.
 
-Other per-row context-menu items: **Rename Branch…**, **New Terminal Tab**
-(selects the worktree and opens a tab at the worktree **root** — unlike a plain
+Other per-row context-menu items: **Rename Branch…** (`⌘⇧M`; the context menu
+targets that row, while the shortcut targets the selected worktree or focused
+Canvas card and is unavailable during bulk selection, worktree creation, or
+another modal prompt), **New Terminal Tab** (selects the worktree and opens a
+tab at the worktree **root** — unlike a plain
 new tab, it never inherits the focused tab's current directory), **Stop Running
 Script** (only while a Prowl-tracked run script is running), **Copy Path**,
 **Copy Branch Name**,

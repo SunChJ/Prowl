@@ -545,7 +545,13 @@ struct WorktreeRowsView: View {
       Button("Rename Branch…") {
         store.send(.requestRenameBranchPrompt(row.id))
       }
-      .help("Rename this branch")
+      .help(
+        AppShortcuts.helpText(
+          title: "Rename branch",
+          commandID: AppShortcuts.CommandID.renameBranch,
+          in: resolvedKeybindings
+        )
+      )
     }
   }
 
