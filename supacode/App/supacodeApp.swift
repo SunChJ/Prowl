@@ -526,6 +526,30 @@ struct SupacodeApp: App {
     }
   }
 
+  private static func makeReadCapture(
+    request: ReadCaptureRequest,
+    terminalManager: WorktreeTerminalManager
+  ) -> ReadCaptureInput? {
+    let target = request.target
+    guard let state = terminalManager.stateIfExists(for: target.worktreeID),
+      let surface = state.surfaceView(for: target.paneID)
+    else {
+      return nil
+    }
+
+    switch request.source {
+    case .viewport:
+      guard let viewportText = surface.readViewportContentsForCLI() else { return nil }
+      return ReadCaptureInput(
+        viewportText: viewportText,
+        screenText: surface.readScreenContentsForCLI()
+      )
+    case .detection:
+      guard let detectionText = surface.readActiveContentsForCLI() else { return nil }
+      return ReadCaptureInput(detectionText: detectionText)
+    }
+  }
+
   // swiftlint:disable:next function_body_length
   static func makeCLICommandRouter(
     appStore: StoreOf<AppFeature>,
@@ -630,17 +654,8 @@ struct SupacodeApp: App {
         }
         return resolver.resolve(selector).map { ReadResolvedTarget(from: $0) }
       },
-      captureProvider: { target in
-        guard let state = terminalManager.stateIfExists(for: target.worktreeID),
-          let surface = state.surfaceView(for: target.paneID),
-          let viewportText = surface.readViewportContentsForCLI()
-        else {
-          return nil
-        }
-        return ReadCaptureInput(
-          viewportText: viewportText,
-          screenText: surface.readScreenContentsForCLI()
-        )
+      captureProvider: { request in
+        Self.makeReadCapture(request: request, terminalManager: terminalManager)
       }
     )
     let keyHandler = KeyCommandHandler(

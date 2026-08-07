@@ -1391,6 +1391,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     if case .read(let input) = envelope.command {
       XCTAssertEqual(input.selector, .pane("pane-123"))
       XCTAssertEqual(input.last, 5)
+      XCTAssertEqual(input.source, .viewport)
     } else {
       XCTFail("Expected read command envelope")
     }
@@ -1399,6 +1400,133 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(payload["ok"] as? Bool, true)
     XCTAssertEqual(payload["command"] as? String, "read")
     XCTAssertEqual(payload["schema_version"] as? String, "prowl.cli.read.v1")
+  }
+
+  func testReadDetectionSourcePassesExactSourceToApp() throws {
+    let socketPath = temporarySocketPath(suffix: "read-detection")
+    let response = try CommandResponse(
+      ok: true,
+      command: "read",
+      schemaVersion: "prowl.cli.read.v1",
+      data: RawJSON(encoding: ReadResponseData(
+        target: ReadResponseTarget(
+          worktree: ListWorktree(
+            id: "Prowl:/Projects/Prowl",
+            name: "Prowl",
+            path: "/Projects/Prowl",
+            rootPath: "/Projects/Prowl",
+            kind: "git"
+          ),
+          tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
+          pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
+        ),
+        mode: "snapshot",
+        last: nil,
+        source: "detection",
+        truncated: false,
+        lineCount: 2,
+        text: "active-line-1\nactive-line-2"
+      ))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["read", "--source", "detection", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .read(let input) = envelope.command {
+      XCTAssertEqual(input.source, .detection)
+    } else {
+      XCTFail("Expected read command envelope")
+    }
+
+    let payload = try jsonObject(from: result.stdout)
+    let data = try XCTUnwrap(payload["data"] as? [String: Any])
+    XCTAssertEqual(data["source"] as? String, "detection")
+  }
+
+  func testReadDetectionSourceRejectsUnhonoredSource() throws {
+    let socketPath = temporarySocketPath(suffix: "read-detection-unhonored")
+    let response = try CommandResponse(
+      ok: true,
+      command: "read",
+      schemaVersion: "prowl.cli.read.v1",
+      data: RawJSON(encoding: ReadResponseData(
+        target: ReadResponseTarget(
+          worktree: ListWorktree(
+            id: "Prowl:/Projects/Prowl",
+            name: "Prowl",
+            path: "/Projects/Prowl",
+            rootPath: "/Projects/Prowl",
+            kind: "git"
+          ),
+          tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
+          pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
+        ),
+        mode: "snapshot",
+        last: nil,
+        source: "screen",
+        truncated: false,
+        lineCount: 1,
+        text: "viewport"
+      ))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["read", "--source", "detection", "--json"]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.readFailed)
+    XCTAssertTrue((error["message"] as? String)?.contains("did not honor") == true)
+  }
+
+  func testReadDetectionSourceRejectsUnhonoredSourceInTextModeWithoutLeakingText() throws {
+    let socketPath = temporarySocketPath(suffix: "read-detection-unhonored-text")
+    let response = try CommandResponse(
+      ok: true,
+      command: "read",
+      schemaVersion: "prowl.cli.read.v1",
+      data: RawJSON(encoding: ReadResponseData(
+        target: ReadResponseTarget(
+          worktree: ListWorktree(
+            id: "Prowl:/Projects/Prowl",
+            name: "Prowl",
+            path: "/Projects/Prowl",
+            rootPath: "/Projects/Prowl",
+            kind: "git"
+          ),
+          tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
+          pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
+        ),
+        mode: "snapshot",
+        last: nil,
+        source: "screen",
+        truncated: false,
+        lineCount: 1,
+        text: "private viewport text"
+      ))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["read", "--source", "detection"]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertTrue(result.stderr.contains("error [READ_FAILED]"))
+    XCTAssertFalse(result.stderr.contains("private viewport text"))
+    XCTAssertEqual(result.stderr.components(separatedBy: "READ_FAILED").count - 1, 1)
   }
 
   func testReadWithoutLastDefaultsToSnapshot() throws {

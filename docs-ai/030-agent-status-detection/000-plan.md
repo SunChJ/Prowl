@@ -122,3 +122,9 @@ the failed attempt to extend the first signal to plain commands is
 - Updated 2026-08-06: current Codex pre-session directory trust, hook review, and sign-in
   dialogs are covered with screen-only rules — see
   [006-current-cli-pre-session-blockers.md](006-current-cli-pre-session-blockers.md)
+- Updated 2026-08-06: a staged migration to typed Claude/Codex profiles, detector-faithful
+  captures, versioned fixtures, and explainable reasons is proposed — see
+  [007-screen-profile-migration-plan.md](007-screen-profile-migration-plan.md)
+- Updated 2026-08-06: `prowl read --source detection` now captures the exact active-screen
+  buffer used by production state detection — see
+  [008-detector-faithful-cli-capture.md](008-detector-faithful-cli-capture.md)
