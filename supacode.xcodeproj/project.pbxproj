@@ -68,6 +68,9 @@
 		};
 		D6F821022F1FCBC1004B4174 /* supacodeTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFolders = (
+				Fixtures,
+			);
 			path = supacodeTests;
 			sourceTree = "<group>";
 		};
