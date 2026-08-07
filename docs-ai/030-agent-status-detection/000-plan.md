@@ -131,3 +131,7 @@ the failed attempt to extend the first signal to plain commands is
 - Updated 2026-08-07: a 15-screen Claude/Codex captured corpus, executable quarantine,
   provenance validation, and Release classifier baseline are in place — see
   [009-captured-screen-fixture-corpus.md](009-captured-screen-fixture-corpus.md)
+- Updated 2026-08-07: screen classification now returns a typed state/reason result,
+  caches the complete result, records stable transition reasons, and exposes an optional
+  JSON-only `detection_reason` — see
+  [010-explainable-screen-detection-results.md](010-explainable-screen-detection-results.md)

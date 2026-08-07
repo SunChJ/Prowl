@@ -139,6 +139,45 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(payload["command"] as? String, "agents")
   }
 
+  func testAgentsPayloadDetectionReasonRemainsBackwardCompatible() throws {
+    let modernData = try JSONEncoder().encode(
+      AgentsResponseData(
+        count: 1,
+        agents: [
+          makeAgentResponse(
+            id: "modern-pane",
+            name: "codex",
+            status: "blocked",
+            projectName: "Prowl",
+            branch: "main",
+            tabTitle: "Modern",
+            detectionReason: "codex.directoryTrust"
+          )
+        ]
+      )
+    )
+    let modernPayload = try JSONDecoder().decode(AgentsCommandPayload.self, from: modernData)
+    XCTAssertEqual(modernPayload.agents.first?.detectionReason, "codex.directoryTrust")
+
+    let legacyData = try JSONEncoder().encode(
+      AgentsResponseData(
+        count: 1,
+        agents: [
+          makeAgentResponse(
+            id: "legacy-pane",
+            name: "claude",
+            status: "idle",
+            projectName: "Prowl",
+            branch: "main",
+            tabTitle: "Legacy"
+          )
+        ]
+      )
+    )
+    let legacyPayload = try JSONDecoder().decode(AgentsCommandPayload.self, from: legacyData)
+    XCTAssertNil(legacyPayload.agents.first?.detectionReason)
+  }
+
   func testJSONModePreservesEscapedControlCharactersFromAppResponse() throws {
     let socketPath = temporarySocketPath(suffix: "json-control")
     let responseJSON = [
@@ -536,6 +575,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
             projectName: "Prowl",
             branch: "main",
             tabTitle: "Done tab",
+            detectionReason: "legacy.detector",
             session: AgentsResponseSession(
               id: "019f4e9e-1234-4567-89ab-0123456789ab",
               path: "/Users/me/.codex/sessions/rollout.jsonl",
@@ -582,6 +622,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(lines[1].contains("Working"), "Expected working second: \(result.stdout)")
     XCTAssertTrue(lines[2].contains("Done"), "Expected done third: \(result.stdout)")
     XCTAssertTrue(lines[2].contains("session=019f4e9e-1234-4567-89ab-0123456789ab [exact]"))
+    XCTAssertFalse(result.stdout.contains("legacy.detector"), "Detection reason must remain JSON-only")
   }
 
   func testAgentsEmptyPayloadShowsNoAgentsFound() throws {
@@ -1980,6 +2021,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     projectName: String,
     branch: String,
     tabTitle: String,
+    detectionReason: String? = nil,
     session: AgentsResponseSession? = nil
   ) -> AgentsResponseAgent {
     AgentsResponseAgent(
@@ -1988,6 +2030,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       name: name,
       status: status,
       rawState: status,
+      detectionReason: detectionReason,
       lastChangedAt: "2026-06-13T04:12:25Z",
       project: AgentsResponseProject(name: projectName, branch: branch, path: "/Projects/\(projectName)"),
       worktree: ListWorktree(
@@ -2240,6 +2283,7 @@ private struct AgentsResponseAgent: Encodable {
     case name
     case status
     case rawState = "raw_state"
+    case detectionReason = "detection_reason"
     case lastChangedAt = "last_changed_at"
     case project
     case worktree
@@ -2249,6 +2293,7 @@ private struct AgentsResponseAgent: Encodable {
   }
 
   let rawState: String
+  let detectionReason: String?
   let lastChangedAt: String
   let project: AgentsResponseProject
   let worktree: ListWorktree

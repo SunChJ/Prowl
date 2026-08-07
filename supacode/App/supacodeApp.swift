@@ -564,10 +564,10 @@ struct SupacodeApp: App {
       )
     }
     let agentsHandler = AgentsCommandHandler {
-      var rawStatesBySurfaceID: [UUID: AgentRawState] = [:]
+      var screenDetectionsBySurfaceID: [UUID: AgentScreenDetection] = [:]
       for terminalState in terminalManager.activeWorktreeStates {
-        for (surfaceID, agentState) in terminalState.surfaceAgentStates {
-          rawStatesBySurfaceID[surfaceID] = agentState.fallbackState
+        for (surfaceID, scan) in terminalState.lastAgentScreenScanBySurface {
+          screenDetectionsBySurfaceID[surfaceID] = scan.detection
         }
       }
       return AgentsRuntimeSnapshot(
@@ -576,7 +576,7 @@ struct SupacodeApp: App {
           repositoriesState: appStore.state.repositories,
           terminalManager: terminalManager
         ),
-        rawStatesBySurfaceID: rawStatesBySurfaceID
+        screenDetectionsBySurfaceID: screenDetectionsBySurfaceID
       )
     }
     let sendHandler = SendCommandHandler(

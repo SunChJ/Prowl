@@ -133,7 +133,7 @@ Key fields by command (see `docs/components/cli.md` for the full contract):
 
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode` (`snapshot`|`last`), `.data.source` (`screen`|`scrollback`|`mixed`|`detection`), plus `.data.stabilized` / `.data.waited_ms` / `.data.samples` when `--wait-stable`.
 - `send` → `.data.input` (source/characters/bytes/trailing_enter_sent); `.data.wait.exit_code` and `.data.wait.duration_ms` when waiting; `.data.capture.text` / `.data.capture.line_count` / `.data.capture.truncated` when `--capture`.
-- `list` / `agents` → `.data.items[]` / `.data.agents[]`, each with `.pane.id`, `.tab.id`, `.worktree.{id,name,path}`, `.task.status`.
+- `list` / `agents` → `.data.items[]` / `.data.agents[]`, each with `.pane.id`, `.tab.id`, and `.worktree.{id,name,path}`. Agent entries also include `.status`, `.raw_state`, and optional `.detection_reason`; list entries include `.task.status`.
 - `tab create` / `open` → `.data.target.{pane,tab,worktree}`.
 
 ## Reading Agent Output
