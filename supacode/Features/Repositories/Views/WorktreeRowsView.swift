@@ -492,18 +492,18 @@ struct WorktreeRowsView: View {
       }
     }
     Divider()
-    renameBranchContextMenuItem(for: row, isBulkSelection: isBulkSelection)
     Button("Copy Path") {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(worktree.workingDirectory.path, forType: .string)
+    }
+    Button("Reveal in Finder") {
+      NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.workingDirectory.path)
     }
     Button("Copy Branch Name") {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(row.name, forType: .string)
     }
-    Button("Reveal in Finder") {
-      NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.workingDirectory.path)
-    }
+    renameBranchContextMenuItem(for: row, isBulkSelection: isBulkSelection)
     if row.info?.pullRequest != nil {
       Button("Open Pull Request") {
         store.send(.githubIntegration(.pullRequestAction(row.id, .openOnCodeHost)))
