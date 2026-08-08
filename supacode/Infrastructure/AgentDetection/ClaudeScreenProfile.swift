@@ -108,18 +108,69 @@ enum ClaudeScreenProfile {
   // tokens once it passes a minute: "45s", "28m 34s", "1h 4m 2s". Both parts stay
   // strict about completeness so transcript prose such as "(1st attempt)" or
   // "(10seconds)" still cannot pass as a live status row.
+  // Free-text labels contain parentheses — "Running tests (focused)…" — so the
+  // elapsed segment is located from the END of the row. Candidate openings are
+  // tried right to left, and the first one whose contents parse as a complete
+  // elapsed segment wins. Anchoring at the first "(" instead would read
+  // "focused)… (1m 38s" as the elapsed and reject a live row.
   nonisolated private static func hasElapsedStatusLine(_ content: String) -> Bool {
-    content.split(separator: "\n").contains { line in
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard trimmed.first == "●" else { return false }
-      let body = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-      guard let open = body.firstIndex(of: "(") else { return false }
+    logicalRows(content).contains { row in
+      guard row.first == "●" else { return false }
+      let body = row.dropFirst().trimmingCharacters(in: .whitespaces)
 
-      let label = body[..<open].trimmingCharacters(in: .whitespaces)
-      guard label.hasSuffix("…") else { return false }
-
-      return hasCompleteElapsedSegment(body[body.index(after: open)...])
+      for open in body.indices.reversed() where body[open] == "(" {
+        let label = body[..<open].trimmingCharacters(in: .whitespaces)
+        guard label.hasSuffix("…") else { continue }
+        if hasCompleteElapsedSegment(body[body.index(after: open)...]) {
+          return true
+        }
+      }
+      return false
     }
+  }
+
+  // Claude wraps a row too wide for the pane onto indented continuation lines —
+  // observed at 40 columns on 2.1.225:
+  //
+  //   "✻ Waiting for 1 background agent to"
+  //   "  finish"
+  //
+  // Narrow split panes are ordinary, so every rule that reads a row has to see the
+  // logical row rather than the first physical one. Only an adjacent line indented
+  // past its head and starting with ordinary text is a continuation: a line opening
+  // with its own marker starts a new row, which keeps this from swallowing the
+  // whole region and inventing rows that were never on screen.
+  nonisolated private static func logicalRows(_ content: String) -> [String] {
+    var rows: [String] = []
+    var current: String?
+    var headIndent = 0
+
+    for line in content.split(separator: "\n", omittingEmptySubsequences: false) {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      guard !trimmed.isEmpty else {
+        if let row = current { rows.append(row) }
+        current = nil
+        continue
+      }
+      let indent = line.prefix(while: { $0 == " " }).count
+
+      if current != nil, indent > headIndent, !startsNewRow(trimmed) {
+        current?.append(" ")
+        current?.append(trimmed)
+        continue
+      }
+      if let row = current { rows.append(row) }
+      current = trimmed
+      headIndent = indent
+    }
+    if let row = current { rows.append(row) }
+    return rows
+  }
+
+  nonisolated private static func startsNewRow(_ trimmed: String) -> Bool {
+    guard let first = trimmed.unicodeScalars.first else { return false }
+    if isAgentSpinnerScalar(first) { return true }
+    return "●⏺◯⎿❯─-".unicodeScalars.contains(first)
   }
 
   // One or more "<digits><unit>" tokens separated by single spaces, terminated by
@@ -158,12 +209,11 @@ enum ClaudeScreenProfile {
   // and it is scoped to the live status region so a transcript quoting it cannot
   // trip the rule.
   nonisolated private static func hasBackgroundAgentWait(_ liveStatus: String) -> Bool {
-    liveStatus.split(separator: "\n").contains { line in
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard let first = trimmed.unicodeScalars.first, isAgentSpinnerScalar(first) else {
+    logicalRows(liveStatus).contains { row in
+      guard let first = row.unicodeScalars.first, isAgentSpinnerScalar(first) else {
         return false
       }
-      let lower = trimmed.lowercased()
+      let lower = row.lowercased()
       return lower.contains("waiting for") && lower.contains("background agent")
     }
   }

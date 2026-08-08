@@ -122,11 +122,94 @@ struct ClaudeBackgroundAgentDetectionTests {
     }
   }
 
+  @Test func wrappedRowsAreReadAsOneLogicalRow() {
+    // Claude Code 2.1.225 at 40 columns. Both shapes were observed on a real
+    // narrow pane; the continuation is indented two spaces.
+    let wrappedWait = detect(
+      """
+      ⏺ The subagent is running; waiting for its reply.
+
+      ✻ Waiting for 1 background agent to
+        finish
+      ────────
+      ❯
+      ────────
+      """
+    )
+    #expect(wrappedWait.state == .working)
+    #expect(wrappedWait.reason == .matched(ClaudeScreenProfile.RuleID.backgroundWork))
+
+    let wrappedElapsed = detect(
+      """
+      ● Running gates and merge lifecycle…
+        (1m 38s · ↓ 187 tokens)
+      ────────
+      ❯
+      ────────
+      """
+    )
+    #expect(wrappedElapsed.state == .working)
+    #expect(wrappedElapsed.reason == .matched(ClaudeScreenProfile.RuleID.elapsedStatus))
+  }
+
+  @Test func continuationJoiningDoesNotInventRows() {
+    // A following line that carries its own marker starts a new row rather than
+    // continuing the previous one, so nothing is stitched into a status row that
+    // was never on screen.
+    let detection = detect(
+      """
+      ⏺ Wrote the report.
+        ⎿  Waiting for 1 background agent to finish is what it said earlier
+      ⏺ Nothing is running now.
+      ────────
+      ❯
+      ────────
+      """
+    )
+
+    #expect(detection.state == .idle)
+  }
+
+  @Test func labelContainingParenthesesStillParses() {
+    // The label is free text, so the elapsed segment is located from the end of
+    // the row. Anchoring at the first "(" reads "focused)… (1m 38s" as elapsed.
+    let detection = detect(
+      """
+      ● Running tests (focused)… (1m 38s · ↓ 187 tokens)
+      ────────
+      ❯
+      ────────
+      """
+    )
+
+    #expect(detection.state == .working)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.elapsedStatus))
+  }
+
+  @Test func narrowPaneDropsDetailSegmentsAndStillParses() {
+    // At 32 columns Claude shortens the row rather than wrapping it, leaving the
+    // elapsed terminated by the closing paren with no " · " detail at all.
+    let detection = detect(
+      """
+      ● Razzle-dazzling… (1m 7s)
+      ────────
+      ❯
+      ────────
+      """
+    )
+
+    #expect(detection.state == .working)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.elapsedStatus))
+  }
+
   @Test func incompleteElapsedSegmentsStayIdle() {
     let notWorking = [
       "● Retrying the merge lifecycle… (1st attempt)",
       "● Actioning… (10seconds · ↓ 47.7k tokens)",
       "● Actioning… (28m 34 · ↓ 47.7k tokens)",
+      // Incomplete elapsed carried across a wrapped row stays incomplete.
+      "● Running gates and merge lifecycle…\n  (1st attempt)",
+      "● Running tests (focused)…\n  (10seconds · ↓ 187 tokens)",
     ]
     for row in notWorking {
       let detection = detect(
