@@ -83,10 +83,21 @@ Two related shapes came out of the same narrow-terminal session and are covered 
   the end of the row. Anchoring at the first `(` reads `focused)… (1m 38s` as the elapsed
   and rejects `● Running tests (focused)… (1m 38s · ↓ 187 tokens)`.
 
+Assembling rows is not enough on its own, because the region that selects which rows the
+rules see was still counted in physical lines. `ClaudeScreenRegions.liveStatus` took the
+last three non-blank lines above the box and only then handed them to the row assembler,
+so a row wrapping onto three or more continuations pushed its own head out of the window.
+The head is what carries the `●` or the spinner, so the reconstructed row could not match
+and the pane reported idle. Surfaces that narrow are reachable, and the shape is not
+exotic: `✻ Waiting for 1 background agent to finish` needs only about twenty columns to
+wrap that far. The region is now assembled into logical rows first and limited to the last
+three of those, which is the same three rows whenever nothing wraps.
+
 ## Result
 
 `claude.backgroundWork` matches the wait row in the live status region, keeping the
 existing below-prompt `agents done` workflow marker. `claude.elapsedStatus` accepts a
 free-text label and a compound elapsed segment, located from the end of the logical row.
-Both read logical rows rather than physical lines. Two captured fixtures under
+Both read logical rows rather than physical lines, and so does the live status region that
+feeds them. Two captured fixtures under
 `claude/2.1.224/working/` witness the rules, and a narrow capture covers the wrapped shape.

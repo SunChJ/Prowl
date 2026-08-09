@@ -152,6 +152,47 @@ struct ClaudeBackgroundAgentDetectionTests {
     #expect(wrappedElapsed.reason == .matched(ClaudeScreenProfile.RuleID.elapsedStatus))
   }
 
+  @Test func rowWrappedPastTheRegionLimitKeepsItsHead() {
+    // The live status region is the last three rows above the box. A row narrow
+    // enough to wrap onto four or more physical lines pushes its own head out of
+    // a window counted in physical lines, and the head carries the glyph every
+    // rule keys on. The region is therefore reconstructed into logical rows
+    // before the limit applies.
+    let wrappedWait = detect(
+      """
+      ⏺ Launched it.
+
+      ✻ Waiting
+        for 1
+        background
+        agent to
+        finish
+      ────
+      ❯
+      ────
+      """
+    )
+    #expect(wrappedWait.state == .working)
+    #expect(wrappedWait.reason == .matched(ClaudeScreenProfile.RuleID.backgroundWork))
+
+    let wrappedElapsed = detect(
+      """
+      ⏺ Started.
+
+      ● Running
+        gates…
+        (1m 38s ·
+        ↓ 187
+        tokens)
+      ────
+      ❯
+      ────
+      """
+    )
+    #expect(wrappedElapsed.state == .working)
+    #expect(wrappedElapsed.reason == .matched(ClaudeScreenProfile.RuleID.elapsedStatus))
+  }
+
   @Test func continuationJoiningDoesNotInventRows() {
     // A following line that carries its own marker starts a new row rather than
     // continuing the previous one, so nothing is stitched into a status row that

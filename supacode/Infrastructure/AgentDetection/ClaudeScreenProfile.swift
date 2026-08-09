@@ -114,7 +114,7 @@ enum ClaudeScreenProfile {
   // elapsed segment wins. Anchoring at the first "(" instead would read
   // "focused)… (1m 38s" as the elapsed and reject a live row.
   nonisolated private static func hasElapsedStatusLine(_ content: String) -> Bool {
-    logicalRows(content).contains { row in
+    claudeLogicalRows(content).contains { row in
       guard row.first == "●" else { return false }
       let body = row.dropFirst().trimmingCharacters(in: .whitespaces)
 
@@ -127,50 +127,6 @@ enum ClaudeScreenProfile {
       }
       return false
     }
-  }
-
-  // Claude wraps a row too wide for the pane onto indented continuation lines —
-  // observed at 40 columns on 2.1.225:
-  //
-  //   "✻ Waiting for 1 background agent to"
-  //   "  finish"
-  //
-  // Narrow split panes are ordinary, so every rule that reads a row has to see the
-  // logical row rather than the first physical one. Only an adjacent line indented
-  // past its head and starting with ordinary text is a continuation: a line opening
-  // with its own marker starts a new row, which keeps this from swallowing the
-  // whole region and inventing rows that were never on screen.
-  nonisolated private static func logicalRows(_ content: String) -> [String] {
-    var rows: [String] = []
-    var current: String?
-    var headIndent = 0
-
-    for line in content.split(separator: "\n", omittingEmptySubsequences: false) {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard !trimmed.isEmpty else {
-        if let row = current { rows.append(row) }
-        current = nil
-        continue
-      }
-      let indent = line.prefix(while: { $0 == " " }).count
-
-      if current != nil, indent > headIndent, !startsNewRow(trimmed) {
-        current?.append(" ")
-        current?.append(trimmed)
-        continue
-      }
-      if let row = current { rows.append(row) }
-      current = trimmed
-      headIndent = indent
-    }
-    if let row = current { rows.append(row) }
-    return rows
-  }
-
-  nonisolated private static func startsNewRow(_ trimmed: String) -> Bool {
-    guard let first = trimmed.unicodeScalars.first else { return false }
-    if isAgentSpinnerScalar(first) { return true }
-    return "●⏺◯⎿❯─-".unicodeScalars.contains(first)
   }
 
   // One or more "<digits><unit>" tokens separated by single spaces, terminated by
@@ -209,7 +165,7 @@ enum ClaudeScreenProfile {
   // and it is scoped to the live status region so a transcript quoting it cannot
   // trip the rule.
   nonisolated private static func hasBackgroundAgentWait(_ liveStatus: String) -> Bool {
-    logicalRows(liveStatus).contains { row in
+    claudeLogicalRows(liveStatus).contains { row in
       guard let first = row.unicodeScalars.first, isAgentSpinnerScalar(first) else {
         return false
       }
@@ -237,10 +193,15 @@ private struct ClaudeScreenRegions: Sendable {
     )
     self.currentInteractionLines = currentInteractionLines
     self.currentInteractionLower = currentInteractionLines.joined(separator: "\n").lowercased()
-    self.liveStatus = agentDetectionRecentLines(
-      Self.contentAbovePrompt(screenLines: lines, promptIndex: promptIndex),
-      limit: 3
+    // Reconstruct rows before limiting the region. Counting the limit in physical
+    // lines drops the head of any row that wraps onto three or more continuations,
+    // and the head is what carries the "●" or spinner glyph the rules key on.
+    // Widths that narrow are reachable: a surface can be as few as five columns.
+    self.liveStatus = claudeLogicalRows(
+      Self.contentAbovePrompt(screenLines: lines, promptIndex: promptIndex)
     )
+    .suffix(3)
+    .joined(separator: "\n")
     self.belowPromptLines = Self.contentBelowPrompt(screenLines: lines, promptIndex: promptIndex)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
@@ -296,6 +257,54 @@ private struct ClaudeScreenRegions: Sendable {
     return isBoxBorderLine(screenLines[screenLines.index(before: promptIndex)])
       && isBoxBorderLine(screenLines[nextIndex])
   }
+}
+
+// Claude wraps a row too wide for the pane onto indented continuation lines —
+// observed at 40 columns on 2.1.225:
+//
+//   "✻ Waiting for 1 background agent to"
+//   "  finish"
+//
+// Narrow split panes are ordinary, so every rule that reads a row has to see the
+// logical row rather than the first physical one, and so does the region that
+// selects which rows the rules see. Only an adjacent line indented past its head
+// and starting with ordinary text is a continuation: a line opening with its own
+// marker starts a new row, which keeps this from swallowing the whole region and
+// inventing rows that were never on screen.
+//
+// Rows arrive already trimmed and unindented, so running this over its own output
+// returns that output unchanged.
+nonisolated private func claudeLogicalRows(_ content: String) -> [String] {
+  var rows: [String] = []
+  var current: String?
+  var headIndent = 0
+
+  for line in content.split(separator: "\n", omittingEmptySubsequences: false) {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else {
+      if let row = current { rows.append(row) }
+      current = nil
+      continue
+    }
+    let indent = line.prefix(while: { $0 == " " }).count
+
+    if current != nil, indent > headIndent, !claudeRowStartsNewRow(trimmed) {
+      current?.append(" ")
+      current?.append(trimmed)
+      continue
+    }
+    if let row = current { rows.append(row) }
+    current = trimmed
+    headIndent = indent
+  }
+  if let row = current { rows.append(row) }
+  return rows
+}
+
+nonisolated private func claudeRowStartsNewRow(_ trimmed: String) -> Bool {
+  guard let first = trimmed.unicodeScalars.first else { return false }
+  if isAgentSpinnerScalar(first) { return true }
+  return "●⏺◯⎿❯─-".unicodeScalars.contains(first)
 }
 
 nonisolated private func isClaudeNumberedSelectionLine(_ line: String) -> Bool {
