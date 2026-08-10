@@ -1,3 +1,4 @@
+import GhosttyKit
 import Testing
 
 @testable import supacode
@@ -73,5 +74,42 @@ struct CanvasInteractionPolicyTests {
 
     #expect(linkActivationRequested == false)
     #expect(showsShield)
+  }
+
+  @Test @MainActor func hiddenZoomedPaneDoesNotContributeStaleHoveredLink() throws {
+    let runtime = GhosttyRuntime()
+    let hiddenPane = makeSurface(runtime: runtime)
+    let visiblePane = makeSurface(runtime: runtime)
+    hiddenPane.bridge.state.mouseOverLink = "https://example.com/stale"
+
+    let tree = try SplitTree(view: hiddenPane)
+      .inserting(view: visiblePane, at: hiddenPane, direction: .right)
+    let zoomedTree = tree.settingZoomed(try #require(tree.find(id: visiblePane.id)))
+    let linkActivationRequested = CanvasInteractionPolicy.linkActivationRequested(
+      hasHoveredLink: CanvasInteractionPolicy.hasHoveredLink(in: zoomedTree),
+      isCommandModifierActive: true
+    )
+    let showsShield = CanvasInteractionPolicy.showsSelectionShield(
+      commandSelectionActive: true,
+      selectionModeActive: false,
+      broadcastFollower: false,
+      linkActivationRequested: linkActivationRequested
+    )
+
+    #expect(linkActivationRequested == false)
+    #expect(showsShield)
+
+    visiblePane.bridge.state.mouseOverLink = "https://example.com/visible"
+    #expect(CanvasInteractionPolicy.hasHoveredLink(in: zoomedTree))
+  }
+
+  @MainActor
+  private func makeSurface(runtime: GhosttyRuntime) -> GhosttySurfaceView {
+    GhosttySurfaceView(
+      runtime: runtime,
+      workingDirectory: nil,
+      context: GHOSTTY_SURFACE_CONTEXT_TAB,
+      skipsSurfaceCreationForTesting: true
+    )
   }
 }
