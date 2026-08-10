@@ -41,6 +41,25 @@ derived from `idle + unseen` and is never a fixture state.
    remain verbatim and are preferred for conversational fixtures.
 8. Run `AgentScreenFixtureCorpusTests` before committing.
 
+Steps 3, 6, and 7 are mechanical, and doing them by hand is where fixtures go wrong: a
+redaction that changes a line's visible width moves a wrap point and produces a screen the
+agent CLI would never render. `scripts/make-detection-fixture.py` performs those three
+steps and refuses a substitution it cannot fit:
+
+```bash
+scripts/make-detection-fixture.py .local/agent-screen-captures/capture.json \
+  --redact "/Users/me=/Users/usr" \
+  --redact "Acme Inc=<ORG_0000>" \
+  > claude/2.1.226/idle/composer.txt
+```
+
+Each replacement is padded or trimmed in the spaces immediately following it, so every
+later column on the row — a closing box border, a second column of chrome — keeps its
+captured position. A replacement too long for the space after it fails with the maximum
+length that would fit. The script writes the redaction summary step 5 asks for to stderr,
+leaving stdout to be redirected into the fixture. It still does not choose *what* to
+redact: step 7 governs that.
+
 The loader resolves this tree through `#filePath`, so tests intentionally run from a
 source checkout rather than relying on test-bundle resource flattening.
 
