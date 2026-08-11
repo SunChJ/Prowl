@@ -50,4 +50,17 @@ struct CodexScreenProfileTests {
     #expect(detection.state == .blocked)
     #expect(detection.reason == .matched(CodexScreenProfile.RuleID.confirmationChoices))
   }
+
+  @Test func blockerTextPreservesCodexQuestionChoicesAndKeyboardHints() throws {
+    let fixture = try AgentScreenFixtureCorpus.load()
+      .first { $0.relativePath == "codex/0.146.1/blocked/command-permission.txt" }
+    let text = try #require(fixture).text
+
+    let blocker = CodexScreenProfile.blockerText(in: AgentScreenSnapshot(canonicalText: text))
+
+    #expect(blocker?.contains("Would you like to run the following command?") == true)
+    #expect(blocker?.contains("› 1. Yes, proceed (y)") == true)
+    #expect(blocker?.contains("3. No, and tell Codex what to do differently (esc)") == true)
+    #expect(blocker?.contains("Press enter to confirm or esc to cancel") == true)
+  }
 }

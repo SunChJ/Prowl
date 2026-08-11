@@ -22,6 +22,14 @@ public enum CLIErrorCode {
 
   // Agents
   public static let agentsFailed = "AGENTS_FAILED"
+  public static let agentNotFound = "AGENT_NOT_FOUND"
+  public static let agentUnsupported = "AGENT_UNSUPPORTED"
+  public static let agentReadFailed = "AGENT_READ_FAILED"
+  public static let blockerUnreadable = "BLOCKER_UNREADABLE"
+  public static let sessionUnresolved = "SESSION_UNRESOLVED"
+  public static let resultNotFound = "RESULT_NOT_FOUND"
+  public static let resultIncomplete = "RESULT_INCOMPLETE"
+  public static let resultTooLarge = "RESULT_TOO_LARGE"
 
   // Focus
   public static let focusFailed = "FOCUS_FAILED"

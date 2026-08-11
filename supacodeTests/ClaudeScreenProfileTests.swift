@@ -91,6 +91,19 @@ struct ClaudeScreenProfileTests {
     #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.blockedPrompt))
   }
 
+  @Test func blockerTextPreservesClaudeQuestionChoicesAndKeyboardHints() throws {
+    let fixture = try AgentScreenFixtureCorpus.load()
+      .first { $0.relativePath == "claude/2.1.223/blocked/command-permission.txt" }
+    let text = try #require(fixture).text
+
+    let blocker = ClaudeScreenProfile.blockerText(in: AgentScreenSnapshot(canonicalText: text))
+
+    #expect(blocker?.contains("Do you want to proceed?") == true)
+    #expect(blocker?.contains("❯ 1. Yes") == true)
+    #expect(blocker?.contains("3. No") == true)
+    #expect(blocker?.contains("Esc to cancel · Tab to amend · ctrl+e to explain") == true)
+  }
+
   @Test func unstructuredScreenUsesExplicitFallback() {
     let detection = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(canonicalText: "screen without live Claude chrome")

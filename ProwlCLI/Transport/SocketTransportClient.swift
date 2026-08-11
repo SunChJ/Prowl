@@ -11,6 +11,8 @@ import ProwlCLIShared
 #endif
 
 enum SocketTransportClient {
+  private static let maximumResponseLength = 32 * 1_024 * 1_024
+
   /// Send a command envelope to the Prowl app and receive a response.
   static func send(_ envelope: CommandEnvelope) throws -> Data {
     let socketPath = ProwlSocket.defaultPath
@@ -46,7 +48,7 @@ enum SocketTransportClient {
       UInt32(bigEndian: $0.load(as: UInt32.self))
     }
 
-    guard responseLength > 0, responseLength < 10_000_000 else {
+    guard responseLength > 0, responseLength <= maximumResponseLength else {
       throw ExitError(
         code: CLIErrorCode.transportFailed,
         message: "Invalid response length from app."

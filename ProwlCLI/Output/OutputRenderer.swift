@@ -68,6 +68,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "agents.read",
+         let data = response.data,
+         let payload = try? data.decode(as: AgentReadCommandPayload.self)
+      {
+        renderAgentsRead(payload)
+        return
+      }
+
       if response.command == "focus",
          let data = response.data,
          let payload = try? data.decode(as: FocusCommandPayload.self)
@@ -249,6 +257,49 @@ enum OutputRenderer {
       let sessionLabel = agent.session.map { "  session=\($0.id) [\($0.confidence)]" } ?? ""
       return "\(statusLabel)  \(agent.name)  \(projectLabel)  \(agent.tab.title)  \(paneHandle)\(sessionLabel)"
     }.joined(separator: "\n")
+  }
+
+  private static func renderAgentsRead(_ payload: AgentReadCommandPayload) {
+    if let data = agentReadResultOnlyData(payload) {
+      FileHandle.standardOutput.write(data)
+      return
+    }
+    print(agentReadSnapshotText(payload))
+  }
+
+  static func agentReadResultOnlyData(_ payload: AgentReadCommandPayload) -> Data? {
+    guard payload.outputMode == .resultOnly, let text = payload.result.text else { return nil }
+    return Data(text.utf8)
+  }
+
+  static func agentReadSnapshotText(_ payload: AgentReadCommandPayload) -> String {
+    var lines = [
+      "Agent: \(payload.agent.type)",
+      "Status: \(payload.agent.status.rawValue)",
+    ]
+    if let reason = payload.agent.detectionReason {
+      lines.append("Reason: \(reason)")
+    }
+    lines.append("Changed: \(payload.agent.lastChangedAt)")
+
+    let result = payload.result
+    if let error = result.error {
+      lines.append("Result: \(result.state.rawValue) (\(error.code))")
+    } else {
+      lines.append("Result: \(result.state.rawValue)")
+    }
+
+    if let blocker = payload.blocker {
+      lines.append("")
+      lines.append("## Blocker")
+      lines.append(blocker.text)
+    }
+    if let text = result.text {
+      lines.append("")
+      lines.append("## Latest result")
+      lines.append(text)
+    }
+    return lines.joined(separator: "\n")
   }
 
   private static func agentStatusLabel(_ status: AgentsCommandStatus) -> String {

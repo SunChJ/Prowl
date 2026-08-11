@@ -44,6 +44,17 @@ enum CodexScreenProfile {
     return AgentScreenDetection(state: .idle, reason: .noRuleMatched)
   }
 
+  /// Raw current interaction text for an actionable blocked screen. This deliberately
+  /// preserves TUI selection markers and keyboard hints instead of reconstructing options.
+  nonisolated static func blockerText(in snapshot: AgentScreenSnapshot) -> String? {
+    let regions = CodexScreenRegions(snapshot: snapshot)
+    guard detect(in: snapshot).state == .blocked else { return nil }
+    if regions.selectedChoice != nil || hasSignInPrompt(regions) {
+      return snapshot.text.trimmingCharacters(in: .newlines)
+    }
+    return nil
+  }
+
   nonisolated private static func hasDirectoryTrustPrompt(_ regions: CodexScreenRegions) -> Bool {
     hasSelectedChoice(
       regions,

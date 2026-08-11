@@ -82,7 +82,7 @@ public struct AgentsCommandSession: Codable, Equatable {
   }
 }
 
-public enum AgentsCommandStatus: String, Codable, Equatable {
+public enum AgentsCommandStatus: String, Codable, Equatable, Sendable {
   case blocked
   case working
   case done

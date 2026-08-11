@@ -8,12 +8,13 @@ This file defines **input-side** rules for the phase-1 CLI commands:
 
 - `open`
 - `list`
+- `agents` (including `agents read`)
 - `focus`
 - `send`
 - `key`
 - `read`
 
-It complements output contracts under `docs-ai/013-prowl-cli/contracts/{open,list,focus,send,key,read}.md`.
+It complements output contracts under `docs-ai/013-prowl-cli/contracts/{open,list,focus,send,key,read,agents-read}.md`.
 
 ---
 
@@ -38,6 +39,7 @@ prowl <subcommand> [target-selector] [command-args] [output-options]
 
 - `open`
 - `list`
+- `agents`
 - `focus`
 - `send`
 - `key`
@@ -188,6 +190,26 @@ prowl list [--json]
 - `list` MUST NOT accept target selectors in v1 (it is global discovery).
 - Extra positional args: `INVALID_ARGUMENT`.
 
+## 5.2.1 `agents`
+
+### Grammar
+
+```bash
+prowl agents [--json]
+prowl agents read <pN|pane-uuid> [--max-bytes <1...4194304>] [--result-only] [--json]
+```
+
+### Rules
+
+- Plain `agents` remains global roster discovery and accepts no target selector.
+- `agents read` requires exactly one positional pane handle (`pN`) or pane UUID. It
+  intentionally accepts neither worktree/tab/focus targeting nor selector flags.
+- `pN` is the current-process handle from text `agents`; JSON callers use the canonical
+  `.data.agents[].pane.id` UUID.
+- `agents read` is an immediate snapshot: it has no timeout, wait flag, or polling mode.
+- `--max-bytes` defaults to 1,048,576 and is bounded by 1...4,194,304.
+- `--result-only` is text-only and cannot combine with `--json`.
+
 ## 5.3 `focus`
 
 ### Grammar
@@ -280,6 +302,7 @@ These tokens are reserved as first command token:
 - `send`
 - `key`
 - `read`
+- `agents`
 
 If first token matches a reserved command, CLI MUST parse as subcommand unless forced by `--` path form.
 
@@ -302,6 +325,8 @@ struct CommandEnvelope {
 enum Command {
   case open(OpenInput)
   case list(ListInput)
+  case agents(AgentsInput)
+  case agentsRead(AgentReadInput)
   case focus(FocusInput)
   case send(SendInput)
   case key(KeyInput)
@@ -325,6 +350,7 @@ prowl focus --pane 6E1A2A10-D99F-4E3F-920C-D93AA3C05764    # explicit pane
 prowl read --pane p3 --last 200                             # explicit pane handle
 prowl tab close --tab t4 --force                            # explicit tab handle
 prowl focus main                                            # auto-resolve worktree name
+prowl agents read p7 --json                                 # immediate semantic agent snapshot
 prowl send "echo hello"                                     # text to current pane
 prowl send 6E1A2A10-D99F-4E3F-920C-D93AA3C05764 "echo hi"  # target + text
 printf 'git status' | prowl send --worktree Prowl --json

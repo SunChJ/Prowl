@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl read, prowl send, prowl key, prowl focus, prowl tab, prowl pane, prowl open, prowl handoff, pane id, agent, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl read, prowl send, prowl key, prowl focus, prowl tab, prowl pane, prowl open, prowl handoff, pane id, agent, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -139,19 +139,49 @@ Each agent contains:
   `medium` session id must not be used for automatic resume without
   additional confirmation.
 
-`prowl agents` is read-only. To jump to or operate on an agent, resolve
-`.data.agents[].pane.id`, then use existing commands:
+`prowl agents` is read-only. Text output is sorted for triage: `Blocked`,
+`Working`, `Done`, then `Idle`. It prints a pane handle such as `p7`; JSON keeps
+the canonical pane UUID. Either form now feeds the semantic snapshot command:
 
 ```bash
+prowl agents read p7
+prowl agents read p7 --json
 pane="$(prowl agents --json | jq -r '.data.agents[] | select(.status=="blocked") | .pane.id' | head -n1)"
-prowl focus --pane "$pane"
-prowl read --pane "$pane" --last 120 --wait-stable
+prowl agents read "$pane" --json
 ```
 
-Text output is sorted for triage: `Blocked`, `Working`, `Done`, then `Idle`.
-It prints a pane handle such as `p7` for each agent; use it as
-`prowl read --pane p7`, not as an `agents` subcommand. Empty output prints
-`No agents found.`.
+### `prowl agents read <pN|pane-uuid>`
+Immediate, read-only semantic snapshot for a currently active **Codex** or
+**Claude Code** pane. It requires an explicit `pN` handle or UUID from `agents`;
+it never guesses from focus, accepts no worktree/tab selector, and has no wait or
+timeout mode.
+
+Default text output always reports current `Status`, classifier `Reason`, last
+state-change time, and a result state. A blocked snapshot includes the raw current
+interaction under `## Blocker`, preserving the question, numbered choices, selected
+row, and Enter/Esc hints. It is the right command for deciding what another agent is
+waiting on; use `prowl key --pane "$pane" ...` to navigate/confirm a menu or
+`prowl send --pane "$pane" ...` for free-form input. Those writes are not atomic with
+the read, so re-read before a consequential choice.
+
+```bash
+prowl agents read p7
+prowl agents read "$pane" --max-bytes 2097152 --json
+prowl agents read p7 --result-only > /tmp/agent-result.txt
+```
+
+JSON is `prowl.cli.agents.read.v1`. `.data.result.state` is independent from live
+agent state: `complete` includes trusted `text`; `pending` means a working/blocked
+agent has not completed a turn; `unavailable`, `missing`, `incomplete`, and
+`too_large` retain a successful live snapshot but include a reason under
+`.data.result.error`. Prowl reads a transcript only after a fresh `exact` or `high`
+session resolution — never a `medium` candidate — and never returns partial text.
+
+`--max-bytes` defaults to 1 MiB and accepts up to 4 MiB. `--result-only` is mutually
+exclusive with `--json`; it writes exactly a complete trusted result to stdout, with
+no heading or added newline. For every other result state it exits non-zero with
+`SESSION_UNRESOLVED`, `RESULT_NOT_FOUND`, `RESULT_INCOMPLETE`, or
+`RESULT_TOO_LARGE`. Empty `agents` roster output remains `No agents found.`.
 
 ### `prowl read [target]`
 Read a pane's content.
@@ -370,6 +400,9 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `SOCKET_PERMISSION_DENIED` | The socket exists but the client cannot connect, usually because a sandbox blocked the Unix socket. Allowlist the socket path, run outside the sandbox, or use matching `PROWL_CLI_SOCKET` values for both app and CLI. |
 | `TARGET_NOT_FOUND` | Selector matched nothing — re-run `list` and pick a UUID or current short handle. |
 | `TARGET_NOT_UNIQUE` | Selector matched several — be more specific (use `--pane`). |
+| `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code. Re-run `agents`. |
+| `BLOCKER_UNREADABLE` | A blocked screen was detected but Prowl could not safely extract its current interaction text. Re-run `agents read` or inspect with `read`. |
+| `SESSION_UNRESOLVED` / `RESULT_NOT_FOUND` / `RESULT_INCOMPLETE` / `RESULT_TOO_LARGE` | `agents read --result-only` could not provide one trustworthy complete result. Drop `--result-only` to retain the live snapshot and inspect `.data.result`. |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |
 | `EMPTY_INPUT` | `send` got neither argv nor stdin (or both). |
 | `INVALID_ARGUMENT` | Bad flag/combo (e.g. `--capture --no-wait`) or out-of-range value. |
@@ -404,7 +437,8 @@ prowl pane close --pane "$pane" --json
 
 - Resolve a UUID `pane.id` or current text `pN` before `read`/`send`/`key`/
   `focus`/close — never trust tab titles.
-- Use `prowl agents --json` when you need agent status; use `prowl list --json`
+- Use `prowl agents --json` for discovery, then `prowl agents read <pN|uuid>` for
+  a supported agent's status, blocker, and trustworthy result state; use `prowl list --json`
   when you need all panes, including ordinary shells.
 - `--capture` needs shell integration; otherwise `read --wait-stable` or file
   redirection.

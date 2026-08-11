@@ -30,6 +30,27 @@ public struct AgentsInput: Codable, Sendable {
   public init() {}
 }
 
+public struct AgentReadInput: Codable, Sendable {
+  public static let defaultMaxBytes = 1_024 * 1_024
+  public static let maximumMaxBytes = 4 * 1_024 * 1_024
+
+  public let pane: String
+  public let maxBytes: Int
+  public let resultOnly: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case pane
+    case maxBytes = "max_bytes"
+    case resultOnly = "result_only"
+  }
+
+  public init(pane: String, maxBytes: Int = Self.defaultMaxBytes, resultOnly: Bool = false) {
+    self.pane = pane
+    self.maxBytes = maxBytes
+    self.resultOnly = resultOnly
+  }
+}
+
 public struct FocusInput: Codable, Sendable {
   public let selector: TargetSelector
 
