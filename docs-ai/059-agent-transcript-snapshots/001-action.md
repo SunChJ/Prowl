@@ -5,7 +5,7 @@
 | Date | Change | Ref |
 | --- | --- | --- |
 | 2026-08-11 | Wrote the snapshot-first plan and established the CLI/result-state contract. | This entry |
-| 2026-08-11 | Added `prowl agents read` for explicit Codex/Claude panes, live blocker extraction, fresh transcript attribution, bounded decoders, contracts, and user guidance. | Pending PR |
+| 2026-08-11 | Added `prowl agents read` for explicit Codex/Claude panes, live blocker extraction, fresh transcript attribution, bounded decoders, contracts, and user guidance. | #696 |
 
 ## Outcome & current state (as of 2026-08-11)
 

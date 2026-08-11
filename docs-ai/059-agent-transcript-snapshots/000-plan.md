@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-11 |
-| **Primary PRs** | (fill in as they merge) |
+| **Primary PRs** | #696 |
 | **Related** | [013 — Prowl CLI](../013-prowl-cli/000-plan.md), [045 — Native agent session detection](../045-native-agent-session-detection/000-plan.md), [issue #473](https://github.com/onevcat/Prowl/issues/473), [relay-tracker #53](https://github.com/onevcat/relay-tracker/issues/53) |
 
 ## Background
