@@ -84,7 +84,7 @@ struct CanvasInteractionPolicyTests {
 
     let tree = try SplitTree(view: hiddenPane)
       .inserting(view: visiblePane, at: hiddenPane, direction: .right)
-    let zoomedTree = tree.settingZoomed(try #require(tree.find(id: visiblePane.id)))
+    let zoomedTree = tree.settingZoomed(tree.find(id: visiblePane.id))
     let linkActivationRequested = CanvasInteractionPolicy.linkActivationRequested(
       hasHoveredLink: CanvasInteractionPolicy.hasHoveredLink(in: zoomedTree),
       isCommandModifierActive: true
