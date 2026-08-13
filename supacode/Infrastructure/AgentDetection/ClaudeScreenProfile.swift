@@ -46,6 +46,16 @@ enum ClaudeScreenProfile {
     return AgentScreenDetection(state: .idle, reason: .noRuleMatched)
   }
 
+  /// Raw current interaction text for an actionable blocked screen. Keep the
+  /// rendered choices and keyboard hints intact rather than inventing option fields.
+  nonisolated static func blockerText(in snapshot: AgentScreenSnapshot) -> String? {
+    let regions = ClaudeScreenRegions(snapshot: snapshot)
+    guard hasBlockedPrompt(regions) else { return nil }
+    let lines =
+      regions.currentInteractionLines.isEmpty ? Array(snapshot.lines.suffix(18)) : regions.currentInteractionLines
+    return lines.joined(separator: "\n").trimmingCharacters(in: .newlines)
+  }
+
   nonisolated private static func hasViewerChrome(_ regions: ClaudeScreenRegions) -> Bool {
     if regions.bottomChromeLines.contains(where: { line in
       line.contains("⌕ Search…") || line.lowercased().contains("ctrl+r to toggle")

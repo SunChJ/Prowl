@@ -24,7 +24,16 @@ When you specifically need active agent status, prefer the agent roster:
 prowl agents --json
 ```
 
-`prowl agents` lists detected agent panes only. It is the right starting point for "which agents are blocked/working/done?", while `prowl list` remains the all-pane inventory, including ordinary shells.
+`prowl agents` lists detected agent panes only. It is the right starting point for "which agents are blocked/working/done?", while `prowl list` remains the all-pane inventory, including ordinary shells. For a currently active Codex or Claude Code agent, follow it with an immediate semantic snapshot:
+
+```bash
+prowl agents read p7 --json
+# Or use the canonical UUID from .data.agents[].pane.id.
+```
+
+`agents read` has no focus fallback, timeout, or wait mode. Its JSON always contains the current
+`.data.agent.status` and independent `.data.result.state`; do not assume `idle`/`done` means a
+trusted result exists unless `result.state == "complete"`.
 
 If your session was launched from a Prowl pane, the focused pane is often you. Treat focused pane IDs as something to identify and avoid unless you intentionally want to operate on yourself.
 
@@ -134,9 +143,23 @@ Key fields by command (see `docs/components/cli.md` for the full contract):
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode` (`snapshot`|`last`), `.data.source` (`screen`|`scrollback`|`mixed`|`detection`), plus `.data.stabilized` / `.data.waited_ms` / `.data.samples` when `--wait-stable`.
 - `send` → `.data.input` (source/characters/bytes/trailing_enter_sent); `.data.wait.exit_code` and `.data.wait.duration_ms` when waiting; `.data.capture.text` / `.data.capture.line_count` / `.data.capture.truncated` when `--capture`.
 - `list` / `agents` → `.data.items[]` / `.data.agents[]`, each with `.pane.id`, `.tab.id`, and `.worktree.{id,name,path}`. Agent entries also include `.status`, `.raw_state`, and optional `.detection_reason`; list entries include `.task.status`.
+- `agents read` → `.data.agent` (current status/reason), `.data.blocker.text` when blocked, and `.data.result`. Only `.data.result.state == "complete"` carries `.data.result.text`; `pending`, `unavailable`, `missing`, `incomplete`, and `too_large` deliberately carry no partial text.
 - `tab create` / `open` → `.data.target.{pane,tab,worktree}`.
 
 ## Reading Agent Output
+
+For an active Codex or Claude Code pane, prefer `agents read` over terminal scraping:
+
+```bash
+snapshot="$(prowl agents read p7 --json)"
+printf '%s\n' "$snapshot" | jq -e '.ok == true and .data.agent.status == "blocked"' >/dev/null
+printf '%s\n' "$snapshot" | jq -r '.data.blocker.text // empty'
+```
+
+The command is an immediate snapshot. A blocker is raw current TUI interaction text, so inspect it
+before using `prowl key --pane p7 ...` or `prowl send --pane p7 ...`; read and write are not atomic.
+Use `--result-only` only for a strict pipeline that needs exact raw result bytes and should fail on
+anything except a complete, exact/high-attributed result. It cannot combine with `--json`.
 
 `task.status` is useful for coordination but is not enough to prove the screen finished rendering. `idle` can arrive before a TUI has painted its final response.
 
@@ -224,7 +247,7 @@ pane="$(prowl agents --json | jq -r '
   | select(.status == "blocked")
   | .pane.id
 ' | head -n 1)"
-prowl read --pane "$pane" --last 120 --wait-stable --json
+prowl agents read "$pane" --json
 ```
 
 When no agent is blocked, use the same pattern with `working`, `done`, or `idle` depending on the task. The JSON payload also includes `.project.name`, `.project.branch`, `.worktree.path`, `.tab.title`, and `.pane.focused`, so automation can filter by human project label while still targeting the concrete pane.
@@ -263,7 +286,7 @@ Avoid outer double quotes around payloads containing `$PWD`, `$VAR`, backticks, 
 
 - Never target by tab title alone; use `pane.id` plus path/cwd.
 - Never omit `--pane` for `send`, `key`, `read`, or `focus` in automation.
-- Use `prowl agents --json` for detected agent status; use `prowl list --json` for all panes and worktree-level `task.status`.
+- Use `prowl agents --json` for discovery and `prowl agents read <pN|uuid> --json` for a supported agent's current semantic snapshot; use `prowl list --json` for all panes and worktree-level `task.status`.
 - `open /path` is a project/path navigation command. It may refocus an existing pane and is not a deterministic create command.
 - Use `tab create` when automation needs a fresh shell, and capture the returned `pane.id` before sending input.
 - Focused pane is not stable; `open` and `focus` change it.
@@ -331,4 +354,4 @@ Write the briefing from your current working knowledge — required sections are
 
 ## Command Set
 
-Current commands: `list`, `agents`, `read`, `send`, `key`, `focus`, `tab create`, `tab close`, `pane close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with explicit `tab close` / `pane close` targets.
+Current commands: `list`, `agents`, `agents read`, `read`, `send`, `key`, `focus`, `tab create`, `tab close`, `pane close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with explicit `tab close` / `pane close` targets.

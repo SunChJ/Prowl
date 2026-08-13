@@ -11,6 +11,8 @@ import Foundation
 
 @MainActor
 final class CLISocketServer {
+  private static let maximumFrameLength = 32 * 1_024 * 1_024
+
   private let router: CLICommandRouter
   private let socketPath: String
   private let lockPath: String
@@ -199,7 +201,7 @@ final class CLISocketServer {
       let length = lengthData.withUnsafeBytes {
         UInt32(bigEndian: $0.load(as: UInt32.self))
       }
-      guard length > 0, length < 10_000_000 else { return }
+      guard length > 0, length <= Self.maximumFrameLength else { return }
 
       let requestData = try Self.fdRead(fildes: clientFD, count: Int(length))
 
@@ -215,6 +217,7 @@ final class CLISocketServer {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
       let responseData = try encoder.encode(response)
+      guard responseData.count > 0, responseData.count <= Self.maximumFrameLength else { return }
 
       var responseLength = UInt32(responseData.count).bigEndian
       try withUnsafeBytes(of: &responseLength) { try Self.fdWrite(fildes: clientFD, buffer: $0) }

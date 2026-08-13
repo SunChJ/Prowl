@@ -110,3 +110,4 @@ agent-facing manual for that).
 | 056 | [performance-optimization-2026-08](056-performance-optimization-2026-08/000-plan.md) | 2026-08-01 | August performance review series: exact cached line counts, opt-in Debug TCA logging, and agent screen-scan memoization |
 | 057 | [performance-benchmark-suite](057-performance-benchmark-suite/000-plan.md) | 2026-08-02 | Ratio-assertion benchmarks pinning the #644–#665 hot paths, `make bench` absolute-number reporting, and live measurement wrappers |
 | 058 | [unified-toolbar-layout](058-unified-toolbar-layout/000-plan.md) | 2026-08-07 | Remove redundant branch/title toolbar items and align the Agents + notifications cluster across Normal, Shelf, and Canvas |
+| 059 | [agent-transcript-snapshots](059-agent-transcript-snapshots/000-plan.md) | 2026-08-11 | Immediate Codex/Claude agent snapshots with trustworthy transcript results and actionable blocker text |

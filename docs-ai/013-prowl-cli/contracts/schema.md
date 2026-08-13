@@ -12,11 +12,12 @@ This file provides machine-validatable JSON Schema definitions for the v1 CLI ou
 - `send.md`
 - `key.md`
 - `read.md`
+- `agents-read.md`
 
 ## Scope
 
 - JSON Schema dialect: **Draft 2020-12**
-- Commands covered: `open`, `list`, `focus`, `send`, `key`, `read`
+- Commands covered: `open`, `list`, `focus`, `send`, `key`, `read`, `agents.read`
 - Each command schema is represented as `oneOf(success, error)`
 - Shared objects are centralized in `$defs` and reused by command schemas
 
@@ -719,6 +720,113 @@ This file provides machine-validatable JSON Schema definitions for the v1 CLI ou
         { "$ref": "#/$defs/readSuccess" },
         { "$ref": "#/$defs/readError" }
       ]
+    },
+
+    "agentsReadSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "command", "schema_version", "data"],
+      "properties": {
+        "ok": { "const": true },
+        "command": { "const": "agents.read" },
+        "schema_version": { "const": "prowl.cli.agents.read.v1" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["output_mode", "target", "agent", "result"],
+          "properties": {
+            "output_mode": { "const": "snapshot" },
+            "target": { "$ref": "#/$defs/resolvedTarget" },
+            "agent": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "status", "raw_state", "last_changed_at"],
+              "properties": {
+                "type": { "type": "string", "enum": ["claude", "codex"] },
+                "status": { "type": "string", "enum": ["blocked", "working", "done", "idle"] },
+                "raw_state": { "type": "string", "enum": ["blocked", "working", "idle", "unknown"] },
+                "detection_reason": { "type": "string" },
+                "last_changed_at": { "type": "string", "format": "date-time" },
+                "session": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "confidence", "source"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "confidence": { "type": "string", "enum": ["exact", "high"] },
+                    "source": { "type": "string", "enum": ["open_file", "transcript_match", "recent_file"] }
+                  }
+                }
+              }
+            },
+            "blocker": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string", "minLength": 1 }
+              }
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state"],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": ["complete", "pending", "unavailable", "missing", "incomplete", "too_large"]
+                },
+                "text": { "type": "string" },
+                "error": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["code", "message"],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": ["SESSION_UNRESOLVED", "RESULT_NOT_FOUND", "RESULT_INCOMPLETE", "RESULT_TOO_LARGE"]
+                    },
+                    "message": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentsReadError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "command", "schema_version", "error"],
+      "properties": {
+        "ok": { "const": false },
+        "command": { "const": "agents.read" },
+        "schema_version": { "const": "prowl.cli.agents.read.v1" },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "APP_NOT_RUNNING", "INVALID_ARGUMENT", "TARGET_NOT_FOUND", "AGENT_NOT_FOUND",
+                "AGENT_UNSUPPORTED", "AGENT_READ_FAILED", "BLOCKER_UNREADABLE", "SESSION_UNRESOLVED",
+                "RESULT_NOT_FOUND", "RESULT_INCOMPLETE", "RESULT_TOO_LARGE"
+              ]
+            },
+            "message": { "type": "string", "minLength": 1 },
+            "details": { "$ref": "#/$defs/errorDetails" }
+          }
+        }
+      }
+    },
+    "agentsReadResponse": {
+      "oneOf": [
+        { "$ref": "#/$defs/agentsReadSuccess" },
+        { "$ref": "#/$defs/agentsReadError" }
+      ]
     }
   }
 }
@@ -732,6 +840,7 @@ This file provides machine-validatable JSON Schema definitions for the v1 CLI ou
 - Validate `prowl send --json` output against `#/$defs/sendResponse`
 - Validate `prowl key --json` output against `#/$defs/keyResponse`
 - Validate `prowl read --json` output against `#/$defs/readResponse`
+- Validate `prowl agents read <pane> --json` output against `#/$defs/agentsReadResponse`
 
 ## Non-goals (v1)
 

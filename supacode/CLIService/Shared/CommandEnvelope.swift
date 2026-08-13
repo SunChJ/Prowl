@@ -17,6 +17,7 @@ public enum Command: Codable, Sendable {
   case open(OpenInput)
   case list(ListInput)
   case agents(AgentsInput)
+  case agentsRead(AgentReadInput)
   case focus(FocusInput)
   case send(SendInput)
   case key(KeyInput)
@@ -30,6 +31,7 @@ public enum Command: Codable, Sendable {
     case .open: "open"
     case .list: "list"
     case .agents: "agents"
+    case .agentsRead: "agents.read"
     case .focus: "focus"
     case .send: "send"
     case .key: "key"

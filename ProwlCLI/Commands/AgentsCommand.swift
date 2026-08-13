@@ -6,7 +6,8 @@ import ProwlCLIShared
 struct AgentsCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "agents",
-    abstract: "List detected agent panes."
+    abstract: "List detected agent panes.",
+    subcommands: [AgentsReadCommand.self]
   )
 
   @OptionGroup var options: GlobalOptions
