@@ -107,8 +107,9 @@ screen, or unreadable blocker region.
 4. Add an independent transcript-result reader beside the existing agent-detection
    infrastructure. It reads a bounded, race-checked JSONL snapshot and has separate
    Codex and Claude decoders:
-   - Codex accepts only a closed `event_msg.payload.type == "task_complete"` record
-     with a usable `turn_id`, `completed_at`, and `last_agent_message`.
+   - Codex accepts only the latest terminal `event_msg.payload.type == "task_complete"`
+     record with a non-empty `turn_id`, integer Unix-seconds `completed_at`, non-empty
+     `last_agent_message`, and no error; a newer `turn_aborted` remains incomplete.
    - Claude accepts `system/turn_duration` as a close marker, follows its bounded
      same-session parent chain back through summaries to an assistant message, and
      accepts text-only content with `end_turn` or `stop_sequence`.

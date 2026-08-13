@@ -8,8 +8,8 @@ struct AgentTranscriptResultReaderTests {
     let result = AgentTranscriptResultReader.decode(
       agent: .codex,
       jsonl: try jsonl([
-        codexCompletion(turnID: "turn-1", completedAt: "2026-08-11T12:00:00Z", text: "First result"),
-        codexCompletion(turnID: "turn-2", completedAt: "2026-08-11T12:01:00Z", text: "Final result"),
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_435_200, text: "First result"),
+        codexCompletion(turnID: "turn-2", completedAt: 1_786_435_260, text: "Final result"),
       ]),
       maxBytes: 1_024
     )
@@ -18,16 +18,108 @@ struct AgentTranscriptResultReaderTests {
     #expect(result.text == "Final result")
   }
 
-  @Test func reportsCodexMaxTokensAsIncompleteWithoutText() throws {
+  @Test func decodesCodexCompletionWithNumericTimestamp() throws {
+    let result = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_438_335, text: "Final result")
+      ]),
+      maxBytes: 1_024
+    )
+
+    #expect(result.state == .complete)
+    #expect(result.text == "Final result")
+  }
+
+  @Test func rejectsCodexCompletionWithoutUsableIdentityOrText() throws {
+    let emptyTurnID = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([
+        codexCompletion(turnID: "", completedAt: 1_786_438_335, text: "Final result")
+      ]),
+      maxBytes: 1_024
+    )
+    let emptyText = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_438_335, text: "")
+      ]),
+      maxBytes: 1_024
+    )
+
+    #expect(emptyTurnID.state == .incomplete)
+    #expect(emptyText.state == .incomplete)
+  }
+
+  @Test func rejectsCodexCompletionWithNonIntegerTimestamp() throws {
+    let result = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_438_335.5, text: "Final result")
+      ]),
+      maxBytes: 1_024
+    )
+
+    #expect(result.state == .incomplete)
+    #expect(result.text == nil)
+  }
+
+  @Test func rejectsCodexCompletionWithErrorOrMissingMessage() throws {
+    var errorPayload =
+      codexCompletion(
+        turnID: "turn-1",
+        completedAt: 1_786_438_335,
+        text: "Partial result"
+      )["payload"] as? [String: Any] ?? [:]
+    errorPayload["error"] = ["message": "stream disconnected"]
+    let errored = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([["type": "event_msg", "payload": errorPayload]]),
+      maxBytes: 1_024
+    )
+    let missingMessage = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([
+        [
+          "type": "event_msg",
+          "payload": [
+            "type": "task_complete",
+            "turn_id": "turn-1",
+            "completed_at": 1_786_438_335,
+            "last_agent_message": NSNull(),
+          ],
+        ]
+      ]),
+      maxBytes: 1_024
+    )
+
+    #expect(errored.state == .incomplete)
+    #expect(missingMessage.state == .incomplete)
+  }
+
+  @Test func acceptsCompletedCodexResultMentioningMaxTokens() throws {
     let result = AgentTranscriptResultReader.decode(
       agent: .codex,
       jsonl: try jsonl([
         codexCompletion(
           turnID: "turn-1",
-          completedAt: "2026-08-11T12:00:00Z",
-          text: "Partial result",
-          status: "max_tokens"
+          completedAt: 1_786_435_200,
+          text: "Use max_tokens to configure the output limit."
         )
+      ]),
+      maxBytes: 1_024
+    )
+
+    #expect(result.state == .complete)
+    #expect(result.text == "Use max_tokens to configure the output limit.")
+  }
+
+  @Test func rejectsLatestBudgetLimitedCodexTurnWithoutReturningEarlierResult() throws {
+    let result = AgentTranscriptResultReader.decode(
+      agent: .codex,
+      jsonl: try jsonl([
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_435_200, text: "Earlier result"),
+        codexAbort(turnID: "turn-2", completedAt: 1_786_435_260, reason: "budget_limited"),
       ]),
       maxBytes: 1_024
     )
@@ -83,7 +175,7 @@ struct AgentTranscriptResultReaderTests {
   @Test func rejectsUnclosedJSONLWithoutReturningPartialText() throws {
     let jsonl =
       try jsonl([
-        codexCompletion(turnID: "turn-1", completedAt: "2026-08-11T12:00:00Z", text: "Final result")
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_435_200, text: "Final result")
       ]) + "{\"type\":\"event_msg\"\n"
     let result = AgentTranscriptResultReader.decode(agent: .codex, jsonl: jsonl, maxBytes: 1_024)
 
@@ -95,13 +187,27 @@ struct AgentTranscriptResultReaderTests {
     let result = AgentTranscriptResultReader.decode(
       agent: .codex,
       jsonl: try jsonl([
-        codexCompletion(turnID: "turn-1", completedAt: "2026-08-11T12:00:00Z", text: "0123456789")
+        codexCompletion(turnID: "turn-1", completedAt: 1_786_435_200, text: "0123456789")
       ]),
       maxBytes: 5
     )
 
     #expect(result.state == .tooLarge)
     #expect(result.text == nil)
+  }
+
+  @Test func readsCompleteResultAtWorstCaseJSONEscapingSize() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "prowl-result-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let text = String(repeating: "\u{1}", count: 400_000)
+    try jsonl([
+      codexCompletion(turnID: "turn-1", completedAt: 1_786_435_200, text: text)
+    ]).write(to: url, atomically: true, encoding: .utf8)
+
+    let result = AgentTranscriptResultReader.read(agent: .codex, at: url, maxBytes: 400_000)
+
+    #expect(result.state == .complete)
+    #expect(result.text == text)
   }
 
   @Test func readsOnlyTheBoundedTranscriptTail() throws {
@@ -111,7 +217,7 @@ struct AgentTranscriptResultReaderTests {
       "{\"type\":\"event_msg\",\"payload\":{\"type\":\"agent_message\",\"text\":\""
       + String(repeating: "x", count: 1_100_000) + "\"}}\n"
     let completion = try jsonl([
-      codexCompletion(turnID: "turn-1", completedAt: "2026-08-11T12:00:00Z", text: "Final result")
+      codexCompletion(turnID: "turn-1", completedAt: 1_786_435_200, text: "Final result")
     ])
     try (oversizedHistory + completion).write(to: url, atomically: true, encoding: .utf8)
 
@@ -123,18 +229,34 @@ struct AgentTranscriptResultReaderTests {
 
   private func codexCompletion(
     turnID: String,
-    completedAt: String,
-    text: String,
-    status: String? = nil
+    completedAt: Any,
+    text: String
   ) -> [String: Any] {
-    var payload: [String: Any] = [
-      "type": "task_complete",
-      "turn_id": turnID,
-      "completed_at": completedAt,
-      "last_agent_message": text,
+    [
+      "type": "event_msg",
+      "payload": [
+        "type": "task_complete",
+        "turn_id": turnID,
+        "completed_at": completedAt,
+        "last_agent_message": text,
+      ],
     ]
-    payload["status"] = status
-    return ["type": "event_msg", "payload": payload]
+  }
+
+  private func codexAbort(
+    turnID: String,
+    completedAt: Any,
+    reason: String
+  ) -> [String: Any] {
+    [
+      "type": "event_msg",
+      "payload": [
+        "type": "turn_aborted",
+        "turn_id": turnID,
+        "completed_at": completedAt,
+        "reason": reason,
+      ],
+    ]
   }
 
   private func claudeAssistant(

@@ -70,13 +70,12 @@ nonisolated enum AgentTranscriptResultReader {
     let startsMidRecord: Bool
   }
 
-  /// A JSON string can be larger than its UTF-8 result after escaping. Three
-  /// times the requested result plus 1 MiB leaves room for one maximal latest
-  /// record and its close markers, while the 16 MiB cap keeps giant histories
-  /// out of the process even when callers request the 4 MiB result maximum.
+  /// JSON escaping can expand one UTF-8 control byte to six ASCII bytes.
+  /// Six times the requested result plus 1 MiB therefore preserves one
+  /// maximal latest record while keeping the 4 MiB request bounded to 25 MiB.
   private static func tailByteLimit(for maxBytes: Int) -> UInt64 {
-    let scaled = max(0, maxBytes) * 3 + 1_024 * 1_024
-    return UInt64(min(16 * 1_024 * 1_024, max(1_024 * 1_024, scaled)))
+    let scaled = max(0, maxBytes) * 6 + 1_024 * 1_024
+    return UInt64(min(25 * 1_024 * 1_024, max(1_024 * 1_024, scaled)))
   }
 
   private static func tailData(at url: URL, byteLimit: UInt64) -> TranscriptTail? {
@@ -131,23 +130,29 @@ nonisolated enum AgentTranscriptResultReader {
   }
 
   private static func decodeCodex(records: [[String: Any]], maxBytes: Int) -> AgentTranscriptResult {
-    guard let payload = records.reversed().compactMap(codexCompletionPayload).first else {
+    guard let payload = records.reversed().lazy.compactMap(codexTerminalPayload).first else {
       return .failure(.missing)
     }
-    guard !containsMaxTokens(payload),
-      payload["turn_id"] is String,
-      payload["completed_at"] is String,
-      let text = payload["last_agent_message"] as? String
+    guard payload["type"] as? String == "task_complete",
+      let turnID = payload["turn_id"] as? String,
+      !turnID.isEmpty,
+      let completedAt = payload["completed_at"] as? NSNumber,
+      CFGetTypeID(completedAt) != CFBooleanGetTypeID(),
+      !CFNumberIsFloatType(completedAt),
+      payload["error"] == nil,
+      let text = payload["last_agent_message"] as? String,
+      !text.isEmpty
     else {
       return .failure(.incomplete)
     }
     return bounded(text, maxBytes: maxBytes)
   }
 
-  private static func codexCompletionPayload(_ record: [String: Any]) -> [String: Any]? {
+  private static func codexTerminalPayload(_ record: [String: Any]) -> [String: Any]? {
     guard record["type"] as? String == "event_msg",
       let payload = record["payload"] as? [String: Any],
-      payload["type"] as? String == "task_complete"
+      let type = payload["type"] as? String,
+      type == "task_complete" || type == "turn_aborted"
     else {
       return nil
     }
@@ -216,18 +221,5 @@ nonisolated enum AgentTranscriptResultReader {
 
   private static func bounded(_ text: String, maxBytes: Int) -> AgentTranscriptResult {
     text.utf8.count <= maxBytes ? .complete(text) : .failure(.tooLarge)
-  }
-
-  private static func containsMaxTokens(_ value: Any) -> Bool {
-    if let text = value as? String {
-      return text.lowercased().contains("max_tokens")
-    }
-    if let array = value as? [Any] {
-      return array.contains(where: containsMaxTokens)
-    }
-    if let object = value as? [String: Any] {
-      return object.values.contains(where: containsMaxTokens)
-    }
-    return false
   }
 }

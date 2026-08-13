@@ -88,8 +88,10 @@ Non-`complete` states include `result.error` with the stable code
 `RESULT_TOO_LARGE`, except `pending`, which is ordinary live activity rather than an
 error. Partial text is never returned.
 
-Codex accepts only `event_msg.payload.type == "task_complete"` records with
-`turn_id`, `completed_at`, and `last_agent_message`. Claude Code accepts a
+Codex accepts only a latest terminal `event_msg.payload.type == "task_complete"`
+record with a non-empty `turn_id`, integer Unix-seconds `completed_at`, non-empty
+`last_agent_message`, and no `error`. A newer `turn_aborted` terminal event makes
+the result incomplete instead of exposing an earlier answer. Claude Code accepts a
 `system/turn_duration` close record and a bounded same-session parent chain to an
 assistant message containing only text blocks with `end_turn` or `stop_sequence`.
 
