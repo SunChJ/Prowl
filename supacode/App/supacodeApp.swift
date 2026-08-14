@@ -589,7 +589,7 @@ struct SupacodeApp: App {
     }
 
     let detection = detectedAgent.detectScreen(in: activeText)
-    let canonicalScreen = AgentScreenSnapshot(canonicalText: agentDetectionRecentText(activeText))
+    let canonicalScreen = AgentScreenSnapshot(text: detectedAgent.detectionScreenText(from: activeText))
     let blockerText: String? =
       switch detectedAgent {
       case .codex: CodexScreenProfile.blockerText(in: canonicalScreen)

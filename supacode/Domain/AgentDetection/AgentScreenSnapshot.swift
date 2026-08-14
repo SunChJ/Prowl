@@ -2,12 +2,11 @@ struct AgentScreenSnapshot: Equatable, Sendable {
   let text: String
   let lines: [String]
 
-  nonisolated init(canonicalText: String) {
-    assert(
-      canonicalText == agentDetectionRecentText(canonicalText),
-      "AgentScreenSnapshot requires canonical detector-tail text."
-    )
-    self.text = canonicalText
-    self.lines = canonicalText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+  /// `text` must be the exact detector input for the agent consuming this
+  /// snapshot — produce it with `DetectedAgent.detectionScreenText(from:)` so
+  /// state detection and blocker extraction always read the same screen.
+  nonisolated init(text: String) {
+    self.text = text
+    self.lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
   }
 }

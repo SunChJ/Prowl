@@ -7,8 +7,21 @@ extension DetectedAgent {
     detectScreen(in: screen).state
   }
 
+  /// The slice of the active screen this agent's detector consumes.
+  ///
+  /// Claude reads the full active screen: its rules are all region-anchored
+  /// (live status from the last rows above the composer, blockers from around
+  /// the prompt, chrome from the bottom lines), while the shared recent-line
+  /// tail is measured from the bottom — a long todo list plus a multi-line
+  /// status line pushes the live spinner row past the limit and a working
+  /// agent reads as idle. Every other detector matches with whole-text scans,
+  /// so the bounded tail stays on as their guard against transcript history.
+  nonisolated func detectionScreenText(from screen: String) -> String {
+    self == .claude ? screen : agentDetectionRecentText(screen)
+  }
+
   nonisolated func detectScreen(in screen: String) -> AgentScreenDetection {
-    let text = agentDetectionRecentText(screen)
+    let text = detectionScreenText(from: screen)
     let state: AgentRawState
     switch self {
     case .pi:
@@ -16,9 +29,9 @@ extension DetectedAgent {
     case .omp:
       state = detectOMP(text)
     case .claude:
-      return ClaudeScreenProfile.detect(in: AgentScreenSnapshot(canonicalText: text))
+      return ClaudeScreenProfile.detect(in: AgentScreenSnapshot(text: text))
     case .codex:
-      return CodexScreenProfile.detect(in: AgentScreenSnapshot(canonicalText: text))
+      return CodexScreenProfile.detect(in: AgentScreenSnapshot(text: text))
     case .gemini:
       state = detectGemini(text)
     case .cursor:

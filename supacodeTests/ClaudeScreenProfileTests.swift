@@ -57,7 +57,7 @@ struct ClaudeScreenProfileTests {
   @Test func elapsedAndBackgroundWorkHaveDistinctReasons() {
     let elapsed = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(
-        canonicalText: """
+        text: """
             ● Forging… (10s · thinking with high effort)
             ─────────
             ❯
@@ -70,7 +70,7 @@ struct ClaudeScreenProfileTests {
 
     let background = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(
-        canonicalText: """
+        text: """
             Task complete.
             ─────────
             ❯
@@ -86,7 +86,7 @@ struct ClaudeScreenProfileTests {
   @Test func blockerOutranksRetainedSpinner() {
     let detection = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(
-        canonicalText: """
+        text: """
             ✻ Tempering… (12s · esc to interrupt)
             Do you want to proceed?
             ❯ 1. Yes
@@ -105,7 +105,7 @@ struct ClaudeScreenProfileTests {
       .first { $0.relativePath == "claude/2.1.223/blocked/command-permission.txt" }
     let text = try #require(fixture).text
 
-    let blocker = ClaudeScreenProfile.blockerText(in: AgentScreenSnapshot(canonicalText: text))
+    let blocker = ClaudeScreenProfile.blockerText(in: AgentScreenSnapshot(text: text))
 
     #expect(blocker?.contains("Do you want to proceed?") == true)
     #expect(blocker?.contains("❯ 1. Yes") == true)
@@ -113,9 +113,40 @@ struct ClaudeScreenProfileTests {
     #expect(blocker?.contains("Esc to cancel · Tab to amend · ctrl+e to explain") == true)
   }
 
+  @Test func spinnerAboveLongTodoListStaysWorking() {
+    // Regression: the shared recent-line tail is measured from the bottom of the
+    // screen, so a long todo list plus the composer and a multi-line status line
+    // pushed the live spinner row out of the detector window and a working agent
+    // was reported idle (via the idle-composer rule).
+    var lines = [
+      "✻ Implementing hybridTopK… (5m 5s · ↓ 21.1k tokens)",
+      "  ⎿ \u{00A0}✔ Write failing tests for hybridTopK and per-scope pickCandidates",
+    ]
+    for index in 2...16 {
+      lines.append("     ◻ Todo item number \(index) still pending")
+    }
+    lines.append(
+      contentsOf: [
+        "──────────────────────────────────────────",
+        "❯ ",
+        "──────────────────────────────────────────",
+        "  [Fable 5 | Enterprise] ██░░░░░░░░ 16% | will git:(master*)",
+        "  ███░░░░░░░ 34% (4h 3m / 5h) | ███░░░░░░░ 29% (4d 19h / 7d)",
+        "  ✓ Bash ×7 | ✓ Read ×6 | ✓ Edit ×5",
+        "  ▸ Implement hybridTopK in similarity.ts (2/16)",
+        "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+      ]
+    )
+
+    let detection = DetectedAgent.claude.detectScreen(in: lines.joined(separator: "\n"))
+
+    #expect(detection.state == .working)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.spinner))
+  }
+
   @Test func unstructuredScreenUsesExplicitFallback() {
     let detection = ClaudeScreenProfile.detect(
-      in: AgentScreenSnapshot(canonicalText: "screen without live Claude chrome")
+      in: AgentScreenSnapshot(text: "screen without live Claude chrome")
     )
 
     #expect(detection.state == .idle)
