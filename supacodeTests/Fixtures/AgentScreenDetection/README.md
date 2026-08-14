@@ -35,10 +35,12 @@ derived from `idle + unseen` and is never a fixture state.
 6. Reduce the capture with the production `agentDetectionRecentText` helper: start at
    the 24th non-empty line from the bottom when at least 24 exist; otherwise retain the
    whole screen. Keep blank lines and trailing screen rows inside that window.
-7. Redact paths, repositories, account identifiers, and all real-session prompts/model
-   output without changing runtime chrome, line ordering, markers, wrapping, or blank-line
-   boundaries. Deliberately scripted probe interactions from disposable workspaces may
-   remain verbatim and are preferred for conversational fixtures.
+7. Redact paths, repositories, account identifiers, all real-session prompts/model output,
+   and the counters a custom status line reports for the session — cost, token totals,
+   quota percentages, elapsed time — without changing runtime chrome, line ordering,
+   markers, wrapping, or blank-line boundaries. The generator masks dollar amounts only;
+   the other counters are yours to replace. Deliberately scripted probe interactions from
+   disposable workspaces may remain verbatim and are preferred for conversational fixtures.
 8. Run `AgentScreenFixtureCorpusTests` before committing.
 
 Steps 3, 6, and 7 are mechanical, and doing them by hand is where fixtures go wrong: a
@@ -66,7 +68,9 @@ than the three-column one `len()` would report. A replacement whose width no ter
 agrees on — a ZWJ sequence, or a variation selector that flips a character between text
 and emoji presentation — is refused rather than guessed at. Dollar amounts are masked
 digit for digit (`$123.45` becomes `$XXX.XX`), so the mask is the width of the amount at
-any magnitude; pass `--keep-money` to retain them.
+any magnitude; pass `--keep-money` to retain them. The digit count survives, and therefore
+so does the order of magnitude: a mask that hid it would occupy different columns, and
+holding the columns is what the fixture is for.
 
 `make test-scripts` exercises these guarantees. The corpus tests validate committed
 fixtures and never run the generator, so without it nothing holds the script to the
