@@ -8,6 +8,18 @@ struct ScreenHeuristicsTests {
     #expect(agent?.detectState(in: "Working...") ?? .unknown == .unknown)
   }
 
+  @Test func detectionScreenTextSlicesPerAgent() {
+    // Pin the slice asymmetry: Claude consumes the full active screen, every
+    // other detector consumes the bounded tail. Widening the full-screen
+    // branch to a whole-text scanner must fail here, not ship silently.
+    let screen = (1...(agentDetectionRecentLineLimit * 2)).map { "line \($0)" }.joined(separator: "\n")
+
+    #expect(DetectedAgent.claude.detectionScreenText(from: screen) == screen)
+    #expect(DetectedAgent.codex.detectionScreenText(from: screen) == agentDetectionRecentText(screen))
+    #expect(DetectedAgent.codex.detectionScreenText(from: screen) != screen)
+    #expect(DetectedAgent.gemini.detectionScreenText(from: screen) == agentDetectionRecentText(screen))
+  }
+
   @Test func piDetection() {
     #expect(DetectedAgent.pi.detectState(in: "Working...") == .working)
     #expect(DetectedAgent.pi.detectState(in: "⠹ Working...") == .working)

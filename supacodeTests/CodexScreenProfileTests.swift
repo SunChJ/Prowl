@@ -58,7 +58,7 @@ struct CodexScreenProfileTests {
 
     for fixture in fixtures {
       let blocker = CodexScreenProfile.blockerText(
-        in: AgentScreenSnapshot(text: agentDetectionRecentText(fixture.text))
+        in: DetectedAgent.codex.detectionSnapshot(from: fixture.text)
       )
 
       #expect(blocker != nil)
@@ -75,7 +75,7 @@ struct CodexScreenProfileTests {
     )
 
     let blocker = CodexScreenProfile.blockerText(
-      in: AgentScreenSnapshot(text: agentDetectionRecentText(fixture.text))
+      in: DetectedAgent.codex.detectionSnapshot(from: fixture.text)
     )
 
     #expect(blocker == nil)
@@ -83,9 +83,8 @@ struct CodexScreenProfileTests {
 
   @Test func blockerTextKeepsQuestionAboveLongWrappedInteraction() {
     let filler = (1...14).map { "  wrapped command detail \($0)" }.joined(separator: "\n")
-    let snapshot = AgentScreenSnapshot(
-      text: agentDetectionRecentText(
-        """
+    let snapshot = DetectedAgent.codex.detectionSnapshot(
+      from: """
         Historical output that must not be returned.
 
           Would you like to run the following command?
@@ -95,7 +94,6 @@ struct CodexScreenProfileTests {
 
           Press enter to confirm or esc to cancel
         """
-      )
     )
 
     let blocker = CodexScreenProfile.blockerText(in: snapshot)
@@ -110,7 +108,7 @@ struct CodexScreenProfileTests {
       .first { $0.relativePath == "codex/0.146.1/blocked/command-permission.txt" }
     let text = try #require(fixture).text
 
-    let blocker = CodexScreenProfile.blockerText(in: AgentScreenSnapshot(text: text))
+    let blocker = CodexScreenProfile.blockerText(in: DetectedAgent.codex.detectionSnapshot(from: text))
 
     #expect(blocker?.contains("Would you like to run the following command?") == true)
     #expect(blocker?.contains("Environment: local") == true)

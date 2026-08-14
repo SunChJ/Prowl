@@ -33,11 +33,17 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
 1. **Process probe.** Prowl reads the pane's foreground process group and matches
    process names / argv against known agent executables, scoring argv[0] highest,
    then process name, then command-line tokens.
-2. **Screen heuristics.** It starts from the last ~24 non-blank lines, then selects
+2. **Screen heuristics.** Claude detection consumes the full active screen (bounded
+   by the terminal height); every other agent starts from the last ~24 non-blank
+   lines as a guard against transcript history. The classifier then selects
    agent-specific live UI regions rather than treating every transcript line as current
    state. Structured confirmation/permission chrome is **Blocked**; status rows and
-   spinners are **Working**. Claude working rows are scoped to the lines immediately above
-   its prompt box, while confirmation text is consulted only around a current numbered
+   spinners are **Working**. Claude working rows come from a live status block walked
+   bottom-up from its prompt box by row shape — the spinner or `●` status row, `⎿`
+   attachments such as todo lists and tips, queued `❯` messages, and right-aligned
+   chrome — stopping at the first transcript-shaped row, so a long todo list cannot
+   push the live row out of view and a status row quoted inside a `⏺` block cannot
+   read as live. Confirmation text is consulted only around a current numbered
    selection row such as `❯ 1. Yes`; a bare input prompt cuts off the preceding transcript.
    Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to interrupt)` footer
    fallback. Its confirmation detector requires a numbered selected row such as `› 1. Yes`

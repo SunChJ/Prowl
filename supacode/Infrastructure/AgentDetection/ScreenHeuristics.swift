@@ -9,15 +9,28 @@ extension DetectedAgent {
 
   /// The slice of the active screen this agent's detector consumes.
   ///
-  /// Claude reads the full active screen: its rules are all region-anchored
-  /// (live status from the last rows above the composer, blockers from around
-  /// the prompt, chrome from the bottom lines), while the shared recent-line
-  /// tail is measured from the bottom — a long todo list plus a multi-line
-  /// status line pushes the live spinner row past the limit and a working
-  /// agent reads as idle. Every other detector matches with whole-text scans,
-  /// so the bounded tail stays on as their guard against transcript history.
+  /// Claude reads the full active screen: its rules are region-anchored (the
+  /// live status block is walked bottom-up from the composer by row shape,
+  /// blockers around the prompt, viewer chrome from the bottom lines), so a
+  /// bottom-measured line budget added no false-positive guard — it only cut
+  /// the live signal off when a long todo list plus a multi-line status line
+  /// pushed the spinner row past the limit and a working agent read as idle.
+  ///
+  /// Every other detector keeps the bounded tail as its guard against
+  /// transcript history. For the legacy scanners the tail is load-bearing —
+  /// they match with whole-text scans. Codex's structured profile anchors
+  /// its windows inside the tail instead; it shares Claude's bounded-bottom
+  /// exposure in principle and keeps the tail until its regions are bounded
+  /// by shape the same way.
   nonisolated func detectionScreenText(from screen: String) -> String {
     self == .claude ? screen : agentDetectionRecentText(screen)
+  }
+
+  /// The one production entry point for building a profile snapshot. State
+  /// detection and blocker extraction must read the same slice; going through
+  /// this keeps a call site from pairing a profile with the wrong one.
+  nonisolated func detectionSnapshot(from screen: String) -> AgentScreenSnapshot {
+    AgentScreenSnapshot(text: detectionScreenText(from: screen))
   }
 
   nonisolated func detectScreen(in screen: String) -> AgentScreenDetection {
