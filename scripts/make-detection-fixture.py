@@ -35,6 +35,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 
 DETECTOR_TAIL_LIMIT = 24
 
@@ -63,6 +64,43 @@ class WidthError(Exception):
     """A replacement could not keep the line's visible width."""
 
 
+# Sequences whose rendered width terminals do not agree on. A ZWJ sequence may
+# collapse into one glyph or render as its parts; a variation selector flips a
+# character between text and emoji presentation, and therefore between one cell
+# and two. Refusing them is the same bargain the rest of this script makes:
+# a fixture that never renders is worse than a redaction that never happens.
+UNDECIDABLE_WIDTH = {"‍"}  # zero-width joiner
+VARIATION_SELECTORS = [range(0xFE00, 0xFE10), range(0xE0100, 0xE01F0)]
+
+
+def cell_width(text: str) -> int:
+    """Visible width of `text` in terminal cells.
+
+    `len()` counts code points, which is the same number only for the ASCII
+    subset. A CJK ideograph occupies two cells, a combining mark none, and
+    "CJK text replaced by an ASCII placeholder" is the common redaction on this
+    fork — so measuring in code points silently narrows exactly the lines the
+    corpus exists to pin.
+    """
+    width = 0
+    for character in text:
+        code = ord(character)
+        if character in UNDECIDABLE_WIDTH or any(
+            code in span for span in VARIATION_SELECTORS
+        ):
+            raise WidthError(
+                f"{character!r} (U+{code:04X}) has no width terminals agree on, so the "
+                f"replacement cannot be shown to preserve the row. Use a replacement "
+                f"without joiners or variation selectors"
+            )
+        if code < 0x20 or code == 0x7F:
+            raise WidthError(f"control character U+{code:04X} has no visible width")
+        if unicodedata.combining(character):
+            continue
+        width += 2 if unicodedata.east_asian_width(character) in ("W", "F") else 1
+    return width
+
+
 def substitute(line: str, old: str, new: str) -> str:
     """Replace `old` with `new`, keeping every later column where it was.
 
@@ -71,8 +109,11 @@ def substitute(line: str, old: str, new: str) -> str:
     closing border of a box, a second column of chrome — therefore stays in its
     captured column. Absorbing the change at the end of the line instead would
     hold the line's total length while sliding all of that content sideways.
+
+    Width is counted in terminal cells, so a two-cell ideograph replaced by a
+    one-cell letter is padded by the one column it gives up.
     """
-    delta = len(new) - len(old)
+    delta = cell_width(new) - cell_width(old)
     out = ""
     rest = line
 
@@ -90,7 +131,7 @@ def substitute(line: str, old: str, new: str) -> str:
                 raise WidthError(
                     f"replacing {old!r} with {new!r} widens the row by {delta} column(s), "
                     f"and only {gap} space(s) follow it; every column after this point "
-                    f"would shift. Choose a replacement of {len(old) + gap} characters or fewer"
+                    f"would shift. Choose a replacement of {cell_width(old) + gap} cells or fewer"
                 )
             tail = tail[delta:]
         rest = tail
@@ -98,6 +139,25 @@ def substitute(line: str, old: str, new: str) -> str:
 
 # Money amounts carry no signal for the classifier and are account data.
 MONEY = re.compile(r"\$\d+\.\d\d")
+
+
+def mask_money(line: str) -> tuple[str, list[tuple[str, str]]]:
+    """Mask dollar amounts digit for digit, through the same width guard.
+
+    A fixed `$X.XX` mask silently narrowed every amount that was not a single
+    unit — `$123.45` lost two columns and slid the rest of the row left, which
+    is precisely the defect this script exists to prevent. Masking each digit
+    with an X keeps the mask the same width as the amount for any magnitude, so
+    the substitution is a no-op for layout by construction rather than by luck.
+    """
+    applied: list[tuple[str, str]] = []
+    for amount in dict.fromkeys(MONEY.findall(line)):
+        masked = re.sub(r"\d", "X", amount)
+        replaced = substitute(line, amount, masked)
+        if replaced != line:
+            applied.append((amount, masked))
+        line = replaced
+    return line, applied
 
 
 def parse_redaction(value: str) -> tuple[str, str]:
@@ -125,7 +185,7 @@ def main() -> int:
     parser.add_argument(
         "--keep-money",
         action="store_true",
-        help="retain dollar amounts instead of masking them as $X.XX",
+        help="retain dollar amounts instead of masking their digits as X",
     )
     args = parser.parse_args()
 
@@ -155,10 +215,13 @@ def main() -> int:
                 applied[old] = new
             line = replaced
         if not args.keep_money:
-            masked = MONEY.sub("$X.XX", line)
-            if masked != line:
-                applied["<dollar amounts>"] = "$X.XX"
-            line = masked
+            try:
+                line, masked = mask_money(line)
+            except WidthError as error:
+                print(f"error: line {number}: {error}", file=sys.stderr)
+                return 1
+            for amount, mask in masked:
+                applied[amount] = mask
         # Width preservation keeps every column up to the last visible glyph, so
         # a closing box border stays where the capture put it. Past that glyph
         # the padding carries nothing, and the corpus stores lines without it.

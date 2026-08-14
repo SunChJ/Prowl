@@ -60,6 +60,18 @@ length that would fit. The script writes the redaction summary step 5 asks for t
 leaving stdout to be redirected into the fixture. It still does not choose *what* to
 redact: step 7 governs that.
 
+Width is counted in terminal cells, not code points: an ideograph occupies two columns and
+a combining mark none, so replacing `東京` with `Tokyo` is a one-column widening rather
+than the three-column one `len()` would report. A replacement whose width no terminal
+agrees on — a ZWJ sequence, or a variation selector that flips a character between text
+and emoji presentation — is refused rather than guessed at. Dollar amounts are masked
+digit for digit (`$123.45` becomes `$XXX.XX`), so the mask is the width of the amount at
+any magnitude; pass `--keep-money` to retain them.
+
+`make test-scripts` exercises these guarantees. The corpus tests validate committed
+fixtures and never run the generator, so without it nothing holds the script to the
+promise it exists to make.
+
 The loader resolves this tree through `#filePath`, so tests intentionally run from a
 source checkout rather than relying on test-bundle resource flattening.
 
