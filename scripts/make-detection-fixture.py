@@ -26,7 +26,10 @@ longer replacement is reported and the run fails, rather than silently shifting
 the row.
 
 The redaction summary the metadata file requires (README step 5) is written to
-stderr, so it does not contaminate the fixture on stdout.
+stderr, so it does not contaminate the fixture on stdout. It reports each
+replacement and how many lines it touched, and never the text that was
+replaced: that summary is committed, and the original is what the redaction
+existed to keep out of the repository.
 """
 
 from __future__ import annotations
@@ -60,17 +63,33 @@ def canonical_tail(content: str, limit: int = DETECTOR_TAIL_LIMIT) -> str:
     return "\n".join(lines[start:])
 
 
-class WidthError(Exception):
+class FixtureError(Exception):
+    """A capture could not be turned into a faithful fixture."""
+
+
+class WidthError(FixtureError):
     """A replacement could not keep the line's visible width."""
 
 
-# Sequences whose rendered width terminals do not agree on. A ZWJ sequence may
-# collapse into one glyph or render as its parts; a variation selector flips a
-# character between text and emoji presentation, and therefore between one cell
-# and two. Refusing them is the same bargain the rest of this script makes:
-# a fixture that never renders is worse than a redaction that never happens.
+class AmountError(FixtureError):
+    """A dollar-shaped value was left for the author to handle."""
+
+
+# Sequences whose rendered width terminals do not agree on, or that are not the
+# sum of their parts. A ZWJ sequence may collapse into one glyph or render as
+# its parts; a variation selector flips a character between text and emoji
+# presentation, and therefore between one cell and two; a skin-tone modifier or
+# a tag sequence attaches to the preceding emoji and adds no cell of its own,
+# so summing code points overcounts it. Refusing them is the same bargain the
+# rest of this script makes: a fixture that never renders is worse than a
+# redaction that never happens.
 UNDECIDABLE_WIDTH = {"‍"}  # zero-width joiner
-VARIATION_SELECTORS = [range(0xFE00, 0xFE10), range(0xE0100, 0xE01F0)]
+UNDECIDABLE_SPANS = [
+    range(0xFE00, 0xFE10),  # variation selectors
+    range(0xE0100, 0xE01F0),  # variation selectors supplement
+    range(0x1F3FB, 0x1F400),  # emoji modifiers (skin tone)
+    range(0xE0001, 0xE0080),  # tag characters, including flag tag sequences
+]
 
 
 def cell_width(text: str) -> int:
@@ -86,12 +105,12 @@ def cell_width(text: str) -> int:
     for character in text:
         code = ord(character)
         if character in UNDECIDABLE_WIDTH or any(
-            code in span for span in VARIATION_SELECTORS
+            code in span for span in UNDECIDABLE_SPANS
         ):
             raise WidthError(
                 f"{character!r} (U+{code:04X}) has no width terminals agree on, so the "
                 f"replacement cannot be shown to preserve the row. Use a replacement "
-                f"without joiners or variation selectors"
+                f"without joiners, variation selectors, emoji modifiers, or tag sequences"
             )
         if code < 0x20 or code == 0x7F:
             raise WidthError(f"control character U+{code:04X} has no visible width")
@@ -137,8 +156,14 @@ def substitute(line: str, old: str, new: str) -> str:
         rest = tail
 
 
-# Money amounts carry no signal for the classifier and are account data.
-MONEY = re.compile(r"\$\d+\.\d\d")
+# Money amounts carry no signal for the classifier and are account data. The
+# grouped form is what a status line prints once a session passes a thousand.
+MONEY = re.compile(r"\$\d{1,3}(?:,\d{3})+\.\d\d|\$\d+\.\d\d")
+
+# Anything else shaped like currency. `$1` is a shell positional parameter and
+# appears in real captures, so a decimal point or a grouping comma is required
+# before a token is treated as an amount the author has to account for.
+AMOUNT_SHAPED = re.compile(r"\$\d[\d,]*(?:\.\d+)?")
 
 
 def mask_money(line: str) -> tuple[str, list[tuple[str, str]]]:
@@ -149,6 +174,12 @@ def mask_money(line: str) -> tuple[str, list[tuple[str, str]]]:
     is precisely the defect this script exists to prevent. Masking each digit
     with an X keeps the mask the same width as the amount for any magnitude, so
     the substitution is a no-op for layout by construction rather than by luck.
+    Grouping separators are kept as they are, for the same reason.
+
+    A dollar-shaped token this does not recognise fails the run. Passing it
+    through would be worse than not masking at all: the README documents the
+    masking as automatic, so an author who reads that and does not re-read the
+    row would commit the amount believing the script had handled it.
     """
     applied: list[tuple[str, str]] = []
     for amount in dict.fromkeys(MONEY.findall(line)):
@@ -157,6 +188,14 @@ def mask_money(line: str) -> tuple[str, list[tuple[str, str]]]:
         if replaced != line:
             applied.append((amount, masked))
         line = replaced
+
+    for leftover in AMOUNT_SHAPED.findall(line):
+        if "." in leftover or "," in leftover:
+            raise AmountError(
+                f"{leftover!r} is shaped like an amount but is not the form this "
+                f"masks, so it would reach the fixture unchanged. Redact it with "
+                f"--redact, or pass --keep-money if it is not account data"
+            )
     return line, applied
 
 
@@ -202,26 +241,30 @@ def main() -> int:
         )
         return 2
 
-    applied: dict[str, str] = {}
+    # Counted by replacement, never by original: this summary is what README
+    # step 5 tells the author to carry into the committed metadata file, and a
+    # summary naming the home path or prompt it removed would put the redacted
+    # text back into the repository the redaction was protecting.
+    applied: dict[str, int] = {}
     out_lines = []
     for number, line in enumerate(canonical_tail(data["text"]).split("\n"), start=1):
         for old, new in args.redact:
             try:
                 replaced = substitute(line, old, new)
-            except WidthError as error:
+            except FixtureError as error:
                 print(f"error: line {number}: {error}", file=sys.stderr)
                 return 1
             if replaced != line:
-                applied[old] = new
+                applied[new] = applied.get(new, 0) + 1
             line = replaced
         if not args.keep_money:
             try:
                 line, masked = mask_money(line)
-            except WidthError as error:
+            except FixtureError as error:
                 print(f"error: line {number}: {error}", file=sys.stderr)
                 return 1
-            for amount, mask in masked:
-                applied[amount] = mask
+            for _, mask in masked:
+                applied[mask] = applied.get(mask, 0) + 1
         # Width preservation keeps every column up to the last visible glyph, so
         # a closing box border stays where the capture put it. Past that glyph
         # the padding carries nothing, and the corpus stores lines without it.
@@ -230,9 +273,15 @@ def main() -> int:
     sys.stdout.write("\n".join(out_lines))
 
     if applied:
-        print("redactions applied (for the metadata file):", file=sys.stderr)
-        for old, new in applied.items():
-            print(f'  "{old} replaced with {new}"', file=sys.stderr)
+        print(
+            "replacements applied, by line count. Name what each one replaced in "
+            "the metadata file — the originals are not printed here, because this "
+            "summary is committed and they were the reason to redact:",
+            file=sys.stderr,
+        )
+        for new, count in applied.items():
+            rows = "line" if count == 1 else "lines"
+            print(f'  {count} {rows} → "… replaced with {new}"', file=sys.stderr)
     else:
         print("no redactions applied", file=sys.stderr)
     return 0

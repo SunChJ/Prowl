@@ -47,6 +47,15 @@ class CellWidth(unittest.TestCase):
         with self.assertRaises(fixture.WidthError):
             fixture.cell_width("❤️")
 
+    def test_emoji_modifier_is_refused_rather_than_summed(self):
+        # Two wide code points, one two-cell grapheme: summing reports four.
+        with self.assertRaises(fixture.WidthError):
+            fixture.cell_width("\U0001f469\U0001f3fd")
+
+    def test_tag_sequence_is_refused(self):
+        with self.assertRaises(fixture.WidthError):
+            fixture.cell_width("\U0001f3f4\U000e0067\U000e0062")
+
 
 class Substitute(unittest.TestCase):
     def test_narrowing_replacement_pads_to_hold_the_border(self):
@@ -82,6 +91,23 @@ class MoneyMasking(unittest.TestCase):
         out, _ = fixture.mask_money("cost $1.23 |")
         self.assertEqual(out, "cost $X.XX |")
 
+    def test_grouped_amount_is_masked_and_keeps_its_separator(self):
+        line = "│ $1,234.56 spent │"
+        out, applied = fixture.mask_money(line)
+        self.assertEqual(out, "│ $X,XXX.XX spent │")
+        self.assertEqual(fixture.cell_width(out), fixture.cell_width(line))
+        self.assertEqual(applied, [("$1,234.56", "$X,XXX.XX")])
+
+    def test_unrecognized_amount_shape_fails_rather_than_passing_through(self):
+        with self.assertRaises(fixture.AmountError):
+            fixture.mask_money("total $12,34.5 |")
+
+    def test_shell_positional_is_not_treated_as_an_amount(self):
+        # `echo "$1"` is ordinary capture content, not billing data.
+        out, applied = fixture.mask_money('echo "$1" && shift')
+        self.assertEqual(out, 'echo "$1" && shift')
+        self.assertEqual(applied, [])
+
     def test_several_amounts_on_one_row(self):
         line = "$9.99 and $1234.56 |"
         out, applied = fixture.mask_money(line)
@@ -116,6 +142,14 @@ class EndToEnd(unittest.TestCase):
         result = self.run_script(line, "--redact", "東京都のユーザー=<CITY_0000>")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(fixture.cell_width(result.stdout), fixture.cell_width(line))
+
+    def test_summary_never_names_what_it_replaced(self):
+        line = "│ /Users/realname/Code  │"
+        result = self.run_script(line, "--redact", "/Users/realname=/Users/usr")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("realname", result.stderr)
+        self.assertIn("/Users/usr", result.stderr)
+        self.assertIn("1 line", result.stderr)
 
     def test_undecidable_replacement_fails_the_run(self):
         result = self.run_script("│ owner name │", "--redact", "owner=❤️")
