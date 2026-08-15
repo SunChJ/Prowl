@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026.8.15](https://github.com/onevcat/Prowl/releases/tag/v2026.8.15)
+
+Improved detection accuracy for Claude Code sessions, plus a new CLI command for reading agent results.
+
+### New
+- `prowl agents read <pane>` (CLI): get an immediate, read-only snapshot of a Codex or Claude Code pane's current status and completed result text. Use `--result-only` to pull just the trusted final output, e.g. for piping into scripts.
+
+### Fixed
+- Claude Code panes with a long todo list no longer flash to Idle while a spinner is still actively running.
+- Claude Code panes waiting on a background agent, or showing multi-word elapsed-time status text, are now correctly detected as working instead of Idle.
+- Cmd-clicking a terminal link in Canvas no longer requires repeated clicks or misfires on the wrong link.
+
 ## [2026.8.9](https://github.com/onevcat/Prowl/releases/tag/v2026.8.9)
 
 This release streamlines the toolbar layout and improves the accuracy of agent status detection for Claude and Codex.
