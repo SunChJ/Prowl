@@ -32,9 +32,15 @@ derived from `idle + unseen` and is never a fixture state.
 4. Keep the raw response under the ignored `.local/agent-screen-captures/` directory.
 5. Record exact CLI version, capture timestamp, terminal rows/columns, and the redaction
    summary in a same-basename metadata file.
-6. Reduce the capture with the production `agentDetectionRecentText` helper: start at
-   the 24th non-empty line from the bottom when at least 24 exist; otherwise retain the
-   whole screen. Keep blank lines and trailing screen rows inside that window.
+6. Reduce the capture to the exact production detector input for the agent
+   (`DetectedAgent.detectionScreenText(from:)`):
+   - `claude` consumes the full active screen. Commit the capture as read, without
+     trimming; it must not exceed the terminal rows recorded in metadata. Trimming a
+     Claude capture can delete the very row above the window that reproduces a bug.
+   - Every other agent consumes the bounded tail produced by the production
+     `agentDetectionRecentText` helper: start at the 24th non-empty line from the
+     bottom when at least 24 exist; otherwise retain the whole screen. Keep blank
+     lines and trailing screen rows inside that window.
 7. Redact paths, repositories, account identifiers, and all real-session prompts/model
    output without changing runtime chrome, line ordering, markers, wrapping, or blank-line
    boundaries. Deliberately scripted probe interactions from disposable workspaces may

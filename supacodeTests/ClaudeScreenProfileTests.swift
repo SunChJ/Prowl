@@ -57,7 +57,7 @@ struct ClaudeScreenProfileTests {
   @Test func elapsedAndBackgroundWorkHaveDistinctReasons() {
     let elapsed = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(
-        canonicalText: """
+        text: """
             ● Forging… (10s · thinking with high effort)
             ─────────
             ❯
@@ -70,7 +70,7 @@ struct ClaudeScreenProfileTests {
 
     let background = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(
-        canonicalText: """
+        text: """
             Task complete.
             ─────────
             ❯
@@ -86,7 +86,7 @@ struct ClaudeScreenProfileTests {
   @Test func blockerOutranksRetainedSpinner() {
     let detection = ClaudeScreenProfile.detect(
       in: AgentScreenSnapshot(
-        canonicalText: """
+        text: """
             ✻ Tempering… (12s · esc to interrupt)
             Do you want to proceed?
             ❯ 1. Yes
@@ -105,7 +105,7 @@ struct ClaudeScreenProfileTests {
       .first { $0.relativePath == "claude/2.1.223/blocked/command-permission.txt" }
     let text = try #require(fixture).text
 
-    let blocker = ClaudeScreenProfile.blockerText(in: AgentScreenSnapshot(canonicalText: text))
+    let blocker = ClaudeScreenProfile.blockerText(in: AgentScreenSnapshot(text: text))
 
     #expect(blocker?.contains("Do you want to proceed?") == true)
     #expect(blocker?.contains("❯ 1. Yes") == true)
@@ -113,9 +113,96 @@ struct ClaudeScreenProfileTests {
     #expect(blocker?.contains("Esc to cancel · Tab to amend · ctrl+e to explain") == true)
   }
 
+  @Test func spinnerAboveLongTodoListStaysWorking() {
+    // Regression: a bottom-measured line budget (the shared recent-line tail)
+    // let a long todo list plus the composer and a multi-line status line push
+    // the live spinner row out of the detector window, so a working agent was
+    // reported idle via the idle-composer rule. The todo block is sized from
+    // the tail limit so this screen keeps overflowing it if the limit moves.
+    var lines = [
+      "✻ Implementing hybridTopK… (5m 5s · ↓ 21.1k tokens)",
+      "  ⎿ \u{00A0}✔ Write failing tests for hybridTopK and per-scope pickCandidates",
+    ]
+    for index in 2...(agentDetectionRecentLineLimit + 2) {
+      lines.append("     ◻ Todo item number \(index) still pending")
+    }
+    lines.append(
+      contentsOf: [
+        "──────────────────────────────────────────",
+        "❯ ",
+        "──────────────────────────────────────────",
+        "  [Fable 5 | Enterprise] ██░░░░░░░░ 16% | will git:(master*)",
+        "  ███░░░░░░░ 34% (4h 3m / 5h) | ███░░░░░░░ 29% (4d 19h / 7d)",
+        "  ✓ Bash ×7 | ✓ Read ×6 | ✓ Edit ×5",
+        "  ▸ Implement hybridTopK in similarity.ts (2/16)",
+        "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+      ]
+    )
+    let nonBlankCount = lines.count { $0.contains { !$0.isWhitespace } }
+    #expect(nonBlankCount > agentDetectionRecentLineLimit)
+
+    let detection = DetectedAgent.claude.detectScreen(in: lines.joined(separator: "\n"))
+
+    #expect(detection.state == .working)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.spinner))
+  }
+
+  @Test func spinnerAboveQueuedMessagesAndTipStaysWorking() {
+    // The live status block is bounded by row shape, not by a fixed row
+    // count: a "⎿" tip attachment, queued "❯" messages, and the right-aligned
+    // effort chrome all belong to the block and must not displace the spinner.
+    let text = """
+      ⏺ Running 1 shell command…
+        ⎿  $ touch permission-probe.txt
+
+      ✻ Slithering… (16s · ↓ 21.1k tokens)
+        ⎿  Tip: Use ctrl+v to paste images from your clipboard
+
+        ❯ Run the shell command `sleep 8`, then reply exactly DONE.
+        ❯ Then summarize the diff in one line.
+                                                        ◉ xhigh · /effort
+      ──────────────────────────────────────────
+      ❯ Press up to edit queued messages
+      ──────────────────────────────────────────
+      """
+
+    let detection = DetectedAgent.claude.detectScreen(in: text)
+
+    #expect(detection.state == .working)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.spinner))
+  }
+
+  @Test func spinnerQuotedAboveTranscriptBlockStaysIdle() {
+    // A status row quoted in the transcript sits above a "⏺" block head. The
+    // live block scan stops at that head, so reading the full active screen
+    // must not resurrect the quoted spinner as live activity.
+    var lines = [
+      "✻ Tempering… (12s · esc to interrupt)",
+      "",
+      "⏺ Here is the analysis:",
+    ]
+    lines.append(contentsOf: (1...20).map { "    analysis detail line \($0)" })
+    lines.append(
+      contentsOf: [
+        "",
+        "✻ Crunched for 7s",
+        "",
+        "──────────────────────────────────────────",
+        "❯ ",
+        "──────────────────────────────────────────",
+        "  ⏸ manual mode on · ← for agents",
+      ]
+    )
+
+    let detection = DetectedAgent.claude.detectScreen(in: lines.joined(separator: "\n"))
+
+    #expect(detection.state == .idle)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.idleComposer))
+  }
+
   @Test func unstructuredScreenUsesExplicitFallback() {
     let detection = ClaudeScreenProfile.detect(
-      in: AgentScreenSnapshot(canonicalText: "screen without live Claude chrome")
+      in: AgentScreenSnapshot(text: "screen without live Claude chrome")
     )
 
     #expect(detection.state == .idle)

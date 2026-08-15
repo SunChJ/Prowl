@@ -7,8 +7,34 @@ extension DetectedAgent {
     detectScreen(in: screen).state
   }
 
+  /// The slice of the active screen this agent's detector consumes.
+  ///
+  /// Claude reads the full active screen: its rules are region-anchored (the
+  /// live status block is walked bottom-up from the composer by row shape,
+  /// blockers around the prompt, viewer chrome from the bottom lines), so a
+  /// bottom-measured line budget added no false-positive guard — it only cut
+  /// the live signal off when a long todo list plus a multi-line status line
+  /// pushed the spinner row past the limit and a working agent read as idle.
+  ///
+  /// Every other detector keeps the bounded tail as its guard against
+  /// transcript history. For the legacy scanners the tail is load-bearing —
+  /// they match with whole-text scans. Codex's structured profile anchors
+  /// its windows inside the tail instead; it shares Claude's bounded-bottom
+  /// exposure in principle and keeps the tail until its regions are bounded
+  /// by shape the same way.
+  nonisolated func detectionScreenText(from screen: String) -> String {
+    self == .claude ? screen : agentDetectionRecentText(screen)
+  }
+
+  /// The one production entry point for building a profile snapshot. State
+  /// detection and blocker extraction must read the same slice; going through
+  /// this keeps a call site from pairing a profile with the wrong one.
+  nonisolated func detectionSnapshot(from screen: String) -> AgentScreenSnapshot {
+    AgentScreenSnapshot(text: detectionScreenText(from: screen))
+  }
+
   nonisolated func detectScreen(in screen: String) -> AgentScreenDetection {
-    let text = agentDetectionRecentText(screen)
+    let text = detectionScreenText(from: screen)
     let state: AgentRawState
     switch self {
     case .pi:
@@ -16,9 +42,9 @@ extension DetectedAgent {
     case .omp:
       state = detectOMP(text)
     case .claude:
-      return ClaudeScreenProfile.detect(in: AgentScreenSnapshot(canonicalText: text))
+      return ClaudeScreenProfile.detect(in: AgentScreenSnapshot(text: text))
     case .codex:
-      return CodexScreenProfile.detect(in: AgentScreenSnapshot(canonicalText: text))
+      return CodexScreenProfile.detect(in: AgentScreenSnapshot(text: text))
     case .gemini:
       state = detectGemini(text)
     case .cursor:
