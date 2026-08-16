@@ -2,10 +2,10 @@
 
 | | |
 | --- | --- |
-| **Status** | Proposed — pending product/API alignment |
+| **Status** | Aligned — implementation pending |
 | **Anchor date** | 2026-08-16 |
 | **Primary PRs** | TBD |
-| **Related** | [013 — Prowl CLI](../013-prowl-cli/000-plan.md), [046 — CLI Short Handles](../046-cli-short-handles/000-plan.md), [047 — Cross-Agent Handoff](../047-cross-agent-handoff/000-plan.md), [059 — Agent Transcript Snapshots](../059-agent-transcript-snapshots/000-plan.md), [`docs/components/cli.md`](../../docs/components/cli.md) |
+| **Related** | [013 — Prowl CLI](../013-prowl-cli/000-plan.md), [046 — CLI Short Handles](../046-cli-short-handles/000-plan.md), [047 — Cross-Agent Handoff](../047-cross-agent-handoff/000-plan.md), [059 — Agent Transcript Snapshots](../059-agent-transcript-snapshots/000-plan.md), [#699 — CLI split-pane creation](https://github.com/onevcat/Prowl/issues/699), [`docs/components/cli.md`](../../docs/components/cli.md) |
 
 ## Background
 
@@ -104,6 +104,9 @@ an unambiguous prefixed handle from an ambiguous bare number.
   explicit close, and caller-pane handoff source resolution.
 - Re-establish a complete, current, testable contract set covering the actual command
   surface and make the user manual, CLI help, and agent skill agree.
+- Make terminal lifecycle action-first: `create tab`, future `create pane`, and `close`.
+  The existing `tab` and `pane` command groups become explicitly deprecated compatibility
+  aliases rather than the vocabulary for new automation.
 - Establish an ownership and verification workflow so later CLI growth cannot introduce
   another undocumented grammar fork.
 
@@ -116,6 +119,9 @@ an unambiguous prefixed handle from an ambiguous bare number.
 - Changing `agents read` from an immediate semantic snapshot into a generic terminal
   reader.
 - Changing handoff's caller-pane source rule or weakening explicit-close protections.
+- Implementing split-pane creation itself. Its action-first public shape and contract
+  boundary are owned by [#699](https://github.com/onevcat/Prowl/issues/699); this work
+  establishes the parent `create` grammar it will extend.
 - Broadening this work into terminal layout, agent-session, or worktree lifecycle
   redesign.
 
@@ -177,21 +183,49 @@ This is an inherent and documentable arity rule, not a target-resolution excepti
 selector flags. It shares the same `PaneHandle` lexical definition, but remains a
 semantic agent command rather than a generic terminal read.
 
-### Resource-specific operations
+### Lifecycle operations use an action-first grammar
 
-The first implementation scope keeps current lifecycle command shapes:
+Terminal lifecycle operations are part of the same orchestration language as `read`,
+`send`, and `focus`; they are not namespaces mirroring app implementation types. Their
+new public forms are:
 
 ```bash
-prowl tab create --worktree MyApp --path /path/inside/MyApp
-prowl tab close --tab t6 --force
-prowl pane close --pane p12
+prowl create tab MyApp --path /path/inside/MyApp
+prowl create pane p12 --direction right      # owned by #699, not implemented here
+prowl close t6 --force
+prowl close p12
 ```
 
-Whether `tab create`, `tab close`, and `pane close` should additionally gain positional
-target shorthand is intentionally deferred. Close commands currently require an explicit
-selector as a safety posture; an explicit positional target could be safe, but it would
-be a separate public-grammar expansion rather than a prerequisite for fixing handle
-consistency.
+The resource noun gives each action a typed target grammar:
+
+```text
+CreateTabTarget  ::= WorktreeRef
+CreatePaneTarget ::= PaneUUID | PaneHandle
+CloseTarget      ::= PaneUUID | TabUUID | PaneHandle | TabHandle
+```
+
+`create tab` accepts exactly one worktree reference, positionally or as `--worktree`.
+`create pane` accepts exactly one pane reference, positionally or as `--pane`, and
+requires an explicit direction. `close` accepts exactly one tab or pane reference,
+positionally or with `--tab` / `--pane`; it accepts neither `--worktree` nor `--target`.
+A positional target and a selector flag remain mutually exclusive. Thus `pN` and `tN`
+route `close` without a selector projection rule, while a UUID resolves as a pane or tab.
+All close forms remain explicit and retain `--force` for protected panes.
+
+The former resource-first forms are deprecated compatibility aliases:
+
+```bash
+prowl tab create ...
+prowl tab close ...
+prowl pane close ...
+```
+
+They must be marked deprecated in help and emit a stderr migration warning on every
+invocation without corrupting `--json` stdout. During one shipped-release compatibility
+window, aliases retain their existing parser and selector behavior, including legacy
+cross-resource projection, so existing automation does not silently change effect.
+New contracts, documentation, examples, and automation must use the action-first forms;
+the aliases may be removed after that window.
 
 ## Contract and Documentation Governance
 
@@ -206,16 +240,16 @@ rebaseline it in the same implementation change as the runtime behavior.
    between typed and generic references. Command contracts must link to it rather than
    duplicate target rules.
 2. Reduce `input.md` to root command parsing and per-command argv/stdin arity. Correct
-   its selector-plus-positional rule to match runtime rejection, and add the current
-   `tab`, `pane`, `handoff`, and `agents read` grammar.
+   its selector-plus-positional rule to match runtime rejection; define `create tab` and
+   `close`; and document deprecated `tab` / `pane` aliases, `handoff`, and `agents read`.
 3. Update existing output contracts for shipped behavior:
    - `send.md`: document `--capture` and its incompatible combinations.
    - `read.md`: document `detection`, stable waiting, and all returned metadata.
    - `focus.md`, `key.md`, `list.md`, and `open.md`: reconcile fields, identifiers, and
      current error behavior against implementation tests.
 4. Add contracts and schema coverage for commands that currently have only implementation
-   and user-manual coverage: `agents`, `tab`, `pane`, and `handoff`. Keep the existing
-   dedicated `agents-read.md` contract.
+   and user-manual coverage: `agents`, `create`, `close`, deprecated `tab` / `pane`, and
+   `handoff`. Keep the existing dedicated `agents-read.md` contract.
 5. Update `schema.md` to enumerate every supported JSON wire response and either validate
    them in automated tests or explicitly narrow its status to a historical subset. The
    preferred outcome is complete executable schema validation.
@@ -239,11 +273,11 @@ validated together.
 
 ## Implementation Plan
 
-### Phase 0 — Align the public policy
+### Phase 0 — Record the aligned public policy
 
-Confirm the prefixed-handle reservation policy, the lifecycle shorthand boundary, and
-whether the current focused-pane fallback remains acceptable for non-destructive commands.
-Freeze the target-language contract before changing resolver behavior.
+Record the confirmed prefixed-handle reservation, action-first lifecycle grammar,
+deprecation policy, and focused-pane fallback boundary in the shared contract before
+changing parser or resolver behavior.
 
 ### Phase 1 — Centralize generic handle resolution
 
@@ -255,7 +289,25 @@ Freeze the target-language contract before changing resolver behavior.
 - Ensure a stale prefixed handle returns a typed target-not-found error and cannot fall
   through to a worktree selector.
 
-### Phase 2 — Prove command parity and safety
+### Phase 2 — Migrate lifecycle commands without breaking aliases
+
+- Introduce top-level `create` and `close` parser groups. `create tab` owns a worktree-only
+  target; `close` owns a pane-or-tab-only target. Reserve `create pane` for #699 rather
+  than exposing an incomplete command.
+- Add typed lifecycle selector parsing so the new commands reject `--target`,
+  `--worktree` for close, cross-resource selectors, and worktree-like positional values
+  before transport. Keep generic UUID resolution only where a UUID is valid for the
+  action's resource type.
+- Add versioned `create` and `close` wire inputs, responses, output rendering, schemas,
+  and handlers. Preserve the existing `tab` and `pane` wire commands and response shapes
+  for deprecated aliases, so their JSON output remains byte-compatible in the window.
+- Mark `tab` and `pane` deprecated in generated help and write a single migration warning
+  to stderr at invocation. The warning must name the precise replacement and never enter
+  JSON stdout.
+- Make the new commands delegate to shared lifecycle operation logic rather than creating
+  a second set of close/create side effects.
+
+### Phase 3 — Prove command parity and safety
 
 Add parser, resolver, handler, and socket integration coverage for the target matrix:
 
@@ -266,22 +318,27 @@ Add parser, resolver, handler, and socket integration coverage for the target ma
 | `send --target p12` with stdin | pane `p12` |
 | `handoff save p12` / `handoff to codex p12` | source pane `p12` |
 | `agents read p12` | semantic snapshot of pane `p12` |
+| `create tab MyApp` / `create tab --worktree MyApp` | a new tab in that worktree |
+| `close p12`, `close t6` | close the typed pane or tab, respectively |
+| `close --pane p12`, `close --tab t6` | equivalent typed-selector close forms |
 | `--pane 12`, `--tab 12` | existing typed bare-handle behavior |
 | generic `12` | worktree behavior, never an inferred handle |
 | stale `p12` / `t12` | target-not-found, never a worktree fallback |
 | positional target + selector flag | `INVALID_ARGUMENT` |
 
-Maintain tests for close requiring an explicit selector and for handoff's caller-pane
-fallback. Add a targeted check that cross-resource close selectors retain their documented
-behavior until a separately approved lifecycle grammar change.
+Maintain tests for explicit close, legacy alias warnings and byte-compatible alias
+behavior, and handoff's caller-pane fallback. The new action-first lifecycle commands
+must reject cross-resource selectors before transport.
 
-### Phase 3 — Rebaseline contracts, manuals, and help
+### Phase 4 — Rebaseline contracts, manuals, and help
 
 Land all contract changes listed above with the runtime change, update examples to use both
-UUID-safe automation and short same-session handoffs, and add a checked command synopsis
-or help snapshot so option changes are mechanically visible in review.
+UUID-safe automation and short same-session handoffs, replace lifecycle examples with
+`create tab` / `close`, document the legacy aliases and their removal policy, and add a
+checked command synopsis or help snapshot so option changes are mechanically visible in
+review.
 
-### Phase 4 — Validate the release surface
+### Phase 5 — Validate the release surface
 
 - Run focused Swift Testing suites for target resolution, command parsing, command handlers,
   and CLI integration.
@@ -299,21 +356,28 @@ or help snapshot so option changes are mechanically visible in review.
 | A stale handle silently reaches a different target | Do not fall back from prefixed handles; fail explicitly. |
 | New CLI talks to an older running app | Resolver lives app-side, so retain the established transport/version failure guidance and ship CLI with the matching app. |
 | Documentation re-drifts after this correction | Single target contract, help snapshot/check, and a four-layer completion rule for public CLI changes. |
-| Over-expanding shorthand weakens destructive-command safety | Keep close selector requirements in this scope; decide positional close shorthand separately. |
+| A generic `close` weakens destructive-command safety | Require one explicit typed tab/pane target; reject worktree, UI-focus fallback, and cross-resource selector projection. |
+| Existing lifecycle scripts break during grammar correction | Keep `tab` / `pane` aliases byte-compatible for one shipped release, mark them deprecated in help, and emit stderr migration warnings. |
 
-## Decisions Requiring Alignment
+## Confirmed Public Decisions
 
-1. **Prefixed-handle compatibility:** adopt the recommended reservation policy, or retain
-   worktree fallback for `pN`/`tN` and accept stale-handle ambiguity.
-2. **Lifecycle shorthand:** keep explicit selector-only close commands, or accept a
-   positional target as an equally explicit future form.
-3. **Focused-target defaults:** retain current convenience for non-destructive terminal
-   operations, or require explicit target selection whenever the caller is outside its
-   own pane.
-4. **Contract enforcement:** require automated JSON-schema validation for every wire
-   command now, or use narrower typed contract tests plus a future schema expansion.
-5. **Compatibility communication:** treat the `pN`/`tN` reservation as a documented
-   behavior correction in the next release, or introduce a deprecation/warning period.
+1. **Prefixed handles:** `pN` and `tN` are reserved typed handles in every generic target
+   context. A stale handle fails and never falls through to a same-named worktree.
+2. **Lifecycle grammar:** new lifecycle commands are action-first: `create tab`, future
+   `create pane`, and `close <pane-or-tab>`. The resource noun constrains selector type;
+   new commands reject cross-resource selectors.
+3. **Destructive targeting:** `close` always requires an explicit tab or pane target.
+   Positional handles/UUIDs and typed `--tab` / `--pane` are equally explicit; worktree
+   and UI-focus fallback are not accepted.
+4. **Deprecated resource groups:** `tab` / `pane` are one-release compatibility aliases,
+   visibly deprecated and warning on stderr. They preserve legacy behavior during that
+   window, then may be removed.
+5. **Focused-target defaults:** retain current convenience for non-destructive terminal
+   operations. `handoff` continues to default to the calling pane, not UI focus.
+6. **Contract enforcement:** every wire command has a complete versioned JSON Schema and
+   automated validation against actual socket responses.
+7. **Pane creation:** do not mix the runtime feature into this change. [#699](https://github.com/onevcat/Prowl/issues/699)
+   owns `prowl create pane <pane> --direction <direction>`.
 
 ## Definition of Done
 
@@ -327,6 +391,7 @@ prowl key p12 enter
 prowl focus p12
 ```
 
-All five address the same live pane; UUID JSON workflows remain stable; explicit close and
-handoff safety rules remain deliberate exceptions; every command and flag has one current
-contract; and tests make future divergence visible before release.
+All five address the same live pane; `create tab` and `close pN` / `close tN` follow the
+same action-first language; UUID JSON workflows remain stable; explicit close and handoff
+safety rules remain deliberate exceptions; every command and flag has one current contract;
+and tests make future divergence visible before release.
