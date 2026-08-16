@@ -10,7 +10,7 @@ Use `prowl` only when the task is to inspect or control the running Prowl GUI ap
 
 ## Safe Default Workflow
 
-For automation, always resolve a concrete pane UUID before `read`, `send`, `key`, `focus`, or destructive close commands. Text `list` and `agents` output also exposes current-process `pN` / `tN` handles for concise same-session handoffs; use them only with explicit `--pane` / `--tab` flags.
+For automation, always resolve a concrete pane UUID before `read`, `send`, `key`, `focus`, or destructive close commands. Text `list` and `agents` also expose current-process `pN` / `tN` handles for concise same-session targeting: `read p7`, `send p7 '…'`, `key p7 enter`, and `close t6` are valid. UUIDs remain the only cross-process identity.
 
 ```bash
 prowl list --json
@@ -61,13 +61,13 @@ worktree="$(prowl list --json | jq -r --arg project "$project" '
   | select((.worktree.path | rtrimstr("/")) == ($project | rtrimstr("/")))
   | .worktree.id
 ' | head -n 1)"
-pane="$(prowl tab create --worktree "$worktree" --json | jq -r '.data.target.pane.id')"
+pane="$(prowl create tab "$worktree" --json | jq -r '.data.target.pane.id')"
 test "$pane" != "$self_pane"
 ```
 
 Prefer a `worktree.id` or `worktree.name` returned by `prowl list` over a hand-typed path; list preserves normalization such as trailing slashes. Use `--path` only for the new tab's working directory inside the selected worktree.
 
-`prowl open /path` opens or focuses a matching project/path and may create a tab when needed. It is not guaranteed to create a new pane. Use `prowl tab create` for deterministic new terminal sessions.
+`prowl open /path` opens or focuses a matching project/path and may create a tab when needed. It is not guaranteed to create a new pane. Use `prowl create tab` for deterministic new terminal sessions.
 
 Run a command and capture its result:
 
@@ -99,14 +99,14 @@ printf '%s\n' 'echo first' 'echo second' | prowl send --pane "$pane" --capture -
 Close a temporary tab/pane when done:
 
 ```bash
-prowl pane close --pane "$pane" --json
-prowl tab close --tab "$tab" --json
+prowl close "$pane" --json
+prowl close --tab "$tab" --json
 ```
 
-`tab close` and `pane close` require an explicit `--tab`, `--pane`, `--worktree`, or `--target`; they intentionally do not default to the currently focused pane. For automation-created tabs, prefer the `tab.id` or `pane.id` returned by `tab create`. If the target has protected agent work or a long-running command, Prowl may ask for GUI confirmation. Use `--force` only after you have positively identified the target:
+`close` requires an explicit pane or tab target and intentionally has no focus or worktree fallback. For automation-created tabs, prefer the `tab.id` or `pane.id` returned by `create tab`. If the target has protected agent work or a long-running command, Prowl may ask for GUI confirmation. Use `--force` only after you have positively identified the target:
 
 ```bash
-prowl pane close --pane "$pane" --force --json
+prowl close "$pane" --force --json
 ```
 
 ## Parsing JSON Output
@@ -124,8 +124,8 @@ out="$(prowl send --pane "$pane" 'git status --short' --capture --timeout 30 --j
 printf '%s\n' "$out" | jq -r '.data.capture.text'
 printf '%s\n' "$out" | jq -r '.data.wait.exit_code'
 
-# tab create / open: new pane and tab ids
-created="$(prowl tab create --worktree "$worktree" --json)"
+# create tab / open: new pane and tab ids
+created="$(prowl create tab "$worktree" --json)"
 printf '%s\n' "$created" | jq -r '.data.target.pane.id'
 printf '%s\n' "$created" | jq -r '.data.target.tab.id'
 
@@ -144,7 +144,7 @@ Key fields by command (see `docs/components/cli.md` for the full contract):
 - `send` → `.data.input` (source/characters/bytes/trailing_enter_sent); `.data.wait.exit_code` and `.data.wait.duration_ms` when waiting; `.data.capture.text` / `.data.capture.line_count` / `.data.capture.truncated` when `--capture`.
 - `list` / `agents` → `.data.items[]` / `.data.agents[]`, each with `.pane.id`, `.tab.id`, and `.worktree.{id,name,path}`. Agent entries also include `.status`, `.raw_state`, and optional `.detection_reason`; list entries include `.task.status`.
 - `agents read` → `.data.agent` (current status/reason), `.data.blocker.text` when blocked, and `.data.result`. Only `.data.result.state == "complete"` carries `.data.result.text`; `pending`, `unavailable`, `missing`, `incomplete`, and `too_large` deliberately carry no partial text.
-- `tab create` / `open` → `.data.target.{pane,tab,worktree}`.
+- `create tab` / `open` → `.data.target.{pane,tab,worktree}`.
 
 ## Reading Agent Output
 
@@ -252,7 +252,7 @@ prowl agents read "$pane" --json
 
 When no agent is blocked, use the same pattern with `working`, `done`, or `idle` depending on the task. The JSON payload also includes `.project.name`, `.project.branch`, `.worktree.path`, `.tab.title`, and `.pane.focused`, so automation can filter by human project label while still targeting the concrete pane.
 
-`-t/--target` can auto-resolve pane UUID, tab UUID, or worktree id/name/path, but not short handles. Explicit `--pane <uuid>` is safer for automation; explicit `--pane <pN>` is useful for a same-session human or agent handoff.
+`-t/--target` and positional generic targets resolve `pN` as a pane, `tN` as a tab, then UUIDs and worktree references. A stale prefixed handle fails rather than falling back to a worktree of the same name. Explicit UUID `--pane` remains safest for automation.
 
 ## Argument Rules
 
@@ -288,7 +288,7 @@ Avoid outer double quotes around payloads containing `$PWD`, `$VAR`, backticks, 
 - Never omit `--pane` for `send`, `key`, `read`, or `focus` in automation.
 - Use `prowl agents --json` for discovery and `prowl agents read <pN|uuid> --json` for a supported agent's current semantic snapshot; use `prowl list --json` for all panes and worktree-level `task.status`.
 - `open /path` is a project/path navigation command. It may refocus an existing pane and is not a deterministic create command.
-- Use `tab create` when automation needs a fresh shell, and capture the returned `pane.id` before sending input.
+- Use `create tab` when automation needs a fresh shell, and capture the returned `pane.id` before sending input.
 - Focused pane is not stable; `open` and `focus` change it.
 - `read --wait-stable` sees rendered screen only. It cannot recover content folded by a TUI.
 - `read` returning fewer lines than `--last` requested is normally `truncated: false` — the pane simply has less history and you already have it all, so do not retry for more. `truncated: true` flags a possibly-incomplete result (the full scrollback could not be read).
@@ -354,4 +354,4 @@ Write the briefing from your current working knowledge — required sections are
 
 ## Command Set
 
-Current commands: `list`, `agents`, `agents read`, `read`, `send`, `key`, `focus`, `tab create`, `tab close`, `pane close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with explicit `tab close` / `pane close` targets.
+Current commands: `list`, `agents`, `agents read`, `read`, `send`, `key`, `focus`, `create tab`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close` target. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.

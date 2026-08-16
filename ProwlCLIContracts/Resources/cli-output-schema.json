@@ -1,0 +1,2032 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prowl.onev.cat/contracts/cli/v1/schema-bundle.json",
+  "title": "Prowl CLI Output Contract Schemas",
+  "description": "Versioned JSON schemas for every Prowl CLI wire response.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/openResponse"
+    },
+    {
+      "$ref": "#/$defs/listResponse"
+    },
+    {
+      "$ref": "#/$defs/agentsResponse"
+    },
+    {
+      "$ref": "#/$defs/agentsReadResponse"
+    },
+    {
+      "$ref": "#/$defs/focusResponse"
+    },
+    {
+      "$ref": "#/$defs/sendResponse"
+    },
+    {
+      "$ref": "#/$defs/keyResponse"
+    },
+    {
+      "$ref": "#/$defs/readResponse"
+    },
+    {
+      "$ref": "#/$defs/createResponse"
+    },
+    {
+      "$ref": "#/$defs/closeResponse"
+    },
+    {
+      "$ref": "#/$defs/tabResponse"
+    },
+    {
+      "$ref": "#/$defs/paneResponse"
+    },
+    {
+      "$ref": "#/$defs/handoffResponse"
+    }
+  ],
+  "$defs": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "root_path",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "git",
+            "plain",
+            "workspace"
+          ]
+        }
+      }
+    },
+    "tab": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "selected"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "cwd",
+        "focused"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focused": {
+          "type": "boolean"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "worktree",
+        "tab",
+        "pane"
+      ],
+      "properties": {
+        "worktree": {
+          "$ref": "#/$defs/worktree"
+        },
+        "tab": {
+          "$ref": "#/$defs/tab"
+        },
+        "pane": {
+          "$ref": "#/$defs/pane"
+        }
+      }
+    },
+    "lifecycleData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "target"
+      ],
+      "properties": {
+        "resource": {
+          "enum": [
+            "tab",
+            "pane"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        }
+      }
+    },
+    "tabData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "target"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "create",
+            "close"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        }
+      }
+    },
+    "paneData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "target"
+      ],
+      "properties": {
+        "action": {
+          "const": "close"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        }
+      }
+    },
+    "listTab": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "selected"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handle": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "boolean"
+        }
+      }
+    },
+    "listPane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "cwd",
+        "focused"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handle": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focused": {
+          "type": "boolean"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "listItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "worktree",
+        "tab",
+        "pane",
+        "task"
+      ],
+      "properties": {
+        "worktree": {
+          "$ref": "#/$defs/worktree"
+        },
+        "tab": {
+          "$ref": "#/$defs/listTab"
+        },
+        "pane": {
+          "$ref": "#/$defs/listPane"
+        },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "running",
+                    "idle"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "listData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "items"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/listItem"
+          }
+        }
+      }
+    },
+    "agentsSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "confidence",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "agentsPane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "index",
+        "title",
+        "cwd",
+        "focused"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handle": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string"
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focused": {
+          "type": "boolean"
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "name",
+        "status",
+        "raw_state",
+        "last_changed_at",
+        "project",
+        "worktree",
+        "tab",
+        "pane"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "blocked",
+            "working",
+            "done",
+            "idle"
+          ]
+        },
+        "raw_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detection_reason": {
+          "type": "string"
+        },
+        "last_changed_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "branch",
+            "path"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "worktree": {
+          "$ref": "#/$defs/worktree"
+        },
+        "tab": {
+          "$ref": "#/$defs/tab"
+        },
+        "pane": {
+          "$ref": "#/$defs/agentsPane"
+        },
+        "session": {
+          "$ref": "#/$defs/agentsSession"
+        }
+      }
+    },
+    "agentsData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "agents"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agent"
+          }
+        }
+      }
+    },
+    "agentReadSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "confidence",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "agentReadData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_mode",
+        "target",
+        "agent",
+        "result"
+      ],
+      "properties": {
+        "output_mode": {
+          "enum": [
+            "snapshot",
+            "result_only"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "status",
+            "raw_state",
+            "last_changed_at"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "blocked",
+                "working",
+                "done",
+                "idle"
+              ]
+            },
+            "raw_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "detection_reason": {
+              "type": "string"
+            },
+            "last_changed_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "session": {
+              "$ref": "#/$defs/agentReadSession"
+            }
+          }
+        },
+        "blocker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "complete",
+                "pending",
+                "unavailable",
+                "missing",
+                "incomplete",
+                "too_large"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      }
+    },
+    "focusData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "resolved_via",
+        "brought_to_front",
+        "target"
+      ],
+      "properties": {
+        "requested": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "selector",
+            "value"
+          ],
+          "properties": {
+            "selector": {
+              "enum": [
+                "worktree",
+                "tab",
+                "pane",
+                "auto",
+                "current"
+              ]
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "resolved_via": {
+          "enum": [
+            "worktree",
+            "tab",
+            "pane"
+          ]
+        },
+        "brought_to_front": {
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        }
+      }
+    },
+    "sendData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "input",
+        "created_tab"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "characters",
+            "bytes",
+            "trailing_enter_sent"
+          ],
+          "properties": {
+            "source": {
+              "enum": [
+                "argv",
+                "stdin"
+              ]
+            },
+            "characters": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "trailing_enter_sent": {
+              "type": "boolean"
+            }
+          }
+        },
+        "created_tab": {
+          "type": "boolean"
+        },
+        "wait": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "exit_code",
+                "duration_ms"
+              ],
+              "properties": {
+                "exit_code": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text",
+            "line_count",
+            "source",
+            "truncated"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "line_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "source": {
+              "const": "screen_diff"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "keyData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "key",
+        "delivery",
+        "target"
+      ],
+      "properties": {
+        "requested": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token",
+            "repeat"
+          ],
+          "properties": {
+            "token": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repeat": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "normalized",
+            "category"
+          ],
+          "properties": {
+            "normalized": {
+              "type": "string",
+              "minLength": 1
+            },
+            "category": {
+              "enum": [
+                "navigation",
+                "editing",
+                "control",
+                "shortcut",
+                "function"
+              ]
+            }
+          }
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempted",
+            "delivered",
+            "mode"
+          ],
+          "properties": {
+            "attempted": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "delivered": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "mode": {
+              "const": "keyDownUp"
+            }
+          }
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        }
+      }
+    },
+    "readData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "mode",
+        "source",
+        "truncated",
+        "line_count",
+        "text"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "mode": {
+          "enum": [
+            "snapshot",
+            "last"
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "screen",
+            "scrollback",
+            "mixed",
+            "detection"
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "line_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "stabilized": {
+          "type": "boolean"
+        },
+        "waited_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "handoffRepo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "branch",
+        "is_git",
+        "changed_file_count",
+        "insertions",
+        "deletions"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_git": {
+          "type": "boolean"
+        },
+        "changed_file_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "insertions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "handoffSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent",
+        "pane_id",
+        "pane_title",
+        "source",
+        "confidence",
+        "excerpt_path",
+        "transcript_path"
+      ],
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pane_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pane_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excerpt_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transcript_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "handoffPane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "worktree_id",
+        "worktree_name",
+        "tab_id",
+        "pane_id",
+        "pane_title"
+      ],
+      "properties": {
+        "worktree_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktree_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pane_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pane_title": {
+          "type": "string"
+        }
+      }
+    },
+    "handoffData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "artifact_path",
+        "repos",
+        "changed_file_count",
+        "has_briefing"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "save",
+            "to"
+          ]
+        },
+        "artifact_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outgoing_agent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to_agent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/handoffRepo"
+          }
+        },
+        "changed_file_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "archived_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_context": {
+          "$ref": "#/$defs/handoffSession"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "enum": [
+                "inline",
+                "fork",
+                "none",
+                "failed"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "has_briefing": {
+          "type": "boolean"
+        },
+        "launched_pane": {
+          "$ref": "#/$defs/handoffPane"
+        }
+      }
+    },
+    "openTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "worktree",
+        "tab",
+        "pane"
+      ],
+      "properties": {
+        "worktree": {
+          "$ref": "#/$defs/worktree"
+        },
+        "tab": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "title",
+            "cwd"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "pane": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "title",
+            "cwd"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "openData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocation",
+        "requested_path",
+        "resolved_path",
+        "resolution",
+        "app_launched",
+        "brought_to_front",
+        "created_tab",
+        "target"
+      ],
+      "properties": {
+        "invocation": {
+          "enum": [
+            "bare",
+            "implicit-open",
+            "open-subcommand"
+          ]
+        },
+        "requested_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolution": {
+          "enum": [
+            "no-argument",
+            "exact-root",
+            "inside-root",
+            "new-root"
+          ]
+        },
+        "app_launched": {
+          "type": "boolean"
+        },
+        "brought_to_front": {
+          "type": "boolean"
+        },
+        "created_tab": {
+          "type": "boolean"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/openTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "openResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "open"
+            },
+            "schema_version": {
+              "const": "prowl.cli.open.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/openData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "open"
+            },
+            "schema_version": {
+              "const": "prowl.cli.open.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "listResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "list"
+            },
+            "schema_version": {
+              "const": "prowl.cli.list.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/listData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "list"
+            },
+            "schema_version": {
+              "const": "prowl.cli.list.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentsData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsReadResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents.read"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.read.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentReadData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents.read"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.read.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "focusResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "focus"
+            },
+            "schema_version": {
+              "const": "prowl.cli.focus.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/focusData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "focus"
+            },
+            "schema_version": {
+              "const": "prowl.cli.focus.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "sendResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "send"
+            },
+            "schema_version": {
+              "const": "prowl.cli.send.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/sendData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "send"
+            },
+            "schema_version": {
+              "const": "prowl.cli.send.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "keyResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "key"
+            },
+            "schema_version": {
+              "const": "prowl.cli.key.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/keyData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "key"
+            },
+            "schema_version": {
+              "const": "prowl.cli.key.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "readResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "read"
+            },
+            "schema_version": {
+              "const": "prowl.cli.read.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/readData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "read"
+            },
+            "schema_version": {
+              "const": "prowl.cli.read.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "createResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "create"
+            },
+            "schema_version": {
+              "const": "prowl.cli.create.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/lifecycleData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "create"
+            },
+            "schema_version": {
+              "const": "prowl.cli.create.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "closeResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "close"
+            },
+            "schema_version": {
+              "const": "prowl.cli.close.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/lifecycleData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "close"
+            },
+            "schema_version": {
+              "const": "prowl.cli.close.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "tabResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "tab"
+            },
+            "schema_version": {
+              "const": "prowl.cli.tab.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/tabData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "tab"
+            },
+            "schema_version": {
+              "const": "prowl.cli.tab.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "paneResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "pane"
+            },
+            "schema_version": {
+              "const": "prowl.cli.pane.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/paneData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "pane"
+            },
+            "schema_version": {
+              "const": "prowl.cli.pane.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "handoffResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "handoff"
+            },
+            "schema_version": {
+              "const": "prowl.cli.handoff.v2"
+            },
+            "data": {
+              "$ref": "#/$defs/handoffData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "handoff"
+            },
+            "schema_version": {
+              "const": "prowl.cli.handoff.v2"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl read, prowl send, prowl key, prowl focus, prowl tab, prowl pane, prowl open, prowl handoff, pane id, agent, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -48,8 +48,8 @@ Most commands accept one selector (mutually exclusive):
   short handle shown in text output; bare `N` is accepted too.
 - `--worktree <id|name|path>` — a worktree (its selected/first tab → focused/first
   pane).
-- `-t, --target <value>` — auto-resolve: tries pane UUID, then tab UUID, then
-  worktree id/name/path.
+- `-t, --target <value>` — auto-resolve: `pN` as a pane, `tN` as a tab, then
+  pane UUID, tab UUID, or worktree id/name/path.
 - **No selector** → the *current* focus (focused worktree → selected tab → focused
   pane). Some commands (close) refuse this for safety.
 
@@ -58,10 +58,11 @@ Most commands accept one selector (mutually exclusive):
 
 Text `list` and `agents` output exposes short, type-prefixed handles such as
 `p7` and `t6`. They are valid only for the current app process, are globally
-monotonic, and are never reused after a tab or pane closes. Use them with an
-explicit `--pane` or `--tab`; `--target` and positional targets deliberately do
-not resolve handles because a bare number can be a worktree name. JSON always
-keeps the canonical UUID in `id`; do not cache either form across an app restart.
+monotonic, and are never reused after a tab or pane closes. They work in every
+generic target position (`read p7`, `focus t6`, `send p7 '…'`); bare numbers remain
+worktree references there. A stale prefixed handle fails rather than falling back to
+a same-named worktree. JSON keeps canonical UUIDs in `id`; do not cache handles
+across an app restart.
 
 > **Never target by tab title.** Titles are free-form and can lie. For scripts,
 > resolve a concrete UUID `pane.id` from `prowl list --json`; for an interactive
@@ -93,8 +94,8 @@ with the corresponding explicit selector:
 
 ```bash
 prowl list
-prowl read --pane p7 --last 120 --wait-stable
-prowl tab close --tab t6 --force
+prowl read p7 --last 120 --wait-stable
+prowl close t6 --force
 ```
 
 `task.status` is **running** when any pane in the worktree is busy — a terminal
@@ -268,32 +269,33 @@ prowl focus --pane "$pane" --json
 prowl focus --worktree MyApp --json
 ```
 
-### `prowl tab create`
-Create a new terminal tab (deterministic — unlike `open`).
-
-- `--path <dir>` — working directory (must be inside the worktree root).
-- Selectors choose the worktree (defaults to current).
+### `prowl create tab`
+Create a new terminal tab (deterministic — unlike `open`). A worktree is required,
+either positionally or with `--worktree`; `--path` must remain inside it.
 
 ```bash
-pane="$(prowl tab create --worktree "$wt" --json | jq -r '.data.target.pane.id')"
+pane="$(prowl create tab "$wt" --json | jq -r '.data.target.pane.id')"
 ```
 
-### `prowl tab close` / `prowl pane close`
-Close a tab or a pane. **Require an explicit selector** (`--tab`/`--pane`/
-`--worktree`/`--target`) — they intentionally do **not** default to the focused
-pane. If the target has protected agent work or a long-running command, Prowl may
-ask for GUI confirmation; `--force` skips it (use only after positively
-identifying the target).
+### `prowl close`
+Close one explicit tab or pane. The positional form uses a UUID, `pN`, or `tN`; the
+long forms are `--pane <uuid|pN|N>` and `--tab <uuid|tN|N>`. `close` rejects
+worktree targeting and has no focus fallback. Protected agent work or a long-running
+command may trigger GUI confirmation; `--force` skips it only after positive
+identification.
 
 ```bash
-prowl pane close --pane "$pane" --json
-prowl tab close --tab "$tab" --force --json
+prowl close "$pane" --json
+prowl close --tab "$tab" --force --json
 ```
+
+> `prowl tab create`, `prowl tab close`, and `prowl pane close` are deprecated
+> compatibility aliases. They warn on stderr and will be removed after one release.
 
 ### `prowl open [path]` (the default command)
 Navigate Prowl to a path (or bring it to front with no argument). It may focus an
 existing pane or create a tab — it is **not** a deterministic "new pane" command.
-For a guaranteed fresh shell, use `tab create`.
+For a guaranteed fresh shell, use `create tab`.
 
 ```bash
 prowl open ~/projects/app     # open/focus that project
@@ -409,7 +411,7 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `CAPTURE_UNSUPPORTED` | Target lacks OSC 133 — drop `--capture`, use `read --wait-stable`. |
 | `WAIT_TIMEOUT` | Command didn't finish in time — raise `--timeout` or use `--no-wait`. |
 | `UNSUPPORTED_KEY` / `INVALID_REPEAT` | Check `prowl key --help`. |
-| `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`tab create` path. |
+| `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path. |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
 | `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
 | `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
@@ -426,11 +428,11 @@ artifacts and terminal excerpts do not appear in `git status`.
 
 ```bash
 self_pane="$(prowl list --json | jq -r '.data.items[]|select(.pane.focused==true)|.pane.id')"
-pane="$(prowl tab create --worktree MyApp --json | jq -r '.data.target.pane.id')"
+pane="$(prowl create tab MyApp --json | jq -r '.data.target.pane.id')"
 test "$pane" != "$self_pane"
 prowl send --pane "$pane" 'swift build' --capture --timeout 300 --json
 prowl read --pane "$pane" --last 100 --wait-stable --json
-prowl pane close --pane "$pane" --json
+prowl close "$pane" --json
 ```
 
 ## Gotchas for agents (quick list)
@@ -442,6 +444,6 @@ prowl pane close --pane "$pane" --json
   when you need all panes, including ordinary shells.
 - `--capture` needs shell integration; otherwise `read --wait-stable` or file
   redirection.
-- `open` is navigation, not a guaranteed new pane — use `tab create`.
+- `open` is navigation, not a guaranteed new pane — use `create tab`.
 - In zsh, don't name a variable `status` (it's readonly).
 - Pass shell values into `jq` with `--arg`.
