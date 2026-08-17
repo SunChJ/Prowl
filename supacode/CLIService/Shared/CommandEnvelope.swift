@@ -22,6 +22,8 @@ public enum Command: Codable, Sendable {
   case send(SendInput)
   case key(KeyInput)
   case read(ReadInput)
+  case create(CreateInput)
+  case close(CloseInput)
   case tab(TabInput)
   case pane(PaneInput)
   case handoff(HandoffInput)
@@ -36,6 +38,8 @@ public enum Command: Codable, Sendable {
     case .send: "send"
     case .key: "key"
     case .read: "read"
+    case .create: "create"
+    case .close: "close"
     case .tab: "tab"
     case .pane: "pane"
     case .handoff: "handoff"

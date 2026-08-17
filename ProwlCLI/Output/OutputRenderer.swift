@@ -100,6 +100,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "create" || response.command == "close",
+         let data = response.data,
+         let payload = try? data.decode(as: LifecycleCommandPayload.self)
+      {
+        print(renderLifecycle(payload, command: response.command))
+        return
+      }
+
       if response.command == "tab",
          let data = response.data,
          let payload = try? data.decode(as: TabCommandPayload.self)
@@ -336,6 +344,23 @@ enum OutputRenderer {
       lines.append("  \("cwd:".dim) \(cwd)")
     }
     return lines.joined(separator: "\n")
+  }
+
+  private static func renderLifecycle(_ payload: LifecycleCommandPayload, command: String) -> String {
+    let wt = payload.target.worktree
+    let tab = payload.target.tab
+    let pane = payload.target.pane
+    let projectName = projectName(from: wt.path)
+    let verb = command == "create" ? "Created" : "Closed"
+
+    switch payload.resource {
+    case .tab:
+      return "\(verb) tab \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
+        + "  \(tab.id.dim)\n  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)"
+    case .pane:
+      return "\(verb) pane \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
+        + "  \(pane.id.dim)"
+    }
   }
 
   private static func renderHandoff(_ payload: HandoffCommandPayload) -> String {

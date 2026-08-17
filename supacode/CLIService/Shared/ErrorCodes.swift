@@ -49,6 +49,10 @@ public enum CLIErrorCode {
   // Read
   public static let readFailed = "READ_FAILED"
 
+  // Lifecycle
+  public static let createFailed = "CREATE_FAILED"
+  public static let closeFailed = "CLOSE_FAILED"
+
   // Tab
   public static let tabFailed = "TAB_FAILED"
 

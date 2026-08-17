@@ -200,6 +200,33 @@ public struct ReadInput: Codable, Sendable {
   }
 }
 
+public enum LifecycleResource: String, Codable, Sendable, Equatable {
+  case tab
+  case pane
+}
+
+public struct CreateInput: Codable, Sendable {
+  public let resource: LifecycleResource
+  public let selector: TargetSelector
+  public let path: String?
+
+  public init(resource: LifecycleResource, selector: TargetSelector, path: String? = nil) {
+    self.resource = resource
+    self.selector = selector
+    self.path = path
+  }
+}
+
+public struct CloseInput: Codable, Sendable {
+  public let selector: TargetSelector
+  public let force: Bool
+
+  public init(selector: TargetSelector, force: Bool = false) {
+    self.selector = selector
+    self.force = force
+  }
+}
+
 public enum TabAction: String, Codable, Sendable {
   case create
   case close
