@@ -56,10 +56,16 @@ steps and refuses a substitution it cannot fit:
 
 ```bash
 scripts/make-detection-fixture.py .local/agent-screen-captures/capture.json \
+  --agent claude \
   --redact "/Users/me=/Users/usr" \
   --redact "Acme Inc=<ORG_0000>" \
   > claude/2.1.226/idle/composer.txt
 ```
+
+`--agent` is required and selects the step 6 reduction: `claude` keeps the full active
+screen, and every other agent value takes the bounded 24-line tail. The flag mirrors
+`DetectedAgent.detectionScreenText(from:)` rather than reading the agent from the
+capture, because the capture does not record which detector will consume it.
 
 Each replacement is padded or trimmed in the spaces immediately following it, so every
 later column on the row — a closing box border, a second column of chrome — keeps its

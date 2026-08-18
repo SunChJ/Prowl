@@ -3,8 +3,15 @@
 
 Implements steps 3, 6, and 7 of the capture-and-promotion procedure in
 `supacodeTests/Fixtures/AgentScreenDetection/README.md`: it rejects a capture
-that is not detector-faithful, reduces the screen to the same tail the detector
-reads, and applies redactions without changing the visible width of any line.
+that is not detector-faithful, reduces the screen to the exact slice the
+detector reads for the given agent, and applies redactions without changing
+the visible width of any line.
+
+The reduction mirrors `DetectedAgent.detectionScreenText(from:)`: `claude`
+consumes the full active screen and is passed through untrimmed, while every
+other agent consumes the bounded 24-line tail. `--agent` selects between the
+two, and is required because the capture does not record which detector will
+consume it.
 
 Width matters. A fixture exists to pin how the classifier reads a real screen,
 and the agent CLIs wrap, shorten, and truncate their rows to the terminal width.
@@ -15,6 +22,7 @@ either preserves the line's visible width or is refused.
 Usage:
 
     scripts/make-detection-fixture.py capture.json \\
+        --agent claude \\
         --redact /Users/me=/Users/usr \\
         --redact 'Acme Inc=<ORG_0000>' \\
         > supacodeTests/Fixtures/AgentScreenDetection/claude/2.1.226/idle/composer.txt
@@ -61,6 +69,16 @@ def canonical_tail(content: str, limit: int = DETECTOR_TAIL_LIMIT) -> str:
             start = index
             break
     return "\n".join(lines[start:])
+
+
+def detection_screen_text(text: str, agent: str) -> str:
+    """Port of `DetectedAgent.detectionScreenText(from:)`.
+
+    `claude` consumes the full active screen; every other agent consumes the
+    bounded tail. The special case is deliberate on the Swift side: trimming a
+    Claude capture can delete the very row that reproduces a bug.
+    """
+    return text if agent == "claude" else canonical_tail(text)
 
 
 class FixtureError(Exception):
@@ -214,6 +232,14 @@ def main() -> int:
         "capture", help="JSON emitted by `prowl read --source detection --json`"
     )
     parser.add_argument(
+        "--agent",
+        required=True,
+        metavar="AGENT",
+        help="detector the fixture targets (the <runtime> path component, e.g. claude "
+        "or codex); claude keeps the full screen, every other agent takes the "
+        "bounded 24-line tail",
+    )
+    parser.add_argument(
         "--redact",
         action="append",
         default=[],
@@ -247,7 +273,8 @@ def main() -> int:
     # text back into the repository the redaction was protecting.
     applied: dict[str, int] = {}
     out_lines = []
-    for number, line in enumerate(canonical_tail(data["text"]).split("\n"), start=1):
+    reduced = detection_screen_text(data["text"], args.agent)
+    for number, line in enumerate(reduced.split("\n"), start=1):
         for old, new in args.redact:
             try:
                 replaced = substitute(line, old, new)

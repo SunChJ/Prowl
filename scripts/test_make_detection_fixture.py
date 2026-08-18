@@ -116,14 +116,38 @@ class MoneyMasking(unittest.TestCase):
         self.assertEqual(len(applied), 2)
 
 
+class Reduction(unittest.TestCase):
+    def test_claude_keeps_the_full_screen(self):
+        # Mirrors `DetectedAgent.detectionScreenText(from:)`: trimming a Claude
+        # capture can delete the very row that reproduces a bug.
+        text = "\n".join(f"line {index}" for index in range(40))
+        self.assertEqual(fixture.detection_screen_text(text, "claude"), text)
+
+    def test_other_agents_take_the_bounded_tail(self):
+        text = "\n".join(f"line {index}" for index in range(40))
+        reduced = fixture.detection_screen_text(text, "codex")
+        self.assertEqual(reduced.split("\n"), [f"line {index}" for index in range(16, 40)])
+
+    def test_blank_lines_do_not_count_toward_the_tail_budget(self):
+        rows = [f"line {index}" for index in range(30)]
+        rows.insert(28, "")
+        reduced = fixture.detection_screen_text("\n".join(rows), "codex")
+        self.assertEqual(len(reduced.split("\n")), 25)
+        self.assertIn("", reduced.split("\n"))
+
+    def test_short_screens_pass_through_for_every_agent(self):
+        text = "a\n\nb"
+        self.assertEqual(fixture.detection_screen_text(text, "codex"), text)
+
+
 class EndToEnd(unittest.TestCase):
-    def run_script(self, text, *args):
+    def run_script(self, text, *args, agent="claude"):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
             json.dump({"data": {"source": "detection", "text": text}}, handle)
             path = handle.name
         try:
             return subprocess.run(
-                [sys.executable, str(SCRIPT), path, *args],
+                [sys.executable, str(SCRIPT), path, "--agent", agent, *args],
                 capture_output=True,
                 text=True,
             )
@@ -156,13 +180,24 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("no width terminals agree on", result.stderr)
 
+    def test_agent_selects_the_reduction(self):
+        text = "\n".join(f"row {index}" for index in range(30))
+        full = self.run_script(text)
+        tail = self.run_script(text, agent="codex")
+        self.assertEqual(full.stdout, text)
+        self.assertEqual(tail.stdout, "\n".join(f"row {index}" for index in range(6, 30)))
+
     def test_viewport_capture_is_still_rejected(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
             json.dump({"data": {"source": "screen", "text": "x"}}, handle)
             path = handle.name
         try:
+            # `--agent` is passed so exit 2 comes from the source check, not
+            # from argparse rejecting a missing required flag with the same code.
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), path], capture_output=True, text=True
+                [sys.executable, str(SCRIPT), path, "--agent", "claude"],
+                capture_output=True,
+                text=True,
             )
         finally:
             pathlib.Path(path).unlink()
