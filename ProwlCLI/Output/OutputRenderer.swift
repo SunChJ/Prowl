@@ -68,6 +68,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "agents.read",
+         let data = response.data,
+         let payload = try? data.decode(as: AgentReadCommandPayload.self)
+      {
+        renderAgentsRead(payload)
+        return
+      }
+
       if response.command == "focus",
          let data = response.data,
          let payload = try? data.decode(as: FocusCommandPayload.self)
@@ -89,6 +97,14 @@ enum OutputRenderer {
          let payload = try? data.decode(as: ReadCommandPayload.self)
       {
         print(renderRead(payload))
+        return
+      }
+
+      if response.command == "create" || response.command == "close",
+         let data = response.data,
+         let payload = try? data.decode(as: LifecycleCommandPayload.self)
+      {
+        print(renderLifecycle(payload, command: response.command))
         return
       }
 
@@ -251,6 +267,49 @@ enum OutputRenderer {
     }.joined(separator: "\n")
   }
 
+  private static func renderAgentsRead(_ payload: AgentReadCommandPayload) {
+    if let data = agentReadResultOnlyData(payload) {
+      FileHandle.standardOutput.write(data)
+      return
+    }
+    print(agentReadSnapshotText(payload))
+  }
+
+  static func agentReadResultOnlyData(_ payload: AgentReadCommandPayload) -> Data? {
+    guard payload.outputMode == .resultOnly, let text = payload.result.text else { return nil }
+    return Data(text.utf8)
+  }
+
+  static func agentReadSnapshotText(_ payload: AgentReadCommandPayload) -> String {
+    var lines = [
+      "Agent: \(payload.agent.type)",
+      "Status: \(payload.agent.status.rawValue)",
+    ]
+    if let reason = payload.agent.detectionReason {
+      lines.append("Reason: \(reason)")
+    }
+    lines.append("Changed: \(payload.agent.lastChangedAt)")
+
+    let result = payload.result
+    if let error = result.error {
+      lines.append("Result: \(result.state.rawValue) (\(error.code))")
+    } else {
+      lines.append("Result: \(result.state.rawValue)")
+    }
+
+    if let blocker = payload.blocker {
+      lines.append("")
+      lines.append("## Blocker")
+      lines.append(blocker.text)
+    }
+    if let text = result.text {
+      lines.append("")
+      lines.append("## Latest result")
+      lines.append(text)
+    }
+    return lines.joined(separator: "\n")
+  }
+
   private static func agentStatusLabel(_ status: AgentsCommandStatus) -> String {
     switch status {
     case .blocked:
@@ -285,6 +344,23 @@ enum OutputRenderer {
       lines.append("  \("cwd:".dim) \(cwd)")
     }
     return lines.joined(separator: "\n")
+  }
+
+  private static func renderLifecycle(_ payload: LifecycleCommandPayload, command: String) -> String {
+    let wt = payload.target.worktree
+    let tab = payload.target.tab
+    let pane = payload.target.pane
+    let projectName = projectName(from: wt.path)
+    let verb = command == "create" ? "Created" : "Closed"
+
+    switch payload.resource {
+    case .tab:
+      return "\(verb) tab \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
+        + "  \(tab.id.dim)\n  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)"
+    case .pane:
+      return "\(verb) pane \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
+        + "  \(pane.id.dim)"
+    }
   }
 
   private static func renderHandoff(_ payload: HandoffCommandPayload) -> String {

@@ -1,0 +1,106 @@
+import Foundation
+import Testing
+
+@testable import supacode
+
+@MainActor
+struct CLILifecycleCommandHandlerTests {
+  @Test func createTabResolvesWorktreeCreatesTabAndReturnsCreatePayload() async throws {
+    let base = makeTarget(tabID: "base-tab", paneID: "base-pane")
+    let created = makeTarget(tabID: "created-tab", paneID: "created-pane")
+    var resolvedSelector: TargetSelector?
+    var createPath: String?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { selector in
+        resolvedSelector = selector
+        return .success(base)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: base)) },
+      createTab: { _, path in
+        createPath = path
+        return created
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(CreateInput(resource: .tab, selector: .worktree("App"), path: "/Projects/App"))
+      )
+    )
+
+    #expect(response.ok)
+    #expect(response.command == "create")
+    #expect(response.schemaVersion == "prowl.cli.create.v1")
+    #expect(resolvedSelector == .worktree("App"))
+    #expect(createPath == "/Projects/App")
+    let data = try #require(response.data)
+    let payload = try data.decode(as: LifecycleCommandPayload.self)
+    #expect(payload.resource == .tab)
+    #expect(payload.target.tab.id == "created-tab")
+  }
+
+  @Test func closeUsesResolvedResourceAndReturnsClosePayload() async throws {
+    let target = makeTarget(tabID: "tab-to-close", paneID: "pane-to-close")
+    var closedPane: TabResolvedTarget?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { selector in
+        #expect(selector == .auto("p12"))
+        return .success(LifecycleResolvedTarget(resource: .pane, target: target))
+      },
+      createTab: { _, _ in nil },
+      closeTab: { _, _ in false },
+      closePane: { target, force in
+        #expect(force)
+        closedPane = target
+        return true
+      }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(output: .json, command: .close(CloseInput(selector: .auto("p12"), force: true)))
+    )
+
+    #expect(response.ok)
+    #expect(response.command == "close")
+    #expect(response.schemaVersion == "prowl.cli.close.v1")
+    #expect(closedPane == target)
+    let data = try #require(response.data)
+    let payload = try data.decode(as: LifecycleCommandPayload.self)
+    #expect(payload.resource == .pane)
+    #expect(payload.target.pane.id == "pane-to-close")
+  }
+
+  private func makeTarget(
+    worktreeID: String = "App:/Projects/App",
+    worktreeName: String = "App",
+    worktreePath: String = "/Projects/App",
+    worktreeRootPath: String = "/Projects/App",
+    worktreeKind: String = "git",
+    tabID: String = "tab-1",
+    tabTitle: String = "App 1",
+    tabSelected: Bool = true,
+    paneID: String = "pane-1",
+    paneTitle: String = "zsh",
+    paneCWD: String? = "/Projects/App",
+    paneFocused: Bool = true
+  ) -> TabResolvedTarget {
+    TabResolvedTarget(
+      worktreeID: worktreeID,
+      worktreeName: worktreeName,
+      worktreePath: worktreePath,
+      worktreeRootPath: worktreeRootPath,
+      worktreeKind: worktreeKind,
+      tabID: tabID,
+      tabTitle: tabTitle,
+      tabSelected: tabSelected,
+      paneID: paneID,
+      paneTitle: paneTitle,
+      paneCWD: paneCWD,
+      paneFocused: paneFocused
+    )
+  }
+}

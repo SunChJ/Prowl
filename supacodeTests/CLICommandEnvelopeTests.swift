@@ -71,6 +71,23 @@ struct CLICommandEnvelopeTests {
     }
   }
 
+  @Test func envelopeAgentsReadRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .text,
+      command: .agentsRead(AgentReadInput(pane: "p7", maxBytes: 1_024, resultOnly: true))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+
+    if case .agentsRead(let input) = decoded.command {
+      #expect(input.pane == "p7")
+      #expect(input.maxBytes == 1_024)
+      #expect(input.resultOnly)
+    } else {
+      Issue.record("Expected .agentsRead command")
+    }
+  }
+
   @Test func envelopeSendWithSelectorRoundTrips() throws {
     let envelope = CommandEnvelope(
       output: .json,
@@ -247,6 +264,7 @@ struct CLICommandEnvelopeTests {
       (.open(OpenInput(path: nil)), "open"),
       (.list(ListInput()), "list"),
       (.agents(AgentsInput()), "agents"),
+      (.agentsRead(AgentReadInput(pane: "p7")), "agents.read"),
       (.focus(FocusInput()), "focus"),
       (.send(SendInput(text: "x")), "send"),
       (.key(KeyInput(rawToken: "tab", token: "tab")), "key"),
@@ -266,6 +284,7 @@ struct CLICommandEnvelopeTests {
       .open(OpenInput(path: "/tmp")),
       .list(ListInput()),
       .agents(AgentsInput()),
+      .agentsRead(AgentReadInput(pane: "p7")),
       .focus(FocusInput()),
       .send(SendInput(text: "test")),
       .key(KeyInput(rawToken: "enter", token: "enter")),

@@ -30,6 +30,27 @@ public struct AgentsInput: Codable, Sendable {
   public init() {}
 }
 
+public struct AgentReadInput: Codable, Sendable {
+  public static let defaultMaxBytes = 1_024 * 1_024
+  public static let maximumMaxBytes = 4 * 1_024 * 1_024
+
+  public let pane: String
+  public let maxBytes: Int
+  public let resultOnly: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case pane
+    case maxBytes = "max_bytes"
+    case resultOnly = "result_only"
+  }
+
+  public init(pane: String, maxBytes: Int = Self.defaultMaxBytes, resultOnly: Bool = false) {
+    self.pane = pane
+    self.maxBytes = maxBytes
+    self.resultOnly = resultOnly
+  }
+}
+
 public struct FocusInput: Codable, Sendable {
   public let selector: TargetSelector
 
@@ -176,6 +197,33 @@ public struct ReadInput: Codable, Sendable {
     try container.encodeIfPresent(stableIntervalMs, forKey: .stableIntervalMs)
     try container.encodeIfPresent(stablePeriodMs, forKey: .stablePeriodMs)
     try container.encodeIfPresent(waitTimeoutSeconds, forKey: .waitTimeoutSeconds)
+  }
+}
+
+public enum LifecycleResource: String, Codable, Sendable, Equatable {
+  case tab
+  case pane
+}
+
+public struct CreateInput: Codable, Sendable {
+  public let resource: LifecycleResource
+  public let selector: TargetSelector
+  public let path: String?
+
+  public init(resource: LifecycleResource, selector: TargetSelector, path: String? = nil) {
+    self.resource = resource
+    self.selector = selector
+    self.path = path
+  }
+}
+
+public struct CloseInput: Codable, Sendable {
+  public let selector: TargetSelector
+  public let force: Bool
+
+  public init(selector: TargetSelector, force: Bool = false) {
+    self.selector = selector
+    self.force = force
   }
 }
 

@@ -17,6 +17,9 @@ struct SupacodeAppCLITests {
     let agentsResponse = await router.route(
       CommandEnvelope(output: .json, command: .agents(AgentsInput()))
     )
+    let agentReadResponse = await router.route(
+      CommandEnvelope(output: .json, command: .agentsRead(AgentReadInput(pane: "p7")))
+    )
     let keyResponse = await router.route(
       CommandEnvelope(output: .json, command: .key(KeyInput(rawToken: "enter", token: "enter")))
     )
@@ -25,9 +28,11 @@ struct SupacodeAppCLITests {
     )
 
     #expect(agentsResponse.command == "agents")
+    #expect(agentReadResponse.command == "agents.read")
     #expect(keyResponse.command == "key")
     #expect(readResponse.command == "read")
     #expect(agentsResponse.error?.code != "NOT_IMPLEMENTED")
+    #expect(agentReadResponse.error?.code != "NOT_IMPLEMENTED")
     #expect(keyResponse.error?.code != "NOT_IMPLEMENTED")
     #expect(readResponse.error?.code != "NOT_IMPLEMENTED")
   }

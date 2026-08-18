@@ -8,10 +8,13 @@ final class CLICommandRouter {
   private let openHandler: any CommandHandler
   private let listHandler: any CommandHandler
   private let agentsHandler: any CommandHandler
+  private let agentsReadHandler: any CommandHandler
   private let focusHandler: any CommandHandler
   private let sendHandler: any CommandHandler
   private let keyHandler: any CommandHandler
   private let readHandler: any CommandHandler
+  private let createHandler: any CommandHandler
+  private let closeHandler: any CommandHandler
   private let tabHandler: any CommandHandler
   private let paneHandler: any CommandHandler
   private let handoffHandler: any CommandHandler
@@ -20,10 +23,13 @@ final class CLICommandRouter {
     openHandler: any CommandHandler = StubCommandHandler(command: "open"),
     listHandler: any CommandHandler = StubCommandHandler(command: "list"),
     agentsHandler: any CommandHandler = StubCommandHandler(command: "agents"),
+    agentsReadHandler: any CommandHandler = StubCommandHandler(command: "agents.read"),
     focusHandler: any CommandHandler = StubCommandHandler(command: "focus"),
     sendHandler: any CommandHandler = StubCommandHandler(command: "send"),
     keyHandler: any CommandHandler = StubCommandHandler(command: "key"),
     readHandler: any CommandHandler = StubCommandHandler(command: "read"),
+    createHandler: any CommandHandler = StubCommandHandler(command: "create"),
+    closeHandler: any CommandHandler = StubCommandHandler(command: "close"),
     tabHandler: any CommandHandler = StubCommandHandler(command: "tab"),
     paneHandler: any CommandHandler = StubCommandHandler(command: "pane"),
     handoffHandler: any CommandHandler = StubCommandHandler(command: "handoff")
@@ -31,10 +37,13 @@ final class CLICommandRouter {
     self.openHandler = openHandler
     self.listHandler = listHandler
     self.agentsHandler = agentsHandler
+    self.agentsReadHandler = agentsReadHandler
     self.focusHandler = focusHandler
     self.sendHandler = sendHandler
     self.keyHandler = keyHandler
     self.readHandler = readHandler
+    self.createHandler = createHandler
+    self.closeHandler = closeHandler
     self.tabHandler = tabHandler
     self.paneHandler = paneHandler
     self.handoffHandler = handoffHandler
@@ -49,10 +58,13 @@ final class CLICommandRouter {
     case .open: handler = openHandler
     case .list: handler = listHandler
     case .agents: handler = agentsHandler
+    case .agentsRead: handler = agentsReadHandler
     case .focus: handler = focusHandler
     case .send: handler = sendHandler
     case .key: handler = keyHandler
     case .read: handler = readHandler
+    case .create: handler = createHandler
+    case .close: handler = closeHandler
     case .tab: handler = tabHandler
     case .pane: handler = paneHandler
     case .handoff: handler = handoffHandler

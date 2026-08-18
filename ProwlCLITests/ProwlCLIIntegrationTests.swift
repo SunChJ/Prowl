@@ -4,6 +4,8 @@ import Darwin
 import Glibc
 #endif
 import Foundation
+import JSONSchema
+import ProwlCLIContracts
 import ProwlCLIShared
 import XCTest
 
@@ -37,6 +39,18 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let help = try runProwl(args: ["--help"])
     XCTAssertEqual(help.exitCode, 0)
     XCTAssertTrue(help.stdout.contains("USAGE:"))
+    XCTAssertTrue(help.stdout.contains("create"))
+    XCTAssertTrue(help.stdout.contains("close"))
+  }
+
+  func testLegacyLifecycleHelpIsMarkedDeprecated() throws {
+    let tabHelp = try runProwl(args: ["tab", "--help"])
+    XCTAssertEqual(tabHelp.exitCode, 0)
+    XCTAssertTrue(tabHelp.stdout.contains("[Deprecated]"))
+
+    let paneHelp = try runProwl(args: ["pane", "--help"])
+    XCTAssertEqual(paneHelp.exitCode, 0)
+    XCTAssertTrue(paneHelp.stdout.contains("[Deprecated]"))
   }
 
   func testListReturnsAppNotRunningWhenSocketUnavailable() throws {
@@ -327,6 +341,172 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       XCTAssertEqual(input.selector, .none)
     } else {
       XCTFail("Expected focus command envelope")
+    }
+  }
+
+  func testReadPositionalPrefixedPaneHandleRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "read-pane-handle")
+    let response = CommandResponse(
+      ok: true,
+      command: "read",
+      schemaVersion: "prowl.cli.read.v1"
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["read", "p12", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .read(let input) = envelope.command {
+      XCTAssertEqual(input.selector, .auto("p12"))
+    } else {
+      XCTFail("Expected read command envelope")
+    }
+  }
+
+  func testCreateTabCommandRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "create-tab")
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .tab))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "tab", "App", "--path", "/Projects/App", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .create(let input) = envelope.command {
+      XCTAssertEqual(input.resource, .tab)
+      XCTAssertEqual(input.selector, .worktree("App"))
+      XCTAssertEqual(input.path, "/Projects/App")
+    } else {
+      XCTFail("Expected create command envelope")
+    }
+  }
+
+  func testCloseCommandRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "close-pane")
+    let response = try CommandResponse(
+      ok: true,
+      command: "close",
+      schemaVersion: "prowl.cli.close.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .pane))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["close", "p12", "--force", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .close(let input) = envelope.command {
+      XCTAssertEqual(input.selector, .auto("p12"))
+      XCTAssertTrue(input.force)
+    } else {
+      XCTFail("Expected close command envelope")
+    }
+  }
+
+  func testCloseAcceptsTypedTabSelector() throws {
+    let socketPath = temporarySocketPath(suffix: "close-tab")
+    let response = try CommandResponse(
+      ok: true,
+      command: "close",
+      schemaVersion: "prowl.cli.close.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .tab))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["close", "--tab", "t6", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .close(let input) = envelope.command {
+      XCTAssertEqual(input.selector, .tab("t6"))
+    } else {
+      XCTFail("Expected close command envelope")
+    }
+  }
+
+  func testCloseRejectsMissingTargetBeforeTransport() throws {
+    let result = try runProwl(args: ["close", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    XCTAssertEqual(payload["command"] as? String, "close")
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testCloseRejectsWorktreeBeforeTransport() throws {
+    let result = try runProwl(args: ["close", "App", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    XCTAssertEqual(payload["command"] as? String, "close")
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testCloseRejectsWorktreeSelectorBeforeTransport() throws {
+    let result = try runProwl(args: ["close", "--worktree", "App", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    XCTAssertEqual(payload["command"] as? String, "close")
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testCreateTabRejectsPaneSelectorBeforeTransport() throws {
+    let result = try runProwl(args: ["create", "tab", "--pane", "p12", "--json"])
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let payload = try jsonObject(from: result.stdout)
+    XCTAssertEqual(payload["ok"] as? Bool, false)
+    XCTAssertEqual(payload["command"] as? String, "create")
+    let error = try XCTUnwrap(payload["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.invalidArgument)
+  }
+
+  func testDeprecatedTabCreateWarnsWithoutChangingLegacyEnvelope() throws {
+    let socketPath = temporarySocketPath(suffix: "deprecated-tab-create")
+    let response = CommandResponse(
+      ok: true,
+      command: "tab",
+      schemaVersion: "prowl.cli.tab.v1"
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["tab", "create", "--worktree", "App", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stderr.contains("deprecated"))
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .tab = envelope.command {
+      // Expected legacy transport contract during the deprecation window.
+    } else {
+      XCTFail("Expected tab command envelope")
     }
   }
 
@@ -1992,6 +2172,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     responseData: Data,
     args: [String]
   ) throws -> (Data, CommandResult) {
+    try assertResponseMatchesSchema(responseData)
     let server = try MockSocketServer(socketPath: socketPath, responseData: responseData)
     defer { server.stop() }
     try server.start()
@@ -2003,6 +2184,24 @@ final class ProwlCLIIntegrationTests: XCTestCase {
 
     let requestData = try XCTUnwrap(server.waitForRequest(timeout: 2.0), "No request received by mock server")
     return (requestData, result)
+  }
+
+  private func assertResponseMatchesSchema(_ responseData: Data) throws {
+    let response = try JSONDecoder().decode(CommandResponse.self, from: responseData)
+    guard response.data != nil || response.ok == false else { return }
+
+    let schemaText = try XCTUnwrap(String(data: ProwlCLIContractBundle.schemaData, encoding: .utf8))
+    let responseText = try XCTUnwrap(String(data: responseData, encoding: .utf8))
+    let schema = try Schema(instance: schemaText)
+    let result = try schema.validate(instance: responseText)
+    XCTAssertTrue(
+      result.isValid,
+      "Socket response violates JSON Schema for \(response.command) \(response.schemaVersion)."
+    )
+  }
+
+  private func makeLifecyclePayload(resource: LifecycleResource) -> LifecycleCommandPayload {
+    LifecycleCommandPayload(resource: resource, target: makeTabTarget())
   }
 
   private func makeTabPayload(action: TabAction) -> TabCommandPayload {
@@ -2197,9 +2396,43 @@ private struct OpenResponseData: Encodable {
     case resolution
     case appLaunched = "app_launched"
     case broughtToFront = "brought_to_front"
+    case createdTab = "created_tab"
+    case target
   }
 
   let broughtToFront: Bool
+  let createdTab = false
+  let target: OpenResponseTarget? = nil
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(invocation, forKey: .invocation)
+    try container.encode(requestedPath, forKey: .requestedPath)
+    try container.encode(resolvedPath, forKey: .resolvedPath)
+    try container.encode(resolution, forKey: .resolution)
+    try container.encode(appLaunched, forKey: .appLaunched)
+    try container.encode(broughtToFront, forKey: .broughtToFront)
+    try container.encode(createdTab, forKey: .createdTab)
+    try container.encode(target, forKey: .target)
+  }
+}
+
+private struct OpenResponseTarget: Encodable {
+  let worktree: ListWorktree
+  let tab: OpenResponseTab
+  let pane: OpenResponsePane
+}
+
+private struct OpenResponseTab: Encodable {
+  let id: String
+  let title: String
+  let cwd: String?
+}
+
+private struct OpenResponsePane: Encodable {
+  let id: String
+  let title: String
+  let cwd: String?
 }
 
 
@@ -2252,13 +2485,22 @@ private struct ListPane: Encodable {
   let title: String
   let cwd: String?
   let focused: Bool
+  let agent: String?
 
-  init(id: String, handle: Int? = nil, title: String, cwd: String?, focused: Bool) {
+  init(
+    id: String,
+    handle: Int? = nil,
+    title: String,
+    cwd: String?,
+    focused: Bool,
+    agent: String? = nil
+  ) {
     self.id = id
     self.handle = handle
     self.title = title
     self.cwd = cwd
     self.focused = focused
+    self.agent = agent
   }
 }
 

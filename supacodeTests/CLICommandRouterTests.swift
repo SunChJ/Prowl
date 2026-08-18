@@ -68,6 +68,18 @@ struct CLICommandRouterTests {
   }
 
   @MainActor
+  @Test func routerDispatchesAgentsReadToAgentsReadHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .agentsRead(AgentReadInput(pane: "p7"))
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "agents.read")
+    #expect(response.error?.code == "NOT_IMPLEMENTED")
+  }
+
+  @MainActor
   @Test func routerDispatchesKeyToKeyHandler() async {
     let router = CLICommandRouter()
     let envelope = CommandEnvelope(
@@ -137,6 +149,7 @@ struct CLICommandRouterTests {
       .open(OpenInput()),
       .list(ListInput()),
       .agents(AgentsInput()),
+      .agentsRead(AgentReadInput(pane: "p7")),
       .focus(FocusInput()),
       .send(SendInput(text: "x")),
       .key(KeyInput(rawToken: "tab", token: "tab")),

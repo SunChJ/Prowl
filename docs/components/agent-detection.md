@@ -33,11 +33,17 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
 1. **Process probe.** Prowl reads the pane's foreground process group and matches
    process names / argv against known agent executables, scoring argv[0] highest,
    then process name, then command-line tokens.
-2. **Screen heuristics.** It starts from the last ~24 non-blank lines, then selects
+2. **Screen heuristics.** Claude detection consumes the full active screen (bounded
+   by the terminal height); every other agent starts from the last ~24 non-blank
+   lines as a guard against transcript history. The classifier then selects
    agent-specific live UI regions rather than treating every transcript line as current
    state. Structured confirmation/permission chrome is **Blocked**; status rows and
-   spinners are **Working**. Claude working rows are scoped to the lines immediately above
-   its prompt box, while confirmation text is consulted only around a current numbered
+   spinners are **Working**. Claude working rows come from a live status block walked
+   bottom-up from its prompt box by row shape — the spinner or `●` status row, `⎿`
+   attachments such as todo lists and tips, queued `❯` messages, and right-aligned
+   chrome — stopping at the first transcript-shaped row, so a long todo list cannot
+   push the live row out of view and a status row quoted inside a `⏺` block cannot
+   read as live. Confirmation text is consulted only around a current numbered
    selection row such as `❯ 1. Yes`; a bare input prompt cuts off the preceding transcript.
    Codex uses an exact bottom-of-screen `•`/`◦ Working (... esc to interrupt)` footer
    fallback. Its confirmation detector requires a numbered selected row such as `› 1. Yes`
@@ -48,10 +54,18 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    Other agent families keep their own patterns (including Oh My Pi's
    `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
    hexagons, Kimi's moon phases, etc.).
-   For Claude, a running **background workflow** keeps a status line *below* the
-   input box (e.g. `3/5 agents done · 7m 29s · ↓ 288.5k tokens`) after the turn has
-   ended; Prowl reads that footer as **Working**, so a churning workflow isn't
-   mistaken for idle.
+   Claude's live status row (`● <label>… (<elapsed> · …)`) accepts a multi-word
+   label and a compound elapsed segment such as `28m 34s` or `1h 4m 2s`, so a turn
+   keeps reporting **Working** after it passes a minute.
+   For Claude, **background agents** end the main turn while they run, leaving
+   `✻ Waiting for 1 background agent to finish` above the input box — a spinner
+   glyph with no ellipsis, which the spinner pattern alone rejects. Prowl reads
+   that wait row as **Working**, along with the older background-workflow footer
+   (`3/5 agents done · 7m 29s · ↓ 288.5k tokens`) below the box.
+   The agent switcher block below the box (`⏺ main` plus one `◯` row per agent) is
+   deliberately *not* read as activity: a subagent that returns control while it
+   still awaits collection keeps its row with the elapsed frozen, so the rows
+   cannot distinguish running work from finished work on a single frame.
 
 For diagnostics and sanitized regression captures, `prowl read --source detection`
 returns the exact active-screen buffer used by stage 2. It is explicitly requested
@@ -81,12 +95,12 @@ showing their chrome keep the last trusted state instead of forcing idle.
 
 **Display states** (what you see):
 
-| Display | Derived from | Meaning |
-|---------|--------------|---------|
-| **Working** | raw `working` | actively processing |
-| **Blocked** | raw `blocked` | waiting for the user (a prompt) |
-| **Done** | raw `idle` + **unseen** | just finished; you haven't looked yet |
-| **Idle** | raw `idle` + **seen** | nothing running |
+| Display     | Derived from            | Meaning                               |
+| ----------- | ----------------------- | ------------------------------------- |
+| **Working** | raw `working`           | actively processing                   |
+| **Blocked** | raw `blocked`           | waiting for the user (a prompt)       |
+| **Done**    | raw `idle` + **unseen** | just finished; you haven't looked yet |
+| **Idle**    | raw `idle` + **seen**   | nothing running                       |
 
 A **Done** pane becomes **Idle** the moment you focus it.
 
@@ -116,11 +130,11 @@ The sidebar worktree row spinner and `prowl list`'s `task.status` report
 
 - a terminal command reports progress (OSC 9;4 / ConEmu-style, e.g. a long shell
   command), **or**
-- a detected agent is **Working** or **Blocked** — including Claude running a
-  background **workflow**, detected from its below-prompt `… agents done …` status
-  line even while the input box looks idle.
+- a detected agent is **Working** or **Blocked** — including Claude waiting on
+  **background agents**, detected from the `✻ Waiting for … background agent …`
+  row even while the input box looks idle.
 
-It's a single coarse running/idle bit (it can't distinguish a background workflow
+It's a single coarse running/idle bit (it can't distinguish background agents
 from a long command). For the agent's finer state use the
 [Active Agents panel](active-agents.md) or [`prowl agents`](cli.md). Expect up to
 ~2 s before it lights on a warm pane, and the ~3 s working-hold before it clears.

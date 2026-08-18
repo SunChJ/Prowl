@@ -19,6 +19,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+    .package(url: "https://github.com/ajevans99/swift-json-schema", from: "0.13.1"),
     .package(url: "https://github.com/onevcat/Rainbow", from: "4.0.0"),
   ],
   targets: [
@@ -35,11 +36,18 @@ let package = Package(
       ],
       path: "ProwlCLI"
     ),
+    .target(
+      name: "ProwlCLIContracts",
+      path: "ProwlCLIContracts",
+      resources: [.process("Resources")]
+    ),
     .testTarget(
       name: "ProwlCLITests",
       dependencies: [
+        "ProwlCLIContracts",
         "ProwlCLIShared",
         "prowl",
+        .product(name: "JSONSchema", package: "swift-json-schema"),
       ],
       path: "ProwlCLITests"
     ),
