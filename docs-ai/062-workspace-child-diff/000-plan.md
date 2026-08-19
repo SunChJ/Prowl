@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | Planned |
+| **Status** | Implemented |
 | **Anchor date** | 2026-08-19 |
-| **Primary PRs** | (fill in as they merge) |
+| **Primary PRs** | #704 |
 | **Related** | [042-project-workspaces](../042-project-workspaces/000-plan.md), `docs/` diff & workspace pages, issue #616 |
 
 ## Background
