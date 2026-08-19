@@ -541,8 +541,8 @@ struct RepositoriesFeature {
     case selectedWorktreeChanged(Worktree?)
     case repositoriesChanged(IdentifiedArrayOf<Repository>)
     case openRepositorySettings(Repository.ID)
-    case showDiff(Worktree.ID)
-    case showOutgoingChanges(Worktree.ID)
+    case showDiff(DiffTargetID)
+    case showOutgoingChanges(DiffTargetID)
     case worktreeCreated(Worktree)
   }
 

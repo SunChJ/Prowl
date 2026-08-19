@@ -280,8 +280,15 @@ struct SupacodeApp: App {
     storeBox: SupacodeAppStoreBox
   ) -> OutgoingChangesClient {
     .live(
-      pullRequestInfo: { worktreeID in
-        storeBox.store?.withState { $0.repositories.worktreeInfo(for: worktreeID)?.pullRequest } ?? nil
+      pullRequestInfo: { targetID in
+        storeBox.store?.withState { state in
+          switch targetID {
+          case .worktree(let worktreeID):
+            state.repositories.worktreeInfo(for: worktreeID)?.pullRequest
+          case .workspaceChild(let childID):
+            state.repositories.workspaceChildInfoByID[childID]?.pullRequest
+          }
+        } ?? nil
       }
     )
   }

@@ -363,14 +363,14 @@ struct AppFeature {
         let selection = SettingsSection.repository(repositoryID)
         return openSettingsEffect(selecting: selection)
 
-      case .repositories(.delegate(.showDiff(let worktreeID))):
-        guard let worktree = state.repositories.worktree(for: worktreeID) else {
+      case .repositories(.delegate(.showDiff(let targetID))):
+        guard let target = state.repositories.diffTarget(for: targetID) else {
           return .none
         }
-        return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
+        return openDiffEffect(target: target, resolvedKeybindings: state.resolvedKeybindings)
 
-      case .repositories(.delegate(.showOutgoingChanges(let worktreeID))):
-        return openOutgoingChangesEffect(worktreeID: worktreeID, state: state)
+      case .repositories(.delegate(.showOutgoingChanges(let targetID))):
+        return openOutgoingChangesEffect(targetID: targetID, state: state)
 
       case .settings(.setSelection(let selection)):
         let resolvedSelection = selection ?? .general

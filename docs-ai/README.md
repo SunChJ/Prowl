@@ -113,3 +113,4 @@ agent-facing manual for that).
 | 059 | [agent-transcript-snapshots](059-agent-transcript-snapshots/000-plan.md) | 2026-08-11 | Immediate Codex/Claude agent snapshots with trustworthy transcript results and actionable blocker text |
 | 060 | [prowl-cli-targeting-and-contract-governance](060-prowl-cli-targeting-and-contract-governance/000-plan.md) | 2026-08-16 | Unified target grammar, CLI contract rebaseline, and durable documentation governance |
 | 061 | [native-toolbar-controls](061-native-toolbar-controls/000-plan.md) | 2026-08-17 | Native macOS toolbar grouping, Liquid Glass ownership, and review standards |
+| 062 | [workspace-child-diff](062-workspace-child-diff/000-plan.md) | 2026-08-19 | Per-repository diff for workspace children via unified DiffTarget routing |

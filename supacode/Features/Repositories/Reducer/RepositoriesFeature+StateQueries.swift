@@ -228,6 +228,44 @@ extension RepositoriesFeature.State {
     }
   }
 
+  /// Resolves a diff entry-point reference to a concrete request. Worktrees
+  /// diff their own directory and host Hunk themselves; workspace children
+  /// diff the child repository while hosting Hunk in the workspace's terminal
+  /// with the child directory as cwd. Child branch falls back live branch →
+  /// metadata branch → repository name.
+  func diffTarget(for id: DiffTargetID) -> DiffTarget? {
+    switch id {
+    case .worktree(let worktreeID):
+      return worktree(for: worktreeID).map(DiffTarget.init(worktree:))
+    case .workspaceChild(let childID):
+      guard let child = allResolvedWorkspaceChildren().first(where: { $0.id == childID }),
+        let workspaceRepository = repositories[id: child.workspaceID]
+      else {
+        return nil
+      }
+      return DiffTarget(
+        id: id,
+        workingDirectory: child.workingDirectory,
+        branchName: workspaceChildBranchByID[child.id] ?? child.metadataBranch ?? child.repositoryName,
+        repositoryRootURL: child.workingDirectory,
+        terminalHost: Self.plainFolderWorktree(for: workspaceRepository),
+        terminalWorkingDirectory: child.workingDirectory
+      )
+    }
+  }
+
+  /// The diff target that ⌘⇧Y, the View menu, and the Command Palette act on:
+  /// the selected worktree, else the selected workspace child.
+  var selectedDiffTargetID: DiffTargetID? {
+    if let selectedWorktreeID {
+      return .worktree(selectedWorktreeID)
+    }
+    if let selectedWorkspaceChildID, selectedRepository?.isWorkspace == true {
+      return .workspaceChild(selectedWorkspaceChildID)
+    }
+    return nil
+  }
+
   struct ArchivedWorktreeGroup: Equatable {
     var repository: Repository
     var worktrees: [Worktree]

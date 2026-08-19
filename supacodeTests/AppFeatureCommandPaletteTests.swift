@@ -903,13 +903,13 @@ struct AppFeatureCommandPaletteTests {
     let settingsFileURL = URL(
       fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json"
     )
-    let launched = LockIsolated<[(ExternalDiffSettings, Worktree)]>([])
+    let launched = LockIsolated<[(ExternalDiffSettings, DiffTarget)]>([])
     let store = withDependencies {
       $0.settingsFileStorage = storage.storage
       $0.settingsFileURL = settingsFileURL
       $0.terminalClient.send = { _ in }
-      $0.externalDiffToolClient.open = { settings, worktree, _, _ in
-        launched.withValue { $0.append((settings, worktree)) }
+      $0.externalDiffToolClient.open = { settings, target, _, _ in
+        launched.withValue { $0.append((settings, target)) }
       }
     } operation: {
       @Shared(.settingsFile) var settingsFile
@@ -935,7 +935,7 @@ struct AppFeatureCommandPaletteTests {
         )
       ]
     )
-    #expect(launched.value.map(\.1) == [worktree])
+    #expect(launched.value.map(\.1) == [DiffTarget(worktree: worktree)])
   }
 
   @Test(.dependencies) func showSelectedWorktreeDiffUsesConfiguredExternalDiffTool() async {
@@ -955,13 +955,13 @@ struct AppFeatureCommandPaletteTests {
     let settingsFileURL = URL(
       fileURLWithPath: "/tmp/supacode-settings-\(UUID().uuidString).json"
     )
-    let launched = LockIsolated<[(ExternalDiffSettings, Worktree)]>([])
+    let launched = LockIsolated<[(ExternalDiffSettings, DiffTarget)]>([])
     let store = withDependencies {
       $0.settingsFileStorage = storage.storage
       $0.settingsFileURL = settingsFileURL
       $0.terminalClient.send = { _ in }
-      $0.externalDiffToolClient.open = { settings, worktree, _, _ in
-        launched.withValue { $0.append((settings, worktree)) }
+      $0.externalDiffToolClient.open = { settings, target, _, _ in
+        launched.withValue { $0.append((settings, target)) }
       }
     } operation: {
       @Shared(.settingsFile) var settingsFile
@@ -987,7 +987,93 @@ struct AppFeatureCommandPaletteTests {
         )
       ]
     )
-    #expect(launched.value.map(\.1) == [worktree])
+    #expect(launched.value.map(\.1) == [DiffTarget(worktree: worktree)])
+  }
+
+  @Test(.dependencies) func showDiffForWorkspaceChildTargetsChildRepository() async {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath
+    )
+    let workspace = Repository(
+      id: "/tmp/ws-child-diff",
+      rootURL: URL(fileURLWithPath: "/tmp/ws-child-diff"),
+      name: "Workspace",
+      kind: .plain,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "Workspace", repositories: [entry])
+    )
+    let childID = entry.resolvedURL(relativeTo: workspace.rootURL).path(percentEncoded: false)
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [workspace]
+    repositoriesState.selection = .repository(workspace.id)
+    repositoriesState.selectedWorkspaceChildID = childID
+    repositoriesState.workspaceChildBranchByID[childID] = "feature/child"
+
+    let launched = LockIsolated<[DiffTarget]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.externalDiffToolClient.open = { _, target, _, _ in
+        launched.withValue { $0.append(target) }
+      }
+    }
+    store.exhaustivity = .off
+
+    // Badge/context-menu route and selection-following shortcut route must
+    // resolve to the same child target.
+    await store.send(.repositories(.delegate(.showDiff(.workspaceChild(childID)))))
+    await store.send(.showSelectedWorktreeDiff)
+    await store.finish()
+
+    let childURL = URL(fileURLWithPath: childID)
+    #expect(launched.value.count == 2)
+    for target in launched.value {
+      #expect(target.id == .workspaceChild(childID))
+      #expect(target.workingDirectory == childURL)
+      #expect(target.branchName == "feature/child")
+      #expect(target.repositoryRootURL == childURL)
+      #expect(target.terminalHost.id == workspace.id)
+      #expect(target.terminalWorkingDirectory == childURL)
+    }
+  }
+
+  @Test func commandPaletteOffersDiffItemsForSelectedWorkspaceChild() {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath
+    )
+    let workspace = Repository(
+      id: "/tmp/ws-palette-diff",
+      rootURL: URL(fileURLWithPath: "/tmp/ws-palette-diff"),
+      name: "Workspace",
+      kind: .plain,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "Workspace", repositories: [entry])
+    )
+    let childID = entry.resolvedURL(relativeTo: workspace.rootURL).path(percentEncoded: false)
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [workspace]
+    repositoriesState.selection = .repository(workspace.id)
+
+    // Workspace selected without a child: no diff target, no diff items.
+    let itemsWithoutChild = CommandPaletteFeature.commandPaletteItems(from: repositoriesState)
+    #expect(!itemsWithoutChild.contains { $0.kind == .showDiff })
+    #expect(!itemsWithoutChild.contains { $0.kind == .outgoingChanges })
+
+    repositoriesState.selectedWorkspaceChildID = childID
+    let items = CommandPaletteFeature.commandPaletteItems(from: repositoriesState)
+    #expect(items.contains { $0.kind == .showDiff })
+    #expect(items.contains { $0.kind == .outgoingChanges })
   }
 
   @Test(.dependencies) func outgoingChangesAlwaysUsesBuiltInClient() async {
@@ -1025,7 +1111,7 @@ struct AppFeatureCommandPaletteTests {
     #expect(
       CommandPaletteFeature.commandPaletteItems(from: repositoriesState).contains { $0.kind == .outgoingChanges }
     )
-    let outgoingRequests = LockIsolated<[Worktree]>([])
+    let outgoingRequests = LockIsolated<[DiffTarget]>([])
     let externalRequests = LockIsolated(0)
     let store = TestStore(
       initialState: AppFeature.State(
@@ -1035,8 +1121,8 @@ struct AppFeatureCommandPaletteTests {
     ) {
       AppFeature()
     } withDependencies: {
-      $0.outgoingChangesClient.open = { worktree, _, _ in
-        outgoingRequests.withValue { $0.append(worktree) }
+      $0.outgoingChangesClient.open = { target, _, _ in
+        outgoingRequests.withValue { $0.append(target) }
       }
       $0.externalDiffToolClient.open = { _, _, _, _ in
         externalRequests.withValue { $0 += 1 }
@@ -1048,7 +1134,7 @@ struct AppFeatureCommandPaletteTests {
     await store.finish()
 
     let requests = outgoingRequests.value
-    #expect(requests == [worktree, worktree])
+    #expect(requests == [DiffTarget(worktree: worktree), DiffTarget(worktree: worktree)])
     #expect(externalRequests.value == 0)
   }
 
@@ -1062,7 +1148,7 @@ struct AppFeatureCommandPaletteTests {
     var repositoriesState = RepositoriesFeature.State()
     repositoriesState.repositories = [repository]
     repositoriesState.selection = .worktree(worktree.id)
-    let outgoingRequests = LockIsolated<[Worktree]>([])
+    let outgoingRequests = LockIsolated<[DiffTarget]>([])
     let store = TestStore(
       initialState: AppFeature.State(
         repositories: repositoriesState,
@@ -1071,15 +1157,15 @@ struct AppFeatureCommandPaletteTests {
     ) {
       AppFeature()
     } withDependencies: {
-      $0.outgoingChangesClient.open = { worktree, _, _ in
-        outgoingRequests.withValue { $0.append(worktree) }
+      $0.outgoingChangesClient.open = { target, _, _ in
+        outgoingRequests.withValue { $0.append(target) }
       }
     }
 
     await store.send(.showSelectedWorktreeOutgoingChanges)
     await store.finish()
 
-    #expect(outgoingRequests.value == [worktree])
+    #expect(outgoingRequests.value == [DiffTarget(worktree: worktree)])
     #expect(store.state.alert == nil)
   }
 
@@ -1133,7 +1219,7 @@ struct AppFeatureCommandPaletteTests {
     var repositoriesState = RepositoriesFeature.State()
     repositoriesState.repositories = [repository]
     repositoriesState.selection = .worktree(selected.id)
-    let outgoingRequests = LockIsolated<[Worktree]>([])
+    let outgoingRequests = LockIsolated<[DiffTarget]>([])
     let store = TestStore(
       initialState: AppFeature.State(
         repositories: repositoriesState,
@@ -1142,16 +1228,16 @@ struct AppFeatureCommandPaletteTests {
     ) {
       AppFeature()
     } withDependencies: {
-      $0.outgoingChangesClient.open = { worktree, _, _ in
-        outgoingRequests.withValue { $0.append(worktree) }
+      $0.outgoingChangesClient.open = { target, _, _ in
+        outgoingRequests.withValue { $0.append(target) }
       }
     }
     store.exhaustivity = .off
 
-    await store.send(.repositories(.delegate(.showOutgoingChanges(targeted.id))))
+    await store.send(.repositories(.delegate(.showOutgoingChanges(.worktree(targeted.id)))))
     await store.finish()
 
-    #expect(outgoingRequests.value == [targeted])
+    #expect(outgoingRequests.value == [DiffTarget(worktree: targeted)])
   }
 
   @Test(.dependencies) func closePullRequestDispatchesAction() async {

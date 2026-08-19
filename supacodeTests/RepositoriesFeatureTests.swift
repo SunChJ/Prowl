@@ -7705,6 +7705,100 @@ struct RepositoriesFeatureTests {
     #expect(rows.first?.info == nil)
   }
 
+  @Test func diffTargetForWorkspaceChildDiffsChildRepoAndHostsHunkInWorkspace() {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath,
+      branchName: "metadata-branch"
+    )
+    let repository = makeWorkspaceRepository(id: "/tmp/ws-diff", children: [entry])
+    var state = makeState(repositories: [repository])
+    let childID = entry.resolvedURL(relativeTo: repository.rootURL).path(percentEncoded: false)
+    state.workspaceChildBranchByID[childID] = "live-branch"
+
+    let target = state.diffTarget(for: .workspaceChild(childID))
+
+    let childURL = URL(fileURLWithPath: childID)
+    #expect(target?.id == .workspaceChild(childID))
+    #expect(target?.workingDirectory == childURL)
+    // Live branch wins over the metadata branch.
+    #expect(target?.branchName == "live-branch")
+    #expect(target?.repositoryRootURL == childURL)
+    // Hunk stays hosted in the workspace terminal, running in the child dir.
+    #expect(target?.terminalHost.id == repository.id)
+    #expect(target?.terminalHost.workingDirectory == repository.rootURL)
+    #expect(target?.terminalWorkingDirectory == childURL)
+  }
+
+  @Test func diffTargetForWorkspaceChildFallsBackBranchToMetadataThenRepositoryName() {
+    let withMetadataBranch = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath,
+      branchName: "metadata-branch"
+    )
+    let withoutAnyBranch = ProjectWorkspace.RepositoryEntry(
+      id: "api",
+      name: "Api",
+      path: "api",
+      sourceKind: .existingPath
+    )
+    let repository = makeWorkspaceRepository(
+      id: "/tmp/ws-diff-fallback",
+      children: [withMetadataBranch, withoutAnyBranch]
+    )
+    let state = makeState(repositories: [repository])
+    let metadataChildID = withMetadataBranch.resolvedURL(relativeTo: repository.rootURL)
+      .path(percentEncoded: false)
+    let namelessChildID = withoutAnyBranch.resolvedURL(relativeTo: repository.rootURL)
+      .path(percentEncoded: false)
+
+    #expect(state.diffTarget(for: .workspaceChild(metadataChildID))?.branchName == "metadata-branch")
+    #expect(state.diffTarget(for: .workspaceChild(namelessChildID))?.branchName == "Api")
+  }
+
+  @Test func diffTargetResolvesWorktreesAndRejectsUnknownChildren() {
+    let worktree = makeWorktree(id: "/tmp/repo-dt/wt", name: "feature")
+    let repository = makeRepository(id: "/tmp/repo-dt", worktrees: [worktree])
+    let state = makeState(repositories: [repository])
+
+    #expect(state.diffTarget(for: .worktree(worktree.id)) == DiffTarget(worktree: worktree))
+    #expect(state.diffTarget(for: .worktree("/tmp/missing")) == nil)
+    #expect(state.diffTarget(for: .workspaceChild("/tmp/missing")) == nil)
+  }
+
+  @Test func selectedDiffTargetIDFollowsWorktreeThenWorkspaceChild() {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath
+    )
+    let workspace = makeWorkspaceRepository(id: "/tmp/ws-selected", children: [entry])
+    let worktree = makeWorktree(id: "/tmp/repo-sel/wt", name: "alpha")
+    let repository = makeRepository(id: "/tmp/repo-sel", worktrees: [worktree])
+    var state = makeState(repositories: [repository, workspace])
+    let childID = entry.resolvedURL(relativeTo: workspace.rootURL).path(percentEncoded: false)
+
+    state.selection = .worktree(worktree.id)
+    #expect(state.selectedDiffTargetID == .worktree(worktree.id))
+
+    state.selection = .repository(workspace.id)
+    state.selectedWorkspaceChildID = childID
+    #expect(state.selectedDiffTargetID == .workspaceChild(childID))
+
+    // A stale child id must not leak once a non-workspace repository is selected.
+    state.selection = .repository(repository.id)
+    #expect(state.selectedDiffTargetID == nil)
+
+    state.selection = .repository(workspace.id)
+    state.selectedWorkspaceChildID = nil
+    #expect(state.selectedDiffTargetID == nil)
+  }
+
   @Test func openWorkspaceChildFocusesOrCreatesBoundTerminalTabInChildDirectory() async {
     let entry = ProjectWorkspace.RepositoryEntry(
       id: "app",

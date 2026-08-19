@@ -247,6 +247,12 @@ struct RepositorySectionView: View {
               ? state.selectedWorkspaceChildID : nil,
             onSelect: { childID in
               store.send(.openWorkspaceChild(childID))
+            },
+            onShowDiff: { childID in
+              store.send(.delegate(.showDiff(.workspaceChild(childID))))
+            },
+            onShowOutgoingChanges: { childID in
+              store.send(.delegate(.showOutgoingChanges(.workspaceChild(childID))))
             }
           )
         } else {

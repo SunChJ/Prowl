@@ -191,7 +191,7 @@ extension AppFeature {
   }
 
   func openDiffEffect(
-    worktree: Worktree,
+    target: DiffTarget,
     resolvedKeybindings: ResolvedKeybindingMap
   ) -> Effect<Action> {
     @Shared(.settingsFile) var settingsFile
@@ -200,35 +200,35 @@ extension AppFeature {
       customCommand: settingsFile.global.externalDiffCustomCommand
     )
     return .run { send in
-      await externalDiffToolClient.open(settings, worktree, resolvedKeybindings) { error in
+      await externalDiffToolClient.open(settings, target, resolvedKeybindings) { error in
         send(.openWorktreeFailed(error))
       }
     }
   }
 
   func openSelectedWorktreeDiffEffect(state: State) -> Effect<Action> {
-    guard let worktreeID = state.repositories.selectedWorktreeID,
-      let worktree = state.repositories.worktree(for: worktreeID)
+    guard let targetID = state.repositories.selectedDiffTargetID,
+      let target = state.repositories.diffTarget(for: targetID)
     else {
       return .none
     }
-    return openDiffEffect(worktree: worktree, resolvedKeybindings: state.resolvedKeybindings)
+    return openDiffEffect(target: target, resolvedKeybindings: state.resolvedKeybindings)
   }
 
   func openSelectedWorktreeOutgoingChangesEffect(state: State) -> Effect<Action> {
-    guard let worktreeID = state.repositories.selectedWorktreeID else {
+    guard let targetID = state.repositories.selectedDiffTargetID else {
       return .none
     }
-    return openOutgoingChangesEffect(worktreeID: worktreeID, state: state)
+    return openOutgoingChangesEffect(targetID: targetID, state: state)
   }
 
-  func openOutgoingChangesEffect(worktreeID: Worktree.ID, state: State) -> Effect<Action> {
-    guard let worktree = state.repositories.worktree(for: worktreeID) else {
+  func openOutgoingChangesEffect(targetID: DiffTargetID, state: State) -> Effect<Action> {
+    guard let target = state.repositories.diffTarget(for: targetID) else {
       return .none
     }
     let resolvedKeybindings = state.resolvedKeybindings
     return .run { send in
-      await outgoingChangesClient.open(worktree, resolvedKeybindings) { error in
+      await outgoingChangesClient.open(target, resolvedKeybindings) { error in
         send(.openWorktreeFailed(error))
       }
     }
