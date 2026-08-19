@@ -244,11 +244,13 @@ extension RepositoriesFeature.State {
       else {
         return nil
       }
+      // Root preference: live-resolved root (same normalization that keys
+      // registered repositories) → metadata source root → checkout directory.
       return DiffTarget(
         id: id,
         workingDirectory: child.workingDirectory,
         branchName: workspaceChildBranchByID[child.id] ?? child.metadataBranch ?? child.repositoryName,
-        repositoryRootURL: child.repositoryRootURL,
+        repositoryRootURL: workspaceChildRepoRootByID[child.id] ?? child.repositoryRootURL,
         terminalHost: Self.plainFolderWorktree(for: workspaceRepository),
         terminalWorkingDirectory: child.workingDirectory
       )

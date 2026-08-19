@@ -6,7 +6,8 @@
 | --- | --- | --- |
 | 2026-08-19 | Plan aligned with onevcat (⌘⇧Y follows selected child; Outgoing Changes included; Hunk runs in workspace terminal with child cwd; natural degradation, no pre-checks) | tracker relay-tracker#154, issue #616 |
 | 2026-08-19 | Implemented `DiffTarget` routing end to end, with tests and `docs/` updates | #704 |
-| 2026-08-20 | Review round (pi agent): scoped child targets by workspace, child `repositoryRootURL` follows recorded source root, added child outgoing coverage | #704 |
+| 2026-08-20 | Review round 1 (pi agent): scoped child targets by workspace, child `repositoryRootURL` follows recorded source root, added child outgoing coverage | #704 |
+| 2026-08-20 | Review round 2 (pi agent): child roots now live-resolved via `gitClient.repoRoot` (cached per reload) since a recorded source location may be a subdirectory or nested worktree; selection pruning validates against the selected workspace's own children | #704 |
 
 ## Outcome & current state (as of 2026-08-19)
 
@@ -20,11 +21,17 @@
   metadata → repository name; terminal host is the synthesized workspace worktree via
   `plainFolderWorktree(for:)`), `selectedDiffTargetID` (selected worktree, else selected
   workspace child), and `pullRequest(for:)` (per-target PR cache dispatch, wired from
-  `supacodeApp`). A child's `repositoryRootURL` is the metadata-recorded local source root
-  (`ProjectWorkspaceRepositoryEntry.localSourceURL`) so linked/worktree checkouts pick up
-  the source repository's `repositorySettings` and `{repoPath}`; remote clones and
-  metadata without a source location fall back to the checkout directory. Chosen over
-  runtime `git` root resolution to keep the query synchronous with no extra cached state.
+  `supacodeApp`). A child's `repositoryRootURL` preference is: live-resolved root →
+  metadata source root (`ProjectWorkspaceRepositoryEntry.localSourceURL`) → checkout
+  directory. The live root comes from `gitClient.repoRoot(childDirectory)` in the
+  workspace-children refresh pipeline, cached in `workspaceChildRepoRootByID` — the same
+  normalization that keys registered repositories (`RepositoriesFeature+RepositoryLoading`),
+  so the child's `repositorySettings` lookup matches its source repository by construction,
+  even when the recorded source location is a subdirectory or a nested worktree. The
+  metadata fallback covers the window before the first refresh lands.
+- `pruneWorkspaceChildInfo` validates `selectedWorkspaceChildID` against the selected
+  workspace's own children (not the global path set), so a child removed from the selected
+  workspace cannot survive as a ghost selection through another workspace sharing the path.
 - `RepositoriesFeature.Delegate.showDiff` / `.showOutgoingChanges` carry `DiffTargetID`;
   `WorkspaceChildRowsView` + `RepositorySectionView` wire the child badge and new
   **Show Diff** / **Show Outgoing Changes** context-menu items.
