@@ -9,6 +9,12 @@ struct ResolvedWorkspaceChild: Equatable, Sendable, Identifiable {
   let repositoryName: String
   let metadataBranch: String?
   let workingDirectory: URL
+  /// The child's canonical repository root: the recorded local source for
+  /// linked and worktree checkouts, else the working directory itself (remote
+  /// clones, metadata without a source location). Keys `repositorySettings`
+  /// and fills `{repoPath}`, matching how `Worktree.repositoryRootURL` points
+  /// at the registered repository rather than the checkout.
+  let repositoryRootURL: URL
 }
 
 extension RepositoriesFeature {

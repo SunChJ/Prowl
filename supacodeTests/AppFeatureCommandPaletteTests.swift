@@ -1029,19 +1029,74 @@ struct AppFeatureCommandPaletteTests {
 
     // Badge/context-menu route and selection-following shortcut route must
     // resolve to the same child target.
-    await store.send(.repositories(.delegate(.showDiff(.workspaceChild(childID)))))
+    await store.send(
+      .repositories(.delegate(.showDiff(.workspaceChild(workspaceID: workspace.id, path: childID))))
+    )
     await store.send(.showSelectedWorktreeDiff)
     await store.finish()
 
     let childURL = URL(fileURLWithPath: childID)
     #expect(launched.value.count == 2)
     for target in launched.value {
-      #expect(target.id == .workspaceChild(childID))
+      #expect(target.id == .workspaceChild(workspaceID: workspace.id, path: childID))
       #expect(target.workingDirectory == childURL)
       #expect(target.branchName == "feature/child")
       #expect(target.repositoryRootURL == childURL)
       #expect(target.terminalHost.id == workspace.id)
       #expect(target.terminalWorkingDirectory == childURL)
+    }
+  }
+
+  @Test(.dependencies) func outgoingChangesForWorkspaceChildTargetsChildRepository() async {
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath
+    )
+    let workspace = Repository(
+      id: "/tmp/ws-child-outgoing",
+      rootURL: URL(fileURLWithPath: "/tmp/ws-child-outgoing"),
+      name: "Workspace",
+      kind: .plain,
+      worktrees: [],
+      workspace: ProjectWorkspace(title: "Workspace", repositories: [entry])
+    )
+    let childID = entry.resolvedURL(relativeTo: workspace.rootURL).path(percentEncoded: false)
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [workspace]
+    repositoriesState.selection = .repository(workspace.id)
+    repositoriesState.selectedWorkspaceChildID = childID
+
+    let outgoingRequests = LockIsolated<[DiffTarget]>([])
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.outgoingChangesClient.open = { target, _, _ in
+        outgoingRequests.withValue { $0.append(target) }
+      }
+    }
+    store.exhaustivity = .off
+
+    // Row context-menu delegate and selection-following shortcut/palette
+    // route must both reach the outgoing client with the child target.
+    await store.send(
+      .repositories(
+        .delegate(.showOutgoingChanges(.workspaceChild(workspaceID: workspace.id, path: childID)))
+      )
+    )
+    await store.send(.showSelectedWorktreeOutgoingChanges)
+    await store.finish()
+
+    #expect(outgoingRequests.value.count == 2)
+    for target in outgoingRequests.value {
+      #expect(target.id == .workspaceChild(workspaceID: workspace.id, path: childID))
+      #expect(target.workingDirectory == URL(fileURLWithPath: childID))
     }
   }
 

@@ -1,11 +1,13 @@
 import Foundation
 
 /// Stable reference to something the diff pipeline can act on: a tracked
-/// worktree, or a workspace child repository keyed by its working-directory
-/// path (the same key as `workspaceChildInfoByID`).
+/// worktree, or a workspace child repository. Children are scoped by their
+/// workspace because metadata does not enforce path uniqueness — two open
+/// workspaces may reference the same child path. `path` is the child's
+/// working-directory path (the same key as `workspaceChildInfoByID`).
 nonisolated enum DiffTargetID: Hashable, Sendable {
   case worktree(Worktree.ID)
-  case workspaceChild(String)
+  case workspaceChild(workspaceID: Repository.ID, path: String)
 }
 
 /// A resolved diff request. Separates the Git target (the directory whose

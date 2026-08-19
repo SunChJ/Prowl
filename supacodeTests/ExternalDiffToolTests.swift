@@ -102,7 +102,7 @@ struct ExternalDiffToolTests {
     )
     let childURL = URL(fileURLWithPath: "/tmp/workspace/app")
     let target = DiffTarget(
-      id: .workspaceChild(childURL.path(percentEncoded: false)),
+      id: .workspaceChild(workspaceID: "/tmp/workspace", path: childURL.path(percentEncoded: false)),
       workingDirectory: childURL,
       branchName: "feature",
       repositoryRootURL: childURL,
