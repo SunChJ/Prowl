@@ -71,15 +71,13 @@ struct ForceDeleteBranchRequest: Equatable {
 }
 
 // Result of refreshing one workspace child repository's live status: current
-// branch, uncommitted diff counts, (when GitHub integration is available) the
-// PR for that branch, and the resolved repository root used to key
-// repository-scoped diff settings.
+// branch, uncommitted diff counts, and (when GitHub integration is available)
+// the PR for that branch.
 nonisolated struct WorkspaceChildInfoUpdate: Equatable, Sendable {
   let id: String
   let branch: String?
   let lineChanges: GitLineChanges?
   let pullRequest: GithubPullRequest?
-  let repositoryRoot: URL?
 }
 
 struct RemoveWorkspaceConfirmation: Equatable {
@@ -307,12 +305,6 @@ struct RepositoriesFeature {
     // folder. Refreshed by `refreshWorkspaceChildrenEffect` on each repo reload.
     var workspaceChildInfoByID: [String: WorktreeInfoEntry] = [:]
     var workspaceChildBranchByID: [String: String] = [:]
-    // Canonical repository root per child, resolved through the same
-    // `gitClient.repoRoot` normalization that keys registered repositories —
-    // so a child's `repositorySettings` lookup matches its source repository
-    // even when the recorded source location is a subdirectory or a nested
-    // worktree. Nil (falling back to metadata) until a refresh lands.
-    var workspaceChildRepoRootByID: [String: URL] = [:]
     var selectedWorkspaceChildID: String?
     var worktreeOrderByRepository: [Repository.ID: [Worktree.ID]] = [:]
     var isOpenPanelPresented = false

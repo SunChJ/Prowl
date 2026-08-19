@@ -22,7 +22,9 @@ nonisolated struct DiffTarget: Equatable, Sendable {
   /// Display branch; also fills `{branch}` in custom diff command templates.
   let branchName: String
   /// Fills `{repoPath}` in custom templates and keys `repositorySettings`.
-  let repositoryRootURL: URL
+  /// For workspace children this starts as a metadata approximation and is
+  /// canonicalized by the diff effects before use.
+  var repositoryRootURL: URL
   /// Worktree owning the terminal that the Hunk tool runs in.
   let terminalHost: Worktree
   /// Hunk cwd when it differs from the host's own directory.

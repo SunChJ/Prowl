@@ -1024,6 +1024,9 @@ struct AppFeatureCommandPaletteTests {
       $0.externalDiffToolClient.open = { _, target, _, _ in
         launched.withValue { $0.append(target) }
       }
+      // The effect canonicalizes the child's repository root at invocation
+      // time; the resolved root must reach the diff client.
+      $0.gitClient.repoRoot = { _ in URL(fileURLWithPath: "/tmp/child-source-root") }
     }
     store.exhaustivity = .off
 
@@ -1041,7 +1044,7 @@ struct AppFeatureCommandPaletteTests {
       #expect(target.id == .workspaceChild(workspaceID: workspace.id, path: childID))
       #expect(target.workingDirectory == childURL)
       #expect(target.branchName == "feature/child")
-      #expect(target.repositoryRootURL == childURL)
+      #expect(target.repositoryRootURL == URL(fileURLWithPath: "/tmp/child-source-root"))
       #expect(target.terminalHost.id == workspace.id)
       #expect(target.terminalWorkingDirectory == childURL)
     }
@@ -1080,6 +1083,11 @@ struct AppFeatureCommandPaletteTests {
       $0.outgoingChangesClient.open = { target, _, _ in
         outgoingRequests.withValue { $0.append(target) }
       }
+      // A failed root canonicalization keeps the metadata fallback instead of
+      // blocking the action.
+      $0.gitClient.repoRoot = { _ in
+        throw NSError(domain: "test", code: 1)
+      }
     }
     store.exhaustivity = .off
 
@@ -1093,10 +1101,12 @@ struct AppFeatureCommandPaletteTests {
     await store.send(.showSelectedWorktreeOutgoingChanges)
     await store.finish()
 
+    let childURL = URL(fileURLWithPath: childID)
     #expect(outgoingRequests.value.count == 2)
     for target in outgoingRequests.value {
       #expect(target.id == .workspaceChild(workspaceID: workspace.id, path: childID))
-      #expect(target.workingDirectory == URL(fileURLWithPath: childID))
+      #expect(target.workingDirectory == childURL)
+      #expect(target.repositoryRootURL == childURL)
     }
   }
 

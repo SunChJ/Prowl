@@ -244,13 +244,14 @@ extension RepositoriesFeature.State {
       else {
         return nil
       }
-      // Root preference: live-resolved root (same normalization that keys
-      // registered repositories) → metadata source root → checkout directory.
+      // The metadata-derived root is a synchronous approximation; the diff
+      // effects canonicalize it through `gitClient.repoRoot` when the action
+      // runs (`AppFeature.canonicalizedDiffTarget`).
       return DiffTarget(
         id: id,
         workingDirectory: child.workingDirectory,
         branchName: workspaceChildBranchByID[child.id] ?? child.metadataBranch ?? child.repositoryName,
-        repositoryRootURL: workspaceChildRepoRootByID[child.id] ?? child.repositoryRootURL,
+        repositoryRootURL: child.repositoryRootURL,
         terminalHost: Self.plainFolderWorktree(for: workspaceRepository),
         terminalWorkingDirectory: child.workingDirectory
       )

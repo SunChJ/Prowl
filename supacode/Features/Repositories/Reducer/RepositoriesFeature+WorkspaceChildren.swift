@@ -30,7 +30,9 @@ extension RepositoriesFeature {
   func refreshWorkspaceChildrenEffect(state: State) -> Effect<Action> {
     let children = state.allResolvedWorkspaceChildren()
     guard !children.isEmpty else {
-      return .none
+      // A reload that removed the last child must also stop an in-flight
+      // refresh, or its late result would repopulate the just-pruned maps.
+      return .cancel(id: CancelID.workspaceChildrenRefresh)
     }
     let gitClient = self.gitClient
     let githubCLI = self.githubCLI
@@ -43,9 +45,6 @@ extension RepositoriesFeature {
           group.addTask {
             async let branchTask = gitClient.branchName(child.workingDirectory)
             async let changesTask = gitClient.lineChanges(child.workingDirectory)
-            // Same normalization that keys registered repositories, so the
-            // child's repository-settings lookup matches its source repo.
-            async let rootTask = try? gitClient.repoRoot(child.workingDirectory)
             let changes = await changesTask
             let branch = await branchTask
             let pullRequest = await Self.fetchWorkspaceChildPullRequest(
@@ -59,8 +58,7 @@ extension RepositoriesFeature {
               id: child.id,
               branch: branch,
               lineChanges: changes,
-              pullRequest: pullRequest,
-              repositoryRoot: await rootTask
+              pullRequest: pullRequest
             )
           }
         }
@@ -114,12 +112,6 @@ func applyWorkspaceChildrenInfo(
       state.workspaceChildBranchByID.removeValue(forKey: update.id)
     }
 
-    if let repositoryRoot = update.repositoryRoot {
-      state.workspaceChildRepoRootByID[update.id] = repositoryRoot
-    } else {
-      state.workspaceChildRepoRootByID.removeValue(forKey: update.id)
-    }
-
     var entry = state.workspaceChildInfoByID[update.id] ?? WorktreeInfoEntry()
     if let changes = update.lineChanges, !changes.isEmpty {
       entry.addedLines = changes.added
@@ -144,9 +136,6 @@ func pruneWorkspaceChildInfo(state: inout RepositoriesFeature.State) {
   let validIDs = Set(state.allResolvedWorkspaceChildren().map(\.id))
   state.workspaceChildInfoByID = state.workspaceChildInfoByID.filter { validIDs.contains($0.key) }
   state.workspaceChildBranchByID = state.workspaceChildBranchByID.filter { validIDs.contains($0.key) }
-  state.workspaceChildRepoRootByID = state.workspaceChildRepoRootByID.filter {
-    validIDs.contains($0.key)
-  }
   // The selection is validated against the selected workspace's own children,
   // not the global path set: another workspace referencing the same path must
   // not keep a removed child selected here.

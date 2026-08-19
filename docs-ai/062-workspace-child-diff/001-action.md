@@ -7,7 +7,8 @@
 | 2026-08-19 | Plan aligned with onevcat (⌘⇧Y follows selected child; Outgoing Changes included; Hunk runs in workspace terminal with child cwd; natural degradation, no pre-checks) | tracker relay-tracker#154, issue #616 |
 | 2026-08-19 | Implemented `DiffTarget` routing end to end, with tests and `docs/` updates | #704 |
 | 2026-08-20 | Review round 1 (pi agent): scoped child targets by workspace, child `repositoryRootURL` follows recorded source root, added child outgoing coverage | #704 |
-| 2026-08-20 | Review round 2 (pi agent): child roots now live-resolved via `gitClient.repoRoot` (cached per reload) since a recorded source location may be a subdirectory or nested worktree; selection pruning validates against the selected workspace's own children | #704 |
+| 2026-08-20 | Review round 2 (pi agent): child roots live-resolved via `gitClient.repoRoot` (cached per reload) since a recorded source location may be a subdirectory or nested worktree; selection pruning validates against the selected workspace's own children | #704 |
+| 2026-08-20 | Review round 3 (pi agent): dropped the root cache — canonicalization moved to the diff effects (`AppFeature.canonicalizedDiffTarget`) at invocation time, eliminating the startup window and cache-staleness class; empty-child reloads cancel the in-flight refresh and stale child updates are filtered | #704 |
 
 ## Outcome & current state (as of 2026-08-19)
 
@@ -21,17 +22,21 @@
   metadata → repository name; terminal host is the synthesized workspace worktree via
   `plainFolderWorktree(for:)`), `selectedDiffTargetID` (selected worktree, else selected
   workspace child), and `pullRequest(for:)` (per-target PR cache dispatch, wired from
-  `supacodeApp`). A child's `repositoryRootURL` preference is: live-resolved root →
-  metadata source root (`ProjectWorkspaceRepositoryEntry.localSourceURL`) → checkout
-  directory. The live root comes from `gitClient.repoRoot(childDirectory)` in the
-  workspace-children refresh pipeline, cached in `workspaceChildRepoRootByID` — the same
-  normalization that keys registered repositories (`RepositoriesFeature+RepositoryLoading`),
-  so the child's `repositorySettings` lookup matches its source repository by construction,
-  even when the recorded source location is a subdirectory or a nested worktree. The
-  metadata fallback covers the window before the first refresh lands.
+  `supacodeApp`). A child's sync-resolved `repositoryRootURL` is the metadata source root
+  (`ProjectWorkspaceRepositoryEntry.localSourceURL`) falling back to the checkout
+  directory; because a recorded source location may be a subdirectory or a nested
+  worktree, the diff effects canonicalize it at invocation time —
+  `AppFeature.canonicalizedDiffTarget` runs `gitClient.repoRoot(childDirectory)` inside
+  `openDiffEffect` / `openOutgoingChangesEffect`, the same normalization that keys
+  registered repositories (`RepositoriesFeature+RepositoryLoading`), so
+  `repositorySettings` and `{repoPath}` match the source repository by construction with
+  no cache to go stale and no startup window. A failed lookup keeps the metadata fallback.
 - `pruneWorkspaceChildInfo` validates `selectedWorkspaceChildID` against the selected
   workspace's own children (not the global path set), so a child removed from the selected
   workspace cannot survive as a ghost selection through another workspace sharing the path.
+- Reloads that leave no workspace children cancel the in-flight children refresh, and
+  `workspaceChildrenInfoLoaded` filters updates to current children, so a late batch
+  cannot repopulate just-pruned maps.
 - `RepositoriesFeature.Delegate.showDiff` / `.showOutgoingChanges` carry `DiffTargetID`;
   `WorkspaceChildRowsView` + `RepositorySectionView` wire the child badge and new
   **Show Diff** / **Show Outgoing Changes** context-menu items.

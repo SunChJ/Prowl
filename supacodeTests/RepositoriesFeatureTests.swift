@@ -710,13 +710,8 @@ struct RepositoriesFeatureTests {
       }
       $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
       $0.gitClient.repoRoot = { url in
-        let path = url.path(percentEncoded: false)
-        // The child pipeline resolves the child's own repository root; only
-        // probing the workspace root itself is forbidden.
-        guard path == childID else {
-          Issue.record("workspace should load as plain without git probing: \(path)")
-          return url
-        }
+        Issue.record(
+          "workspace should load as plain without git probing: \(url.path(percentEncoded: false))")
         return url
       }
       $0.gitClient.worktrees = { url in
@@ -724,8 +719,7 @@ struct RepositoriesFeatureTests {
         return []
       }
       // The workspace's child repository is refreshed via the child pipeline
-      // (live branch + diff + repo root), distinct from the worktree probing
-      // above.
+      // (live branch + diff), distinct from the worktree probing above.
       $0.gitClient.branchName = { _ in "main" }
       $0.gitClient.lineChanges = { _ in nil }
       $0.gitClient.remoteInfo = { _ in nil }
@@ -741,7 +735,6 @@ struct RepositoriesFeatureTests {
     await store.receive(\.delegate.repositoriesChanged)
     await store.receive(\.workspaceChildrenInfoLoaded) {
       $0.workspaceChildBranchByID = [childID: "main"]
-      $0.workspaceChildRepoRootByID = [childID: URL(fileURLWithPath: childID)]
     }
     await store.finish()
   }
@@ -7651,15 +7644,13 @@ struct RepositoriesFeatureTests {
           id: "/ws/app",
           branch: "feature",
           lineChanges: GitLineChanges(added: 7, removed: 2),
-          pullRequest: pullRequest,
-          repositoryRoot: URL(fileURLWithPath: "/ws/app-source")
+          pullRequest: pullRequest
         ),
         WorkspaceChildInfoUpdate(
           id: "/ws/api",
           branch: "  ",
           lineChanges: GitLineChanges(added: 0, removed: 0),
-          pullRequest: nil,
-          repositoryRoot: nil
+          pullRequest: nil
         ),
       ],
       state: &state
@@ -7669,11 +7660,9 @@ struct RepositoriesFeatureTests {
     #expect(state.workspaceChildInfoByID["/ws/app"]?.addedLines == 7)
     #expect(state.workspaceChildInfoByID["/ws/app"]?.removedLines == 2)
     #expect(state.workspaceChildInfoByID["/ws/app"]?.pullRequest == pullRequest)
-    #expect(state.workspaceChildRepoRootByID["/ws/app"] == URL(fileURLWithPath: "/ws/app-source"))
     // Blank branch + empty diff + no PR → no entries.
     #expect(state.workspaceChildBranchByID["/ws/api"] == nil)
     #expect(state.workspaceChildInfoByID["/ws/api"] == nil)
-    #expect(state.workspaceChildRepoRootByID["/ws/api"] == nil)
   }
 
   @Test func workspaceChildRowsMergesLiveBranchAndInfo() {
@@ -7841,7 +7830,7 @@ struct RepositoriesFeatureTests {
       id: "/tmp/ws-roots",
       children: [linkedEntry, remoteEntry]
     )
-    var state = makeState(repositories: [repository])
+    let state = makeState(repositories: [repository])
     let linkedChildID = linkedEntry.resolvedURL(relativeTo: repository.rootURL)
       .path(percentEncoded: false)
     let remoteChildID = remoteEntry.resolvedURL(relativeTo: repository.rootURL)
@@ -7857,14 +7846,6 @@ struct RepositoriesFeatureTests {
     #expect(linkedTarget?.repositoryRootURL == URL(fileURLWithPath: "/tmp/source-repo"))
     #expect(linkedTarget?.workingDirectory == URL(fileURLWithPath: linkedChildID))
     #expect(remoteTarget?.repositoryRootURL == URL(fileURLWithPath: remoteChildID))
-
-    // A live-resolved root (recorded source was a subdirectory or a nested
-    // worktree) wins over the metadata source location.
-    state.workspaceChildRepoRootByID[linkedChildID] = URL(fileURLWithPath: "/tmp/true-root")
-    let resolvedTarget = state.diffTarget(
-      for: .workspaceChild(workspaceID: repository.id, path: linkedChildID)
-    )
-    #expect(resolvedTarget?.repositoryRootURL == URL(fileURLWithPath: "/tmp/true-root"))
   }
 
   @Test func pruneClearsSelectedChildRemovedFromItsWorkspaceDespiteDuplicatePath() {
@@ -8012,7 +7993,6 @@ struct RepositoriesFeatureTests {
       removedLines: 1,
       pullRequest: nil
     )
-    initialState.workspaceChildRepoRootByID["/tmp/gone/app"] = URL(fileURLWithPath: "/tmp/gone")
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
@@ -8020,7 +8000,6 @@ struct RepositoriesFeatureTests {
       $0.gitClient.lineChanges = { _ in
         GitLineChanges(added: 7, removed: 2, skippedUntrackedFileCount: 1)
       }
-      $0.gitClient.repoRoot = { _ in URL(fileURLWithPath: "/tmp/resolved-root") }
       $0.repositoryPersistence.saveRepositorySnapshot = { _ in }
     }
     store.exhaustivity = .off
@@ -8032,14 +8011,39 @@ struct RepositoriesFeatureTests {
     await store.finish()
 
     #expect(store.state.workspaceChildInfoByID["/tmp/gone/app"] == nil)
-    #expect(store.state.workspaceChildRepoRootByID["/tmp/gone/app"] == nil)
     #expect(store.state.workspaceChildBranchByID[childID] == "feature/live")
     #expect(store.state.workspaceChildInfoByID[childID]?.addedLines == 7)
     #expect(store.state.workspaceChildInfoByID[childID]?.removedLines == 2)
     #expect(store.state.workspaceChildInfoByID[childID]?.skippedUntrackedFileCount == 1)
-    #expect(
-      store.state.workspaceChildRepoRootByID[childID] == URL(fileURLWithPath: "/tmp/resolved-root")
+  }
+
+  @Test func workspaceChildrenInfoLoadedIgnoresUpdatesForRemovedChildren() async {
+    // An in-flight refresh can land after a reload removed its child; the
+    // stale update must not repopulate the just-pruned maps.
+    let entry = ProjectWorkspace.RepositoryEntry(
+      id: "app",
+      name: "App",
+      path: "app",
+      sourceKind: .existingPath
     )
+    let repository = makeWorkspaceRepository(id: "/tmp/ws-stale", children: [entry])
+    let store = TestStore(initialState: makeState(repositories: [repository])) {
+      RepositoriesFeature()
+    }
+
+    await store.send(
+      .workspaceChildrenInfoLoaded([
+        WorkspaceChildInfoUpdate(
+          id: "/tmp/ws-removed/app",
+          branch: "stale",
+          lineChanges: GitLineChanges(added: 1, removed: 1),
+          pullRequest: nil
+        )
+      ])
+    )
+
+    #expect(store.state.workspaceChildBranchByID.isEmpty)
+    #expect(store.state.workspaceChildInfoByID.isEmpty)
   }
 
   @Test func openRepositoriesFinishedRefreshesWorkspaceChildren() async {

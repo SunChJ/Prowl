@@ -114,6 +114,7 @@ struct AppFeature {
   @Dependency(CustomShortcutRegistryClient.self) var customShortcutRegistryClient
   @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient
   @Dependency(OutgoingChangesClient.self) var outgoingChangesClient
+  @Dependency(GitClientDependency.self) var gitClient
 
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in

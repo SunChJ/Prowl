@@ -190,6 +190,23 @@ extension AppFeature {
     }
   }
 
+  /// A workspace child's sync-resolved root comes from workspace metadata,
+  /// which may record a subdirectory or a nested worktree. Canonicalize it
+  /// through the same `repoRoot` normalization that keys registered
+  /// repositories, at the moment the action runs, so `repositorySettings` and
+  /// `{repoPath}` match the source repository. Worktree targets already carry
+  /// their registered root; a failed lookup keeps the metadata fallback.
+  func canonicalizedDiffTarget(_ target: DiffTarget) async -> DiffTarget {
+    guard case .workspaceChild = target.id,
+      let root = try? await gitClient.repoRoot(target.workingDirectory)
+    else {
+      return target
+    }
+    var target = target
+    target.repositoryRootURL = root
+    return target
+  }
+
   func openDiffEffect(
     target: DiffTarget,
     resolvedKeybindings: ResolvedKeybindingMap
@@ -200,6 +217,7 @@ extension AppFeature {
       customCommand: settingsFile.global.externalDiffCustomCommand
     )
     return .run { send in
+      let target = await canonicalizedDiffTarget(target)
       await externalDiffToolClient.open(settings, target, resolvedKeybindings) { error in
         send(.openWorktreeFailed(error))
       }
@@ -228,6 +246,7 @@ extension AppFeature {
     }
     let resolvedKeybindings = state.resolvedKeybindings
     return .run { send in
+      let target = await canonicalizedDiffTarget(target)
       await outgoingChangesClient.open(target, resolvedKeybindings) { error in
         send(.openWorktreeFailed(error))
       }
