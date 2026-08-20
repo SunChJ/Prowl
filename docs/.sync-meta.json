@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "ab7470396f2c04744e58a8d4ed966375be04ede5",
-  "last_synced_date": "2026-08-15",
-  "note": "Verified the agent transcript snapshots + Claude detection + Canvas link range (PRs #691, #696-#698): user-facing changes (prowl agents read, --result-only/--max-bytes, Claude live status block shape walk, Canvas cmd-click link priority) had docs maintained in-branch; no doc edits needed, baseline bump only."
+  "last_synced_commit": "1abc11ffe293b6b124625fe8a9823beed6ae2a91",
+  "last_synced_date": "2026-08-20",
+  "note": "Verified the CLI target-grammar + workspace child diff + toolbar grouping range (PRs #700, #702-#704): docs for prowl create/close, child-repo diff entry points, and the update indicator placement were maintained in-branch; only added CREATE_FAILED/CLOSE_FAILED to the cli.md error-code list."
 }
