@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026.8.20](https://github.com/onevcat/Prowl/releases/tag/v2026.8.20)
+
+This release adds per-repository diffing for workspace children and unifies the Prowl CLI's target syntax.
+
+### New
+- Workspace child rows now support diffs: click their `+N/-M` badge or use the context menu's Show Diff / Show Outgoing Changes. Diff shortcuts (⌘⇧Y, ⌥⌘⇧Y), the View menu, and Command Palette now follow the selected workspace child, not just worktrees.
+- The Prowl CLI accepts `pN`/`tN` pane and tab handles directly in any target position, and adds action-first `prowl create tab` and `prowl close` commands. The older `tab`/`pane` lifecycle commands still work but print a deprecation warning.
+
+### Fixed
+- Fixed terminal tab colors occasionally resolving incorrectly when SwiftUI rendered them asynchronously off the main thread.
+
+### Improved
+- Notification and update controls in the toolbar are now grouped together for a cleaner layout.
+
 ## [2026.8.15](https://github.com/onevcat/Prowl/releases/tag/v2026.8.15)
 
 Improved detection accuracy for Claude Code sessions, plus a new CLI command for reading agent results.
