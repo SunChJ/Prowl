@@ -232,10 +232,35 @@ private struct ClaudeScreenRegions: Sendable {
 
   nonisolated private static func liveStatusBlock(_ rows: [String]) -> ArraySlice<String> {
     var start = rows.endIndex
-    while start > rows.startIndex, isClaudeLiveChromeRow(rows[start - 1]) {
-      start -= 1
+    while start > rows.startIndex {
+      if isClaudeLiveChromeRow(rows[start - 1]) {
+        start -= 1
+        continue
+      }
+      guard let head = queuedMessageHeadIndex(above: start - 1, in: rows) else { break }
+      start = head
     }
     return rows[start...]
+  }
+
+  // A prose row sits inside the live block only as a queued-message body
+  // paragraph: a blank line inside a queued "❯" message detaches the paragraph
+  // from its head row, so it surfaces as an unmarked row and would otherwise
+  // end the block, demoting the spinner above to history while the agent is
+  // still working. Body paragraphs hang directly under their head, so the
+  // prose run counts as queued body only when the first row-starting or
+  // chrome row above it is a "❯" head. Anything else on top — a "⏺" block, a
+  // border, or non-queued chrome such as a quoted spinner — means the prose
+  // is transcript text, which still ends the block.
+  nonisolated private static func queuedMessageHeadIndex(above proseIndex: Int, in rows: [String]) -> Int? {
+    var index = proseIndex
+    while index > rows.startIndex {
+      let row = rows[index - 1]
+      if row.first == "❯" { return index - 1 }
+      if isClaudeLiveChromeRow(row) || claudeRowStartsNewRow(row) { return nil }
+      index -= 1
+    }
+    return nil
   }
 
   nonisolated private static func currentInteractionLines(

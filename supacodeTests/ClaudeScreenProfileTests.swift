@@ -172,6 +172,38 @@ struct ClaudeScreenProfileTests {
     #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.spinner))
   }
 
+  @Test func spinnerAboveQueuedMessageWithBlankLineStaysWorking() {
+    // Live capture: a queued "❯" message whose body contains a blank line
+    // renders its trailing paragraph as an unmarked prose row. The bottom-up
+    // shape scan must not end the live block there — the paragraph still
+    // belongs to the queued block, and stopping demoted the spinner above it
+    // to history, so a working agent read as idle.
+    let text = """
+      ⏺ Waiting for a new run to appear on the poc repo · 2m 35s
+        ⎿  $ until gh api "repos/acme/poc/actions/runs" >/dev/null; do sleep 5; done (2m 35s)
+           (ctrl+b to run in background)
+
+      ✻ Combobulating… (14m 4s · ↓ 141.9k tokens)
+
+        ❯ https://example.com/acme/poc/actions/runs/18352009
+
+          这个是你发的么
+        ❯ https://example.com/acme/poc/actions/runs/18352094
+          还有这个
+
+      ──────────────────────────────────────────
+      ❯ Press up to edit queued messages
+      ──────────────────────────────────────────
+        ✓ Bash ×18 | ✓ Edit ×1
+        ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+      """
+
+    let detection = DetectedAgent.claude.detectScreen(in: text)
+
+    #expect(detection.state == .working)
+    #expect(detection.reason == .matched(ClaudeScreenProfile.RuleID.spinner))
+  }
+
   @Test func spinnerQuotedAboveTranscriptBlockStaysIdle() {
     // A status row quoted in the transcript sits above a "⏺" block head. The
     // live block scan stops at that head, so reading the full active screen
