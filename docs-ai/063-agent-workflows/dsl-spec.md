@@ -165,6 +165,15 @@ and every re-delivery after Relaunch, so no path ever shows a token-less or
 verdict-less command. Authors never spell the command (the validator warns when
 `text`/`instruction` contains `prowl workflow done`).
 
+**V1 native action schemas** (normative summary; `prowl workflow schema` prints the full
+JSON Schema):
+
+| Action | `with` inputs | Outputs |
+| --- | --- | --- |
+| `handoff.transition` | `briefing` (path, optional), `from` (role, required), `to` (role, required), `note` (string, optional) | `kickoff_prompt` (string), `artifact_path` (path), `has_briefing` (bool) |
+| `handoff.checkpoint` | `briefing` (path, required), `note` (string, optional) | `artifact_path` (path) |
+| `git.context` | `root` (path, optional; default worktree) | `path` (path to the generated markdown summary), `branch` (string) |
+
 ## 5. `expect`
 
 ```yaml
@@ -177,20 +186,21 @@ expect:
   on_timeout: attention     # only with `timeout`: attention (default) | skip | cancel
 ```
 
-- **Activation identity.** Each time a step starts waiting — once for a plain step, once
-  per iteration inside `repeat` — the runner creates a new *activation*
-  `(run id, step id, activation ordinal, delivery role)` and mints a fresh delivery token
-  for it; the previous activation of the same step (if any) is terminal. The **activation
-  ordinal is run-global and monotonic** (1, 2, 3, … across all steps and iterations), so it
-  alone identifies an activation within a run. Exactly one successful `done` is accepted
-  per activation, identified by its token; a later, stale, or token-less delivery gets
-  `STEP_NOT_EXPECTING` / `TOKEN_REQUIRED` / `TOKEN_INVALID`. Skip / Cancel / Relaunch
-  revoke the *current* activation's token (Relaunch then mints a new activation). Every
-  delivery is persisted as `outputs/<name>.<ordinal>.md` (collision-free by construction,
-  even when several steps produce the same output name); `outputs/<name>.md` is the
-  "latest" view, replaced atomically (temp file + rename); materialized instructions are
-  versioned the same way (`instructions/<step>.<ordinal>.md`), and `run.json` records the
-  activation → step / iteration / output-file mapping.
+- **Invocation and activation identity.** Every execution of a `message` or `launch` step
+  — once for a plain step, once per iteration inside `repeat`, again after Relaunch —
+  mints a run-global, monotonic **invocation ordinal** (1, 2, 3, … across all steps and
+  iterations) on entry, whether or not the step waits; it names the step's artifacts
+  (`instructions/<step>.<ordinal>.md`). When the step has an `expect`, the same invocation
+  is also its *activation* `(run id, step id, ordinal, delivery role)`: the runner mints a
+  fresh delivery token for it, and the previous activation of the same step (if any) is
+  terminal. Exactly one successful `done` is accepted per activation, identified by its
+  token; a later, stale, or token-less delivery gets `STEP_NOT_EXPECTING` /
+  `TOKEN_REQUIRED` / `TOKEN_INVALID`. Skip / Cancel / Relaunch revoke the *current*
+  activation's token (Relaunch then mints a new invocation/activation). Every delivery is
+  persisted as `outputs/<name>.<ordinal>.md` (collision-free by construction, even when
+  several steps produce the same output name); `outputs/<name>.md` is the "latest" view,
+  replaced atomically (temp file + rename); `run.json` records the invocation → step /
+  iteration / activation / file mapping.
 - Output bodies are capped (default 1 MiB, hard max 4 MiB → `OUTPUT_TOO_LARGE`).
 - **Skip rule.** Skipping an `expect` (panel Skip or `on_timeout: skip`) marks its output
   missing. If any later step's template references that output (or the `until` of an
@@ -245,7 +255,7 @@ appends the rendered command itself); `on_timeout: skip` on an output referenced
   run.json                  # state snapshot: workflow id/version, frozen role bindings (profile UUID/name, pane ids),
                             # step states, timestamps; no env values, no extra arguments, no credentials
   log.md                    # human-readable, append-only
-  instructions/<step>.<ordinal>.md   # materialized `instruction` / `prompt` text, one per activation (run-global ordinal)
+  instructions/<step>.<ordinal>.md   # materialized `instruction` / `prompt` text, one per invocation (run-global ordinal, §5)
   skills/<id>/SKILL.md      # materialized bundled skills
   outputs/<name>.md         # latest validated delivery (atomically replaced); every delivery is also kept as <name>.<ordinal>.md
 ```
@@ -269,7 +279,7 @@ output body is excluded from that claim.
 
 ```bash
 prowl workflow list [--json]                                  # sources, enabled, validation status
-prowl workflow run <id|name> [source] [--role r=<profile|uuid|auto>]... [--input k=v]... [--json]
+prowl workflow run <id|name> [source] [--role r=<binding>]... [--input k=v]... [--json]   # <binding> grammar is source-specific, see below
                                                               # [source]: 060 GenericTarget (pN | tN | UUID | worktree ref); omitted → caller pane
                                                               # when the workflow has a `current` role (SOURCE_REQUIRED outside a pane), a
                                                               # worktree reference otherwise
@@ -334,7 +344,7 @@ changed` was requested.
 | Advance | A step completes when its `expect` is satisfied (or it has none and its effect succeeded). `repeat` evaluates `until` before entry and after each iteration; `max` reached with `until` still false ends the run as `max_rounds_reached`. |
 | Message delivery | Injection is synchronous (`insertCommittedText` + submit); Prowl keeps no queue — a `working` agent holds the line in its own input queue, and the panel says so. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
 | Binding scope | As defined in §3 (four-tuple key with the canonical role-requirements digest); §3 is normative. |
-| Activation | Defined in §5: every wait is a new activation with its own token; one delivery per activation; revocation is per activation; outputs are versioned by activation ordinal. |
+| Invocation / activation | Defined in §5: every `message`/`launch` execution mints a run-global invocation ordinal (artifact naming); a waiting invocation is an activation with its own token; one delivery per activation; revocation is per activation; outputs and instructions are versioned by ordinal. |
 | Rendered-text boundary | Every string that reaches `insertCommittedText` + submit — rendered `text`, pointer lines, completion commands, nudges — is validated after template substitution: no line terminators (`\n`, `\r`, U+2028/2029) and no C0/C1 control characters; violations stop the step with `RENDERED_TEXT_INVALID` (`needsAttention`, never a partial injection). String inputs and `--input` values are validated the same way at start; a worktree path that cannot be rendered on one line is rejected at start (`UNSAFE_PATH`). Multi-line content always goes through `instruction` / materialized files. |
 | Watchdog | Driven by the periodic detection events (`agentEntryChanged` / `agentEntryRemoved`, forwarded to the runner by `AppFeature`'s single terminal-event subscription — `WorktreeTerminalManager.eventStream()` is single-consumer) plus an injected clock. When a step starts waiting the watchdog reads the role's current state first and schedules cancellable grace deadlines; it never depends on a later event alone. Every trigger has a grace period because detection is heuristic and a wrong guess must be harmless. Awaited role `blocked` ≥ `blocked_grace` (default 30 s) → `needsAttention` (Focus pane / Cancel). Awaited role `idle`/`done` ≥ `idle_grace` (default 3 min) without `done` → one automatic nudge (`[Prowl] When your work for this step is fully complete, finish with: <the active activation's completion command, from the §4 renderer — token and verdict choices included>`, harmless if the agent is still working because the runtime merely queues the line), then `needsAttention` after another `idle_grace` (Nudge again / Keep waiting / Skip / Cancel). Awaited role's agent process gone → `needsAttention` (Relaunch role / Skip / Cancel). `working` never triggers anything. Grace values are global settings. |
 | `needsAttention` | A UI state (orange status slot + notification), never a deadline: a late `done` is still accepted; only an explicit Skip marks the output missing and rejects later deliveries. |

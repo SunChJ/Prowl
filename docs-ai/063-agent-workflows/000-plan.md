@@ -119,8 +119,9 @@ that advances one step at a time through existing terminal boundaries:
   never be misattributed. Tokens are never written into YAML, and the **generated
   command is the only spelling agents ever see**: one completion-command renderer produces
   the initial hint, every nudge, and every re-delivery (token always present; for verdict
-  steps a `--verdict VALUE -` form plus one executable command per allowed value in the
-  materialized instruction and in `prowl workflow status`); built-ins and examples say
+  steps one complete executable command per allowed value on every transport — typed
+  line, materialized instruction, and `prowl workflow status` — never a placeholder);
+  built-ins and examples say
   "finish with the generated completion command"; the validator warns when
   `text`/`instruction` spells out `prowl workflow done`. `expect` is valid only on
   `message` and `launch` (their target role delivers); native actions return typed
@@ -131,8 +132,10 @@ that advances one step at a time through existing terminal boundaries:
 - `notify`/`close` → the existing bell pipeline and protected close path.
 
 **Data channels.** Inbound to an agent is always *file + short pointer*: long
-`instruction` text is materialized to `run.dir/instructions/<step>.md` and one line is
-typed (or passed as the kickoff prompt); short `text` is typed verbatim (single line).
+`instruction` text is materialized (one file per invocation, named by the run-global
+invocation ordinal — the DSL spec §§5/8 are normative for run-directory layout) and one
+line is typed (or passed as the kickoff prompt); short `text` is typed verbatim (single
+line).
 Outbound is `prowl workflow done [--verdict v] -` (stdin): the caller pane identifies the
 run/role, the delivery token identifies the awaited step — the YAML itself carries nothing
 machine-specific. Transcript observation (`agents read`) and headless adapter capture are
@@ -166,9 +169,10 @@ schedules cancellable grace deadlines on the injected clock; it never relies on 
 event alone.
 
 **Data bus.** `<root>/.prowl/workflow-runs/<run-id>/` holds `run.json`, `log.md`,
-`instructions/`, `skills/` (materialized from the embedded skill registry only — `skill:`
-ids are safe slugs that must resolve to a bundled skill), `outputs/<name>.md` (every
-delivery also kept as `<name>.<activation ordinal>.md`; latest wins in templates).
+`instructions/` and `outputs/` (both versioned by the run-global invocation ordinal, latest
+output view replaced atomically — layout normative in the DSL spec §8), `skills/`
+(materialized from the embedded skill registry only — `skill:` ids are safe slugs that must
+resolve to a bundled skill).
 Distribution is "the next instruction names the path"; Prowl never inlines one agent's
 output into another agent's input box, and every rendered line is re-validated as a
 single terminal line before injection (template values such as inputs or paths cannot
@@ -318,9 +322,10 @@ to|save` remain (see Open questions for alias vs. removal).
   synchronous CLI call): a launch/provision failure after the artifacts are written ends
   the run as `failed`, keeps artifacts and log, and returns `HANDOFF_FAILED` exactly as the
   current handler does. The adapter awaits run completion synchronously (no agent wait is
-  involved once the brief is supplied) and is covered by per-field socket parity tests:
-  no-agent source, `--no-brief`, `--no-launch`, profile lookup failure, provisioning
-  failure, launch failure.
+  involved once the brief is supplied) and is covered by per-field socket parity tests
+  (the DSL spec §11 list is normative: no-agent source, `--no-brief`, `--no-launch`,
+  omitted brief choice, empty stdin, invalid sections, action/transition failure, profile
+  lookup failure, provisioning failure, launch failure).
 - `skills/prowl-workflows/SKILL.md`: how to author and run workflows; `prowl workflow
   schema` prints the machine-readable reference.
 
@@ -350,9 +355,11 @@ Shapes are intentionally close to what exists so the runner and the CLI share on
   additively (`resource: pane`, `anchor`, `direction`, optional `launch {profile_id,
   profile_name, agent}`). `prowl profiles list` is a read-only snapshot of enabled/disabled
   profiles with availability (`prowl.cli.profiles.v1`). `prowl agents wait <pane> --until
-  idle|done|blocked|changed --timeout 1…3600` subscribes to the per-surface
-  `ActiveAgentEntry` events (immediate return when already satisfied; `WAIT_TIMEOUT`
-  otherwise) and returns `{status, raw_state, waited_ms}` (`prowl.cli.agents.wait.v1`).
+  idle|done|blocked|changed --timeout 1…3600` consumes the typed `ObservedAgentState`
+  observer described above (snapshot first → immediate return when already satisfied;
+  `WAIT_TIMEOUT` on expiry; `removed` / `surfaceClosed` → error `AGENT_GONE` with the last
+  known status in the error payload) and returns `{status, raw_state, waited_ms}`
+  (`prowl.cli.agents.wait.v1`).
 - **Tests**: terminal-layer coverage extends `supacodeTests/WorktreeTerminalStateAgentProfileTests.swift`
   (anchored split, placement override, background tab, returned identity, provisioning
   failure); planner intent rendering per adapter in `supacodeTests/AgentProfileTests.swift`
@@ -490,6 +497,12 @@ built-ins land, handoff migrated).
   declared; optional fixes (`UNSAFE_PATH` listed, `tN` in the source grammar, concepts
   table and binding text aligned with the DSL, `notify` fallback without a `current` role,
   legacy parity list includes the preflight cases).
+- **Review round 5 (2026-08-22; verified before adopting)** — run-directory specifics in
+  the plan now defer to the DSL spec (§§5/8 normative); a run-global *invocation* ordinal
+  is minted on entry to every `message`/`launch` execution (artifact naming for
+  non-waiting steps too), with *activation* = waiting invocation; `--role r=<binding>` in
+  the synopsis; `agents wait` wording aligned with the `ObservedAgentState` observer and
+  `AGENT_GONE` payload; a compact V1 action schema table added to the DSL.
 
 ## Open questions
 
