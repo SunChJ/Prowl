@@ -114,3 +114,4 @@ agent-facing manual for that).
 | 060 | [prowl-cli-targeting-and-contract-governance](060-prowl-cli-targeting-and-contract-governance/000-plan.md) | 2026-08-16 | Unified target grammar, CLI contract rebaseline, and durable documentation governance |
 | 061 | [native-toolbar-controls](061-native-toolbar-controls/000-plan.md) | 2026-08-17 | Native macOS toolbar grouping, Liquid Glass ownership, and review standards |
 | 062 | [workspace-child-diff](062-workspace-child-diff/000-plan.md) | 2026-08-19 | Per-repository diff for workspace children via unified DiffTarget routing |
+| 063 | [agent-workflows](063-agent-workflows/000-plan.md) | 2026-08-21 | Agent Workflows: YAML-declared, profile-bound multi-agent orchestration (runner, `prowl workflow` CLI, status center, built-in handoff/adversarial review); successor to 047's fixed handoff flow |

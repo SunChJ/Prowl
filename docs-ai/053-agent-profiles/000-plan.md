@@ -423,3 +423,4 @@ agent 列表不变。
 - 2026-08-01 — Handoff 的 briefing resume/fork 已删除;Profile 环境和 home
   只需沿 destination launch 传播,不再规划 `AgentResumeRequest` 双路径。见
   [047.006](../047-cross-agent-handoff/006-remove-fork-briefing.md)。
+- Updated 2026-08-22: profile-aware handoff 与跨 agent 编排规划为 [063-agent-workflows](../063-agent-workflows/000-plan.md)：workflow 的 role 以 `agents`/`suggest` 描述要求、在本机绑定 profile（共享文件不含 profile 名），启动经由带 `.prompt` intent、返回 pane 身份的 profile launch boundary；本文「后续方向」中的 handoff 迁移与 `prowl` CLI profile 感知由该条目承接。
