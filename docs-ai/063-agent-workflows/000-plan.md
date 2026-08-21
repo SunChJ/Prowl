@@ -84,7 +84,7 @@ contract governance of 060.
 | Term | Meaning |
 | --- | --- |
 | Workflow | A `prowl.workflow/v1` YAML document: id, inputs, roles, steps. Sources: bundle (`prowl.*` ids), user (`~/.prowl/workflows/*.yaml`), repo (`<root>/.prowl/workflows/*.yaml`). |
-| Role | A participant: `source: current` (the pane the run was started from; it must host a detected agent only if a non-skipped step `message`s it, so a bare shell can still be the source of a context-only handoff), `pick` (an existing detected agent pane in the same worktree, chosen at start), or `launch` (a new agent Prowl starts). V1 launch roles are interactive (TUI in a tab/split); `kind: headless` is reserved for V2 (see Alternatives). |
+| Role | A participant: `source: current` (the pane the run was started from; it must host a detected agent only if the runner will actually deliver a `message` to it — steps pre-skipped or completed by a seeded output at start do not count — so a bare shell can still be the source of a context-only or pre-briefed handoff), `pick` (an existing detected agent pane in the same worktree, chosen at start), or `launch` (a new agent Prowl starts). V1 launch roles are interactive (TUI in a tab/split); `kind: headless` is reserved for V2 (see Alternatives). |
 | Binding | Role → concrete Agent Profile, resolved at start and frozen into the run. |
 | Step | One verb: `message` (say something to a live role), `launch` (start a launch role), `action` (built-in Swift action), `notify`, `close`; plus `repeat` blocks. Each step has a `title` for the status slot and an optional `expect`. |
 | Expect | Only on `message` / `launch` steps: what must happen before the run advances — a named `output` delivered by the step's target role via the generated `prowl workflow done` command, optional `sections`/`format` validation, optional `verdict` enum (safe slugs), optional `timeout` / `on_timeout`. |
@@ -130,7 +130,10 @@ that advances one step at a time through existing terminal boundaries:
   `message` and `launch` (their target role delivers); native actions return typed
   outputs synchronously. Skipping a step whose expected output is referenced by a later
   template ends the run as `skipped` (the panel says which step depends on it) — V1 has
-  no optional template values, so the alternative would be an unrenderable step.
+  no optional template values, so the alternative would be an unrenderable step. The one
+  tolerated consumer is a `with` input declared optional by the action's schema: the key is
+  simply absent, which is how skipping the brief turns `prowl.handoff` into a context-only
+  transition (the old HUD's "Context Only" fallback, now a generic rule).
 - `action` → a registry of native Swift actions (`handoff.transition`, `git.context`).
 - `notify`/`close` → the existing bell pipeline and protected close path.
 
@@ -530,6 +533,13 @@ built-ins land, handoff migrated).
   ordinal, `outputs/brief.<ordinal>.md`, `seeded` record, no token/pane), preserving the
   invalid-brief-before-any-artifact property; the destination-only binding is
   cross-referenced from the binding model, the `run` response, and `run.json`.
+- **Review round 9 (2026-08-22; verified before adopting, mechanism chosen differently)** —
+  instead of an adapter-private input overlay, the Skip rule tolerates missing outputs for
+  optional action inputs (key absent → `handoff.transition` context-only), which serves
+  `--no-brief`, `save --no-brief`, and the GUI "Context Only" skip with one rule; `current`
+  role admission depends on whether a message will actually be delivered (pre-skipped and
+  seeded-completed steps do not count); seeded outputs are validated against the step's
+  `expect`; outputs may be agent- or caller-authored.
 
 ## Open questions
 

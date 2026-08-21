@@ -65,7 +65,7 @@ roles:
 
 | Field | Rules |
 | --- | --- |
-| `source` | At most one `current` role per workflow. A `current` role must host a detected agent only if some step that is not pre-skipped at start `message`s it; otherwise a bare shell pane is a valid source (context-only handoff, legacy `handoff save`). A workflow without a `current` role needs an explicit worktree at start. `pick` roles are chosen from the detected agents of the source worktree at start; a pane already in a run is not offered. |
+| `source` | At most one `current` role per workflow. A `current` role must host a detected agent only if the runner will actually **deliver** to it — i.e. at least one `message` step targeting it is neither pre-skipped nor completed by a seeded output (§5) at start; otherwise a bare shell pane is a valid source (context-only handoff, legacy `handoff save`, legacy `--brief -`). The check runs after the internal start API has applied its pre-skips/seeds. A workflow without a `current` role needs an explicit worktree at start. `pick` roles are chosen from the detected agents of the source worktree at start; a pane already in a run is not offered. |
 | `kind` | Only for `launch`. V1 accepts `interactive` only; `headless` is reserved (§12) because no executor/output protocol exists yet. |
 | `agents` | Tokens from the detected-agent catalog. Validator warns (not errors) when none is installed locally. |
 | `suggest` | Subset of profile preset fields (`agent`, `model`, `reasoning_effort`, `execution_mode`). Never a reference to a profile name or UUID. |
@@ -205,21 +205,28 @@ expect:
   replaced atomically (temp file + rename); `run.json` records the invocation → step /
   iteration / activation / file mapping.
 - **Seeded outputs (internal, adapter-only).** The runner's internal start API lets an
-  in-app caller (today only the `LegacyHandoffAdapter`, §11) supply an already-validated
-  body for a step's output *before* any agent participates. After the caller's preflight
-  succeeds and the run directory exists, the runner allocates a run-global ordinal,
+  in-app caller (today only the `LegacyHandoffAdapter`, §11) supply a body for a step's
+  output *before* any agent participates. The runner validates it against the target
+  step's `expect` (format, sections, verdict, size cap) exactly as a delivery; after that
+  check and the caller's own preflight succeed and the run directory exists, the runner
+  allocates a run-global ordinal,
   atomically writes `outputs/<name>.<ordinal>.md` plus the latest view, and records the
   step in `run.json` as `seeded` (no source-pane delivery, no activation, no token). The
   step counts as completed and its `expect` is satisfied; templates resolve
   `outputs.<name>.path` normally; later invocations continue the same monotonic ordinal
   sequence. Seeding is not reachable from YAML or the public CLI.
 - Output bodies are capped (default 1 MiB, hard max 4 MiB → `OUTPUT_TOO_LARGE`).
-- **Skip rule.** Skipping an `expect` (panel Skip or `on_timeout: skip`) marks its output
-  missing. If any later step's template references that output (or the `until` of an
-  enclosing `repeat` depends on its verdict), the run ends as `skipped` instead of
-  advancing — V1 has no optional template values. The panel states which step depends on
-  the output before the user confirms Skip; the validator warns when `on_timeout: skip`
-  would end the run this way.
+- **Skip rule.** Skipping an `expect` (panel Skip, `on_timeout: skip`, or an internal
+  pre-skip) marks its output missing. A missing output is tolerated by exactly one kind of
+  consumer: a `with` input that the action's registry schema declares **optional** — the
+  key is then absent from the action's effective input (this is how `handoff.transition`
+  degrades to a context-only transition, i.e. the old HUD's "Context Only"). Every other
+  reference — `text` / `instruction` / `prompt` / `notify` templates, required action
+  inputs, or the `until` of an enclosing `repeat` — makes the run end as `skipped` instead
+  of advancing, because V1 has no optional template values. The panel states the
+  consequence ("continues without a briefing" vs. "ends the run; step X depends on it")
+  before the user confirms Skip; the validator warns when `on_timeout: skip` would end the
+  run this way.
 - Waiting is supervised by the state-driven watchdog (§10), not by wall-clock time; a
   `working` role is never interrupted.
 
@@ -258,7 +265,8 @@ names, output names, input names, and verdict values must match
 `^[a-z0-9][a-z0-9_-]{0,63}$` — because they become path components and CLI arguments.
 Warnings: no installed agent satisfies `agents`; no enabled profile matches `suggest`;
 `timeout` above 2h; `text`/`instruction` spelling out `prowl workflow done` (the runner
-appends the rendered command itself); `on_timeout: skip` on an output referenced later.
+appends the rendered command itself); `on_timeout: skip` on an output that a later
+non-optional consumer references (the run would end as `skipped`).
 
 ## 8. Run directory
 
@@ -280,8 +288,10 @@ and the run UUID, under canonical containment checks against
 `<root>/.prowl/workflow-runs/` (no symlink leaf, resolved parent + leaf compared to the
 resolved base — the `AgentProfileHomeProvisioner` gate). Repo-scoped definitions are
 untrusted input; nothing from a workflow file is interpolated into a path except validated
-slugs. Outputs are agent-authored content persisted at the agent's request (size caps in
-§5); they are kept until the user removes the run folder (retention policy: V2). Privacy
+slugs. Outputs are agent-authored content persisted at the agent's request — or, for
+seeded outputs (§5), caller-supplied content validated against the step's `expect` — with
+the size caps of §5; they are kept until the user removes the run folder (retention
+policy: V2). Privacy
 wording as in §10: Prowl-authored persisted and response metadata (`run.json`, `log.md`,
 the non-body fields of CLI payloads) carries profile UUID/name and agent tokens only —
 never extra arguments, environment values, home paths, or credentials; the agent-provided
@@ -380,8 +390,11 @@ changed` was requested.
   **seeded output** (§5: validated during adapter preflight, then materialized as
   `outputs/brief.<ordinal>.md` with a `seeded` record once the run exists, so
   `{{ outputs.brief.path }}` resolves normally and no pane delivery or token is fabricated),
-  `--no-brief` → `brief` step pre-skipped / output missing (the action's optional input is
-  absent → context-only semantics), `--note` → `handoff.transition` input, `save` →
+  `--no-brief` → `brief` step pre-skipped / output missing — the built-in's
+  `with: { briefing: "{{ outputs.brief.path }}" }` then drops the key by the §5 Skip rule
+  (optional action input), so the run continues with context-only semantics, exactly as a
+  GUI user skipping the brief step gets "Context Only"; no adapter-specific overlay exists,
+  `--note` → `handoff.transition` input, `save` →
   `prowl.handoff-checkpoint` (brief → `action handoff.checkpoint`), and `to <agent>` by
   launch intent: **when a launch is requested**, the receiver role is bound to the
   Recommended enabled profile of that runtime (else `PROFILE_NOT_FOUND`); **with
@@ -411,8 +424,10 @@ changed` was requested.
   `to --brief -` and `save --brief -` (invalid brief rejected before any run directory or
   `.prowl` artifact exists; valid brief yields a versioned seeded output, a `seeded`
   `run.json` record, the rendered action input, and a later invocation continuing the
-  ordinal sequence), `save --no-brief` with and without an existing valid `current.md`
-  (context-only checkpoint keeps it), omitted brief choice
+  ordinal sequence), `to --no-brief` and `save --no-brief` completing (not `skipped`) with
+  the `briefing` input absent, `save --no-brief` with and without an existing valid
+  `current.md` (context-only checkpoint keeps it), every one of these four from a bare
+  shell source (no detected agent), omitted brief choice
   → `BRIEF_REQUIRED`, empty stdin → `EMPTY_INPUT`, invalid sections → `INVALID_BRIEF`,
   action/transition failure, profile lookup failure, provisioning failure, launch
   failure).
