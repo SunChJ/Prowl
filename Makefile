@@ -41,6 +41,23 @@ PROWL_SENTRY_DSN ?=
 PROWL_POSTHOG_API_KEY ?=
 PROWL_POSTHOG_HOST ?=
 
+# Local Debug signing. Debug products are ad-hoc signed by default, and an ad-hoc
+# signature's designated requirement is its cdhash, which changes on every rebuild:
+# TCC then treats each build as a new app and re-asks for Desktop/Documents/Downloads
+# access from Prowl Debug and from the commands running in its panes. Setting
+# PROWL_DEVELOPMENT_TEAM (environment or Config/Secrets.env) makes build-app and
+# test-app sign the app and the test host with that team's Apple Development identity
+# through Xcode's automatic signing, so the grants survive rebuilds. Empty keeps
+# ad-hoc signing, which needs no certificate (CI, contributors).
+PROWL_DEVELOPMENT_TEAM ?=
+ifneq ($(strip $(PROWL_DEVELOPMENT_TEAM)),)
+DEBUG_SIGNING_ARGS := DEVELOPMENT_TEAM=$(PROWL_DEVELOPMENT_TEAM)
+TEST_SIGNING_ARGS := $(DEBUG_SIGNING_ARGS)
+else
+DEBUG_SIGNING_ARGS :=
+TEST_SIGNING_ARGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+endif
+
 .DEFAULT_GOAL := help
 .PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-integration benchmark-build bump-version log-stream
 
@@ -112,7 +129,7 @@ embed-docs: # Stage docs/ into Resources for bundling into the app (.app/Content
 	echo "embedded docs at $$dst"
 
 build-app: ensure-ghostty embed-cli-debug embed-docs # Build the macOS app (Debug)
-	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon'
+	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental $(DEBUG_SIGNING_ARGS) 2>&1 | mise exec -- xcsift -w --format toon'
 
 sync-cli-version: # Sync app MARKETING_VERSION into ProwlCLIShared/ProwlVersion.swift
 	@version="$$(/usr/bin/awk -F' = ' '/MARKETING_VERSION = [0-9.]*;/{gsub(/;/,"",$$2);print $$2; exit}' \
@@ -335,7 +352,7 @@ test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	mkdir -p "$$(dirname "$$result_bundle")"; \
 	rm -rf "$$result_bundle"; \
 	set +e; \
-	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon; \
+	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" $(TEST_SIGNING_ARGS) -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon; \
 	xcodebuild_status=$${PIPESTATUS[0]}; \
 	set -e; \
 	if [ "$$xcodebuild_status" -ne 0 ]; then \

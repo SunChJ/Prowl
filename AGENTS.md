@@ -25,6 +25,8 @@ make test-cli-integration        # Run CLI integration tests (socket round-trip)
 make bump-version                # Bump version (date-based YYYY.M.DD) and create git tag; used by release.sh
 ```
 
+Debug builds are ad-hoc signed by default, so building needs no certificate. An ad-hoc signature's designated requirement is its cdhash, which changes on every rebuild, so macOS re-asks for Desktop/Documents/Downloads access from Prowl Debug — and from the commands running in its panes — after each build. If your worktrees live in those folders, set `PROWL_DEVELOPMENT_TEAM=<Team ID>` (environment or `Config/Secrets.env`) and `make build-app` / `make test` sign the Debug app and test host with your Apple Development identity instead; the Team ID is the certificate's OU, not the ID in parentheses after your name. With it set, replace the `CODE_SIGNING_*` settings in ad-hoc `xcodebuild test` invocations like the one below with `DEVELOPMENT_TEAM=<Team ID>` so the test host keeps the same signature.
+
 Run a single test class or method:
 
 ```bash
