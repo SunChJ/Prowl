@@ -84,7 +84,10 @@ override, is re-validated first (exists, enabled, satisfies `agents`, adapter su
 seeded prompt); a failing candidate falls through to the next tier. The chosen profile is
 frozen into the run together with its launch plan; later profile edits do not affect the
 run. CLI overrides are source-specific (§9): `--role <launch-role>=<profile name|uuid|auto>`,
-`--role <pick-role>=<agent pane: pN | pane UUID>`; `current` roles take no override.
+`--role <pick-role>=<agent pane: pN | pane UUID>`; `current` roles take no override. One
+internal exception exists: the `LegacyHandoffAdapter` (§11) may freeze a launch role as a
+*destination-only* binding (agent token, no profile) when its launch step is pre-skipped;
+a generic resolver never performs profile lookup for such a role.
 
 ## 4. Steps
 
@@ -201,6 +204,15 @@ expect:
   several steps produce the same output name); `outputs/<name>.md` is the "latest" view,
   replaced atomically (temp file + rename); `run.json` records the invocation → step /
   iteration / activation / file mapping.
+- **Seeded outputs (internal, adapter-only).** The runner's internal start API lets an
+  in-app caller (today only the `LegacyHandoffAdapter`, §11) supply an already-validated
+  body for a step's output *before* any agent participates. After the caller's preflight
+  succeeds and the run directory exists, the runner allocates a run-global ordinal,
+  atomically writes `outputs/<name>.<ordinal>.md` plus the latest view, and records the
+  step in `run.json` as `seeded` (no source-pane delivery, no activation, no token). The
+  step counts as completed and its `expect` is satisfied; templates resolve
+  `outputs.<name>.path` normally; later invocations continue the same monotonic ordinal
+  sequence. Seeding is not reachable from YAML or the public CLI.
 - Output bodies are capped (default 1 MiB, hard max 4 MiB → `OUTPUT_TOO_LARGE`).
 - **Skip rule.** Skipping an `expect` (panel Skip or `on_timeout: skip`) marks its output
   missing. If any later step's template references that output (or the `until` of an
@@ -252,7 +264,7 @@ appends the rendered command itself); `on_timeout: skip` on an output referenced
 
 ```
 <root>/.prowl/workflow-runs/<run-id>/
-  run.json                  # state snapshot: workflow id/version, frozen role bindings (profile UUID/name, pane ids),
+  run.json                  # state snapshot: workflow id/version, frozen role bindings (profile UUID/name, pane ids, or a destination-only agent token), seeded/invocation records,
                             # step states, timestamps; no env values, no extra arguments, no credentials
   log.md                    # human-readable, append-only
   instructions/<step>.<ordinal>.md   # materialized `instruction` / `prompt` text, one per invocation (run-global ordinal, §5)
@@ -315,8 +327,9 @@ unknown roles are `INVALID_ARGUMENT`; a missing override falls back to binding r
 # current roles take no override
 ```
 
-The `run` response records every frozen binding (launch: profile id/name/agent; pick:
-pane id/handle and detected agent).
+The `run` response records every frozen binding (launch: profile id/name/agent, or — for
+the internal destination-only binding of §11 — agent token only; pick: pane id/handle and
+detected agent).
 
 Error codes: `WORKFLOW_NOT_FOUND`, `WORKFLOW_INVALID`, `RUN_NOT_FOUND`, `PANE_BUSY`,
 `ROLE_MISMATCH`, `STEP_NOT_EXPECTING`, `TOKEN_REQUIRED`, `TOKEN_INVALID`,
@@ -363,8 +376,12 @@ changed` was requested.
   `## Next Steps`) → `action handoff.transition` (archive-first `.prowl/handoff/`
   contract) → `launch receiver` (`prompt: "{{ actions.transition.kickoff_prompt }}"`) →
   `notify`. The deprecated `prowl handoff` commands are served by a `LegacyHandoffAdapter`
-  that maps source selectors → run source, `--brief -` / `--no-brief` → `brief` output
-  pre-delivered / step pre-skipped, `--note` → `handoff.transition` input, `save` →
+  that maps source selectors → run source, `--brief -` → the `brief` step completed by a
+  **seeded output** (§5: validated during adapter preflight, then materialized as
+  `outputs/brief.<ordinal>.md` with a `seeded` record once the run exists, so
+  `{{ outputs.brief.path }}` resolves normally and no pane delivery or token is fabricated),
+  `--no-brief` → `brief` step pre-skipped / output missing (the action's optional input is
+  absent → context-only semantics), `--note` → `handoff.transition` input, `save` →
   `prowl.handoff-checkpoint` (brief → `action handoff.checkpoint`), and `to <agent>` by
   launch intent: **when a launch is requested**, the receiver role is bound to the
   Recommended enabled profile of that runtime (else `PROFILE_NOT_FOUND`); **with
@@ -391,7 +408,10 @@ changed` was requested.
   `to … --no-brief` with a stale `current.md` present (archived and removed, context-only
   kickoff, `has_briefing: false`), `to gemini --no-launch` in both brief and context-only
   variants (asserting `to_agent`, archive/log target, no profile lookup, no launch),
-  `save --brief -`, `save --no-brief` with and without an existing valid `current.md`
+  `to --brief -` and `save --brief -` (invalid brief rejected before any run directory or
+  `.prowl` artifact exists; valid brief yields a versioned seeded output, a `seeded`
+  `run.json` record, the rendered action input, and a later invocation continuing the
+  ordinal sequence), `save --no-brief` with and without an existing valid `current.md`
   (context-only checkpoint keeps it), omitted brief choice
   → `BRIEF_REQUIRED`, empty stdin → `EMPTY_INPUT`, invalid sections → `INVALID_BRIEF`,
   action/transition failure, profile lookup failure, provisioning failure, launch

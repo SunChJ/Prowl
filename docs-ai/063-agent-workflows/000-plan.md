@@ -315,7 +315,9 @@ to|save` remain (see Open questions for alias vs. removal).
   destination-only binding carrying the validated token and the `launch` step is
   pre-skipped (so `prowl handoff to gemini --no-launch` keeps its archive/log/`to_agent`
   behavior for every detected-agent token); source selectors / positional source → run
-  source; `--brief -` / `--no-brief` → `brief` output pre-delivered / step pre-skipped
+  source; `--brief -` → the `brief` step completed by a *seeded output* (validated in
+  preflight, then materialized as a versioned `outputs/brief.<ordinal>.md` with a `seeded`
+  record — no fabricated delivery or token; DSL spec §5); `--no-brief` → step pre-skipped
   (absent briefing = context-only transition: archive, remove the stale `current.md`,
   regenerate `context.md`, context-only kickoff); `--note` → `handoff.transition` input;
   `save` → `prowl.handoff-checkpoint`. The adapter
@@ -523,6 +525,11 @@ built-ins land, handoff migrated).
   typed destination-only binding (token, no profile/pane/plan) that `handoff.transition`
   resolves `to` from, profile lookup happens only when a launch is requested; both cases
   join the parity matrix; Retry revokes/re-mints a token only when the step has `expect`.
+- **Review round 8 (2026-08-22; verified before adopting)** — internal-only *seeded
+  outputs* give a pre-delivered legacy brief a legal run-store identity (run-global
+  ordinal, `outputs/brief.<ordinal>.md`, `seeded` record, no token/pane), preserving the
+  invalid-brief-before-any-artifact property; the destination-only binding is
+  cross-referenced from the binding model, the `run` response, and `run.json`.
 
 ## Open questions
 
