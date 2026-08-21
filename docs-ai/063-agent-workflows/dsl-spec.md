@@ -277,7 +277,7 @@ non-optional consumer references (the run would end as `skipped`).
   log.md                    # human-readable, append-only
   instructions/<step>.<ordinal>.md   # materialized `instruction` / `prompt` text, one per invocation (run-global ordinal, §5)
   skills/<id>/SKILL.md      # materialized bundled skills
-  outputs/<name>.md         # latest validated delivery (atomically replaced); every delivery is also kept as <name>.<ordinal>.md
+  outputs/<name>.md         # latest validated output (atomically replaced); every output version is also kept as <name>.<ordinal>.md
 ```
 
 `<root>/.prowl/workflow-runs/.gitignore` contains `*` (self-ignoring, as `.prowl/handoff/`).

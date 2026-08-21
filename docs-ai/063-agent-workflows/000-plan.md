@@ -85,7 +85,7 @@ contract governance of 060.
 | --- | --- |
 | Workflow | A `prowl.workflow/v1` YAML document: id, inputs, roles, steps. Sources: bundle (`prowl.*` ids), user (`~/.prowl/workflows/*.yaml`), repo (`<root>/.prowl/workflows/*.yaml`). |
 | Role | A participant: `source: current` (the pane the run was started from; it must host a detected agent only if the runner will actually deliver a `message` to it — steps pre-skipped or completed by a seeded output at start do not count — so a bare shell can still be the source of a context-only or pre-briefed handoff), `pick` (an existing detected agent pane in the same worktree, chosen at start), or `launch` (a new agent Prowl starts). V1 launch roles are interactive (TUI in a tab/split); `kind: headless` is reserved for V2 (see Alternatives). |
-| Binding | Role → concrete Agent Profile, resolved at start and frozen into the run. |
+| Binding | Role → concrete Agent Profile (or, for `pick`, an existing pane), resolved at start and frozen into the run; the only exception is the internal destination-only binding the legacy handoff adapter uses for `--no-launch` (agent token, no profile). |
 | Step | One verb: `message` (say something to a live role), `launch` (start a launch role), `action` (built-in Swift action), `notify`, `close`; plus `repeat` blocks. Each step has a `title` for the status slot and an optional `expect`. |
 | Expect | Only on `message` / `launch` steps: what must happen before the run advances — a named `output` delivered by the step's target role via the generated `prowl workflow done` command, optional `sections`/`format` validation, optional `verdict` enum (safe slugs), optional `timeout` / `on_timeout`. |
 | Run | One execution: state snapshot + artifacts under `<root>/.prowl/workflow-runs/<run-id>/`. |
@@ -183,7 +183,9 @@ Distribution is "the next instruction names the path"; Prowl never inlines one a
 output into another agent's input box, and every rendered line is re-validated as a
 single terminal line before injection (template values such as inputs or paths cannot
 smuggle a newline past the boundary). Outputs are agent-authored
-content persisted at the agent's request (default cap 1 MiB, hard max 4 MiB,
+content persisted at the agent's request — or, for the internal seeded outputs of the
+legacy adapter, caller-supplied content validated against the step's `expect` — (default
+cap 1 MiB, hard max 4 MiB,
 `OUTPUT_TOO_LARGE` otherwise; same bounds as `agents read`), kept until the user deletes
 the run folder (retention policy is a V2 item, as for `.prowl/handoff/archive`). Step ids
 and output names are restricted to safe slugs because they become path components; run
