@@ -99,7 +99,7 @@ steps:
   - id: brief
     title: "Author writing the brief"
     message: author                          # ① speak to a live interactive role
-    instruction: |                           #    multi-line → materialized to run.dir/instructions/brief.md; one pointer line is typed
+    instruction: |                           #    multi-line → materialized to a run instruction file (run.dir/instructions/brief.<ordinal>.md); one pointer line is typed
       Write a short brief for an adversarial reviewer: ## Scope, ## Claims, ## How to verify.
       Deliver it with the generated completion command.   # never spell `prowl workflow done` yourself — the runner appends the tokenized command
     expect: { output: brief, sections: ["## Scope", "## Claims"], timeout: 10m }
@@ -171,7 +171,7 @@ JSON Schema):
 | Action | `with` inputs | Outputs |
 | --- | --- | --- |
 | `handoff.transition` | `briefing` (path, optional), `from` (role, required), `to` (role, required), `note` (string, optional) | `kickoff_prompt` (string), `artifact_path` (path), `has_briefing` (bool) |
-| `handoff.checkpoint` | `briefing` (path, required), `note` (string, optional) | `artifact_path` (path) |
+| `handoff.checkpoint` | `briefing` (path, optional — absent = context-only checkpoint: regenerate `context.md`, keep an earlier valid `current.md` if present, as today's `handoff save --no-brief`), `note` (string, optional) | `artifact_path` (path), `has_briefing` (bool, for this invocation) |
 | `git.context` | `root` (path, optional; default worktree) | `path` (path to the generated markdown summary), `branch` (string) |
 
 ## 5. `expect`
@@ -342,7 +342,7 @@ changed` was requested.
 | --- | --- |
 | Start | Resolve bindings, freeze plans, create run dir, write `run.json`, then execute step 1. `current` role must not already be in a run (`PANE_BUSY`). |
 | Advance | A step completes when its `expect` is satisfied (or it has none and its effect succeeded). `repeat` evaluates `until` before entry and after each iteration; `max` reached with `until` still false ends the run as `max_rounds_reached`. |
-| Message delivery | Injection is synchronous (`insertCommittedText` + submit); Prowl keeps no queue — a `working` agent holds the line in its own input queue, and the panel says so. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
+| Message delivery | Injection is synchronous (`insertCommittedText` + submit, treated as one operation); Prowl keeps no queue — a `working` agent holds the line in its own input queue, and the panel says so. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). If the insert succeeded but the submit failed, the attention text says that the line may still sit unsubmitted in the pane's input (Focus pane lets the user press Enter there). **Retry** re-executes the step as a new invocation: it revokes the previous activation's token, mints a new ordinal/token, and injects the freshly rendered line. At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
 | Binding scope | As defined in §3 (four-tuple key with the canonical role-requirements digest); §3 is normative. |
 | Invocation / activation | Defined in §5: every `message`/`launch` execution mints a run-global invocation ordinal (artifact naming); a waiting invocation is an activation with its own token; one delivery per activation; revocation is per activation; outputs and instructions are versioned by ordinal. |
 | Rendered-text boundary | Every string that reaches `insertCommittedText` + submit — rendered `text`, pointer lines, completion commands, nudges — is validated after template substitution: no line terminators (`\n`, `\r`, U+2028/2029) and no C0/C1 control characters; violations stop the step with `RENDERED_TEXT_INVALID` (`needsAttention`, never a partial injection). String inputs and `--input` values are validated the same way at start; a worktree path that cannot be rendered on one line is rejected at start (`UNSAFE_PATH`). Multi-line content always goes through `instruction` / materialized files. |
@@ -381,9 +381,11 @@ changed` was requested.
   immediately, as the current handler does. It awaits run completion synchronously and
   renders the existing `prowl.cli.handoff.v2` response shape (schema-compatible;
   differences documented and covered by per-field socket parity tests: no-agent source,
-  `--no-brief`, `--no-launch`, omitted brief choice → `BRIEF_REQUIRED`, empty stdin →
-  `EMPTY_INPUT`, invalid sections → `INVALID_BRIEF`, action/transition failure, profile
-  lookup failure, provisioning failure, launch failure).
+  `to … --no-brief`, `--no-launch`, `save --brief -`, `save --no-brief` with and without
+  an existing valid `current.md` (context-only checkpoint keeps it), omitted brief choice
+  → `BRIEF_REQUIRED`, empty stdin → `EMPTY_INPUT`, invalid sections → `INVALID_BRIEF`,
+  action/transition failure, profile lookup failure, provisioning failure, launch
+  failure).
 - `prowl.adversarial-review` — as in §4; interactive reviewer in a right split by default.
 
 ## 12. Reserved for V2

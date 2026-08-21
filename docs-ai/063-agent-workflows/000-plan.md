@@ -107,10 +107,13 @@ that advances one step at a time through existing terminal boundaries:
   delivered. At most one pending injection exists per role; Cancel / Skip / Relaunch drop
   it.
 - `expect` → a `WorkflowRequestRegistry` entry (generalizing `HandoffRequestRegistry`)
-  keyed by an **opaque per-activation delivery token** (a UUID, hence shell-safe) that
-  Prowl mints each time a step starts waiting — every `repeat` iteration is a new
-  activation `(run, step, ordinal, role)` with its own token, one delivery per activation —
-  and places in the generated completion command
+  keyed by an **opaque per-activation delivery token** (a UUID, hence shell-safe). Lifecycle
+  (normative in the DSL spec §5): every `message`/`launch` execution mints a run-global
+  invocation ordinal on entry; when the step has an `expect`, that invocation is an
+  activation `(run, step, ordinal, role)` whose token is minted *before* the line is
+  rendered and injected (the injected text carries it); every `repeat` iteration and every
+  Retry/Relaunch is a new invocation. One delivery per activation. The token is placed in
+  the generated completion command
   (`PROWL_WORKFLOW_TOKEN=<token> prowl workflow done -`, the same env-prefix technique as
   today's `PROWL_HANDOFF_REQUEST_ID`; `--token <token>` is the explicit form). The entry
   is claimable exactly once; a `done` that arrives without the token, with a revoked token
@@ -503,6 +506,12 @@ built-ins land, handoff migrated).
   non-waiting steps too), with *activation* = waiting invocation; `--role r=<binding>` in
   the synopsis; `agents wait` wording aligned with the `ObservedAgentState` observer and
   `AGENT_GONE` payload; a compact V1 action schema table added to the DSL.
+- **Review round 6 (2026-08-22; verified before adopting)** — `handoff.checkpoint.briefing`
+  is optional (absent = context-only checkpoint, preserving today's `handoff save
+  --no-brief`) with a `has_briefing` output, and both `save` variants join the legacy
+  parity matrix; message Retry is a new invocation (token revoked and re-minted; guidance
+  when an insert succeeded but the submit failed); the plan's token paragraph now
+  cross-references the DSL invocation/activation lifecycle.
 
 ## Open questions
 
