@@ -170,7 +170,7 @@ JSON Schema):
 
 | Action | `with` inputs | Outputs |
 | --- | --- | --- |
-| `handoff.transition` | `briefing` (path, optional), `from` (role, required), `to` (role, required), `note` (string, optional) | `kickoff_prompt` (string), `artifact_path` (path), `has_briefing` (bool) |
+| `handoff.transition` | `briefing` (path, optional — **absent = context-only transition**, exactly today's `handoff to --no-brief`: archive the outgoing `current.md`/`context.md`, then *remove* `current.md` so a stale briefing can never impersonate a fresh one, regenerate `context.md`, and select the context/archive-only kickoff prompt), `from` (role, required), `to` (role, required; its agent token comes from the role's frozen binding — a profile binding yields the profile's agent, a legacy *destination-only* binding (see §11) yields the recorded token), `note` (string, optional) | `kickoff_prompt` (string; briefing or context-only variant), `artifact_path` (path), `has_briefing` (bool) |
 | `handoff.checkpoint` | `briefing` (path, optional — absent = context-only checkpoint: regenerate `context.md`, keep an earlier valid `current.md` if present, as today's `handoff save --no-brief`), `note` (string, optional) | `artifact_path` (path), `has_briefing` (bool, for this invocation) |
 | `git.context` | `root` (path, optional; default worktree) | `path` (path to the generated markdown summary), `branch` (string) |
 
@@ -342,7 +342,7 @@ changed` was requested.
 | --- | --- |
 | Start | Resolve bindings, freeze plans, create run dir, write `run.json`, then execute step 1. `current` role must not already be in a run (`PANE_BUSY`). |
 | Advance | A step completes when its `expect` is satisfied (or it has none and its effect succeeded). `repeat` evaluates `until` before entry and after each iteration; `max` reached with `until` still false ends the run as `max_rounds_reached`. |
-| Message delivery | Injection is synchronous (`insertCommittedText` + submit, treated as one operation); Prowl keeps no queue — a `working` agent holds the line in its own input queue, and the panel says so. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). If the insert succeeded but the submit failed, the attention text says that the line may still sit unsubmitted in the pane's input (Focus pane lets the user press Enter there). **Retry** re-executes the step as a new invocation: it revokes the previous activation's token, mints a new ordinal/token, and injects the freshly rendered line. At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
+| Message delivery | Injection is synchronous (`insertCommittedText` + submit, treated as one operation); Prowl keeps no queue — a `working` agent holds the line in its own input queue, and the panel says so. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). If the insert succeeded but the submit failed, the attention text says that the line may still sit unsubmitted in the pane's input (Focus pane lets the user press Enter there). **Retry** re-executes the step as a new invocation: it mints a new ordinal (and, when the step has an `expect`, revokes the previous activation's token and mints a new one) and injects the freshly rendered line. At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
 | Binding scope | As defined in §3 (four-tuple key with the canonical role-requirements digest); §3 is normative. |
 | Invocation / activation | Defined in §5: every `message`/`launch` execution mints a run-global invocation ordinal (artifact naming); a waiting invocation is an activation with its own token; one delivery per activation; revocation is per activation; outputs and instructions are versioned by ordinal. |
 | Rendered-text boundary | Every string that reaches `insertCommittedText` + submit — rendered `text`, pointer lines, completion commands, nudges — is validated after template substitution: no line terminators (`\n`, `\r`, U+2028/2029) and no C0/C1 control characters; violations stop the step with `RENDERED_TEXT_INVALID` (`needsAttention`, never a partial injection). String inputs and `--input` values are validated the same way at start; a worktree path that cannot be rendered on one line is rejected at start (`UNSAFE_PATH`). Multi-line content always goes through `instruction` / materialized files. |
@@ -363,11 +363,18 @@ changed` was requested.
   `## Next Steps`) → `action handoff.transition` (archive-first `.prowl/handoff/`
   contract) → `launch receiver` (`prompt: "{{ actions.transition.kickoff_prompt }}"`) →
   `notify`. The deprecated `prowl handoff` commands are served by a `LegacyHandoffAdapter`
-  that maps `to <agent>` → Recommended enabled profile of that runtime (else
-  `PROFILE_NOT_FOUND`), source selectors → run source, `--brief -` / `--no-brief` → `brief`
-  output pre-delivered / step pre-skipped, `--note` → `handoff.transition` input,
-  `--no-launch` → `launch` step pre-skipped with the target token recorded (no profile
-  needed), `save` → `prowl.handoff-checkpoint` (brief → `action handoff.checkpoint`). The
+  that maps source selectors → run source, `--brief -` / `--no-brief` → `brief` output
+  pre-delivered / step pre-skipped, `--note` → `handoff.transition` input, `save` →
+  `prowl.handoff-checkpoint` (brief → `action handoff.checkpoint`), and `to <agent>` by
+  launch intent: **when a launch is requested**, the receiver role is bound to the
+  Recommended enabled profile of that runtime (else `PROFILE_NOT_FOUND`); **with
+  `--no-launch`**, no profile lookup happens at all — the receiver role is frozen with a
+  typed *destination-only* binding (`legacyDestination(agent: <validated detected-agent
+  token>)`, an internal run-state binding kind that carries no profile, pane, or plan) and
+  the `launch` step is pre-skipped. `handoff.transition` resolves `to` from that binding, so
+  archive names, the transition log line, and the `to_agent` response field keep the
+  recorded token exactly as today, and `prowl handoff to gemini --no-launch` keeps working
+  for every detected-agent token. The
   adapter **preflights before creating any run or artifact**, reproducing the current
   handler's immediate errors: neither `--brief` nor `--no-brief` → `BRIEF_REQUIRED` (the
   legacy path never starts an agent-mediated brief step or a hidden model turn); empty
@@ -381,8 +388,11 @@ changed` was requested.
   immediately, as the current handler does. It awaits run completion synchronously and
   renders the existing `prowl.cli.handoff.v2` response shape (schema-compatible;
   differences documented and covered by per-field socket parity tests: no-agent source,
-  `to … --no-brief`, `--no-launch`, `save --brief -`, `save --no-brief` with and without
-  an existing valid `current.md` (context-only checkpoint keeps it), omitted brief choice
+  `to … --no-brief` with a stale `current.md` present (archived and removed, context-only
+  kickoff, `has_briefing: false`), `to gemini --no-launch` in both brief and context-only
+  variants (asserting `to_agent`, archive/log target, no profile lookup, no launch),
+  `save --brief -`, `save --no-brief` with and without an existing valid `current.md`
+  (context-only checkpoint keeps it), omitted brief choice
   → `BRIEF_REQUIRED`, empty stdin → `EMPTY_INPUT`, invalid sections → `INVALID_BRIEF`,
   action/transition failure, profile lookup failure, provisioning failure, launch
   failure).

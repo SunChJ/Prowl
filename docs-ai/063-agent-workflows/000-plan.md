@@ -309,12 +309,16 @@ to|save` remain (see Open questions for alias vs. removal).
   `prowl handoff` commands are served by a **`LegacyHandoffAdapter`** in the app (D3) that
   maps every existing parameter onto the runner's internal start API and renders the
   existing `prowl.cli.handoff.v2` response shape (schema-compatible; semantic differences
-  documented, not "byte-compatible"): `to <agent>` → the Recommended enabled profile of
-  that runtime, else `PROFILE_NOT_FOUND` with guidance; source selectors / positional
-  source → run source; `--brief -` / `--no-brief` → `brief` output pre-delivered / step
-  pre-skipped; `--note` → `handoff.transition` input; `--no-launch` → `launch` step
-  pre-skipped with the target token recorded (so `prowl handoff to gemini --no-launch`
-  keeps working without any profile); `save` → `prowl.handoff-checkpoint`. The adapter
+  documented, not "byte-compatible"): `to <agent>` with a requested launch → the
+  Recommended enabled profile of that runtime, else `PROFILE_NOT_FOUND` with guidance;
+  `to <agent> --no-launch` → no profile lookup, the receiver role is frozen as a typed
+  destination-only binding carrying the validated token and the `launch` step is
+  pre-skipped (so `prowl handoff to gemini --no-launch` keeps its archive/log/`to_agent`
+  behavior for every detected-agent token); source selectors / positional source → run
+  source; `--brief -` / `--no-brief` → `brief` output pre-delivered / step pre-skipped
+  (absent briefing = context-only transition: archive, remove the stale `current.md`,
+  regenerate `context.md`, context-only kickoff); `--note` → `handoff.transition` input;
+  `save` → `prowl.handoff-checkpoint`. The adapter
   preflights before any run or artifact exists, reproducing today's immediate errors
   (`BRIEF_REQUIRED` when neither `--brief` nor `--no-brief` is given — the legacy path
   never starts an agent-mediated brief step; `EMPTY_INPUT`; `INVALID_BRIEF`), and maps
@@ -512,6 +516,13 @@ built-ins land, handoff migrated).
   parity matrix; message Retry is a new invocation (token revoked and re-minted; guidance
   when an insert succeeded but the submit failed); the plan's token paragraph now
   cross-references the DSL invocation/activation lifecycle.
+- **Review round 7 (2026-08-22; verified before adopting)** — absent
+  `handoff.transition.briefing` is normatively the context-only *transition* (archive,
+  remove stale `current.md`, regenerate context, context-only kickoff, `has_briefing:
+  false`) — distinct from the checkpoint rule; `--no-launch` freezes the receiver as a
+  typed destination-only binding (token, no profile/pane/plan) that `handoff.transition`
+  resolves `to` from, profile lookup happens only when a launch is requested; both cases
+  join the parity matrix; Retry revokes/re-mints a token only when the step has `expect`.
 
 ## Open questions
 
