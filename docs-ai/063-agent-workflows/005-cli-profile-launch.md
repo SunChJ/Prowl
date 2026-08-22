@@ -34,4 +34,5 @@ Release R1 already had deterministic anchored split creation (A1) and per-pane i
 
 - Slice: 063-A2
 - Branch: `feat/cli-profile-launch`
+- PR: #714
 - Follows: [003-cli-create-pane.md](003-cli-create-pane.md), [004-pane-identity-env.md](004-pane-identity-env.md)
