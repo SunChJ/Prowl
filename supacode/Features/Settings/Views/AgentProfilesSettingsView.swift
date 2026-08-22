@@ -14,7 +14,7 @@ struct AgentProfilesSettingsView: View {
         profileListSection
       }
       .formStyle(.grouped)
-      .navigationTitle("Profiles")
+      .navigationTitle("Agent Profiles")
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .task { store.send(.task) }
     } destination: { editorStore in

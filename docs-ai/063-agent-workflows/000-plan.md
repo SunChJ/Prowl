@@ -564,4 +564,4 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
-- Updated 2026-08-22: Shipped C0 with the Agents sidebar group, Profiles page, and Command Line Tool page; Workflows remains deferred to D1 — see [001-settings-agents-group.md](001-settings-agents-group.md).
+- Updated 2026-08-22: Shipped C0 with the Agents sidebar group, Profiles page, and Command Line Tool page; Workflows remains deferred to D1 — see [002-settings-agents-group.md](002-settings-agents-group.md).

@@ -185,7 +185,8 @@ struct AppFeatureSettingsSelectionTests {
     #expect(shown.value)
   }
 
-  @Test func selectingAnotherSectionClearsAgentProfileEditorState() async {
+  @Test(arguments: [SettingsSection.general, .commandLineTool])
+  func selectingAnotherSectionClearsAgentProfileEditorState(section: SettingsSection) async {
     let profile = AgentProfile(name: "Codex", runtime: .codex)
     var state = AppFeature.State(settings: SettingsFeature.State())
     state.settings.selection = .profiles
@@ -197,8 +198,8 @@ struct AppFeatureSettingsSelectionTests {
       AppFeature()
     }
 
-    await store.send(.settings(.setSelection(.general))) {
-      $0.settings.selection = .general
+    await store.send(.settings(.setSelection(section))) {
+      $0.settings.selection = section
       $0.settings.agentProfiles = nil
     }
   }

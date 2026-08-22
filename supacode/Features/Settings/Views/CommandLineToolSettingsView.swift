@@ -1,9 +1,11 @@
 import ComposableArchitecture
 import SwiftUI
 
+/// Settings → Agents → Command Line Tool: install/status for the bundled `prowl`
+/// CLI and the socket it reaches the app through. Installation behavior stays in
+/// `SettingsFeature`; this view only presents it.
 struct CommandLineToolSettingsView: View {
   @Bindable var store: StoreOf<SettingsFeature>
-  @State private var isAskAgentHelpPresented = false
 
   var body: some View {
     Form {
@@ -73,31 +75,15 @@ struct CommandLineToolSettingsView: View {
             .truncationMode(.middle)
         }
 
-        Text("prowl connects to the running app through this local Unix socket.")
-          .foregroundStyle(.secondary)
-          .font(.callout)
-      }
-
-      Section("Ask Your Agent") {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Give your coding agent a prompt that points it at Prowl's bundled documentation.")
-            .foregroundStyle(.secondary)
-            .font(.callout)
-          Button("Ask Agent About Prowl…") {
-            isAskAgentHelpPresented = true
-          }
-          .help("Copy a prompt that points your coding agent at Prowl's bundled docs")
-          .buttonStyle(.bordered)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(
+          "prowl reaches the running app through this local Unix socket. "
+            + "Set PROWL_CLI_SOCKET for both Prowl and prowl to use a different path."
+        )
+        .foregroundStyle(.secondary)
+        .font(.callout)
       }
     }
     .formStyle(.grouped)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .sheet(isPresented: $isAskAgentHelpPresented) {
-      AskAgentHelpView {
-        isAskAgentHelpPresented = false
-      }
-    }
   }
 }
