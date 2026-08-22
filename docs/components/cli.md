@@ -84,7 +84,10 @@ process launched inside it (agents, their tools, scripts):
 Resolve your own tab and worktree from it:
 
 ```bash
-The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). If it is unset or matches nothing, pick yourself from `prowl list --json` by `pane.cwd`.```
+me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
+test -n "$me" || { echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl is talking to another Prowl instance" >&2; exit 1; }
+printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
+```
 
 The variable is inherited, not verified: a process that scrubbed its environment
 (`sudo`, `ssh`, containers) will not have it, and a tmux/screen session attached from a
