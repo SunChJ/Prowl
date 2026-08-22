@@ -65,7 +65,7 @@ roles:
 
 | Field | Rules |
 | --- | --- |
-| `source` | At most one `current` role per workflow. A `current` role must host a detected agent only if the runner will actually **deliver** to it — i.e. at least one `message` step targeting it is neither pre-skipped nor completed by a seeded output (§5) at start; otherwise a bare shell pane is a valid source (context-only handoff, legacy `handoff save`, legacy `--brief -`). The check runs after the internal start API has applied its pre-skips/seeds. A workflow without a `current` role needs an explicit worktree at start. `pick` roles are chosen from the detected agents of the source worktree at start; a pane already in a run is not offered. |
+| `source` | At most one `current` role per workflow. A `current` role must host a detected agent only if the runner will actually **deliver** to it — i.e. at least one `message` step targeting it is not skipped at start (`--skip <step>` / the start sheet's skip option, §9); otherwise a bare shell pane is a valid source (e.g. a context-only handoff). A workflow without a `current` role needs an explicit worktree at start. `pick` roles are chosen from the detected agents of the source worktree at start; a pane already in a run is not offered. |
 | `kind` | Only for `launch`. V1 accepts `interactive` only; `headless` is reserved (§12) because no executor/output protocol exists yet. |
 | `agents` | Tokens from the detected-agent catalog. Validator warns (not errors) when none is installed locally. |
 | `suggest` | Subset of profile preset fields (`agent`, `model`, `reasoning_effort`, `execution_mode`). Never a reference to a profile name or UUID. |
@@ -84,10 +84,7 @@ override, is re-validated first (exists, enabled, satisfies `agents`, adapter su
 seeded prompt); a failing candidate falls through to the next tier. The chosen profile is
 frozen into the run together with its launch plan; later profile edits do not affect the
 run. CLI overrides are source-specific (§9): `--role <launch-role>=<profile name|uuid|auto>`,
-`--role <pick-role>=<agent pane: pN | pane UUID>`; `current` roles take no override. One
-internal exception exists: the `LegacyHandoffAdapter` (§11) may freeze a launch role as a
-*destination-only* binding (agent token, no profile) when its launch step is pre-skipped;
-a generic resolver never performs profile lookup for such a role.
+`--role <pick-role>=<agent pane: pN | pane UUID>`; `current` roles take no override.
 
 ## 4. Steps
 
@@ -173,8 +170,8 @@ JSON Schema):
 
 | Action | `with` inputs | Outputs |
 | --- | --- | --- |
-| `handoff.transition` | `briefing` (path, optional — **absent = context-only transition**, exactly today's `handoff to --no-brief`: archive the outgoing `current.md`/`context.md`, then *remove* `current.md` so a stale briefing can never impersonate a fresh one, regenerate `context.md`, and select the context/archive-only kickoff prompt), `from` (role, required), `to` (role, required; its agent token comes from the role's frozen binding — a profile binding yields the profile's agent, a legacy *destination-only* binding (see §11) yields the recorded token), `note` (string, optional) | `kickoff_prompt` (string; briefing or context-only variant), `artifact_path` (path), `has_briefing` (bool) |
-| `handoff.checkpoint` | `briefing` (path, optional — absent = context-only checkpoint: regenerate `context.md`, keep an earlier valid `current.md` if present, as today's `handoff save --no-brief`), `note` (string, optional) | `artifact_path` (path), `has_briefing` (bool, for this invocation) |
+| `handoff.transition` | `briefing` (path, optional — **absent = context-only transition**: archive the outgoing `current.md`/`context.md`, then *remove* `current.md` so a stale briefing can never impersonate a fresh one, regenerate `context.md`, and select the context/archive-only kickoff prompt), `from` (role, required), `to` (role, required; its agent token is the frozen profile binding's agent), `note` (string, optional) | `kickoff_prompt` (string; briefing or context-only variant), `artifact_path` (path), `has_briefing` (bool) |
+| `handoff.checkpoint` | `briefing` (path, optional — absent = context-only checkpoint: regenerate `context.md`, keep an earlier valid `current.md` if present), `note` (string, optional) | `artifact_path` (path), `has_briefing` (bool, for this invocation) |
 | `git.context` | `root` (path, optional; default worktree) | `path` (path to the generated markdown summary), `branch` (string) |
 
 ## 5. `expect`
@@ -204,20 +201,9 @@ expect:
   several steps produce the same output name); `outputs/<name>.md` is the "latest" view,
   replaced atomically (temp file + rename); `run.json` records the invocation → step /
   iteration / activation / file mapping.
-- **Seeded outputs (internal, adapter-only).** The runner's internal start API lets an
-  in-app caller (today only the `LegacyHandoffAdapter`, §11) supply a body for a step's
-  output *before* any agent participates. The runner validates it against the target
-  step's `expect` (format, sections, verdict, size cap) exactly as a delivery; after that
-  check and the caller's own preflight succeed and the run directory exists, the runner
-  allocates a run-global ordinal,
-  atomically writes `outputs/<name>.<ordinal>.md` plus the latest view, and records the
-  step in `run.json` as `seeded` (no source-pane delivery, no activation, no token). The
-  step counts as completed and its `expect` is satisfied; templates resolve
-  `outputs.<name>.path` normally; later invocations continue the same monotonic ordinal
-  sequence. Seeding is not reachable from YAML or the public CLI.
 - Output bodies are capped (default 1 MiB, hard max 4 MiB → `OUTPUT_TOO_LARGE`).
-- **Skip rule.** Skipping an `expect` (panel Skip, `on_timeout: skip`, or an internal
-  pre-skip) marks its output missing. A missing output is tolerated by exactly one kind of
+- **Skip rule.** Skipping an `expect` (panel Skip, `on_timeout: skip`, or a skip chosen at
+  start via `--skip <step>` / the start sheet) marks its output missing. A missing output is tolerated by exactly one kind of
   consumer: a `with` input that the action's registry schema declares **optional** — the
   key is then absent from the action's effective input (this is how `handoff.transition`
   degrades to a context-only transition, i.e. the old HUD's "Context Only"). Every other
@@ -272,7 +258,7 @@ non-optional consumer references (the run would end as `skipped`).
 
 ```
 <root>/.prowl/workflow-runs/<run-id>/
-  run.json                  # state snapshot: workflow id/version, frozen role bindings (profile UUID/name, pane ids, or a destination-only agent token), seeded/invocation records,
+  run.json                  # state snapshot: workflow id/version, frozen role bindings (profile UUID/name, pane ids), invocation records,
                             # step states, timestamps; no env values, no extra arguments, no credentials
   log.md                    # human-readable, append-only
   instructions/<step>.<ordinal>.md   # materialized `instruction` / `prompt` text, one per invocation (run-global ordinal, §5)
@@ -288,10 +274,9 @@ and the run UUID, under canonical containment checks against
 `<root>/.prowl/workflow-runs/` (no symlink leaf, resolved parent + leaf compared to the
 resolved base — the `AgentProfileHomeProvisioner` gate). Repo-scoped definitions are
 untrusted input; nothing from a workflow file is interpolated into a path except validated
-slugs. Outputs are agent-authored content persisted at the agent's request — or, for
-seeded outputs (§5), caller-supplied content validated against the step's `expect` — with
-the size caps of §5; they are kept until the user removes the run folder (retention
-policy: V2). Privacy
+slugs. Outputs are agent-authored content persisted at the agent's request, within the
+size caps of §5; they are kept until the user removes the run folder (retention policy:
+V2). Privacy
 wording as in §10: Prowl-authored persisted and response metadata (`run.json`, `log.md`,
 the non-body fields of CLI payloads) carries profile UUID/name and agent tokens only —
 never extra arguments, environment values, home paths, or credentials; the agent-provided
@@ -301,7 +286,7 @@ output body is excluded from that claim.
 
 ```bash
 prowl workflow list [--json]                                  # sources, enabled, validation status
-prowl workflow run <id|name> [source] [--role r=<binding>]... [--input k=v]... [--json]   # <binding> grammar is source-specific, see below
+prowl workflow run <id|name> [source] [--role r=<binding>]... [--input k=v]... [--skip <step-id>]... [--json]   # <binding> grammar is source-specific, see below
                                                               # [source]: 060 GenericTarget (pN | tN | UUID | worktree ref); omitted → caller pane
                                                               # when the workflow has a `current` role (SOURCE_REQUIRED outside a pane), a
                                                               # worktree reference otherwise
@@ -337,9 +322,22 @@ unknown roles are `INVALID_ARGUMENT`; a missing override falls back to binding r
 # current roles take no override
 ```
 
-The `run` response records every frozen binding (launch: profile id/name/agent, or — for
-the internal destination-only binding of §11 — agent token only; pick: pane id/handle and
-detected agent).
+The `run` response records every frozen binding (launch: profile id/name/agent; pick: pane
+id/handle and detected agent).
+
+**`--skip <step-id>`** (repeatable) marks a step skipped at start. It is accepted only for
+steps whose `expect` output has no non-optional consumer (§5 Skip rule) — e.g.
+`prowl workflow run prowl.handoff --skip brief` is a context-only handoff; anything else is
+`INVALID_ARGUMENT` naming the dependent step. The start sheet offers the same choice
+("Skip <step title>") for such steps, which is also how a bare-shell pane can start a
+handoff.
+
+**Self-initiated runs.** When `run` is invoked from the pane that becomes the `current`
+role and the first step is a `message` to that role, the response carries that step's
+rendered instruction (or pointer) and its completion command, and the runner does **not**
+also type them into the caller's pane — the caller already has them. For an agent this
+makes a self-handoff two commands: `prowl workflow run prowl.handoff`, then the returned
+`… prowl workflow done -` with its briefing on stdin.
 
 Error codes: `WORKFLOW_NOT_FOUND`, `WORKFLOW_INVALID`, `RUN_NOT_FOUND`, `PANE_BUSY`,
 `ROLE_MISMATCH`, `STEP_NOT_EXPECTING`, `TOKEN_REQUIRED`, `TOKEN_INVALID`,
@@ -384,54 +382,25 @@ changed` was requested.
   `background: true`, no `agents` restriction — any adapter with seeded-prompt support);
   steps: `message source` (brief, sections `## Objective`, `## Current State`,
   `## Next Steps`) → `action handoff.transition` (archive-first `.prowl/handoff/`
-  contract) → `launch receiver` (`prompt: "{{ actions.transition.kickoff_prompt }}"`) →
-  `notify`. The deprecated `prowl handoff` commands are served by a `LegacyHandoffAdapter`
-  that maps source selectors → run source, `--brief -` → the `brief` step completed by a
-  **seeded output** (§5: validated during adapter preflight, then materialized as
-  `outputs/brief.<ordinal>.md` with a `seeded` record once the run exists, so
-  `{{ outputs.brief.path }}` resolves normally and no pane delivery or token is fabricated),
-  `--no-brief` → `brief` step pre-skipped / output missing — the built-in's
-  `with: { briefing: "{{ outputs.brief.path }}" }` then drops the key by the §5 Skip rule
-  (optional action input), so the run continues with context-only semantics, exactly as a
-  GUI user skipping the brief step gets "Context Only"; no adapter-specific overlay exists,
-  `--note` → `handoff.transition` input, `save` →
-  `prowl.handoff-checkpoint` (brief → `action handoff.checkpoint`), and `to <agent>` by
-  launch intent: **when a launch is requested**, the receiver role is bound to the
-  Recommended enabled profile of that runtime (else `PROFILE_NOT_FOUND`); **with
-  `--no-launch`**, no profile lookup happens at all — the receiver role is frozen with a
-  typed *destination-only* binding (`legacyDestination(agent: <validated detected-agent
-  token>)`, an internal run-state binding kind that carries no profile, pane, or plan) and
-  the `launch` step is pre-skipped. `handoff.transition` resolves `to` from that binding, so
-  archive names, the transition log line, and the `to_agent` response field keep the
-  recorded token exactly as today, and `prowl handoff to gemini --no-launch` keeps working
-  for every detected-agent token. The
-  adapter **preflights before creating any run or artifact**, reproducing the current
-  handler's immediate errors: neither `--brief` nor `--no-brief` → `BRIEF_REQUIRED` (the
-  legacy path never starts an agent-mediated brief step or a hidden model turn); empty
-  stdin → `EMPTY_INPUT`; a briefing missing the required sections → `INVALID_BRIEF`;
-  unknown agent token → the existing argument error. With the `brief` step pre-supplied or
-  pre-skipped the `current` role needs no detected agent, so a bare shell pane stays a
-  valid legacy source. Action/transition failures map to the documented legacy failure
-  response (never an attention state or partial success). The adapter starts the run with
-  `failurePolicy: .fail`: a provisioning/launch failure after the artifacts are written
-  ends the run as `failed` (artifacts and log kept) and returns `HANDOFF_FAILED`
-  immediately, as the current handler does. It awaits run completion synchronously and
-  renders the existing `prowl.cli.handoff.v2` response shape (schema-compatible;
-  differences documented and covered by per-field socket parity tests: no-agent source,
-  `to … --no-brief` with a stale `current.md` present (archived and removed, context-only
-  kickoff, `has_briefing: false`), `to gemini --no-launch` in both brief and context-only
-  variants (asserting `to_agent`, archive/log target, no profile lookup, no launch),
-  `to --brief -` and `save --brief -` (invalid brief rejected before any run directory or
-  `.prowl` artifact exists; valid brief yields a versioned seeded output, a `seeded`
-  `run.json` record, the rendered action input, and a later invocation continuing the
-  ordinal sequence), `to --no-brief` and `save --no-brief` completing (not `skipped`) with
-  the `briefing` input absent, `save --no-brief` with and without an existing valid
-  `current.md` (context-only checkpoint keeps it), every one of these four from a bare
-  shell source (no detected agent), omitted brief choice
-  → `BRIEF_REQUIRED`, empty stdin → `EMPTY_INPUT`, invalid sections → `INVALID_BRIEF`,
-  action/transition failure, profile lookup failure, provisioning failure, launch
-  failure).
+  contract, `with: { briefing: "{{ outputs.brief.path }}", from: source, to: receiver }`)
+  → `launch receiver` (`prompt: "{{ actions.transition.kickoff_prompt }}"`) → `notify`.
+  Skipping `brief` (start sheet, `--skip brief`, or the panel) yields the context-only
+  transition through the §5 Skip rule — the replacement for the old HUD's "Context Only".
+- `prowl.handoff-checkpoint` — `message source` (brief) → `action handoff.checkpoint`;
+  the "save progress for a later successor" use case (no receiver, no launch).
 - `prowl.adversarial-review` — as in §4; interactive reviewer in a right split by default.
+
+**Retirement of `prowl handoff`.** The shipped `prowl handoff to|save` commands are
+retired rather than adapted: for one release they remain as *stubs* that execute nothing
+and return the structured error `HANDOFF_RETIRED` (JSON envelope; plain text + stderr
+otherwise) whose message is the copy-pasteable replacement —
+`prowl workflow run prowl.handoff [--role receiver=<profile|auto>] [--skip brief]` for `to`,
+`prowl workflow run prowl.handoff-checkpoint` for `save`, plus the note that the briefing
+is now delivered with the returned `prowl workflow done -` command. After that release the
+commands, `HandoffCommandHandler`, `HandoffHudFeature`, `HandoffRequestRegistry`, and the
+`prowl.cli.handoff.v2` contract are removed; the `.prowl/handoff/` artifact contract itself
+lives on inside the two actions. `docs/components/handoff.md` and the `prowl-cli` skill are
+rewritten around the workflow commands in the same change.
 
 ## 12. Reserved for V2
 
