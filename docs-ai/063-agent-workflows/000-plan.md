@@ -283,6 +283,25 @@ writes.
   / User / Repo lists, enable toggle, per-workflow "ask for bindings" override, validation
   status with YAML line errors, Reveal, New Workflow… (template file), Ask your agent to
   write one (prompt pointing at bundled `docs/` + `skills/`).
+- **CLI reachability status** (deferred from C0 #709, see
+  [002-settings-agents-group.md](002-settings-agents-group.md); lands with D1's preflight):
+  the Command Line Tool page shows only `ProwlSocket.defaultPath` — a computed value that
+  honours `PROWL_CLI_SOCKET` — not whether Prowl is actually listening there. Today
+  `CLISocketServer.start()` (`supacode/CLIService/CLISocketServer.swift`) throws
+  `CLIServiceError` (`socketAlreadyOwned` when another Prowl instance holds the lock,
+  `lockFailed`, `permissionFailed`, `bindFailed`, `listenFailed`, `socketPathTooLong`,
+  `socketCreationFailed`), `supacodeApp.makeCLISocketServer` only logs the failure, and
+  `isRunning` is private — nothing downstream observes it, so a user whose `prowl` cannot
+  connect sees a healthy-looking Settings page. D1's CLI dependency banner and the runner
+  preflight need the same signal, so build it once: a `CLIServiceStatus`
+  (`listening(path)` / `failed(CLIServiceError, path)` / `stopped`) published by the server
+  through a small dependency client or the existing `TerminalClient`-style event stream (not
+  NSNotification), read by `SettingsFeature` for a status row under Command Line Tool ›
+  Connection (tri-state indicator like the install row; failure text names the reason and,
+  for `socketAlreadyOwned`, the competing instance) and by the workflow preflight
+  (`install` / `socket` blockers before a run). Tests: reducer tests with a stubbed status,
+  plus a `CLISocketServer` test that `start()` on an already-owned path surfaces
+  `socketAlreadyOwned`.
 
 ### CLI (per 060's four-layer rule)
 
