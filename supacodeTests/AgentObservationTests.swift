@@ -111,8 +111,18 @@ struct AgentObservationTests {
       .observeAgentState(surfaceID: closeAllFixture.surfaceID)
       .makeAsyncIterator()
     _ = try await closeAllIterator.next()
+    closeAllFixture.state.emitAgentEntry(
+      surfaceID: closeAllFixture.surfaceID,
+      tabId: closeAllFixture.tabID,
+      state: PaneAgentState(detectedAgent: .claude, state: .working)
+    )
+    guard case .changed = try await closeAllIterator.next() else {
+      Issue.record("Expected published agent before close-all")
+      return
+    }
 
     closeAllFixture.state.closeAllSurfaces()
+    #expect(try await closeAllIterator.next() == .removed)
     #expect(try await closeAllIterator.next() == .surfaceClosed)
     #expect(try await closeAllIterator.next() == nil)
 
@@ -121,8 +131,18 @@ struct AgentObservationTests {
       .observeAgentState(surfaceID: pruneFixture.surfaceID)
       .makeAsyncIterator()
     _ = try await pruneIterator.next()
+    pruneFixture.state.emitAgentEntry(
+      surfaceID: pruneFixture.surfaceID,
+      tabId: pruneFixture.tabID,
+      state: PaneAgentState(detectedAgent: .codex, state: .working)
+    )
+    guard case .changed = try await pruneIterator.next() else {
+      Issue.record("Expected published agent before prune")
+      return
+    }
 
     pruneFixture.manager.prune(keeping: [])
+    #expect(try await pruneIterator.next() == .removed)
     #expect(try await pruneIterator.next() == .surfaceClosed)
     #expect(try await pruneIterator.next() == nil)
   }

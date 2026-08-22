@@ -97,14 +97,18 @@ final class AgentObservationStore {
       switch continuation.yield(.surfaceClosed) {
       case .enqueued:
         continuation.finish()
-      case .dropped, .terminated:
+      case .dropped:
         continuation.finish(throwing: AgentObservationError.bufferOverflow)
+      case .terminated:
+        continue
       @unknown default:
         continuation.finish(throwing: AgentObservationError.bufferOverflow)
       }
     }
   }
 
+  /// Internal diagnostic seam used by cancellation tests and available to S2
+  /// when it exposes per-pane signal capability health.
   func subscriberCount(surfaceID: UUID) -> Int {
     records[surfaceID]?.subscribers.count ?? 0
   }

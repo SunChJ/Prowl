@@ -95,4 +95,14 @@ Four credible P3 hardening/docs findings were accepted before the next round:
 
 Format-category filtering was deferred as optional S2 hardening; the pre-existing blocking
 socket-framing architecture remains outside S1 and should be revisited before high-volume
-hook fan-in. Rounds 2–3 review the updated HEAD independently.
+hook fan-in.
+
+### Round 2 — `a63ba4a4`
+
+A fresh pass re-verified the full diff and all round-1 fixes, then ran 60 focused tests and
+lint. It found no P0/P1. Two credible P3 hardening items were accepted: close-all/prune tests
+now pin `changed → removed → surfaceClosed → finish` with a published agent, and synthetic
+dead-surface snapshots explicitly document that `surfaceClosed` is authoritative after the
+revision resets. Already-terminated continuations are no longer mislabeled as overflow.
+The internal subscriber-count seam remains deliberately available for diagnostics/S2 health.
+Round 3 reviews the updated HEAD independently.

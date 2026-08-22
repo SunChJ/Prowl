@@ -239,6 +239,7 @@ final class WorktreeTerminalManager {
     return true
   }
 
+  /// Internal observer-health diagnostic; not a user-facing API.
   func agentObservationSubscriberCount(surfaceID: UUID) -> Int {
     agentObservationStore.subscriberCount(surfaceID: surfaceID)
   }

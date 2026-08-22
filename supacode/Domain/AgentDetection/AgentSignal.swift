@@ -39,6 +39,8 @@ struct AgentObservationSnapshot: Equatable, Sendable {
   let latestSignal: AgentSignal?
   /// Monotonic within one live surface. Consumers use it to recognize a newer
   /// resubscription snapshot after an overflow; it is not a persisted cursor.
+  /// A synthetic snapshot for an already-closed surface resets to zero, and the
+  /// following `surfaceClosed` event is authoritative.
   let revision: UInt64
 }
 
