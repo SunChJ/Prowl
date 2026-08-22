@@ -351,11 +351,13 @@ Companion primitives for CLI-driven orchestration (same boundaries as the runner
 `prowl create pane <pane> --direction <dir> [--profile <name|uuid> --prompt -]`,
 `prowl create tab <worktree> [--profile … --prompt -]`, `prowl profiles list`,
 `prowl agents wait <pane> --until idle|done|blocked|changed [--timeout]`, `prowl send`,
-`prowl agents read`. `agents wait` consumes the typed per-surface observer
-(`ObservedAgentState`: `snapshot` first, then `changed` / `removed` / `surfaceClosed`);
-it returns immediately when the snapshot already satisfies `--until`, and maps `removed`
-/ `surfaceClosed` to the terminal error `AGENT_GONE` (never to `done`) unless `--until
-changed` was requested.
+`prowl agents read`. `agents wait` (and `agents signal`) are specified in
+[064 agent-completion-signals](../064-agent-completion-signals/000-plan.md); they consume
+the typed per-surface observer (`ObservedAgentState`: `snapshot` first, then `changed` /
+`removed` / `surfaceClosed`, plus 064's `.signal`), return immediately when the snapshot
+already satisfies `--until`, report `source`/`confidence`, and map `removed` /
+`surfaceClosed` to the terminal error `AGENT_GONE` (never to `done`) unless `--until
+changed` / `exit` was requested.
 
 ## 10. Run semantics
 

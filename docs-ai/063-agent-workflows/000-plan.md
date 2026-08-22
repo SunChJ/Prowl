@@ -5,7 +5,7 @@
 | **Status** | Planned (design in discussion; see Open questions) |
 | **Anchor date** | 2026-08-21 |
 | **Primary PRs** | TBD (see Delivery slicing) |
-| **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
+| **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
 
 ## Background
 
@@ -292,10 +292,13 @@ reference is required otherwise; `--role` is source-specific (`launch` role →
 `<profile name|uuid|auto>`, `pick` role → `<pN|pane UUID>` in the source worktree,
 `current` → none); `prowl profiles list` (read-only, for CLI-driven orchestration);
 prerequisites
-`prowl create pane <pane> --direction … [--profile <name|uuid> --prompt -]` (#699 extended)
-and `prowl agents wait <pane> --until idle|done|blocked [--timeout]`. `prowl handoff
-to|save` are **retired**: one release of non-executing stubs that answer `HANDOFF_RETIRED`
-with the exact `prowl workflow run …` replacement, then removal (see Built-ins).
+`prowl create pane <pane> --direction … [--profile <name|uuid> --prompt -]` (#699 extended);
+`prowl agents signal` / `prowl agents wait` (deterministic completion signals for the
+CLI-driven route) are specified and delivered by
+[064 agent-completion-signals](../064-agent-completion-signals/000-plan.md), which consumes
+this entry's observer and launch boundary. `prowl handoff to|save` are **retired**: one
+release of non-executing stubs that answer `HANDOFF_RETIRED` with the exact `prowl workflow
+run …` replacement, then removal (see Built-ins).
 
 ### Built-ins and distribution
 
@@ -352,12 +355,11 @@ Shapes are intentionally close to what exists so the runner and the CLI share on
   (`PROFILE_NOT_FOUND` / `PROFILE_NOT_UNIQUE`); `prowl.cli.create.v1` is extended
   additively (`resource: pane`, `anchor`, `direction`, optional `launch {profile_id,
   profile_name, agent}`). `prowl profiles list` is a read-only snapshot of enabled/disabled
-  profiles with availability (`prowl.cli.profiles.v1`). `prowl agents wait <pane> --until
-  idle|done|blocked|changed --timeout 1…3600` consumes the typed `ObservedAgentState`
-  observer described above (snapshot first → immediate return when already satisfied;
-  `WAIT_TIMEOUT` on expiry; `removed` / `surfaceClosed` → error `AGENT_GONE` with the last
-  known status in the error payload) and returns `{status, raw_state, waited_ms}`
-  (`prowl.cli.agents.wait.v1`).
+  profiles with availability (`prowl.cli.profiles.v1`). `prowl agents wait` is owned by
+  [064](../064-agent-completion-signals/000-plan.md): it consumes the typed
+  `ObservedAgentState` observer described above (snapshot first; `removed` /
+  `surfaceClosed` → `AGENT_GONE`) and adds the signal bus, `source`/`confidence`, and
+  launch-scoped hooks on top of this entry's launch boundary.
 - **Tests**: terminal-layer coverage extends `supacodeTests/WorktreeTerminalStateAgentProfileTests.swift`
   (anchored split, placement override, background tab, returned identity, provisioning
   failure); planner intent rendering per adapter in `supacodeTests/AgentProfileTests.swift`
@@ -383,7 +385,7 @@ built-ins land, handoff migrated).
 | 1 | **C0** Settings IA: Agents group (Profiles / Workflows placeholder / Command Line Tool moved from Advanced) | C | — | Independent, small, decides where everything lands |
 | 2 | **A1** `prowl create pane` (#699) + target-surface split primitive returning the surface id; CLI four layers | A | 060 | Foundation for every `launch` into a split |
 | 3 | **B1** Definitions: Yams, `AgentWorkflow` model + validator + JSON Schema, three-source discovery, `prowl workflow list/validate/schema`, read-only Settings list | B | — | Parallel with A1; makes the DSL concrete and authorable |
-| 4 | **A2** Profile launch boundary (`.prompt`, placement override, anchor, background, synchronous `LaunchedSurface` result) + `prowl create tab/pane --profile --prompt -` + `prowl profiles list` + `prowl agents wait` | A | A1 | Unlocks the CLI-driven route and is the runner's `launch` boundary |
+| 4 | **A2** Profile launch boundary (`.prompt`, placement override, anchor, background, synchronous `LaunchedSurface` result) + `prowl create tab/pane --profile --prompt -` + `prowl profiles list` (`prowl agents wait` moved to 064) | A | A1 | Unlocks the CLI-driven route and is the runner's `launch` boundary; 064-S3 attaches launch-scoped hooks here |
 | 5 | **B2** Runner core (pure): run state machine incl. `repeat`, run store, template renderer, `WorkflowRequestRegistry`, action registry, watchdog with injected clock — tested against fake boundaries | B | B1 | Parallel with A2 |
 | 6 | **B3** Runner wiring: `WorkflowRunsFeature` effects, detection-event subscription, CLI preflight, `prowl workflow run/status/done/cancel` + contracts | B | A2, B2 | Engine first powered on |
 | 7 | **C1** Status center fifth state + run panel + attention triggers + notifications (061 visual verification) | C | B3 | Runs become visible |
@@ -456,8 +458,15 @@ built-ins land, handoff migrated).
   memory. Direction: V1 edits YAML in an external editor; a GUI editor with file ↔ UI
   two-way sync is the long-term goal (see Open questions for the round-trip constraint).
 - **CLI-driven orchestration primitives ship with #699**: `prowl create tab|pane
-  --profile <name|uuid> [--prompt -]`, `prowl profiles list`, `prowl agents wait` are part
-  of the prerequisite PRs, not a later wave.
+  --profile <name|uuid> [--prompt -]` and `prowl profiles list` are part of the
+  prerequisite PRs, not a later wave. (`prowl agents wait` was initially listed here and
+  moved to 064 on 2026-08-22 — see below.)
+- **Completion signals split out as 064 (2026-08-22)**: the layered signal bus,
+  `prowl agents signal`, launch-scoped hooks, and `prowl agents wait` with
+  `source`/`confidence` are an independent entry. 063 V1 does not depend on it (steps
+  complete on `done`; the heuristic watchdog is harmless by design); 064 consumes 063's
+  observer (B3) and launch boundary (A2), and in return sharpens the watchdog and enables
+  063's V2 observe mode / `on_attention: ask <role>`.
 - **Settings IA**: Agents becomes a sidebar group with Profiles / Workflows / Command Line
   Tool pages (see Design / UI); the CLI install leaves Advanced.
 - **No default wall-clock timeout; state-driven watchdog with grace periods** (see Design
