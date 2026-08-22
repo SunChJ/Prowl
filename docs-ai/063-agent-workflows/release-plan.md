@@ -48,7 +48,7 @@ User-visible result: onevcat's daily CLI-driven orchestration is first-class
 | 3 | **B3** runner wiring + `workflow run/status/done/cancel` | 063 | A2, S1, B2 | engine powered on |
 | 4 | **C1** status center + run panel + notifications | 063 | B3 | runs visible |
 | 5 | **C2** start sheet + entry points (capsule popover, palette, Active Agents) | 063 | B3 | GUI-initiated runs |
-| 6 | **D1** `embed-skills`, `prowl-workflows` authoring skill, `docs/components/workflows.md`, Settings › Workflows page | 063 | B1, C2 | custom workflows, agent-assisted authoring |
+| 6 | **D1** `prowl-workflows` authoring skill (skills embedding from 065), `docs/components/workflows.md`, Settings › Workflows page | 063 | B1, C2, 065-K1 | custom workflows, agent-assisted authoring |
 | 7 | **D2** `prowl.adversarial-review` built-in + reviewer skill + E2E; watchdog consumes exact signals (064-S5 part) | 063 + 064 | A2, C2, D1, S3 wave 1 | first built-in workflow |
 
 The shipped handoff (HUD + `prowl handoff`) stays untouched in R2. Fallback split if R2 is
