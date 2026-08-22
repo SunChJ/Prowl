@@ -30,6 +30,9 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | --- | --- | --- | --- | --- |
 | 1 | **C0** Settings IA: `Section("Agents")` with Profiles (renamed) + Command Line Tool (from Advanced); no Workflows page yet | 063 | — | CLI install lives with Agents |
 | 1 | **A1** `prowl create pane` (#699) + anchored split primitive | 063 | 060 | CLI can split |
+| 1 | **065-S0/K1** skill-target spike; `embed-skills` + `ProwlSkills` registry | 065 | — | skills ship in the bundle; D1 prerequisite |
+| 2 | **065-K2** shared `SymlinkInstaller` + `prowl skills list\|install\|uninstall\|path` | 065 | 065-K1 | one command installs Prowl's skills into agent skill folders |
+| 3 | **065-K3** Agent Skills section on Settings › Command Line Tool | 065 | 065-K2 | GUI users install skills without a terminal |
 | 2 | **A2** profile launch boundary + `create tab\|pane --profile <p> --prompt -` + `profiles list` | 063 | A1 | CLI launches a profile with a kickoff prompt and gets the pane back |
 | 2 | **S1** signal bus + `ObservedAgentState` multicast observer + `prowl agents signal` | 064 | — | layer-0 signals for every runtime |
 | 3 | **S2** `prowl agents wait` (`source`/`confidence`, `--include-screen`) + `agents` `signals` field + skill rubric | 064 | S1 | no hand-written polling; heuristic results are labelled |
@@ -37,7 +40,7 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 
 User-visible result: onevcat's daily CLI-driven orchestration is first-class
 (`create pane --profile --prompt -` → `agents wait` → `send`). Docs: `docs/components/cli.md`,
-`agent-detection.md`, `settings.md`, `prowl-cli` skill. Parallelism: C0 ∥ A1, A2 ∥ S1.
+`agent-detection.md`, `settings.md`, `prowl-cli` skill. Parallelism: C0 ∥ A1 ∥ 065-K1, A2 ∥ S1.
 
 ### R2 — Agent Workflows
 
