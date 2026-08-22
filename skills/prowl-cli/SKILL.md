@@ -28,7 +28,7 @@ Use `$PROWL_PANE_ID` as your own selector and as the guard against operating on 
 
 ```bash
 me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
-test -n "$me" || { echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl is talking to another Prowl instance" >&2; exit 1; }
+test -n "$me" || { echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl is talking to another Prowl instance" >&2; false; }
 printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
 test "$pane" != "$PROWL_PANE_ID"   # before sending anything to $pane
 ```
