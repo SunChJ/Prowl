@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Planned (per-runtime matrix pending research) |
+| **Status** | Planned (research matrix recorded 2026-08-22) |
 | **Anchor date** | 2026-08-22 |
 | **Primary PRs** | TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
@@ -149,7 +149,7 @@ permission or question dialog), tells the agent to use `--include-screen` and
 | --- | --- | --- | --- |
 | 1 | **S1** Signal bus state + `.signal` observer case + `prowl agents signal` (CLI four layers) | 063 B3's observer | Layer 0 works for every runtime immediately |
 | 2 | **S2** `prowl agents wait` + `agents` `signals` field + `--include-screen` + skill rubric | S1 | Route B usable; heuristic fallback honest |
-| 3 | **S3** Launch-scoped hook injection per runtime (adapter `signalHooks`, self-check) | 063 A2, research matrix | Start with Claude Code and Codex; add runtimes as verified |
+| 3 | **S3** Launch-scoped hook injection per runtime (adapter `signalHooks`, self-check) | 063 A2, research matrix | Wave 1 = tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (turn-complete only; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. Wave 2 = tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only. Tier C (Cursor, Amp: project files) is not attached. |
 | 4 | **S4** Transcript file-watch and OSC producers | S1 | Layer 2 without hooks |
 | 5 | **S5** 063 consumption: watchdog uses exact signals; V2 observe mode / `on_attention: ask` | 063 C1+, S3 | Recorded in 063 amendments |
 
@@ -177,13 +177,39 @@ arrive, `wait` resolves with `source=hook`, and a manually launched agent resolv
   detection/adapters/CLI rather than the runner, and need their own per-runtime
   maintenance; 063 consumes them through one observer type.
 
+## Research outcome (2026-08-22)
+
+The per-runtime matrix lives in
+[research-agent-completion-signals.md](research-agent-completion-signals.md) (all 15 CLIs
+installed locally; live hook runs for claude, codex, copilot, kimi, droid, pi, omp,
+opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusions:
+
+- Eight runtimes accept a Prowl hook **per launch without touching user config**
+  (tier A above); five more only through a Prowl-owned home (tier B, i.e. dedicated-home
+  profiles); Cursor Agent and Amp only via project files (not attached).
+- Codex's hook system is trust-gated per command hash; per-launch `-c hooks.*` needs
+  `--dangerously-bypass-hook-trust`, which Prowl will **not** pass. Codex gets
+  `turn-complete` through the ungated `notify` config; its permission prompts stay
+  heuristic/transcript-based.
+- Claude Code holds all hooks in interactive sessions until the workspace-trust dialog is
+  accepted — the self-check grace must tolerate that, and a trust prompt is itself a
+  `blocked` state worth surfacing.
+- Kimi's `--config-file` replaces the whole config; per-launch hooks there mean Prowl
+  re-supplying the user's provider config — deferred to tier B.
+- Several payloads carry `last_assistant_message` (Claude, Codex, Qoder, Qwen, Grok,
+  Gemini) — a cheap result channel for 063's V2 observe mode on those runtimes.
+- Terminal escapes (OSC 9/99/777/BEL, 9;4) are focus-/threshold-gated everywhere and
+  therefore only a layer-2 hint, never a completion proof.
+
 ## Open questions
 
-- Per-runtime hook/notify/event support, per-launch enablement syntax, and payload shapes
-  — being researched; results land in `research-agent-completion-signals.md`.
 - Whether hook subprocesses can always reach Prowl's socket from sandboxed runtimes
-  (Codex sandbox); `PROWL_CLI_SOCKET` and the bundled binary path must be passed through.
-- Exact `stable-for` and self-check grace defaults.
+  (Codex sandbox, OpenCode/Pi/OMP plugin runtimes); `PROWL_CLI_SOCKET` and the bundled
+  binary path must be passed through and verified per runtime in S3.
+- Exact `stable-for` and self-check grace defaults (Claude's trust-dialog hold suggests a
+  generous, state-aware grace rather than a fixed few seconds).
+- Re-verification cadence: the matrix is versioned per row; S3 adapters need fixture tests
+  that fail loudly when a CLI's hook syntax changes.
 
 ## Amendments
 
