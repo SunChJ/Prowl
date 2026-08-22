@@ -6,7 +6,7 @@ Release R1 starts by establishing the Settings information architecture that lat
 
 ## Change
 
-- Settings now reads: flat items (General … Commands) → `Agents` group (`Profiles`, `Command Line Tool`) → `Repositories` group.
+- Settings now reads: flat items (General … Commands, Advanced last) → `Agents` group (`Profiles`, `Command Line Tool`) → `Repositories` group.
 - The profile list keeps the sidebar label `Profiles` and is titled `Agent Profiles`; `openAgentProfilesSettings` and “Manage Agent Profiles…” continue to select it.
 - The Command Line Tool page owns the existing install/status controls and shows the Unix socket path `prowl` uses to reach the app (`ProwlSocket.defaultPath`, honouring `PROWL_CLI_SOCKET`). The copy describes where `prowl` connects; it does not claim the socket is live.
 - Advanced keeps analytics, crash reporting, and terminal-layout controls, now split into `Analytics & Crash Reports` and `Terminal Layout` sections.

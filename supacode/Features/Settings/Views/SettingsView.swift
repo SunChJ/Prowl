@@ -30,12 +30,12 @@ struct SettingsView: View {
           .tag(SettingsSection.worktree)
         Label("Updates", systemImage: "arrow.down.circle")
           .tag(SettingsSection.updates)
-        Label("Advanced", systemImage: "gearshape.2")
-          .tag(SettingsSection.advanced)
         Label("GitHub", systemImage: "arrow.triangle.branch")
           .tag(SettingsSection.github)
         Label("Commands", systemImage: "globe")
           .tag(SettingsSection.customCommands)
+        Label("Advanced", systemImage: "gearshape.2")
+          .tag(SettingsSection.advanced)
 
         Section("Agents") {
           Label("Profiles", systemImage: "person.crop.circle")
