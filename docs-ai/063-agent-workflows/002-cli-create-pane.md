@@ -34,3 +34,4 @@ Release R1 needs deterministic split creation for both direct CLI orchestration 
 - Slice: 063-A1
 - Branch: `feat/cli-create-pane`
 - Issue: #699
+- PR: #710
