@@ -35,7 +35,7 @@ overrides it for both processes).
 - `--no-color` — disable colored text output (implied by `--json`).
 
 Success envelope: `{ "ok": true, "command": "...", "schema_version": "...", "data": {...} }`.
-Error envelope: `{ "ok": false, "command": "...", "error": { "code": "...", "message": "..." } }`.
+Error envelope: `{ "ok": false, "command": "...", "schema_version": "...", "error": { "code": "...", "message": "..." } }`.
 Exit code is 0 on success, non-zero on failure. **Parser errors print plain text**
 (not JSON) even with `--json`, because parsing happens before execution — always
 check the exit code before piping to `jq`.
@@ -63,8 +63,9 @@ Text `list` and `agents` output exposes short, type-prefixed handles such as
 monotonic, and are never reused after a tab or pane closes. They work in every
 generic target position (`read p7`, `focus t6`, `send p7 '…'`); bare numbers remain
 worktree references there. A stale prefixed handle fails rather than falling back to
-a same-named worktree. JSON keeps canonical UUIDs in `id`; do not cache handles
-across an app restart.
+a same-named worktree. JSON keeps canonical UUIDs in `id`. Neither handles nor pane
+UUIDs survive an app restart (restored tabs keep their tab UUID; restored panes are new
+surfaces with new UUIDs) — re-run `prowl list` instead of caching either.
 
 > **Never target by tab title.** Titles are free-form and can lie. For scripts,
 > resolve a concrete UUID `pane.id` from `prowl list --json`; for an interactive
@@ -85,16 +86,21 @@ Resolve your own tab and worktree from it:
 
 ```bash
 me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
-test -n "$me" || { echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl is talking to another Prowl instance" >&2; false; }
-printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
+if [ -z "$me" ]; then
+  echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl reached another Prowl instance; stop, do not guess" >&2
+else
+  printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
+fi
 ```
 
 The variable is inherited, not verified: a process that scrubbed its environment
 (`sudo`, `ssh`, containers) will not have it, and a tmux/screen session attached from a
 different pane reports the pane its server started in. A value that matches no
 `pane.id` usually means `prowl` reached a different Prowl instance than the one hosting
-your pane (see [Transport & app launch](#transport--app-launch)). When it is unset or
-matches nothing, fall back to `prowl list --json` and choose by `pane.cwd` — never
+your pane (see [Transport & app launch](#transport--app-launch)). Keep every step that
+depends on knowing yourself inside the success branch. When it is unset or matches
+nothing, stop rather than guess: `pane.cwd` only narrows the candidates — several panes
+usually share one cwd — and may stand in for you only when the match is unique; never
 assume the *focused* pane is you. Prowl itself never trusts the variable for
 attribution; commands that need the calling pane (`handoff`) resolve it from the
 caller's process ancestry.
@@ -137,9 +143,9 @@ good for coordination but lags a screen by ~2–3 s and can flip to idle **befor
 TUI finishes painting — confirm with `read --wait-stable`.
 
 Your own pane is `$PROWL_PANE_ID` (see [Identity](#identity-which-pane-am-i)); compare
-against it before sending input anywhere:
+against it before sending input anywhere — the check fails closed when the id is unset:
 ```bash
-test "$pane" != "$PROWL_PANE_ID"
+[ -n "$PROWL_PANE_ID" ] && [ "$pane" != "$PROWL_PANE_ID" ]
 ```
 
 ### `prowl agents`
@@ -369,8 +375,10 @@ prowl handoff save       [target] [--brief -|--no-brief] [--note "…"]
 `--worktree <name>`, or the positional target) wins; otherwise the source is
 **the calling pane** — Prowl maps the `prowl` process's ancestry to the pane
 whose shell spawned it, so an agent running the command hands off *itself*
-regardless of UI focus. Outside any Prowl pane with no selector the command
-errors with `SOURCE_REQUIRED`; the focused pane is never guessed.
+regardless of UI focus. Outside any Prowl pane — or when the ancestry does not
+reach the pane's shell, as under tmux/screen or a detached wrapper — a call with no
+selector errors with `SOURCE_REQUIRED` (pass `--pane "$PROWL_PANE_ID"` once the
+identity check matched); the focused pane is never guessed.
 
 **Briefing.** `--brief -` reads an inline agent-authored briefing from stdin
 (heredoc). Every handoff must provide it or use `--no-brief` as the explicit
@@ -437,6 +445,10 @@ artifacts and terminal excerpts do not appear in `git status`.
   `$TMPDIR/prowl-cli.sock`.
 - If the app isn't running, the CLI launches it (`open -a Prowl`) and waits up to
   ~15s for the socket — except when `PROWL_CLI_SOCKET` is set.
+- A separately launched (Debug) app needs both its own `PROWL_CLI_SOCKET` and the CLI
+  built with it (`./.build/debug/prowl` from that checkout, or
+  `Prowl Debug.app/Contents/Resources/prowl-cli/prowl`); the installed `prowl` may
+  report the same version yet lack newer commands.
 - Sandboxed agents must be allowed to connect to the Unix socket. If the CLI
   reports `SOCKET_PERMISSION_DENIED`, allowlist the socket path in the agent
   sandbox, run `prowl` outside that sandbox, or start both the app and CLI with
@@ -477,7 +489,7 @@ artifacts and terminal excerpts do not appear in `git status`.
 
 ```bash
 pane="$(prowl create tab MyApp --json | jq -r '.data.target.pane.id')"
-test "$pane" != "$PROWL_PANE_ID"
+[ -n "$PROWL_PANE_ID" ] && [ "$pane" != "$PROWL_PANE_ID" ]
 prowl send --pane "$pane" 'swift build' --capture --timeout 300 --json
 prowl read --pane "$pane" --last 100 --wait-stable --json
 prowl close "$pane" --json

@@ -28,12 +28,15 @@ Use `$PROWL_PANE_ID` as your own selector and as the guard against operating on 
 
 ```bash
 me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
-test -n "$me" || { echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl is talking to another Prowl instance" >&2; false; }
-printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
-test "$pane" != "$PROWL_PANE_ID"   # before sending anything to $pane
+if [ -z "$me" ]; then
+  echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl reached another Prowl instance; stop, do not guess" >&2
+else
+  printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
+fi
+[ -n "$PROWL_PANE_ID" ] && [ "$pane" != "$PROWL_PANE_ID" ]   # self-guard before touching $pane; fails closed when the id is unset
 ```
 
-The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). If it is unset or matches nothing, pick yourself from `prowl list --json` by `pane.cwd`. Never assume the focused pane is you — `open` and `focus` move focus, and the user may be looking anywhere.
+The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). Keep everything that depends on knowing yourself inside the success branch (or chained with `&&`). If it is unset or matches nothing, stop rather than guess: `pane.cwd` only narrows the candidates — several panes usually share one cwd — and may stand in for you only when the match is unique. Never assume the focused pane is you — `open` and `focus` move focus, and the user may be looking anywhere.
 
 ## Safe Default Workflow
 
@@ -48,7 +51,7 @@ prowl key --pane "$pane" enter --json
 prowl focus --pane "$pane" --json
 ```
 
-Pick targets by `pane.id`, `tab.id`, `worktree.id`/`name`/`path`, and `pane.cwd`. Never trust tab titles: they are free-form and can lag or lie. Text `prowl list` / `prowl agents` also print short handles (`p7`, `t6`) that work in any target position for the life of the app process (`read p7`, `close t6`); UUIDs are the only identity that survives an app restart.
+Pick targets by `pane.id`, `tab.id`, `worktree.id`/`name`/`path`, and `pane.cwd`. Never trust tab titles: they are free-form and can lag or lie. Text `prowl list` / `prowl agents` also print short handles (`p7`, `t6`) that work in any target position for the life of the app process (`read p7`, `close t6`). UUIDs are the canonical identity of a *live* pane or tab, not a durable one: after an app restart restored tabs keep their tab UUID but panes are new surfaces with new UUIDs — never cache handles or pane UUIDs across a restart; re-run `prowl list`.
 
 For a currently active Codex or Claude Code agent, `prowl agents read p7 --json` returns an immediate semantic snapshot: `.data.agent.status`, `.data.blocker.text` when blocked, and `.data.result` — a result is trustworthy only when `.data.result.state == "complete"`.
 
@@ -101,7 +104,7 @@ prowl close --tab "$tab" --force --json   # --force skips the GUI confirmation f
 
 ## Parsing JSON Output
 
-Every `--json` response is `{ "ok", "command", "schema_version", "data": {...} }`; failures are `{ "ok": false, "error": { "code", "message" } }`. Parser errors (bad flags) print plain text even with `--json`, so check the exit code before piping into `jq`. When JSON sits in a shell variable, use `printf '%s\n' "$json" | jq …` — zsh `echo` can turn `\u001B` escapes back into control characters. Pass shell values into `jq` with `--arg`.
+Every `--json` response is `{ "ok", "command", "schema_version", "data": {...} }`; failures are `{ "ok": false, "command", "schema_version", "error": { "code", "message" } }`. Parser errors (bad flags) print plain text even with `--json`, so check the exit code before piping into `jq`. When JSON sits in a shell variable, use `printf '%s\n' "$json" | jq …` — zsh `echo` can turn `\u001B` escapes back into control characters. Pass shell values into `jq` with `--arg`.
 
 Key fields by command:
 
@@ -144,7 +147,7 @@ done
 - `open /path` may refocus an existing pane; it is not a create command.
 - Focus is not stable and is not you: `open` and `focus` change it, and the user clicks around.
 - `send --capture` captures a screen diff; multiline input may include command echo.
-- The CLI talks to one socket owner. With two Prowl instances running, the default `prowl` reaches whichever owns the standard socket; a manually launched dev instance and every CLI call must share the same `PROWL_CLI_SOCKET=/tmp/name.sock`. Sandboxed agents must be allowed to connect to that Unix socket.
+- The CLI talks to one socket owner. With two Prowl instances running, the default `prowl` reaches whichever owns the standard socket; a manually launched dev instance and every CLI call must share the same `PROWL_CLI_SOCKET=/tmp/name.sock` *and* the CLI built with that app (`./.build/debug/prowl` from the same checkout, or `Prowl Debug.app/Contents/Resources/prowl-cli/prowl`) — the version string does not reveal a mismatch, a missing command does. Sandboxed agents must be allowed to connect to that Unix socket.
 - A newer CLI talking to an older app can fail at transport level (`TRANSPORT_FAILED`) — confirm the running app was built with the command.
 
 ## Error Handling
@@ -160,7 +163,7 @@ done
 
 ## Handing Off Your Task
 
-`prowl handoff to <agent> --brief -` hands your task to another agent. Run it from your own pane (the calling pane is the source — no selector needed) and pipe your briefing on stdin:
+`prowl handoff to <agent> --brief -` hands your task to another agent. Run it from your own pane (the calling pane is the source — no selector needed) and pipe your briefing on stdin. Prowl finds the calling pane through process ancestry, so a direct shell or agent child works; under tmux/screen or a detached wrapper that resolution fails with `SOURCE_REQUIRED` — then pass `--pane "$PROWL_PANE_ID"` explicitly, after the identity check above matched.
 
 ```bash
 prowl handoff to codex --brief - <<'EOF'
