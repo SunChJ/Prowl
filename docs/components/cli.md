@@ -84,14 +84,14 @@ process launched inside it (agents, their tools, scripts):
 Resolve your own tab and worktree from it:
 
 ```bash
-me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
-printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
-```
+The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). If it is unset or matches nothing, pick yourself from `prowl list --json` by `pane.cwd`.```
 
 The variable is inherited, not verified: a process that scrubbed its environment
 (`sudo`, `ssh`, containers) will not have it, and a tmux/screen session attached from a
-different pane reports the pane its server started in. When it is unset or does not
-match any `pane.id`, fall back to `prowl list --json` and choose by `pane.cwd` — never
+different pane reports the pane its server started in. A value that matches no
+`pane.id` usually means `prowl` reached a different Prowl instance than the one hosting
+your pane (see [Transport & app launch](#transport--app-launch)). When it is unset or
+matches nothing, fall back to `prowl list --json` and choose by `pane.cwd` — never
 assume the *focused* pane is you. Prowl itself never trusts the variable for
 attribution; commands that need the calling pane (`handoff`) resolve it from the
 caller's process ancestry.

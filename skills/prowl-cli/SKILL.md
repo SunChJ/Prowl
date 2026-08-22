@@ -28,11 +28,12 @@ Use `$PROWL_PANE_ID` as your own selector and as the guard against operating on 
 
 ```bash
 me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
+test -n "$me" || { echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl is talking to another Prowl instance" >&2; exit 1; }
 printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
 test "$pane" != "$PROWL_PANE_ID"   # before sending anything to $pane
 ```
 
-The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. If it is unset or matches no `pane.id`, pick yourself from `prowl list --json` by `pane.cwd`. Never assume the focused pane is you — `open` and `focus` move focus, and the user may be looking anywhere.
+The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). If it is unset or matches nothing, pick yourself from `prowl list --json` by `pane.cwd`. Never assume the focused pane is you — `open` and `focus` move focus, and the user may be looking anywhere.
 
 ## Safe Default Workflow
 
