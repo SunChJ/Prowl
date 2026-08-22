@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-08-16 |
-| **Primary PRs** | TBD |
+| **Primary PRs** | #700 |
 | **Related** | [013 — Prowl CLI](../013-prowl-cli/000-plan.md), [046 — CLI Short Handles](../046-cli-short-handles/000-plan.md), [047 — Cross-Agent Handoff](../047-cross-agent-handoff/000-plan.md), [059 — Agent Transcript Snapshots](../059-agent-transcript-snapshots/000-plan.md), [#699 — CLI split-pane creation](https://github.com/onevcat/Prowl/issues/699), [`docs/components/cli.md`](../../docs/components/cli.md) |
 
 ## Background

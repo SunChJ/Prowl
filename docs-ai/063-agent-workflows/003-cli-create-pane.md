@@ -1,4 +1,4 @@
-# 063.002 — Anchored Split and `prowl create pane` (A1)
+# 063.003 — Anchored Split and `prowl create pane` (A1)
 
 ## Context
 

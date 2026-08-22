@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | Planned (design in discussion; see Open questions) |
+| **Status** | In progress — R1 foundations C0/A1/A1b implemented; A2 implemented in PR #714 |
 | **Anchor date** | 2026-08-21 |
-| **Primary PRs** | TBD (see Delivery slicing) |
+| **Primary PRs** | R1 foundations: #709 (C0), #710 (A1), #713 (A1b), #714 (A2); B1–D3 TBD |
 | **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
 
 ## Background
@@ -367,7 +367,7 @@ Shapes are intentionally close to what exists so the runner and the CLI share on
   `AgentProfileLaunchPlan.swift`): `AgentProfileLaunchPlanner.plan(for:intent:homeBaseDirectory:)`
   gains the intent (default `.interactive`; stays pure); a new
   `AgentProfileLaunchRequest { plan, placement: .tab(background:) | .split(anchor: UUID?,
-  direction:), workingDirectoryOverride: URL?, title: String? }`;
+  direction:, background:), workingDirectoryOverride: URL?, title: String? }`;
   `WorktreeTerminalState.launchAgentProfile(_ request) -> Result<LaunchedSurface {tabID,
   surfaceID}, AgentProfileLaunchError>`; a synchronous result-returning `TerminalClient`
   closure (same style as `createTabInDirectory`), with the existing fire-and-forget

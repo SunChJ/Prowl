@@ -220,4 +220,8 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
-(append `- Updated 2026-MM-DD: ... — see [00N-topic.md](00N-topic.md)` lines here)
+- Updated 2026-08-22: prerequisite 063-A2 is implemented in PR #714. Its typed synchronous
+  launch boundary preserves the adapter-rendered invocation and launch-scoped surface
+  environment that S3 will extend; A2 intentionally injects no hooks. With that dependency
+  ready, S1 (signal bus, multicast observer, and `agents signal`) is the next R1 critical-path
+  slice, followed by S2 and S3 wave 1.

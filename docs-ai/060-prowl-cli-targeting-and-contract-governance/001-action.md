@@ -39,6 +39,15 @@ now owns the action-first `create pane <pane> --direction <right|left|up|down>`
 contract and requires a direct target-surface split primitive rather than a
 focus-dependent implementation.
 
+## Follow-on extensions
+
+The deliberate pane-creation boundary was subsequently filled by 063-A1 in PR #710,
+including the direct anchored split primitive and `prowl create pane`. PR #713 added
+per-pane `PROWL_PANE_ID`, and 063-A2 in PR #714 extended the same governed lifecycle
+surface with typed Profile launch, `--prompt -`, background placement, and
+`prowl profiles list`. Their parser, wire contract, manual, skill, and executable-schema
+changes follow this entry's four-layer ownership rule.
+
 ## Verification
 
 Executed successfully:

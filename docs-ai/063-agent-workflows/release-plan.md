@@ -24,6 +24,23 @@ that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launc
 PRs merge to `main` one at a time (each keeps `main` shippable); engine PRs without a
 user-facing surface may merge before "their" release and stay dormant. Three releases:
 
+### Current R1 status (2026-08-22)
+
+| Slice(s) | State | PR / next action |
+| --- | --- | --- |
+| C0 | Merged | #709 |
+| A1 | Merged | #710 |
+| A1b | Merged | #713 |
+| A2 | Implemented | #714 |
+| S1 | Planned | **Next critical-path PR**: signal bus, multicast observer, `agents signal` |
+| S2 | Planned | Follows S1: `agents wait` and honest heuristic fallback |
+| S3 wave 1 | Planned | Follows A2 + S1: tier-A launch hooks |
+| 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
+| 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
+
+A2 completes 063's R1 implementation work. The orchestration critical path now moves to
+064-S1 → S2 → S3 wave 1; 065-S0/K1 may proceed independently in parallel.
+
 ### R1 — CLI orchestration primitives + completion signals
 
 | Order | Slice | Entry | Depends | Outcome |
@@ -78,9 +95,10 @@ cross-worktree roles, GUI editor) and the rest of 064-S5; scheduled by demand.
 ## Dependency graph
 
 ```
-R1:  C0            A1 ──► A2 ──┐
-                   S1 ──► S2   ├──► S3w1
-                      └────────┘
+R1:  C0            A1 ──► A1b
+                     └──► A2 ─────────┐
+                   S1 ──┬──► S2       ├──► S3w1
+                        └──────────────┘
      065-S0/K1 ──► 065-K2 ──► 065-K3
 R2:  B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1 ──► C2 ──► D1 (◄ 065-K1) ──► D2 (◄ S3w1)
 R3:  D3 (◄ D2)        S3w2 (◄ S3w1)        S4 (◄ S1)
@@ -89,6 +107,8 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-22 — A2 implemented in #714 after C0 #709, A1 #710, and A1b #713. The next R1
+  critical path is 064-S1 → S2 → S3 wave 1; 065-S0/K1 remains independent parallel work.
 - 2026-08-22 — A1 review: added **A1b** (`PROWL_PANE_ID`) to R1; `create pane` keeps an explicit
   anchor (no caller-pane default) and a background placement stays with A2.
 - 2026-08-22 — first version: three releases agreed; `ObservedAgentState` observer moved
