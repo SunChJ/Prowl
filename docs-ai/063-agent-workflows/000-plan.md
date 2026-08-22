@@ -283,6 +283,25 @@ writes.
   / User / Repo lists, enable toggle, per-workflow "ask for bindings" override, validation
   status with YAML line errors, Reveal, New Workflow… (template file), Ask your agent to
   write one (prompt pointing at bundled `docs/` + `skills/`).
+- **CLI reachability status** (deferred from C0 #709, see
+  [002-settings-agents-group.md](002-settings-agents-group.md); lands with D1's preflight):
+  the Command Line Tool page shows only `ProwlSocket.defaultPath` — a computed value that
+  honours `PROWL_CLI_SOCKET` — not whether Prowl is actually listening there. Today
+  `CLISocketServer.start()` (`supacode/CLIService/CLISocketServer.swift`) throws
+  `CLIServiceError` (`socketAlreadyOwned` when another Prowl instance holds the lock,
+  `lockFailed`, `permissionFailed`, `bindFailed`, `listenFailed`, `socketPathTooLong`,
+  `socketCreationFailed`), `supacodeApp.makeCLISocketServer` only logs the failure, and
+  `isRunning` is private — nothing downstream observes it, so a user whose `prowl` cannot
+  connect sees a healthy-looking Settings page. D1's CLI dependency banner and the runner
+  preflight need the same signal, so build it once: a `CLIServiceStatus`
+  (`listening(path)` / `failed(CLIServiceError, path)` / `stopped`) published by the server
+  through a small dependency client or the existing `TerminalClient`-style event stream (not
+  NSNotification), read by `SettingsFeature` for a status row under Command Line Tool ›
+  Connection (tri-state indicator like the install row; failure text names the reason and,
+  for `socketAlreadyOwned`, the competing instance) and by the workflow preflight
+  (`install` / `socket` blockers before a run). Tests: reducer tests with a stubbed status,
+  plus a `CLISocketServer` test that `start()` on an already-owned path surfaces
+  `socketAlreadyOwned`.
 
 ### CLI (per 060's four-layer rule)
 
@@ -305,9 +324,11 @@ run …` replacement, then removal (see Built-ins).
 
 ### Built-ins and distribution
 
-- `Resources/workflows/*.yaml` and `Resources/skills/` are embedded like `docs/`
-  (`Makefile` `embed-docs` pattern); `skill:` references are materialized into the run
-  directory so sandboxed agents can read them.
+- `Resources/workflows/*.yaml` are embedded like `docs/` (`Makefile` `embed-docs` pattern);
+  `Resources/skills/` and the bundled-skill registry are owned by
+  [065-bundled-agent-skills](../065-bundled-agent-skills/000-plan.md) (`embed-skills`,
+  `ProwlSkills`); `skill:` references resolve through that registry and are materialized
+  into the run directory so sandboxed agents can read them.
 - `prowl.adversarial-review`: interactive reviewer in a right split (transparency and user
   trust outweigh headless precision), `repeat … until outputs.findings.verdict == clean`
   with `max_rounds`.
@@ -394,7 +415,7 @@ attaches hooks through A2's launch boundary.
 | **B3** | B | A2, 064-S1, B2 | Runner wiring: `WorkflowRunsFeature` effects, observer consumption via `AppFeature`, CLI preflight, `prowl workflow run/status/done/cancel` + contracts. Engine first powered on. |
 | **C1** | C | B3 | Status center fifth state + run panel + attention triggers + notifications (061 visual verification). Runs become visible. |
 | **C2** | C | B3 | Start sheet (bindings, suggestion-based profile creation, don't-ask-again, `--skip` equivalent) + entry points (capsule popover, palette, Active Agents context menu). GUI-initiated runs. |
-| **D1** | D | B1, C2 | `embed-skills`, `prowl-workflows` authoring skill, `docs/components/workflows.md`, Settings › Workflows page (enable/validate/Reveal/New/Ask-agent/per-workflow auto) added to the Agents group. Distribution and docs. |
+| **D1** | D | B1, C2, 065-K1 | `prowl-workflows` authoring skill (registered by adding it to `skills/`; embedding and the registry come from [065](../065-bundled-agent-skills/000-plan.md)), `docs/components/workflows.md`, Settings › Workflows page (enable/validate/Reveal/New/Ask-agent/per-workflow auto) added to the Agents group. Distribution and docs. |
 | **D2** | D | A2, C2, D1, 064-S3 wave 1 | `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification; the watchdog consumes exact signals (064-S5 part). Proves the engine on a fresh flow before touching shipped behavior. |
 | **D3** | D | D2 | `prowl.handoff` + `prowl.handoff-checkpoint` built-ins + `handoff.transition`/`handoff.checkpoint` actions; `prowl handoff to\|save` → `HANDOFF_RETIRED` stubs; remove `HandoffHudFeature`, `HandoffCommandHandler`, `HandoffRequestRegistry`; rewrite `docs/components/handoff.md` and the `prowl-cli` skill. Migrate the shipped feature last. |
 | **V2** | — | — | observe mode (`expect.status` + `agents read` / hook `last_assistant_message`), `on_attention: ask <role>`, fan-out (`count`, `wait all`), run persistence/resume, retention, cross-worktree roles, GUI editor. |
@@ -479,7 +500,8 @@ attaches hooks through A2's launch boundary.
   when wrong: grace before acting, a nudge that only asks the agent to finish with `done`
   when it is truly complete, and attention states that never discard a late delivery.
 - **PR order / releases** (revised 2026-08-22): three releases — R1 = C0, A1, A2,
-  064-S1/S2/S3-wave-1 (CLI orchestration + signals); R2 = B1, B2, B3, C1, C2, D1, D2
+  064-S1/S2/S3-wave-1, 065-S0/K1/K2/K3 (CLI orchestration + signals + skill distribution);
+  R2 = B1, B2, B3, C1, C2, D1, D2
   (Agent Workflows); R3 = D3, 064-S3-wave-2/S4, first V2 items (handoff migration). The
   single source for order and release assignment is [release-plan.md](release-plan.md);
   the slice tables in 063/064 define contents only. The new Adversarial Review flow
@@ -565,3 +587,4 @@ attaches hooks through A2's launch boundary.
 ## Amendments
 
 - Updated 2026-08-22: Implemented A1 with the direct anchored split primitive and schema-governed `prowl create pane` command — see [002-cli-create-pane.md](002-cli-create-pane.md).
+- Updated 2026-08-22: Shipped C0 with the Agents sidebar group, Profiles page, and Command Line Tool page; Workflows remains deferred to D1 — see [002-settings-agents-group.md](002-settings-agents-group.md).

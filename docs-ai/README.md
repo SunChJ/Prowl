@@ -15,14 +15,16 @@ onevcat explicitly asks for a `docs-ai/` record.
 docs-ai/NNN-<slug>/
   000-plan.md      # plan before implementation (RFC-like)
   001-action.md    # what was actually done, verified against the code
-  002-<topic>.md   # amendments: follow-up waves, corrections (indexed in 000-plan.md)
+  002-<topic>.md   # amendments: follow-up waves, corrections, or one record per slice of a multi-PR entry (indexed in 000-plan.md)
   <living>.md      # non-numbered = living doc (runbook/ledger/reference), updated in place
 ```
 
 Rules for writing new entries live in the `write-ai-doc` skill
 (`.claude/skills/write-ai-doc/SKILL.md`). In short: select only qualifying product work,
 then plan first, act second, amend in place for in-frame follow-ups, and open a new numbered
-entry for large pivots. Numbered files are immutable history; non-numbered files are living
+entry for large pivots. An entry delivered across several PRs records each slice as an
+amendment (`002+`, shipped with its PR) and writes `001-action.md` once, when the last slice
+lands, summarizing them. Numbered files are immutable history; non-numbered files are living
 documents.
 
 Entries `001`–`045` were backfilled on 2026-07-12 from PRs, commits, and the former
@@ -119,3 +121,4 @@ agent-facing manual for that).
 | 062 | [workspace-child-diff](062-workspace-child-diff/000-plan.md) | 2026-08-19 | Per-repository diff for workspace children via unified DiffTarget routing |
 | 063 | [agent-workflows](063-agent-workflows/000-plan.md) | 2026-08-21 | Agent Workflows: YAML-declared, profile-bound multi-agent orchestration (runner, `prowl workflow` CLI, status center, built-in handoff/adversarial review); successor to 047's fixed handoff flow |
 | 064 | [agent-completion-signals](064-agent-completion-signals/000-plan.md) | 2026-08-22 | Layered agent signal bus (cooperative / launch-scoped hooks / transcript+process+OSC / heuristic), `prowl agents signal` + `agents wait` with source/confidence, per-runtime hook research |
+| 065 | [bundled-agent-skills](065-bundled-agent-skills/000-plan.md) | 2026-08-22 | Bundle Prowl's official agent skills into the app, `prowl skills` install/uninstall via symlinks into agent skill folders, Agent Skills section on Settings › Command Line Tool, shared registry for 063 |
