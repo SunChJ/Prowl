@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl profiles list, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl profiles list, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -106,8 +106,8 @@ step that depends on knowing yourself inside the success branch. When it is unse
 matches nothing, stop rather than guess: `pane.cwd` only narrows the candidates — several panes
 usually share one cwd — and may stand in for you only when the match is unique; never
 assume the *focused* pane is you. Prowl itself never trusts the variable for
-attribution; commands that need the calling pane (`handoff`) resolve it from the
-caller's process ancestry.
+attribution; commands that need the calling pane (`handoff`, `agents signal`) resolve it
+from the caller's process ancestry.
 
 ## Commands
 
@@ -226,6 +226,32 @@ exclusive with `--json`; it writes exactly a complete trusted result to stdout, 
 no heading or added newline. For every other result state it exits non-zero with
 `SESSION_UNRESOLVED`, `RESULT_NOT_FOUND`, `RESULT_INCOMPLETE`, or
 `RESULT_TOO_LARGE`. Empty `agents` roster output remains `No agents found.`.
+
+### `prowl agents signal <event>`
+
+Report a cooperative event for the agent in the **calling pane**:
+
+```bash
+prowl agents signal turn-ended --detail "Review complete"
+prowl agents signal needs-input --session session-1 --json
+prowl agents signal progress --progress 75
+```
+
+Events are `turn-ended`, `needs-input`, `session-start`, `session-end`, and `progress`.
+`turn-ended` means one runtime interaction ended; it does not complete a workflow or prove
+an assigned task is done. `--progress` accepts 0–100 and is valid only for `progress`.
+Optional `--session` and claimed `--origin` are limited to 256 UTF-8 bytes; `--detail`
+carries a short result/reason up to 4096 bytes. Values must be non-empty and control-free.
+
+The command accepts no target: Prowl attributes the kernel socket peer PID through process
+ancestry to a live pane. It never uses UI focus or `PROWL_PANE_ID`; external terminals,
+tmux/detached ancestry, and already-closed panes fail with `SOURCE_REQUIRED` or
+`AGENT_GONE`. Public signals report `source=cooperative_cli`, `confidence=exact`; exact
+means explicit channel and caller-pane attribution, not verified business completion.
+Claimed origin never upgrades trust. JSON uses `prowl.cli.agents.signal.v1`.
+
+`dispatch-complete` and `agents wait` arrive together in the next slice with an opaque
+`dispatch_id`; `workflow done` remains the only workflow-step completion command.
 
 ### `prowl profiles list`
 
@@ -517,6 +543,8 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `PROFILE_NOT_FOUND` | No enabled Profile matches the UUID or exact name — re-run `profiles list`; disabled Profiles cannot launch. |
 | `PROFILE_NOT_UNIQUE` | Several enabled Profiles have the exact name — use the Profile UUID from `profiles list`. |
 | `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code. Re-run `agents`. |
+| `SOURCE_REQUIRED` | A caller-owned command such as `agents signal` or selector-free `handoff` could not map the socket peer ancestry to a Prowl pane. Run it inside the source pane without tmux/detached wrappers, or use an explicit selector where that command permits one. |
+| `AGENT_GONE` | The caller pane closed before `agents signal` could record its event. |
 | `BLOCKER_UNREADABLE` | A blocked screen was detected but Prowl could not safely extract its current interaction text. Re-run `agents read` or inspect with `read`. |
 | `SESSION_UNRESOLVED` / `RESULT_NOT_FOUND` / `RESULT_INCOMPLETE` / `RESULT_TOO_LARGE` | `agents read --result-only` could not provide one trustworthy complete result. Drop `--result-only` to retain the live snapshot and inspect `.data.result`. |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |
@@ -561,6 +589,8 @@ fi
 - Use `prowl agents --json` for discovery, then `prowl agents read <pN|uuid>` for
   a supported agent's status, blocker, and trustworthy result state; use `prowl list --json`
   when you need all panes, including ordinary shells.
+- Use `prowl agents signal` only from the pane reporting the event; it never targets focus
+  or another pane and never substitutes for `workflow done`.
 - `--capture` needs shell integration; otherwise `read --wait-stable` or file
   redirection.
 - `open` is navigation, not a guaranteed new pane — use `create tab` or `create pane`.

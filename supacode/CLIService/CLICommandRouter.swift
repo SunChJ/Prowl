@@ -9,6 +9,7 @@ final class CLICommandRouter {
   private let listHandler: any CommandHandler
   private let agentsHandler: any CommandHandler
   private let agentsReadHandler: any CommandHandler
+  private let agentsSignalHandler: any CommandHandler
   private let profilesHandler: any CommandHandler
   private let focusHandler: any CommandHandler
   private let sendHandler: any CommandHandler
@@ -25,6 +26,7 @@ final class CLICommandRouter {
     listHandler: any CommandHandler = StubCommandHandler(command: "list"),
     agentsHandler: any CommandHandler = StubCommandHandler(command: "agents"),
     agentsReadHandler: any CommandHandler = StubCommandHandler(command: "agents.read"),
+    agentsSignalHandler: any CommandHandler = StubCommandHandler(command: "agents.signal"),
     profilesHandler: any CommandHandler = StubCommandHandler(command: "profiles"),
     focusHandler: any CommandHandler = StubCommandHandler(command: "focus"),
     sendHandler: any CommandHandler = StubCommandHandler(command: "send"),
@@ -40,6 +42,7 @@ final class CLICommandRouter {
     self.listHandler = listHandler
     self.agentsHandler = agentsHandler
     self.agentsReadHandler = agentsReadHandler
+    self.agentsSignalHandler = agentsSignalHandler
     self.profilesHandler = profilesHandler
     self.focusHandler = focusHandler
     self.sendHandler = sendHandler
@@ -62,6 +65,7 @@ final class CLICommandRouter {
     case .list: handler = listHandler
     case .agents: handler = agentsHandler
     case .agentsRead: handler = agentsReadHandler
+    case .agentsSignal: handler = agentsSignalHandler
     case .profiles: handler = profilesHandler
     case .focus: handler = focusHandler
     case .send: handler = sendHandler

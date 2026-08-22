@@ -9,7 +9,7 @@ and the executable [schema bundle](schema.md).
 ```text
 prowl [path]
 prowl open [path]
-prowl list | agents | profiles | focus | read | send | key | handoff | create | close
+prowl list | agents [read|signal] | profiles | focus | read | send | key | handoff | create | close
 ```
 
 Bare path forms (`/`, `./`, `../`, `~/`, `file://`, `.`, `..`) enter `open`.
@@ -59,10 +59,25 @@ is a read-only global snapshot and accepts no target. `close` requires a pane-or
 shipped release. They keep their legacy parser/transport behavior while emitting a
 stderr warning; new automation must use the lifecycle grammar above.
 
+## Agent signal grammar
+
+```bash
+prowl agents signal <turn-ended|needs-input|session-start|session-end|progress>
+                    [--progress <0...100>] [--session <id>]
+                    [--origin <claimed-origin>] [--detail <text>]
+```
+
+`--progress` is valid only with `progress`; omitting it means indeterminate progress.
+Session/origin are at most 256 UTF-8 bytes and detail is at most 4096. All are non-empty
+and control-free when present. Parser and handler enforce the same shared validation.
+See [agents-signal.md](agents-signal.md).
+
 ## Command-specific exceptions
 
 - `agents read <pN|pane-uuid>` is a pane-only semantic snapshot, no selectors or
   focus fallback.
+- `agents signal` accepts no selector. Its source is the caller pane resolved from the
+  socket peer process ancestry, never UI focus or `PROWL_PANE_ID`.
 - `handoff` defaults to the calling pane, not UI focus.
 - `list`, `agents`, and `profiles list` are global discovery commands with no target selector.
 - `open` consumes a path rather than a target.

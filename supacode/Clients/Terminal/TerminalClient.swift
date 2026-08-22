@@ -11,6 +11,8 @@ struct TerminalClient {
   var launchAgentProfile:
     @MainActor @Sendable (Worktree, AgentProfileLaunchRequest) -> Result<LaunchedSurface, AgentProfileLaunchError>
   var events: @MainActor @Sendable () -> AsyncStream<Event>
+  /// Per-surface multicast stream. Independent from the single-consumer event stream.
+  var observeAgentState: @MainActor @Sendable (UUID) -> AgentObservationStream
   var canvasFocusedWorktreeID: @MainActor @Sendable () -> Worktree.ID?
   /// Active surface in the selected tab. Lets the reducer capture the target
   /// synchronously before an async dispatch races against AppKit focus reshuffle
@@ -108,6 +110,7 @@ extension TerminalClient: DependencyKey {
     createTabInDirectory: { _, _ in fatalError("TerminalClient.createTabInDirectory not configured") },
     launchAgentProfile: { _, _ in fatalError("TerminalClient.launchAgentProfile not configured") },
     events: { fatalError("TerminalClient.events not configured") },
+    observeAgentState: { _ in fatalError("TerminalClient.observeAgentState not configured") },
     canvasFocusedWorktreeID: { nil },
     selectedSurfaceID: { _ in nil },
     handoffSourceContext: { _ in nil },
@@ -125,6 +128,7 @@ extension TerminalClient: DependencyKey {
     createTabInDirectory: { _, _ in nil },
     launchAgentProfile: { _, _ in .failure(.tabCreationFailed) },
     events: { AsyncStream { $0.finish() } },
+    observeAgentState: { _ in AgentObservationStream { $0.finish() } },
     canvasFocusedWorktreeID: { nil },
     selectedSurfaceID: { _ in nil },
     handoffSourceContext: { _ in nil },

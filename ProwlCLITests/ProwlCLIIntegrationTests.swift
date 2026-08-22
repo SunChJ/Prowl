@@ -153,6 +153,95 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(payload["command"] as? String, "agents")
   }
 
+  func testAgentsSignalRoundTripsOverSocketInTextMode() throws {
+    let socketPath = temporarySocketPath(suffix: "agents-signal-text")
+    let paneID = "6E1A2A10-D99F-4E3F-920C-D93AA3C05764"
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.signal",
+      schemaVersion: "prowl.cli.agents.signal.v1",
+      data: RawJSON(
+        encoding: AgentSignalCommandPayload(
+          pane: AgentSignalPanePayload(id: paneID, worktreeID: "/Projects/App"),
+          signal: AgentSignalPayload(
+            event: .turnEnded,
+            progress: nil,
+            source: "cooperative_cli",
+            confidence: "exact",
+            timestamp: "2026-08-22T12:00:00.000Z",
+            sessionID: "session-1",
+            detail: "Review complete",
+            claimedOrigin: "manual-review"
+          )
+        ))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: [
+        "agents", "signal", "turn-ended",
+        "--origin", "manual-review",
+        "--session", "session-1",
+        "--detail", "Review complete",
+        "--no-color",
+      ]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "Signaled turn-ended for pane \(paneID).\n")
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsSignal(let input) = envelope.command else {
+      return XCTFail("Expected agents.signal command envelope")
+    }
+    XCTAssertEqual(input.event, .turnEnded)
+    XCTAssertEqual(input.origin, "manual-review")
+    XCTAssertEqual(input.sessionID, "session-1")
+    XCTAssertEqual(input.detail, "Review complete")
+  }
+
+  func testAgentsSignalPreservesSchemaValidatedJSONResponse() throws {
+    let socketPath = temporarySocketPath(suffix: "agents-signal-json")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.signal",
+      schemaVersion: "prowl.cli.agents.signal.v1",
+      data: RawJSON(
+        encoding: AgentSignalCommandPayload(
+          pane: AgentSignalPanePayload(
+            id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
+            worktreeID: "/Projects/App"
+          ),
+          signal: AgentSignalPayload(
+            event: .progress,
+            progress: 75,
+            source: "cooperative_cli",
+            confidence: "exact",
+            timestamp: "2026-08-22T12:00:00.000Z",
+            sessionID: nil,
+            detail: nil,
+            claimedOrigin: nil
+          )
+        ))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["agents", "signal", "progress", "--progress", "75", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let request = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsSignal(let input) = request.command else {
+      return XCTFail("Expected agents.signal command envelope")
+    }
+    XCTAssertEqual(input.progress, 75)
+    let rendered = try jsonObject(from: result.stdout)
+    XCTAssertEqual(rendered["command"] as? String, "agents.signal")
+    XCTAssertEqual(rendered["schema_version"] as? String, "prowl.cli.agents.signal.v1")
+  }
+
   func testAgentsPayloadDetectionReasonRemainsBackwardCompatible() throws {
     let modernData = try JSONEncoder().encode(
       AgentsResponseData(

@@ -104,6 +104,28 @@ showing their chrome keep the last trusted state instead of forcing idle.
 
 A **Done** pane becomes **Idle** the moment you focus it.
 
+## Cooperative signal bus
+
+Detection remains heuristic UI state. Separately, every live pane now has a terminal-owned
+multicast observation stream. A process inside the pane can report explicit runtime events:
+
+```bash
+prowl agents signal turn-ended --detail "Review complete"
+prowl agents signal needs-input
+```
+
+Prowl attributes the socket caller through process ancestry, not focus or
+`PROWL_PANE_ID`. A signal can exist for an ordinary shell pane with no detected agent and
+does not create or overwrite a detected-agent entry. `turn-ended` means one interaction
+ended, not that a workflow step completed; only `prowl workflow done` will advance a
+workflow. Future `agents wait` and launch-scoped hooks consume the same per-pane stream.
+
+Each observer receives an atomic current snapshot before live changes. Multiple observers
+do not compete with the app's existing single-consumer terminal event stream. Agent removal
+keeps the pane stream alive; pane closure emits `surfaceClosed` and finishes it. Bounded
+overflow is explicit so future waiters can re-subscribe and resnapshot rather than silently
+lose lifecycle or signal evidence.
+
 ## How often it runs
 
 - **No polling** for cold panes that have not received recent input.

@@ -25,6 +25,7 @@ public enum CLIErrorCode {
   public static let agentNotFound = "AGENT_NOT_FOUND"
   public static let agentUnsupported = "AGENT_UNSUPPORTED"
   public static let agentReadFailed = "AGENT_READ_FAILED"
+  public static let agentGone = "AGENT_GONE"
   public static let blockerUnreadable = "BLOCKER_UNREADABLE"
   public static let sessionUnresolved = "SESSION_UNRESOLVED"
   public static let resultNotFound = "RESULT_NOT_FOUND"

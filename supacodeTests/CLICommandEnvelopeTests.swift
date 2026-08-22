@@ -71,6 +71,31 @@ struct CLICommandEnvelopeTests {
     }
   }
 
+  @Test func envelopeAgentsSignalRoundTrips() throws {
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .agentsSignal(
+        AgentSignalInput(
+          event: .needsInput,
+          origin: "manual",
+          sessionID: "session-1",
+          detail: "Approval required"
+        ))
+    )
+    let data = try JSONEncoder().encode(envelope)
+    let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
+
+    if case .agentsSignal(let input) = decoded.command {
+      #expect(input.event == .needsInput)
+      #expect(input.progress == nil)
+      #expect(input.origin == "manual")
+      #expect(input.sessionID == "session-1")
+      #expect(input.detail == "Approval required")
+    } else {
+      Issue.record("Expected .agentsSignal command")
+    }
+  }
+
   @Test func envelopeAgentsReadRoundTrips() throws {
     let envelope = CommandEnvelope(
       output: .text,
@@ -265,6 +290,7 @@ struct CLICommandEnvelopeTests {
       (.list(ListInput()), "list"),
       (.agents(AgentsInput()), "agents"),
       (.agentsRead(AgentReadInput(pane: "p7")), "agents.read"),
+      (.agentsSignal(AgentSignalInput(event: .turnEnded)), "agents.signal"),
       (.focus(FocusInput()), "focus"),
       (.send(SendInput(text: "x")), "send"),
       (.key(KeyInput(rawToken: "tab", token: "tab")), "key"),
@@ -285,6 +311,7 @@ struct CLICommandEnvelopeTests {
       .list(ListInput()),
       .agents(AgentsInput()),
       .agentsRead(AgentReadInput(pane: "p7")),
+      .agentsSignal(AgentSignalInput(event: .sessionStart)),
       .focus(FocusInput()),
       .send(SendInput(text: "test")),
       .key(KeyInput(rawToken: "enter", token: "enter")),

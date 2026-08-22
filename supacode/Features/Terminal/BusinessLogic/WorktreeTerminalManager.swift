@@ -12,6 +12,7 @@ final class WorktreeTerminalManager {
   private let runtime: GhosttyRuntime?
   private let layoutPersistence: TerminalLayoutPersistenceClient
   private let targetHandleRegistry = TerminalTargetHandleRegistry()
+  @ObservationIgnored private let agentObservationStore: AgentObservationStore
   private var states: [Worktree.ID: WorktreeTerminalState] = [:]
   private var notificationsEnabled = true
   private var commandFinishedNotificationEnabled = true
@@ -34,11 +35,13 @@ final class WorktreeTerminalManager {
   init(
     runtime: GhosttyRuntime,
     preferredFontSize: Float32? = nil,
-    layoutPersistence: TerminalLayoutPersistenceClient = .liveValue
+    layoutPersistence: TerminalLayoutPersistenceClient = .liveValue,
+    agentObservationBufferCapacity: Int = 64
   ) {
     self.runtime = runtime
     self.layoutPersistence = layoutPersistence
     self.preferredFontSize = preferredFontSize
+    self.agentObservationStore = AgentObservationStore(bufferCapacity: agentObservationBufferCapacity)
     baselineFontSize = runtime.defaultFontSize()
   }
 
@@ -223,6 +226,23 @@ final class WorktreeTerminalManager {
     }
   }
 
+  /// Independent per-surface multicast observation. This deliberately does not
+  /// reuse `eventStream()`, whose single production subscriber is `AppFeature`.
+  func observeAgentState(surfaceID: UUID) -> AgentObservationStream {
+    agentObservationStore.observe(surfaceID: surfaceID, isLive: containsSurface(surfaceID))
+  }
+
+  @discardableResult
+  func recordAgentSignal(_ signal: AgentSignal, surfaceID: UUID) -> Bool {
+    guard containsSurface(surfaceID) else { return false }
+    agentObservationStore.publishSignal(signal, surfaceID: surfaceID)
+    return true
+  }
+
+  func agentObservationSubscriberCount(surfaceID: UUID) -> Int {
+    agentObservationStore.subscriberCount(surfaceID: surfaceID)
+  }
+
   func eventStream() -> AsyncStream<TerminalClient.Event> {
     eventContinuation?.finish()
     let (stream, continuation) = AsyncStream.makeStream(
@@ -304,10 +324,17 @@ final class WorktreeTerminalManager {
       self?.emit(.taskStatusChanged(worktreeID: worktree.id, status: status))
     }
     state.onAgentEntryChanged = { [weak self] entry in
-      self?.emit(.agentEntryChanged(entry))
+      guard let self else { return }
+      agentObservationStore.publishAgentChanged(entry)
+      emit(.agentEntryChanged(entry))
     }
     state.onAgentEntryRemoved = { [weak self] id in
-      self?.emit(.agentEntryRemoved(id))
+      guard let self else { return }
+      agentObservationStore.publishAgentRemoved(surfaceID: id)
+      emit(.agentEntryRemoved(id))
+    }
+    state.onSurfaceClosed = { [weak self] surfaceID in
+      self?.agentObservationStore.publishSurfaceClosed(surfaceID: surfaceID)
     }
     state.onRunScriptStatusChanged = { [weak self] isRunning in
       self?.emit(.runScriptStatusChanged(worktreeID: worktree.id, isRunning: isRunning))
@@ -449,6 +476,10 @@ final class WorktreeTerminalManager {
 
   func stateContaining(tabId: TerminalTabID) -> WorktreeTerminalState? {
     activeWorktreeStates.first { $0.surfaceView(for: tabId) != nil }
+  }
+
+  private func containsSurface(_ surfaceID: UUID) -> Bool {
+    states.values.contains { $0.surfaceView(for: surfaceID) != nil }
   }
 
   @discardableResult
@@ -745,6 +776,7 @@ final class WorktreeTerminalManager {
       self.runtime = nil
       self.layoutPersistence = .liveValue
       self.preferredFontSize = nil
+      self.agentObservationStore = AgentObservationStore(bufferCapacity: 64)
       self.baselineFontSize = 13
     }
   #endif

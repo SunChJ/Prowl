@@ -358,6 +358,9 @@ struct SupacodeApp: App {
       events: {
         terminalManager.eventStream()
       },
+      observeAgentState: { surfaceID in
+        terminalManager.observeAgentState(surfaceID: surfaceID)
+      },
       canvasFocusedWorktreeID: {
         terminalManager.canvasFocusedWorktreeID
       },
@@ -667,7 +670,8 @@ struct SupacodeApp: App {
   static func makeCLICommandRouter(
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager,
-    handoffRequestRegistry: HandoffRequestRegistry = HandoffRequestRegistry()
+    handoffRequestRegistry: HandoffRequestRegistry = HandoffRequestRegistry(),
+    agentSignalCallerResolver: AgentSignalCommandHandler.ResolveCaller? = nil
   ) -> CLICommandRouter {
 
     let listHandler = ListCommandHandler {
@@ -700,6 +704,19 @@ struct SupacodeApp: App {
         screenDetectionsBySurfaceID: screenDetectionsBySurfaceID
       )
     }
+    let resolveAgentSignalCaller: AgentSignalCommandHandler.ResolveCaller =
+      agentSignalCallerResolver ?? { callerProcessID in
+        CallerPaneResolver.pane(
+          forCallerProcess: callerProcessID,
+          paneByShellPID: terminalManager.paneByShellPID()
+        )
+      }
+    let agentSignalHandler = AgentSignalCommandHandler(
+      resolveCaller: resolveAgentSignalCaller,
+      recordSignal: { caller, signal in
+        terminalManager.recordAgentSignal(signal, surfaceID: caller.surfaceID)
+      }
+    )
     let agentReadHandler = AgentReadCommandHandler(
       snapshotProvider: { pane in
         await Self.makeAgentReadRuntimeSnapshot(
@@ -987,6 +1004,7 @@ struct SupacodeApp: App {
       listHandler: listHandler,
       agentsHandler: agentsHandler,
       agentsReadHandler: agentReadHandler,
+      agentsSignalHandler: agentSignalHandler,
       profilesHandler: profilesHandler,
       focusHandler: focusHandler,
       sendHandler: sendHandler,

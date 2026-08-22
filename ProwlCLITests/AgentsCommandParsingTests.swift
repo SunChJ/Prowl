@@ -24,4 +24,37 @@ final class AgentsCommandParsingTests: XCTestCase {
 
     XCTAssertThrowsError(try command.validateOutputMode())
   }
+
+  func testSignalParsesEventAndMetadata() throws {
+    let command = try AgentsSignalCommand.parse([
+      "turn-ended",
+      "--origin", "manual-review",
+      "--session", "session-1",
+      "--detail", "Review complete",
+      "--json",
+    ])
+
+    XCTAssertEqual(command.event, .turnEnded)
+    XCTAssertNil(command.progress)
+    XCTAssertEqual(command.origin, "manual-review")
+    XCTAssertEqual(command.sessionID, "session-1")
+    XCTAssertEqual(command.detail, "Review complete")
+    XCTAssertTrue(command.options.json)
+  }
+
+  func testSignalParsesIndeterminateAndNumericProgress() throws {
+    let indeterminate = try AgentsSignalCommand.parse(["progress"])
+    let numeric = try AgentsSignalCommand.parse(["progress", "--progress", "75"])
+
+    XCTAssertEqual(indeterminate.event, .progress)
+    XCTAssertNil(indeterminate.progress)
+    XCTAssertEqual(numeric.progress, 75)
+  }
+
+  func testSignalRejectsInvalidEventProgressAndBoundedText() {
+    XCTAssertThrowsError(try AgentsSignalCommand.parse(["complete"]))
+    XCTAssertThrowsError(try AgentsSignalCommand.parse(["turn-ended", "--progress", "1"]))
+    XCTAssertThrowsError(try AgentsSignalCommand.parse(["progress", "--progress", "101"]))
+    XCTAssertThrowsError(try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "x", count: 4_097)]))
+  }
 }
