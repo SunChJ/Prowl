@@ -1,3 +1,6 @@
+import Foundation
+import ProwlCLIContracts
+import ProwlCLIShared
 import XCTest
 
 @testable import prowl
@@ -49,6 +52,26 @@ final class AgentsCommandParsingTests: XCTestCase {
     XCTAssertEqual(indeterminate.event, .progress)
     XCTAssertNil(indeterminate.progress)
     XCTAssertEqual(numeric.progress, 75)
+  }
+
+  func testSignalHelpAndSchemaUseSharedDetailLimit() throws {
+    XCTAssertTrue(
+      AgentsSignalCommand.helpMessage().contains(
+        "maximum \(AgentSignalInput.maximumDetailBytes) UTF-8 bytes"
+      )
+    )
+
+    let root = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: ProwlCLIContractBundle.schemaData) as? [String: Any]
+    )
+    let definitions = try XCTUnwrap(root["$defs"] as? [String: Any])
+    let agentSignalData = try XCTUnwrap(definitions["agentSignalData"] as? [String: Any])
+    let dataProperties = try XCTUnwrap(agentSignalData["properties"] as? [String: Any])
+    let signal = try XCTUnwrap(dataProperties["signal"] as? [String: Any])
+    let signalProperties = try XCTUnwrap(signal["properties"] as? [String: Any])
+    let detail = try XCTUnwrap(signalProperties["detail"] as? [String: Any])
+
+    XCTAssertEqual(detail["maxLength"] as? Int, AgentSignalInput.maximumDetailBytes)
   }
 
   func testSignalRejectsInvalidEventProgressAndBoundedText() {

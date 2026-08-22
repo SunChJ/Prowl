@@ -122,3 +122,11 @@ the PR merge-ready. No code changes were requested. The known second-instance De
 limitation remains non-blocking because kernel peer-PID framing, ancestry resolution, app
 composition, signal recording, and observer delivery are covered by executable tests; a
 single-app live pane check remains a cheap follow-up after the next normal Debug install.
+
+### Post-gate 32 KiB amendment — `8a594d11`
+
+A focused independent review of the owner-requested limit increase found no P0/P1/P2. It
+verified UTF-8 byte semantics, the 32 MiB frame and 1 MiB argv headroom, and an approximately
+2 MiB worst-case payload per surface when a slow subscriber fills all 64 buffered events.
+One optional P3 was accepted: CLI help now derives the number from the shared constant, and a
+contract test pins the executable schema's `maxLength` to that constant.
