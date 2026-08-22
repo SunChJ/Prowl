@@ -74,7 +74,7 @@ nonisolated enum AgentProfileEnvironmentPolicy {
   }
 
   /// Account-home variables come from the adapters, not a hardcoded list; the
-  /// `PROWL_` prefix protects the worktree/root facts Prowl injects itself.
+  /// `PROWL_` prefix protects the worktree/root/pane facts Prowl injects itself.
   /// Letting an override set `CODEX_HOME` on an unbound profile would bypass
   /// home provisioning, deletion protection, and rooted session detection —
   /// custom homes are a separate capability, not an env-table backdoor.

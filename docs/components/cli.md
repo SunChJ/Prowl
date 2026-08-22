@@ -35,7 +35,7 @@ overrides it for both processes).
 - `--no-color` — disable colored text output (implied by `--json`).
 
 Success envelope: `{ "ok": true, "command": "...", "schema_version": "...", "data": {...} }`.
-Error envelope: `{ "ok": false, "command": "...", "error": { "code": "...", "message": "..." } }`.
+Error envelope: `{ "ok": false, "command": "...", "schema_version": "...", "error": { "code": "...", "message": "..." } }`.
 Exit code is 0 on success, non-zero on failure. **Parser errors print plain text**
 (not JSON) even with `--json`, because parsing happens before execution — always
 check the exit code before piping to `jq`.
@@ -63,12 +63,51 @@ Text `list` and `agents` output exposes short, type-prefixed handles such as
 monotonic, and are never reused after a tab or pane closes. They work in every
 generic target position (`read p7`, `focus t6`, `send p7 '…'`); bare numbers remain
 worktree references there. A stale prefixed handle fails rather than falling back to
-a same-named worktree. JSON keeps canonical UUIDs in `id`; do not cache handles
-across an app restart.
+a same-named worktree. JSON keeps canonical UUIDs in `id`. Neither handles nor pane
+UUIDs survive an app restart (restored tabs keep their tab UUID; restored panes are new
+surfaces with new UUIDs) — re-run `prowl list` instead of caching either.
 
 > **Never target by tab title.** Titles are free-form and can lie. For scripts,
 > resolve a concrete UUID `pane.id` from `prowl list --json`; for an interactive
 > same-session handoff, copy the `pN` handle from text `prowl list`.
+
+### Identity: which pane am I?
+
+Every pane's shell starts with these environment variables, inherited by every
+process launched inside it (agents, their tools, scripts):
+
+- `PROWL_PANE_ID` — the pane's own UUID, the same value as `pane.id` in `prowl list
+  --json`. Use it directly as a selector (`--pane "$PROWL_PANE_ID"`), as the anchor for
+  `create pane`, and as the guard that keeps automation from acting on itself.
+- `PROWL_WORKTREE_PATH`, `PROWL_ROOT_PATH` — the worktree directory and repository root
+  (see [custom-actions](custom-actions.md)).
+
+Resolve your own tab and worktree from it:
+
+```bash
+me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
+if [ -z "$me" ]; then
+  echo "no pane matches PROWL_PANE_ID=[$PROWL_PANE_ID] — unset, or prowl reached another Prowl instance; stop, do not guess" >&2
+else
+  printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
+fi
+```
+
+The variable is inherited, not verified: a process that scrubbed its environment
+(`sudo`, `ssh`, containers) will not have it, and a tmux/screen session attached from a
+different pane reports the pane its server started in. A value that matches no
+`pane.id` usually means `prowl` reached a different Prowl instance than the one hosting
+your pane (see [Transport & app launch](#transport--app-launch)). A match proves the pane
+exists, not that you run in it: trust the value only when your process ancestry reaches
+the pane's shell — under tmux/screen or a detached wrapper it names the pane the
+server started in, so identify your pane by other means (`prowl agents --json` for the
+pane hosting your agent session, a unique `pane.cwd`) and pass it explicitly. Keep every
+step that depends on knowing yourself inside the success branch. When it is unset or
+matches nothing, stop rather than guess: `pane.cwd` only narrows the candidates — several panes
+usually share one cwd — and may stand in for you only when the match is unique; never
+assume the *focused* pane is you. Prowl itself never trusts the variable for
+attribution; commands that need the calling pane (`handoff`) resolve it from the
+caller's process ancestry.
 
 ## Commands
 
@@ -107,9 +146,11 @@ Claude running a background **workflow**); otherwise **idle**. See the
 good for coordination but lags a screen by ~2–3 s and can flip to idle **before** a
 TUI finishes painting — confirm with `read --wait-stable`.
 
-Find your own pane (to avoid operating on yourself):
+Your own pane is `$PROWL_PANE_ID` (see [Identity](#identity-which-pane-am-i)); gate
+every action on a target behind the identity lookup result `me` from that section —
+not the bare variable, which could be stale — so the check fails closed:
 ```bash
-self_pane="$(prowl list --json | jq -r '.data.items[] | select(.pane.focused==true) | .pane.id')"
+[ -n "$me" ] && [ "$pane" != "$PROWL_PANE_ID" ] && prowl send --pane "$pane" '…' --json
 ```
 
 ### `prowl agents`
@@ -339,8 +380,11 @@ prowl handoff save       [target] [--brief -|--no-brief] [--note "…"]
 `--worktree <name>`, or the positional target) wins; otherwise the source is
 **the calling pane** — Prowl maps the `prowl` process's ancestry to the pane
 whose shell spawned it, so an agent running the command hands off *itself*
-regardless of UI focus. Outside any Prowl pane with no selector the command
-errors with `SOURCE_REQUIRED`; the focused pane is never guessed.
+regardless of UI focus. Outside any Prowl pane — or when the ancestry does not
+reach the pane's shell, as under tmux/screen or a detached wrapper — a call with no
+selector errors with `SOURCE_REQUIRED`; in those same setups `$PROWL_PANE_ID` is not a
+trustworthy stand-in (it names the pane the server started in), so determine the pane
+by other means and pass it with `--pane` explicitly. The focused pane is never guessed.
 
 **Briefing.** `--brief -` reads an inline agent-authored briefing from stdin
 (heredoc). Every handoff must provide it or use `--no-brief` as the explicit
@@ -407,6 +451,10 @@ artifacts and terminal excerpts do not appear in `git status`.
   `$TMPDIR/prowl-cli.sock`.
 - If the app isn't running, the CLI launches it (`open -a Prowl`) and waits up to
   ~15s for the socket — except when `PROWL_CLI_SOCKET` is set.
+- A separately launched (Debug) app needs both its own `PROWL_CLI_SOCKET` and the CLI
+  built with it (`./.build/debug/prowl` from that checkout, or
+  `Prowl Debug.app/Contents/Resources/prowl-cli/prowl`); the installed `prowl` may
+  report the same version yet lack newer commands.
 - Sandboxed agents must be allowed to connect to the Unix socket. If the CLI
   reports `SOCKET_PERMISSION_DENIED`, allowlist the socket path in the agent
   sandbox, run `prowl` outside that sandbox, or start both the app and CLI with
@@ -437,27 +485,32 @@ artifacts and terminal excerpts do not appear in `git status`.
 
 ## Safety & self-targeting
 
-- If your shell runs **inside a Prowl pane**, the focused pane is probably *you*.
-  Identify and avoid it (the `self_pane` snippet above) so you don't `key enter`
-  into your own session.
+- If your shell runs **inside a Prowl pane**, `$PROWL_PANE_ID` is *you*. Compare
+  every target against it so you don't `key enter` into your own session; the
+  focused pane is not a reliable stand-in (`open` and `focus` move it).
 - Close commands require explicit targets and may prompt for GUI confirmation on
   protected work; `--force` bypasses the prompt.
 
 ## A complete loop (run, read, clean up)
 
 ```bash
-self_pane="$(prowl list --json | jq -r '.data.items[]|select(.pane.focused==true)|.pane.id')"
+me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
 pane="$(prowl create tab MyApp --json | jq -r '.data.target.pane.id')"
-test "$pane" != "$self_pane"
-prowl send --pane "$pane" 'swift build' --capture --timeout 300 --json
-prowl read --pane "$pane" --last 100 --wait-stable --json
-prowl close "$pane" --json
+if [ -z "$me" ] || [ "$pane" = "$PROWL_PANE_ID" ]; then
+  echo "refusing: self identity is unverified, or \$pane is me" >&2
+else
+  prowl send --pane "$pane" 'swift build' --capture --timeout 300 --json
+  prowl read --pane "$pane" --last 100 --wait-stable --json
+  prowl close "$pane" --json
+fi
 ```
 
 ## Gotchas for agents (quick list)
 
 - Resolve a UUID `pane.id` or current text `pN` before `read`/`send`/`key`/
   `focus`/close — never trust tab titles.
+- You are `$PROWL_PANE_ID`, not "the focused pane"; look up your tab/worktree
+  from it when you need them.
 - Use `prowl agents --json` for discovery, then `prowl agents read <pN|uuid>` for
   a supported agent's status, blocker, and trustworthy result state; use `prowl list --json`
   when you need all panes, including ordinary shells.

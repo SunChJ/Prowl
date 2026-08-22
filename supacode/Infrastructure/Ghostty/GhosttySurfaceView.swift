@@ -114,8 +114,14 @@ final class GhosttySurfaceView: NSView, Identifiable {
     }
   }
 
+  /// Environment variable that carries the pane's own UUID into every process
+  /// started inside it, so an agent can address itself (`--pane "$PROWL_PANE_ID"`)
+  /// without guessing from focus. Convenience identity only: the value is
+  /// inherited and forgeable, so trusted attribution stays on caller-PID resolution.
+  static let paneIdentityEnvironmentKey = "PROWL_PANE_ID"
+
   let runtime: GhosttyRuntime
-  let id = UUID()
+  let id: UUID
   private var debugID: String {
     String(id.uuidString.prefix(8))
   }
@@ -124,6 +130,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
   }
   let bridge: GhosttySurfaceBridge
   let launchWorkingDirectory: URL?
+  /// Environment handed to the surface's shell: the caller's variables plus the pane identity.
+  let launchEnvironment: [String: String]
   private(set) var surface: ghostty_surface_t?
   private var surfaceRef: GhosttyRuntime.SurfaceReference?
   private let workingDirectoryCString: UnsafeMutablePointer<CChar>?
@@ -261,6 +269,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
     environment: [String: String] = [:],
     skipsSurfaceCreationForTesting: Bool = false
   ) {
+    let id = UUID()
+    self.id = id
     self.runtime = runtime
     self.bridge = GhosttySurfaceBridge()
     self.fontSize = fontSize ?? 0
@@ -281,7 +291,10 @@ final class GhosttySurfaceView: NSView, Identifiable {
     } else {
       initialInputCString = nil
     }
-    let sortedEnv = environment.sorted { $0.key < $1.key }
+    var launchEnvironment = environment
+    launchEnvironment[Self.paneIdentityEnvironmentKey] = id.uuidString
+    self.launchEnvironment = launchEnvironment
+    let sortedEnv = launchEnvironment.sorted { $0.key < $1.key }
     var allocatedStrings: [UnsafeMutablePointer<CChar>] = []
     allocatedStrings.reserveCapacity(sortedEnv.count * 2)
     for (key, value) in sortedEnv {
