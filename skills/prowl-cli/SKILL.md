@@ -33,10 +33,19 @@ if [ -z "$me" ]; then
 else
   printf '%s\n' "$me" | jq -r '.tab.id, .worktree.id, .worktree.name, .worktree.path'
 fi
-[ -n "$PROWL_PANE_ID" ] && [ "$pane" != "$PROWL_PANE_ID" ]   # self-guard before touching $pane; fails closed when the id is unset
 ```
 
-The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). Keep everything that depends on knowing yourself inside the success branch (or chained with `&&`). If it is unset or matches nothing, stop rather than guess: `pane.cwd` only narrows the candidates — several panes usually share one cwd — and may stand in for you only when the match is unique. Never assume the focused pane is you — `open` and `focus` move focus, and the user may be looking anywhere.
+Gate every action on a target behind the same check — a bare predicate line does not stop an interactive shell:
+
+```bash
+if [ -z "$PROWL_PANE_ID" ] || [ "$pane" = "$PROWL_PANE_ID" ]; then
+  echo "refusing: no verified pane of my own, or \$pane is me" >&2
+else
+  prowl send --pane "$pane" 'git status --short' --capture --timeout 30 --json
+fi
+```
+
+The variable is inherited, not verified: it is missing after `sudo`/`ssh`/containers and can name the wrong pane inside a tmux/screen session attached from elsewhere. A set value that matches no `pane.id` usually means `prowl` is talking to a different Prowl instance than the one hosting your pane (two apps running; see `PROWL_CLI_SOCKET` under Pitfalls). A match only proves that pane exists, not that you are running in it: trust the value only when your process is a direct child of the pane's shell (no tmux/screen server or detached wrapper in between); under tmux/screen or a detached wrapper, identify your pane by other means — `prowl agents --json` for the pane hosting your own agent session, or a unique `pane.cwd` — and pass it explicitly. If it is unset or matches nothing, stop rather than guess: `pane.cwd` only narrows the candidates — several panes usually share one cwd — and may stand in for you only when the match is unique. Never assume the focused pane is you — `open` and `focus` move focus, and the user may be looking anywhere.
 
 ## Safe Default Workflow
 
@@ -163,7 +172,7 @@ done
 
 ## Handing Off Your Task
 
-`prowl handoff to <agent> --brief -` hands your task to another agent. Run it from your own pane (the calling pane is the source — no selector needed) and pipe your briefing on stdin. Prowl finds the calling pane through process ancestry, so a direct shell or agent child works; under tmux/screen or a detached wrapper that resolution fails with `SOURCE_REQUIRED` — then pass `--pane "$PROWL_PANE_ID"` explicitly, after the identity check above matched.
+`prowl handoff to <agent> --brief -` hands your task to another agent. Run it from your own pane (the calling pane is the source — no selector needed) and pipe your briefing on stdin. Prowl finds the calling pane through process ancestry, so a direct shell or agent child works; under tmux/screen or a detached wrapper that resolution fails with `SOURCE_REQUIRED`, and in exactly those setups `$PROWL_PANE_ID` is not trustworthy either (it names the pane the tmux server started in, which may still exist) — identify your pane by other means (`prowl agents --json`, a unique `pane.cwd`) and pass it with `--pane` explicitly.
 
 ```bash
 prowl handoff to codex --brief - <<'EOF'
