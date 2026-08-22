@@ -85,10 +85,11 @@ pane="$(printf '%s\n' "$launch" | jq -r '.data.target.pane.id')"
 prowl read --pane "$pane" --last 200 --wait-stable --json
 ```
 
-The returned pane is the launched agent; `.data.launch` records the resolved Profile. Use
-`read --wait-stable` today. When `agents wait` ships, prefer it for deterministic completion
-before the final read. Add `--background` when the split must not change focus or select a
-hidden anchor's tab/worktree.
+The returned pane is the launched agent; `.data.launch` records the resolved Profile. `--prompt -`
+requires a pipe or heredoc (never interactive stdin); Prowl carries the prompt outside initial PTY
+input, so long or multiline review instructions are safe. Use `read --wait-stable` today. When
+`agents wait` ships, prefer it for deterministic completion before the final read. Add
+`--background` when the split must not change focus or select a hidden anchor's tab/worktree.
 
 Create a fresh tab in a listed worktree:
 

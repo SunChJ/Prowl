@@ -55,9 +55,23 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   }
 
   /// The exact line typed into the new pane; doubles as the launch preview.
+  /// Prompt text rides in the surface environment so canonical PTY limits and
+  /// line-editor key interpretation cannot truncate or mutate it.
   var terminalInput: String {
-    guard !commandEnvironmentTokens.isEmpty else { return invocation.terminalInput }
-    return (["env"] + commandEnvironmentTokens + [invocation.terminalInput]).joined(separator: " ")
+    let promptCarrier =
+      surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == nil
+      ? nil : AgentProfileLaunchPlanner.promptCarrierName
+    let invocationInput = invocation.terminalInput(
+      replacingFinalArgumentWithEnvironmentVariable: promptCarrier
+    )
+    var environmentTokens = commandEnvironmentTokens
+    if let promptCarrier {
+      // Expansion happens in the shell before env(1) removes the carrier from
+      // the launched process environment. The pane shell retains the carrier.
+      environmentTokens.insert(contentsOf: ["-u", promptCarrier], at: 0)
+    }
+    guard !environmentTokens.isEmpty else { return invocationInput }
+    return (["env"] + environmentTokens + [invocationInput]).joined(separator: " ")
   }
 
   var previewText: String { terminalInput }
@@ -235,11 +249,17 @@ nonisolated extension AgentProfile {
 nonisolated enum AgentProfileLaunchPlanError: Error, Equatable, Sendable {
   case runtimeUnavailable(AgentProfileRuntime)
   case accountIsolationUnsupported(AgentProfileRuntime)
+  case promptContainsNUL
+  case promptArgumentUnavailable(AgentProfileRuntime)
   case homeEscapesBase(URL)
   case homeIsSymbolicLink(URL)
 }
 
 nonisolated enum AgentProfileLaunchPlanner {
+  /// Reserved surface-environment carrier for prompted starts. The prompt is
+  /// expanded as one quoted argv token and never enters Ghostty initial_input.
+  static let promptCarrierName = "PROWL_LAUNCH_PROMPT"
+
   /// Resolves a profile into one launch plan. Pure: no filesystem access —
   /// home provisioning happens at the launch boundary, not here.
   static func plan(
@@ -288,6 +308,15 @@ nonisolated enum AgentProfileLaunchPlanner {
         dedicatedHome: dedicatedHome
       )
     )
+    if let prompt = intent.promptText {
+      guard !prompt.contains("\0") else {
+        throw AgentProfileLaunchPlanError.promptContainsNUL
+      }
+      guard invocation.arguments.last == prompt else {
+        throw AgentProfileLaunchPlanError.promptArgumentUnavailable(profile.runtime)
+      }
+      surfaceEnvironment[promptCarrierName] = prompt
+    }
     let overrides = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
     for name in overrides.keys.sorted() {
       let carrier = AgentProfileEnvironmentPolicy.carrierName(for: name)

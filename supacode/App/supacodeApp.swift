@@ -1252,23 +1252,28 @@ struct SupacodeApp: App {
     _ request: CLIProfileLaunchRequest,
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager
-  ) -> TabResolvedTarget? {
+  ) -> Result<TabResolvedTarget, CLIProfileLaunchFailure> {
     let repositories = Array(appStore.state.repositories.repositories)
     guard
       let worktree = resolveCLITerminalWorktree(
         id: request.target.worktreeID,
         repositories: repositories
       )
-    else { return nil }
+    else {
+      return .failure(.createFailed("The resolved worktree is no longer available."))
+    }
 
     let intent = request.prompt.map(AgentStartIntent.prompt) ?? .interactive
-    guard
-      let plan = try? AgentProfileLaunchPlanner.plan(
+    let plan: AgentProfileLaunchPlan
+    do {
+      plan = try AgentProfileLaunchPlanner.plan(
         for: request.profile,
         intent: intent,
         homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory
       )
-    else { return nil }
+    } catch {
+      return .failure(.planning(error, profile: request.profile))
+    }
 
     let placement: AgentProfileLaunchRequest.Placement
     switch request.resource {
@@ -1278,7 +1283,9 @@ struct SupacodeApp: App {
       guard
         let anchor = UUID(uuidString: request.target.paneID),
         let direction = request.direction
-      else { return nil }
+      else {
+        return .failure(.createFailed("The resolved split anchor is invalid."))
+      }
       placement = .split(
         anchor: anchor,
         direction: direction.terminalSplitDirection,
@@ -1292,12 +1299,13 @@ struct SupacodeApp: App {
       workingDirectoryOverride: directory,
       title: request.profile.name
     )
-    guard
-      case .success(let launched) = terminalManager.launchAgentProfile(
-        launchRequest,
-        in: worktree
-      )
-    else { return nil }
+    let launched: LaunchedSurface
+    switch terminalManager.launchAgentProfile(launchRequest, in: worktree) {
+    case .success(let surface):
+      launched = surface
+    case .failure(let error):
+      return .failure(.creation(error, profile: request.profile))
+    }
 
     if !request.background {
       selectCLIWorktreeContext(
@@ -1310,9 +1318,9 @@ struct SupacodeApp: App {
     let resolver = makeTargetResolver(appStore: appStore, terminalManager: terminalManager)
     switch resolver.resolve(.pane(launched.surfaceID.uuidString)) {
     case .success(let resolved):
-      return TabResolvedTarget(from: resolved)
+      return .success(TabResolvedTarget(from: resolved))
     case .failure:
-      return nil
+      return .failure(.createFailed("The launched Profile pane could not be resolved."))
     }
   }
 

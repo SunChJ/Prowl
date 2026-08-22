@@ -68,6 +68,18 @@ struct CLICommandRouterTests {
   }
 
   @MainActor
+  @Test func routerDispatchesProfilesToProfilesHandler() async {
+    let router = CLICommandRouter()
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .profiles(ProfilesInput())
+    )
+    let response = await router.route(envelope)
+    #expect(response.command == "profiles")
+    #expect(response.error?.code == "NOT_IMPLEMENTED")
+  }
+
+  @MainActor
   @Test func routerDispatchesAgentsReadToAgentsReadHandler() async {
     let router = CLICommandRouter()
     let envelope = CommandEnvelope(
@@ -150,6 +162,7 @@ struct CLICommandRouterTests {
       .list(ListInput()),
       .agents(AgentsInput()),
       .agentsRead(AgentReadInput(pane: "p7")),
+      .profiles(ProfilesInput()),
       .focus(FocusInput()),
       .send(SendInput(text: "x")),
       .key(KeyInput(rawToken: "tab", token: "tab")),

@@ -53,9 +53,11 @@ name (frozen at launch — later renames don't relabel live panes). The identity
 lives exactly as long as the launched agent: once it exits, any agent started
 manually in that pane shows its own name and runs with your default
 environment and account.
-A launch that fails before its surface exists (e.g. home provisioning) shows a
-warning toast, and only a successful launch updates the per-repo "last
-launched" memory behind the Recommended resolution.
+A Toolbar or Command Palette launch that fails before its surface exists (e.g.
+home provisioning) shows a warning toast, and only a successful launch from
+those UI surfaces updates the per-repo "last launched" memory behind the
+Recommended resolution. CLI launches instead return a structured error and do
+not update Recommended memory.
 
 ## Managing profiles
 

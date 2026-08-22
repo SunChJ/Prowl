@@ -205,7 +205,19 @@ nonisolated struct AgentInvocation: Equatable, Sendable {
   }
 
   var terminalInput: String {
-    ([executable] + arguments).map(Self.shellQuote).joined(separator: " ")
+    terminalInput(replacingFinalArgumentWithEnvironmentVariable: nil)
+  }
+
+  /// Profile plans can carry a prompted start's final argv value through the
+  /// surface environment instead of typing it into a canonical PTY. Adapters
+  /// append prompt text as the final argument; the logical invocation retains
+  /// the real value while only the shell rendering substitutes the reference.
+  func terminalInput(replacingFinalArgumentWithEnvironmentVariable variable: String?) -> String {
+    var tokens = arguments.map(Self.shellQuote)
+    if let variable, !tokens.isEmpty {
+      tokens[tokens.index(before: tokens.endIndex)] = "\"$\(variable)\""
+    }
+    return ([Self.shellQuote(executable)] + tokens).joined(separator: " ")
   }
 
   static func shellQuote(_ argument: String) -> String {

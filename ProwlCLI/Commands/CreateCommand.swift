@@ -13,6 +13,23 @@ struct CreateCommand: ParsableCommand {
       CreatePaneCommand.self,
     ]
   )
+
+  static func validateProfileLaunchResponse(
+    _ response: CommandResponse,
+    requested: Bool
+  ) throws {
+    guard requested else { return }
+    guard
+      let data = response.data,
+      let payload = try? data.decode(as: LifecycleCommandPayload.self),
+      payload.launch != nil
+    else {
+      throw ExitError(
+        code: CLIErrorCode.createFailed,
+        message: "The running Prowl app did not honor the Profile launch. Update or restart Prowl, then retry."
+      )
+    }
+  }
 }
 
 struct CreateLaunchOptions: ParsableArguments {
@@ -25,7 +42,10 @@ struct CreateLaunchOptions: ParsableArguments {
   @Flag(name: .long, help: "Create the profile launch without changing the current selection or focus.")
   var background = false
 
-  func resolve() throws -> (launch: CreateLaunchInput?, background: Bool) {
+  func resolve(
+    stdinIsTerminal: Bool = isatty(fileno(stdin)) != 0,
+    readStdin: () throws -> Data? = { try FileHandle.standardInput.readToEnd() }
+  ) throws -> (launch: CreateLaunchInput?, background: Bool) {
     guard let profile else {
       if prompt != nil || background {
         throw ExitError(
@@ -47,8 +67,14 @@ struct CreateLaunchOptions: ParsableArguments {
         message: "--prompt accepts only '-' to read the kickoff prompt from stdin."
       )
     }
+    guard !stdinIsTerminal else {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "--prompt - requires piped stdin; it cannot read from an interactive terminal."
+      )
+    }
     guard
-      let data = try? FileHandle.standardInput.readToEnd(),
+      let data = try? readStdin(),
       let text = String(data: data, encoding: .utf8)
     else {
       throw ExitError(code: CLIErrorCode.emptyInput, message: "Failed to read the kickoff prompt from stdin.")
@@ -78,11 +104,14 @@ struct CreateTabCommand: ParsableCommand {
 
   mutating func run() throws {
     try CLIExecution.run(command: "create", output: options.outputMode, colorEnabled: options.colorEnabled) {
+      let input = try makeInput()
       let envelope = CommandEnvelope(
         output: options.outputMode,
-        command: .create(try makeInput())
+        command: .create(input)
       )
-      try CLIRunner.execute(envelope)
+      try CLIRunner.execute(envelope) { response in
+        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch != nil)
+      }
     }
   }
 
@@ -140,11 +169,14 @@ struct CreatePaneCommand: ParsableCommand {
 
   mutating func run() throws {
     try CLIExecution.run(command: "create", output: options.outputMode, colorEnabled: options.colorEnabled) {
+      let input = try makeInput()
       let envelope = CommandEnvelope(
         output: options.outputMode,
-        command: .create(try makeInput())
+        command: .create(input)
       )
-      try CLIRunner.execute(envelope)
+      try CLIRunner.execute(envelope) { response in
+        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch != nil)
+      }
     }
   }
 

@@ -582,9 +582,11 @@ attaches hooks through A2's launch boundary.
 
 - GUI workflow editor (V2): Yams does not preserve comments/formatting on re-serialization;
   two-way sync needs either a comment-preserving writer or a "managed file" policy.
+
 ## Amendments
 
 - Updated 2026-08-22: Shipped C0 with the Agents sidebar group, Profiles page, and Command Line Tool page; Workflows remains deferred to D1 — see [002-settings-agents-group.md](002-settings-agents-group.md).
 - Updated 2026-08-22: Implemented A1 with the direct anchored split primitive and schema-governed `prowl create pane` command — see [003-cli-create-pane.md](003-cli-create-pane.md).
 - Updated 2026-08-22: Implemented A1b — `PROWL_PANE_ID` in every pane's environment, manual identity section, and the `prowl-cli` skill rewritten around it — see [004-pane-identity-env.md](004-pane-identity-env.md).
 - Updated 2026-08-22: Implemented A2 with the typed Profile launch boundary, prompted/background `create tab|pane`, and `profiles list`; the final A1/A2 Swift interface question is resolved — see [005-cli-profile-launch.md](005-cli-profile-launch.md).
+- Updated 2026-08-22: Hardened A2 after review: prompts bypass canonical PTY input through a reserved surface-environment carrier, launch failures retain typed reasons, interactive stdin/version skew fail closed, and hidden-worktree background selection is covered — see [005-cli-profile-launch.md](005-cli-profile-launch.md#review-hardening).

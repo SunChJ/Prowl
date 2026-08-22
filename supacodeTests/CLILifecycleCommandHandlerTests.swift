@@ -170,7 +170,7 @@ struct CLILifecycleCommandHandlerTests {
       profiles: { [profile] },
       launchAgentProfile: { request in
         launchRequest = request
-        return created
+        return .success(created)
       },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
@@ -220,7 +220,7 @@ struct CLILifecycleCommandHandlerTests {
       profiles: { [disabled, enabled] },
       launchAgentProfile: { request in
         launchedProfile = request.profile
-        return target
+        return .success(target)
       },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
@@ -257,7 +257,7 @@ struct CLILifecycleCommandHandlerTests {
       profiles: { [byName, byID] },
       launchAgentProfile: { request in
         launchedProfile = request.profile
-        return target
+        return .success(target)
       },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
@@ -327,7 +327,23 @@ struct CLILifecycleCommandHandlerTests {
     #expect(response.error?.code == CLIErrorCode.profileNotUnique)
   }
 
-  @Test func profileLaunchFailureMapsToCreateFailed() async {
+  @Test func profileLaunchFailureClassifiesPlanningAndCreationErrors() {
+    let profile = AgentProfile(name: "Reviewer", runtime: .amp)
+
+    #expect(
+      CLIProfileLaunchFailure.planning(
+        AgentRuntimeError.unsupportedStartIntent(.amp, .prompt("Review.")),
+        profile: profile
+      )
+        == .invalidArgument("Agent Profile “Reviewer” does not support kickoff prompts.")
+    )
+    #expect(
+      CLIProfileLaunchFailure.creation(.splitAnchorUnavailable, profile: profile)
+        == .createFailed("The split anchor for Agent Profile “Reviewer” is no longer available.")
+    )
+  }
+
+  @Test func profileLaunchFailurePreservesTheCreationReason() async {
     let target = makeTarget()
     let profile = AgentProfile(name: "Reviewer", runtime: .claude)
     let handler = LifecycleCommandHandler(
@@ -336,7 +352,9 @@ struct CLILifecycleCommandHandlerTests {
       createTab: { _, _ in nil },
       createPane: { _, _ in nil },
       profiles: { [profile] },
-      launchAgentProfile: { _ in nil },
+      launchAgentProfile: { _ in
+        .failure(.createFailed("The split anchor is no longer available."))
+      },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
     )
@@ -356,6 +374,41 @@ struct CLILifecycleCommandHandlerTests {
 
     #expect(!response.ok)
     #expect(response.error?.code == CLIErrorCode.createFailed)
+    #expect(response.error?.message == "The split anchor is no longer available.")
+  }
+
+  @Test func unsupportedPromptIntentMapsToInvalidArgument() async {
+    let target = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .amp)
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { _ in
+        .failure(.invalidArgument("Agent Profile “Reviewer” does not support kickoff prompts."))
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review.")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(response.error?.message == "Agent Profile “Reviewer” does not support kickoff prompts.")
   }
 
   @Test func emptyProfilePromptIsRejectedBeforeResolution() async {
@@ -388,6 +441,39 @@ struct CLILifecycleCommandHandlerTests {
 
     #expect(!response.ok)
     #expect(response.error?.code == CLIErrorCode.emptyInput)
+    #expect(!didResolve)
+  }
+
+  @Test func profilePromptContainingNULIsRejectedBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review\0this")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
     #expect(!didResolve)
   }
 
@@ -463,7 +549,7 @@ struct CLILifecycleCommandHandlerTests {
       createTab: { _, _ in nil },
       createPane: { _, _ in nil },
       profiles: { profiles },
-      launchAgentProfile: { _ in target },
+      launchAgentProfile: { _ in .success(target) },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
     )

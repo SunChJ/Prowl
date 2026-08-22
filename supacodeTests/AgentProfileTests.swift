@@ -285,18 +285,34 @@ struct AgentProfileTests {
     #expect(plan.previewText == plan.invocation.terminalInput)
   }
 
-  @Test func plannerForwardsPromptIntentThroughTheProfileAdapter() throws {
+  @Test func plannerCarriesPromptOutsideTheInitialPTYInput() throws {
     var preset = profile(name: "Codex · Reviewer")
     preset.model = "gpt-5.4"
+    let prompt = String(repeating: "Review the current diff carefully. ", count: 80) + "\tReport findings."
 
     let plan = try AgentProfileLaunchPlanner.plan(
       for: preset,
-      intent: .prompt("Review the current diff."),
+      intent: .prompt(prompt),
       homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
     )
 
     #expect(plan.invocation.executable == "codex")
-    #expect(plan.invocation.arguments == ["--model", "gpt-5.4", "Review the current diff."])
+    #expect(plan.invocation.arguments == ["--model", "gpt-5.4", prompt])
+    #expect(plan.surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == prompt)
+    #expect(!plan.terminalInput.contains(prompt))
+    #expect(plan.terminalInput.hasPrefix("env -u \(AgentProfileLaunchPlanner.promptCarrierName) "))
+    #expect(plan.terminalInput.contains("\"$\(AgentProfileLaunchPlanner.promptCarrierName)\""))
+    #expect(plan.terminalInput.utf8.count < 1_024)
+  }
+
+  @Test func plannerRejectsPromptThatCannotRideInTheSurfaceEnvironment() {
+    #expect(throws: AgentProfileLaunchPlanError.promptContainsNUL) {
+      try AgentProfileLaunchPlanner.plan(
+        for: profile(name: "Codex"),
+        intent: .prompt("Review\0this"),
+        homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+      )
+    }
   }
 
   @Test func plannerKeepsInteractiveAsTheDefaultIntent() throws {

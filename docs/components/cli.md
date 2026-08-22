@@ -347,6 +347,11 @@ EOF
 )"
 ```
 
+`--prompt -` requires a pipe or heredoc; it rejects interactive stdin instead of waiting
+for `Ctrl-D`. Prowl carries the prompt outside the terminal's initial PTY input and expands
+it as one quoted argument, so multiline, tab-containing, and long review instructions are
+not interpreted by the shell line editor. NUL bytes remain invalid.
+
 `--background` is Profile-only and creates the tab without changing the selected
 worktree, tab, or pane.
 
@@ -367,8 +372,9 @@ selecting a hidden anchor's worktree/tab.
 
 `.data.anchor` records the source pane as resolved before the split (its `focused` flag is
 pre-split state), `.data.direction` records the public direction, and a Profile launch adds
-`.data.launch.{profile_id,profile_name,agent}`. The operation targets the anchor directly;
-it never depends on current UI focus.
+`.data.launch.{profile_id,profile_name,agent}`. The CLI requires this launch metadata when
+`--profile` was requested, so a mismatched older app cannot silently return an ordinary
+shell. The operation targets the anchor directly; it never depends on current UI focus.
 
 ### `prowl close`
 Close one explicit tab or pane. The positional form uses a UUID, `pN`, or `tN`; the

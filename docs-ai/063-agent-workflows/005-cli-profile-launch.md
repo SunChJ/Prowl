@@ -22,13 +22,21 @@ Release R1 already had deterministic anchored split creation (A1) and per-pane i
 - Disabled Profiles remain discoverable but do not participate in name uniqueness and cannot launch. A matching disabled UUID returns `PROFILE_NOT_FOUND` with an explicit message.
 - CLI/workflow launches use the synchronous closure and do not emit the menu/palette recommendation-memory events. The adapter-rendered invocation and surface environment inside the compiled plan remain the clean 064-S3 seam; A2 injects no hooks.
 
+## Review hardening
+
+- A post-implementation review identified that Ghostty writes `initial_input` before the interactive shell enters raw mode. macOS canonical PTYs cap one line at `TTYHOG` (1024 bytes), so a literal prompted invocation could lose its closing quote/newline and stall at `quote>`. Prompted Profile plans now carry the verbatim prompt in reserved `PROWL_LAUNCH_PROMPT` surface environment, render only `"$PROWL_LAUNCH_PROMPT"` into the short typed command, and use `env -u` so the launched process does not inherit the carrier. NUL is rejected at both socket and planner boundaries.
+- CLI Profile launch providers now return a typed failure. Unsupported prompted starts map to `INVALID_ARGUMENT`; planning, provisioning, split, insertion, and resolution failures retain actionable messages under `CREATE_FAILED`.
+- `--prompt -` rejects interactive stdin before reading. A CLI that receives a successful create response without requested launch metadata fails instead of silently accepting an ordinary shell from a mismatched older app.
+- Manager-level coverage now uses visible and hidden worktrees to prove a background split preserves worktree, tab, and pane selection. Router coverage includes `profiles`, and the manual scopes recommendation memory/toasts to Toolbar and Command Palette launches.
+- `profiles list` intentionally remains a non-blocking cache snapshot. It does not trigger a shell probe; negative-result TTL and refresh ownership are unchanged.
+
 ## Verification
 
-- TDD RED runs failed on the absent planner intent, launch request/result, CLI flags/wire fields, Profile lookup, profiles command, and executable schema; the corresponding focused suites were then driven GREEN.
-- Focused app suites (`WorktreeTerminalStateAgentProfileTests`, `AgentProfileTests`, `AgentRuntimeAdapterTests`, `CLILifecycleCommandHandlerTests`, `CLIProfilesCommandHandlerTests`): 82 tests passed.
-- `make check`, `make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` passed; integration verified 84 socket/schema tests.
+- TDD RED runs failed on the absent planner intent, launch request/result, CLI flags/wire fields, Profile lookup, profiles command, executable schema, prompt carrier, typed launch failures, TTY guard, and version-skew validation; the corresponding focused suites were then driven GREEN.
+- Focused app suites (`WorktreeTerminalStateAgentProfileTests`, `WorktreeTerminalManagerTests`, `AgentProfileTests`, `AgentRuntimeAdapterTests`, `CLILifecycleCommandHandlerTests`, `CLIProfilesCommandHandlerTests`, `CLICommandRouterTests`): 131 tests passed.
+- `make check`, `make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` passed; integration verified 85 socket/schema tests.
 - `make build-app` passed with zero errors and warnings.
-- Live isolated Debug verification used a dedicated `PROWL_CLI_SOCKET` and the repository CLI. A real Claude Profile received distinct kickoff prompts in an anchored right split and a background tab; `agents --json` identified both returned panes, `read --wait-stable` observed `PROWL_A2_SPLIT_OK` / `PROWL_A2_BACKGROUND_OK`, and the background target remained `selected: false`, `focused: false`. The created split, background tab, and anchor tab were closed and the isolated Debug process was terminated.
+- Live isolated Debug verification used a dedicated `PROWL_CLI_SOCKET` and the repository CLI. A real Claude Profile received distinct kickoff prompts in an anchored right split and a background tab; `agents --json` identified both returned panes, `read --wait-stable` observed `PROWL_A2_SPLIT_OK` / `PROWL_A2_BACKGROUND_OK`, and the background target remained `selected: false`, `focused: false`. A second regression launch delivered a 2534-byte prompt containing a tab, observed `PROWL_A2_LONG_PROMPT_OK` with no `quote>` continuation, and remained in a background tab. Every created resource was closed and each isolated Debug process was terminated.
 
 ## Refs
 

@@ -22,9 +22,6 @@ public enum CLIErrorCode {
 
   // Agents
   public static let agentsFailed = "AGENTS_FAILED"
-
-  // Profiles
-  public static let profilesFailed = "PROFILES_FAILED"
   public static let agentNotFound = "AGENT_NOT_FOUND"
   public static let agentUnsupported = "AGENT_UNSUPPORTED"
   public static let agentReadFailed = "AGENT_READ_FAILED"
@@ -33,6 +30,9 @@ public enum CLIErrorCode {
   public static let resultNotFound = "RESULT_NOT_FOUND"
   public static let resultIncomplete = "RESULT_INCOMPLETE"
   public static let resultTooLarge = "RESULT_TOO_LARGE"
+
+  // Profiles
+  public static let profilesFailed = "PROFILES_FAILED"
 
   // Focus
   public static let focusFailed = "FOCUS_FAILED"

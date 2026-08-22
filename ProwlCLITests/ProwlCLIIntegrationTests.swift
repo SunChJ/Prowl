@@ -456,6 +456,28 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     }
   }
 
+  func testCreateProfileFailsClosedWhenTheAppOmitsLaunchMetadata() throws {
+    let socketPath = temporarySocketPath(suffix: "create-profile-version-skew")
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .tab))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "tab", "App", "--profile", "Reviewer", "--json"]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let output = try jsonObject(from: result.stdout)
+    let error = try XCTUnwrap(output["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.createFailed)
+    XCTAssertTrue((error["message"] as? String)?.contains("Update or restart Prowl") == true)
+  }
+
   func testCreatePaneProfilePromptRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "create-pane-profile")
     let launch = LifecycleCommandLaunch(

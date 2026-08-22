@@ -34,8 +34,10 @@ configuration, becomes focused, and Prowl selects the anchor's worktree and tab 
 UUID first, then an exact name among enabled profiles; duplicate enabled names fail with
 `PROFILE_NOT_UNIQUE`, while missing or disabled profiles fail with `PROFILE_NOT_FOUND`.
 Runtime availability is advisory and never blocks launch. `--prompt` accepts only `-` and
-reads a non-empty kickoff prompt from stdin; `--prompt` and `--background` require
-`--profile`.
+reads a non-empty kickoff prompt from piped UTF-8 stdin; an interactive terminal is rejected
+instead of waiting for EOF. `--prompt` and `--background` require `--profile`. Prompt text is
+carried in the launch-scoped surface environment and expanded as one quoted argv token; it is
+not written through Ghostty's initial PTY input stream. NUL bytes are rejected.
 
 Foreground profile launches select the destination worktree/tab and focus the returned pane.
 A background tab is created without changing the selected worktree, tab, or pane. A
@@ -92,7 +94,9 @@ before the split: its `focused` / `selected` flags describe the pre-split state 
 command.
 
 A successful Profile launch adds the following field to either tab or pane data; ordinary
-shell creation omits it:
+shell creation omits it. When the CLI requested `--profile`, omission of this metadata is a
+contract failure, preventing a newer CLI from silently accepting an ordinary shell created by
+an older app:
 
 ```json
 {
@@ -108,5 +112,7 @@ shell creation omits it:
 
 `INVALID_ARGUMENT`, `EMPTY_INPUT`, `TARGET_NOT_FOUND`, `TARGET_NOT_UNIQUE`,
 `PROFILE_NOT_FOUND`, `PROFILE_NOT_UNIQUE`, `PATH_NOT_ALLOWED`, and `CREATE_FAILED` use the
-common error envelope in
+common error envelope. Unsupported prompted starts and invalid prompt values return
+`INVALID_ARGUMENT`; creation/provisioning failures retain a specific human-readable reason
+under `CREATE_FAILED`. See
 [`cli-output-schema.json`](../../../ProwlCLIContracts/Resources/cli-output-schema.json).

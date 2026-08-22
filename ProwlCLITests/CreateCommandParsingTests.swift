@@ -64,6 +64,26 @@ final class CreateCommandParsingTests: XCTestCase {
     XCTAssertThrowsError(try inline.makeInput())
   }
 
+  func testPromptRejectsInteractiveStdinWithoutReading() {
+    var options = CreateLaunchOptions()
+    options.profile = "Reviewer"
+    options.prompt = "-"
+    var didRead = false
+
+    XCTAssertThrowsError(
+      try options.resolve(
+        stdinIsTerminal: true,
+        readStdin: {
+          didRead = true
+          return Data()
+        }
+      )
+    ) { error in
+      XCTAssertEqual((error as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
+    XCTAssertFalse(didRead)
+  }
+
   func testPromptAndBackgroundRequireAProfile() throws {
     let prompt = try CreateTabCommand.parse(["App", "--prompt", "-"])
     let background = try CreatePaneCommand.parse(["p12", "--direction", "right", "--background"])
