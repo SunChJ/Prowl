@@ -143,6 +143,13 @@ final class LifecycleCommandHandler: CommandHandler {
           message: "The kickoff prompt must not contain NUL bytes."
         )
       }
+      if prompt.utf8.count > CreateLaunchInput.maximumPromptUTF8ByteCount {
+        return errorResponse(
+          command: "create",
+          code: CLIErrorCode.invalidArgument,
+          message: "The kickoff prompt exceeds the 256 KiB UTF-8 limit."
+        )
+      }
     }
     switch input.resource {
     case .tab:
@@ -277,7 +284,8 @@ final class LifecycleCommandHandler: CommandHandler {
       launch: LifecycleCommandLaunch(
         profileID: profile.id.uuidString,
         profileName: profile.name,
-        agent: profile.runtime.agent.rawValue
+        agent: profile.runtime.agent.rawValue,
+        promptDelivery: launch.prompt == nil ? nil : .surfaceEnvironmentV1
       )
     )
   }

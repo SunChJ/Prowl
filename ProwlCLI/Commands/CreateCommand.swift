@@ -16,17 +16,23 @@ struct CreateCommand: ParsableCommand {
 
   static func validateProfileLaunchResponse(
     _ response: CommandResponse,
-    requested: Bool
+    requested launchInput: CreateLaunchInput?
   ) throws {
-    guard requested else { return }
+    guard let launchInput else { return }
     guard
       let data = response.data,
       let payload = try? data.decode(as: LifecycleCommandPayload.self),
-      payload.launch != nil
+      let launch = payload.launch
     else {
       throw ExitError(
         code: CLIErrorCode.createFailed,
-        message: "The running Prowl app did not honor the Profile launch. Update or restart Prowl, then retry."
+        message: "The running Prowl app did not honor the Profile launch. An ordinary shell may have been created; inspect prowl list and close it before retrying. Update or restart Prowl."
+      )
+    }
+    if launchInput.prompt != nil, launch.promptDelivery != .surfaceEnvironmentV1 {
+      throw ExitError(
+        code: CLIErrorCode.createFailed,
+        message: "The running Prowl app did not confirm safe prompt delivery. A Profile pane may have been created with a truncated prompt; inspect prowl list and close it before retrying. Update or restart Prowl."
       )
     }
   }
@@ -73,11 +79,17 @@ struct CreateLaunchOptions: ParsableArguments {
         message: "--prompt - requires piped stdin; it cannot read from an interactive terminal."
       )
     }
-    guard
-      let data = try? readStdin(),
-      let text = String(data: data, encoding: .utf8)
-    else {
+    guard let data = try? readStdin() else {
       throw ExitError(code: CLIErrorCode.emptyInput, message: "Failed to read the kickoff prompt from stdin.")
+    }
+    guard data.count <= CreateLaunchInput.maximumPromptUTF8ByteCount else {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "The kickoff prompt exceeds the 256 KiB UTF-8 limit."
+      )
+    }
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw ExitError(code: CLIErrorCode.emptyInput, message: "Failed to read the kickoff prompt as UTF-8.")
     }
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw ExitError(code: CLIErrorCode.emptyInput, message: "The kickoff prompt is empty.")
@@ -110,7 +122,7 @@ struct CreateTabCommand: ParsableCommand {
         command: .create(input)
       )
       try CLIRunner.execute(envelope) { response in
-        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch != nil)
+        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch)
       }
     }
   }
@@ -175,7 +187,7 @@ struct CreatePaneCommand: ParsableCommand {
         command: .create(input)
       )
       try CLIRunner.execute(envelope) { response in
-        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch != nil)
+        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch)
       }
     }
   }

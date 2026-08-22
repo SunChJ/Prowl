@@ -202,7 +202,8 @@ struct CLILifecycleCommandHandlerTests {
         == LifecycleCommandLaunch(
           profileID: profile.id.uuidString,
           profileName: "Reviewer",
-          agent: "claude"
+          agent: "claude",
+          promptDelivery: .surfaceEnvironmentV1
         )
     )
   }
@@ -467,6 +468,45 @@ struct CLILifecycleCommandHandlerTests {
             resource: .tab,
             selector: .worktree("App"),
             launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review\0this")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(!didResolve)
+  }
+
+  @Test func oversizedProfilePromptIsRejectedBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(
+              profile: "Reviewer",
+              prompt: String(
+                repeating: "x",
+                count: CreateLaunchInput.maximumPromptUTF8ByteCount + 1
+              )
+            )
           )
         )
       )

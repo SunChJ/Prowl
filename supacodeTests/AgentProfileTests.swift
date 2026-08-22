@@ -300,9 +300,49 @@ struct AgentProfileTests {
     #expect(plan.invocation.arguments == ["--model", "gpt-5.4", prompt])
     #expect(plan.surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == prompt)
     #expect(!plan.terminalInput.contains(prompt))
-    #expect(plan.terminalInput.hasPrefix("env -u \(AgentProfileLaunchPlanner.promptCarrierName) "))
-    #expect(plan.terminalInput.contains("\"$\(AgentProfileLaunchPlanner.promptCarrierName)\""))
+    #expect(
+      plan.terminalInput.hasPrefix(
+        "PROWL_LAUNCH_PROMPT_VALUE=\"$PROWL_LAUNCH_PROMPT\"; unset PROWL_LAUNCH_PROMPT; "
+      )
+    )
+    #expect(plan.terminalInput.contains("env -u PROWL_LAUNCH_PROMPT_VALUE "))
+    #expect(plan.terminalInput.contains("\"$PROWL_LAUNCH_PROMPT_VALUE\""))
+    #expect(plan.terminalInput.hasSuffix("; unset PROWL_LAUNCH_PROMPT_VALUE"))
     #expect(plan.terminalInput.utf8.count < 1_024)
+  }
+
+  @Test func promptedTerminalInputCleansCarrierAndTemporaryShellValue() throws {
+    let prompt = "Review the current diff."
+    let carrier = AgentProfileLaunchPlanner.promptCarrierName
+    let valueVariable = AgentProfileLaunchPlanner.promptShellValueName
+    let childCheck = "[[ \"$1\" == \"\(prompt)\" && -z ${\(carrier)+x} && -z ${\(valueVariable)+x} ]]"
+    let plan = AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: "Reviewer",
+      runtime: .claude,
+      invocation: AgentInvocation(
+        executable: "/bin/zsh",
+        arguments: ["-f", "-c", childCheck, "prowl-child", prompt]
+      ),
+      commandEnvironmentTokens: [],
+      placement: .tab,
+      splitDirection: .right,
+      surfaceEnvironment: [carrier: prompt],
+      dedicatedHome: nil
+    )
+    let parentCheck = "[[ -z ${\(carrier)+x} && -z ${\(valueVariable)+x} ]]"
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+    process.arguments = ["-f", "-c", "\(plan.terminalInput); \(parentCheck)"]
+    var environment = ProcessInfo.processInfo.environment
+    environment[carrier] = prompt
+    environment[valueVariable] = "stale-exported-value"
+    process.environment = environment
+
+    try process.run()
+    process.waitUntilExit()
+
+    #expect(process.terminationStatus == 0)
   }
 
   @Test func plannerRejectsPromptThatCannotRideInTheSurfaceEnvironment() {

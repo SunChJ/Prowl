@@ -217,6 +217,10 @@ public enum CreatePaneDirection: String, Codable, CaseIterable, Sendable, Equata
 }
 
 public struct CreateLaunchInput: Codable, Sendable, Equatable {
+  /// Keeps the surface-shell spawn and prompted child exec comfortably below
+  /// macOS ARG_MAX, including the inherited environment and configured argv.
+  public static let maximumPromptUTF8ByteCount = 256 * 1_024
+
   public let profile: String
   public let prompt: String?
 

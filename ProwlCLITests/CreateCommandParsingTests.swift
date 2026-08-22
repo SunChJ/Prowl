@@ -84,6 +84,23 @@ final class CreateCommandParsingTests: XCTestCase {
     XCTAssertFalse(didRead)
   }
 
+  func testPromptRejectsOversizedUTF8Input() {
+    var options = CreateLaunchOptions()
+    options.profile = "Reviewer"
+    options.prompt = "-"
+
+    XCTAssertThrowsError(
+      try options.resolve(
+        stdinIsTerminal: false,
+        readStdin: {
+          Data(repeating: 0x78, count: CreateLaunchInput.maximumPromptUTF8ByteCount + 1)
+        }
+      )
+    ) { error in
+      XCTAssertEqual((error as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
+  }
+
   func testPromptAndBackgroundRequireAProfile() throws {
     let prompt = try CreateTabCommand.parse(["App", "--prompt", "-"])
     let background = try CreatePaneCommand.parse(["p12", "--direction", "right", "--background"])

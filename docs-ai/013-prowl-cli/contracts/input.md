@@ -49,8 +49,8 @@ prowl close --tab <uuid|tN|N> [--force]
 `create tab` requires a worktree-only target. `create pane` requires a pane-only
 anchor and explicit direction; it rejects `--target`, `--worktree`, `--tab`, bare
 numbers, and focus fallback. `--prompt` accepts only `-`, reads non-empty UTF-8 piped
-stdin, rejects an interactive terminal and NUL bytes, and requires `--profile`; `--background`
-also requires `--profile`. `profiles list`
+stdin up to 256 KiB, rejects an interactive terminal and NUL bytes, and requires `--profile`;
+`--background` also requires `--profile`. `profiles list`
 is a read-only global snapshot and accepts no target. `close` requires a pane-or-tab-only target and rejects
 `--target`, `--worktree`, bare-number positions, and focus fallback. See
 [create.md](create.md) and [close.md](close.md).

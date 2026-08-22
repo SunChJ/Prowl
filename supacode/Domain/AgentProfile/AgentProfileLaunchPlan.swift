@@ -61,17 +61,23 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     let promptCarrier =
       surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == nil
       ? nil : AgentProfileLaunchPlanner.promptCarrierName
-    let invocationInput = invocation.terminalInput(
-      replacingFinalArgumentWithEnvironmentVariable: promptCarrier
-    )
-    var environmentTokens = commandEnvironmentTokens
-    if let promptCarrier {
-      // Expansion happens in the shell before env(1) removes the carrier from
-      // the launched process environment. The pane shell retains the carrier.
-      environmentTokens.insert(contentsOf: ["-u", promptCarrier], at: 0)
+    guard let promptCarrier else {
+      guard !commandEnvironmentTokens.isEmpty else { return invocation.terminalInput }
+      return (["env"] + commandEnvironmentTokens + [invocation.terminalInput]).joined(separator: " ")
     }
-    guard !environmentTokens.isEmpty else { return invocationInput }
-    return (["env"] + environmentTokens + [invocationInput]).joined(separator: " ")
+
+    let valueVariable = AgentProfileLaunchPlanner.promptShellValueName
+    let invocationInput = invocation.terminalInput(
+      replacingFinalArgumentWithEnvironmentVariable: valueVariable
+    )
+    let childCommand = (["env", "-u", valueVariable] + commandEnvironmentTokens + [invocationInput]).joined(
+      separator: " ")
+    return [
+      "\(valueVariable)=\"$\(promptCarrier)\"",
+      "unset \(promptCarrier)",
+      childCommand,
+      "unset \(valueVariable)",
+    ].joined(separator: "; ")
   }
 
   var previewText: String { terminalInput }
@@ -259,6 +265,10 @@ nonisolated enum AgentProfileLaunchPlanner {
   /// Reserved surface-environment carrier for prompted starts. The prompt is
   /// expanded as one quoted argv token and never enters Ghostty initial_input.
   static let promptCarrierName = "PROWL_LAUNCH_PROMPT"
+  /// Unexported shell variable used only between carrier cleanup and child
+  /// argv expansion. env(1) removes it defensively if the user exported the
+  /// same reserved name before launch; the final command clears it from the shell.
+  static let promptShellValueName = "PROWL_LAUNCH_PROMPT_VALUE"
 
   /// Resolves a profile into one launch plan. Pure: no filesystem access —
   /// home provisioning happens at the launch boundary, not here.

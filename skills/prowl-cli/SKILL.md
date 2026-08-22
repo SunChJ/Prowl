@@ -86,8 +86,9 @@ prowl read --pane "$pane" --last 200 --wait-stable --json
 ```
 
 The returned pane is the launched agent; `.data.launch` records the resolved Profile. `--prompt -`
-requires a pipe or heredoc (never interactive stdin); Prowl carries the prompt outside initial PTY
-input, so long or multiline review instructions are safe. Use `read --wait-stable` today. When
+requires a pipe or heredoc (never interactive stdin); Prowl carries up to 256 KiB outside initial
+PTY input and reports `.data.launch.prompt_delivery = "surface_env_v1"`. Put larger requirement
+sets in a repository file and prompt the Profile to read it. Use `read --wait-stable` today. When
 `agents wait` ships, prefer it for deterministic completion before the final read. Add
 `--background` when the split must not change focus or select a hidden anchor's tab/worktree.
 
@@ -139,7 +140,7 @@ Key fields by command:
 - `agents read` → `.data.agent`, `.data.blocker.text`, `.data.result.{state,text}` — `pending`, `unavailable`, `missing`, `incomplete`, `too_large` carry no partial text.
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode`, `.data.source`; `.data.stabilized` / `.data.waited_ms` with `--wait-stable`.
 - `send` → `.data.input`, `.data.wait.{exit_code,duration_ms}` when waiting, `.data.capture.{text,line_count,truncated}` with `--capture`.
-- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`.
+- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`, plus `.prompt_delivery` for prompted launches.
 - `profiles list` → `.data.profiles[]` with `.id`, `.name`, `.enabled`, `.runtime`, `.availability.{status,reason}`.
 
 Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `.content`, `.output`, or `.stdout`.

@@ -196,6 +196,12 @@
         "agent": {
           "type": "string",
           "minLength": 1
+        },
+        "prompt_delivery": {
+          "type": "string",
+          "enum": [
+            "surface_env_v1"
+          ]
         }
       }
     },

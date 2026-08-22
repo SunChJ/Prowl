@@ -475,7 +475,37 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let output = try jsonObject(from: result.stdout)
     let error = try XCTUnwrap(output["error"] as? [String: Any])
     XCTAssertEqual(error["code"] as? String, CLIErrorCode.createFailed)
-    XCTAssertTrue((error["message"] as? String)?.contains("Update or restart Prowl") == true)
+    XCTAssertTrue((error["message"] as? String)?.contains("ordinary shell may have been created") == true)
+    XCTAssertTrue((error["message"] as? String)?.contains("prowl list") == true)
+  }
+
+  func testCreatePromptFailsClosedWhenTheAppOmitsSafeDeliveryMetadata() throws {
+    let socketPath = temporarySocketPath(suffix: "create-prompt-delivery-version-skew")
+    let launch = LifecycleCommandLaunch(
+      profileID: UUID().uuidString,
+      profileName: "Reviewer",
+      agent: "claude"
+    )
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .tab, launch: launch))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "tab", "App", "--profile", "Reviewer", "--prompt", "-", "--json"],
+      stdinData: Data("Review the diff.\n".utf8)
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let output = try jsonObject(from: result.stdout)
+    let error = try XCTUnwrap(output["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.createFailed)
+    XCTAssertTrue((error["message"] as? String)?.contains("safe prompt delivery") == true)
+    XCTAssertTrue((error["message"] as? String)?.contains("truncated prompt") == true)
   }
 
   func testCreatePaneProfilePromptRoundTripsOverSocket() throws {
@@ -483,7 +513,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let launch = LifecycleCommandLaunch(
       profileID: UUID().uuidString,
       profileName: "Reviewer",
-      agent: "claude"
+      agent: "claude",
+      promptDelivery: .surfaceEnvironmentV1
     )
     let response = try CommandResponse(
       ok: true,
@@ -523,6 +554,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let outputLaunch = try XCTUnwrap(data["launch"] as? [String: Any])
     XCTAssertEqual(outputLaunch["profile_name"] as? String, "Reviewer")
     XCTAssertEqual(outputLaunch["agent"] as? String, "claude")
+    XCTAssertEqual(outputLaunch["prompt_delivery"] as? String, "surface_env_v1")
   }
 
   func testProfilesListRoundTripsOverSocket() throws {

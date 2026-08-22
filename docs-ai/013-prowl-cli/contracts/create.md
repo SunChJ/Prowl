@@ -35,9 +35,13 @@ UUID first, then an exact name among enabled profiles; duplicate enabled names f
 `PROFILE_NOT_UNIQUE`, while missing or disabled profiles fail with `PROFILE_NOT_FOUND`.
 Runtime availability is advisory and never blocks launch. `--prompt` accepts only `-` and
 reads a non-empty kickoff prompt from piped UTF-8 stdin; an interactive terminal is rejected
-instead of waiting for EOF. `--prompt` and `--background` require `--profile`. Prompt text is
-carried in the launch-scoped surface environment and expanded as one quoted argv token; it is
-not written through Ghostty's initial PTY input stream. NUL bytes are rejected.
+instead of waiting for EOF. The UTF-8 payload is capped at 256 KiB; oversized input returns
+`INVALID_ARGUMENT` before any surface exists. `--prompt` and `--background` require
+`--profile`. Prompt text is carried in a reserved surface-environment carrier and expanded as
+one quoted argv token; it is not written through Ghostty's initial PTY input stream. Before
+starting the Profile process, the shell copies the value into an unexported temporary variable
+and unsets the carrier; after the process exits it unsets the temporary value. NUL bytes are
+rejected.
 
 Foreground profile launches select the destination worktree/tab and focus the returned pane.
 A background tab is created without changing the selected worktree, tab, or pane. A
@@ -103,10 +107,15 @@ an older app:
   "launch": {
     "profile_id": "…",
     "profile_name": "Reviewer",
-    "agent": "claude"
+    "agent": "claude",
+    "prompt_delivery": "surface_env_v1"
   }
 }
 ```
+
+`prompt_delivery` is present only for prompted launches. When `--prompt -` was requested, the
+CLI requires `surface_env_v1`; launch metadata without that delivery marker is a contract
+failure because an older app may still have used literal canonical-PTY input.
 
 ## Errors
 
@@ -114,5 +123,7 @@ an older app:
 `PROFILE_NOT_FOUND`, `PROFILE_NOT_UNIQUE`, `PATH_NOT_ALLOWED`, and `CREATE_FAILED` use the
 common error envelope. Unsupported prompted starts and invalid prompt values return
 `INVALID_ARGUMENT`; creation/provisioning failures retain a specific human-readable reason
-under `CREATE_FAILED`. See
+under `CREATE_FAILED`. Client-side version mismatch errors warn that an ordinary shell or
+Profile pane may already have been created and direct the caller to inspect `prowl list` and
+close it. See
 [`cli-output-schema.json`](../../../ProwlCLIContracts/Resources/cli-output-schema.json).

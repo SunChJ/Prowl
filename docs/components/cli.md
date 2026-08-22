@@ -350,7 +350,11 @@ EOF
 `--prompt -` requires a pipe or heredoc; it rejects interactive stdin instead of waiting
 for `Ctrl-D`. Prowl carries the prompt outside the terminal's initial PTY input and expands
 it as one quoted argument, so multiline, tab-containing, and long review instructions are
-not interpreted by the shell line editor. NUL bytes remain invalid.
+not interpreted by the shell line editor. The carrier is removed before the Profile process
+starts and its unexported temporary shell value is cleared when that process exits. NUL bytes
+remain invalid, and UTF-8 prompt input over 256 KiB is rejected before creating a surface.
+For larger requirement sets, keep the content in a repository file and use the kickoff prompt
+to tell the Profile which file to read.
 
 `--background` is Profile-only and creates the tab without changing the selected
 worktree, tab, or pane.
@@ -372,9 +376,12 @@ selecting a hidden anchor's worktree/tab.
 
 `.data.anchor` records the source pane as resolved before the split (its `focused` flag is
 pre-split state), `.data.direction` records the public direction, and a Profile launch adds
-`.data.launch.{profile_id,profile_name,agent}`. The CLI requires this launch metadata when
-`--profile` was requested, so a mismatched older app cannot silently return an ordinary
-shell. The operation targets the anchor directly; it never depends on current UI focus.
+`.data.launch.{profile_id,profile_name,agent}`. Prompted launches also return
+`.data.launch.prompt_delivery = "surface_env_v1"`. The CLI requires launch metadata for
+`--profile` and the delivery marker for `--prompt -`, so mismatched older apps cannot silently
+report a potentially truncated launch as successful. A mismatch error warns that the older
+app may already have created a resource; inspect `prowl list` and close it before retrying.
+The operation targets the anchor directly; it never depends on current UI focus.
 
 ### `prowl close`
 Close one explicit tab or pane. The positional form uses a UUID, `pN`, or `tN`; the
