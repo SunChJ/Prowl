@@ -28,3 +28,4 @@ The selection boundary is represented by `SettingsSection.profiles` and `.comman
 
 - Slice: 063-C0
 - Branch: `feat/settings-agents-group`
+- PR: #709
