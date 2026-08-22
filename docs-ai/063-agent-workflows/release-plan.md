@@ -31,11 +31,11 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | 1 | **C0** Settings IA: `Section("Agents")` with Profiles (renamed) + Command Line Tool (from Advanced); no Workflows page yet | 063 | — | CLI install lives with Agents |
 | 1 | **A1** `prowl create pane` (#699) + anchored split primitive | 063 | 060 | CLI can split |
 | 1 | **065-S0/K1** skill-target spike; `embed-skills` + `ProwlSkills` registry | 065 | — | skills ship in the bundle; D1 prerequisite |
-| 2 | **065-K2** shared `SymlinkInstaller` + `prowl skills list\|install\|uninstall\|path` | 065 | 065-K1 | one command installs Prowl's skills into agent skill folders |
-| 3 | **065-K3** Agent Skills section on Settings › Command Line Tool | 065 | 065-K2 | GUI users install skills without a terminal |
 | 2 | **A2** profile launch boundary + `create tab\|pane --profile <p> --prompt -` + `profiles list` | 063 | A1 | CLI launches a profile with a kickoff prompt and gets the pane back |
 | 2 | **S1** signal bus + `ObservedAgentState` multicast observer + `prowl agents signal` | 064 | — | layer-0 signals for every runtime |
+| 2 | **065-K2** shared `SymlinkInstaller` + `prowl skills list\|install\|uninstall\|path` | 065 | 065-K1 | one command installs Prowl's skills into agent skill folders |
 | 3 | **S2** `prowl agents wait` (`source`/`confidence`, `--include-screen`) + `agents` `signals` field + skill rubric | 064 | S1 | no hand-written polling; heuristic results are labelled |
+| 3 | **065-K3** Agent Skills section on Settings › Command Line Tool | 065 | 065-K2 | GUI users install skills without a terminal |
 | 4 | **S3 wave 1** launch-scoped hooks for tier-A runtimes (Claude Code, Codex `notify`, Copilot, Droid, Qoder, Pi, OMP, OpenCode) + self-check | 064 | A2, S1 | `agents wait` is deterministic for Prowl-launched agents |
 
 User-visible result: onevcat's daily CLI-driven orchestration is first-class
@@ -80,7 +80,8 @@ cross-worktree roles, GUI editor) and the rest of 064-S5; scheduled by demand.
 R1:  C0            A1 ──► A2 ──┐
                    S1 ──► S2   ├──► S3w1
                       └────────┘
-R2:  B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1 ──► C2 ──► D1 ──► D2 (◄ S3w1)
+     065-S0/K1 ──► 065-K2 ──► 065-K3
+R2:  B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1 ──► C2 ──► D1 (◄ 065-K1) ──► D2 (◄ S3w1)
 R3:  D3 (◄ D2)        S3w2 (◄ S3w1)        S4 (◄ S1)
 R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 ```
@@ -90,3 +91,5 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 - 2026-08-22 — first version: three releases agreed; `ObservedAgentState` observer moved
   from 063-B3 to 064-S1; C0 ships without the Workflows page; `prowl agents wait` owned by
   064-S2.
+- 2026-08-22 — 065 bundled-agent-skills joins R1 (S0/K1 ∥ A1, then K2, K3); `embed-skills`
+  and the skill registry move from 063-D1 to 065-K1, D1 depends on it.

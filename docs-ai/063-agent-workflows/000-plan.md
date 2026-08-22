@@ -481,7 +481,8 @@ attaches hooks through A2's launch boundary.
   when wrong: grace before acting, a nudge that only asks the agent to finish with `done`
   when it is truly complete, and attention states that never discard a late delivery.
 - **PR order / releases** (revised 2026-08-22): three releases — R1 = C0, A1, A2,
-  064-S1/S2/S3-wave-1 (CLI orchestration + signals); R2 = B1, B2, B3, C1, C2, D1, D2
+  064-S1/S2/S3-wave-1, 065-S0/K1/K2/K3 (CLI orchestration + signals + skill distribution);
+  R2 = B1, B2, B3, C1, C2, D1, D2
   (Agent Workflows); R3 = D3, 064-S3-wave-2/S4, first V2 items (handoff migration). The
   single source for order and release assignment is [release-plan.md](release-plan.md);
   the slice tables in 063/064 define contents only. The new Adversarial Review flow
