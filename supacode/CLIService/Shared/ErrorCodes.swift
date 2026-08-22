@@ -22,6 +22,9 @@ public enum CLIErrorCode {
 
   // Agents
   public static let agentsFailed = "AGENTS_FAILED"
+
+  // Profiles
+  public static let profilesFailed = "PROFILES_FAILED"
   public static let agentNotFound = "AGENT_NOT_FOUND"
   public static let agentUnsupported = "AGENT_UNSUPPORTED"
   public static let agentReadFailed = "AGENT_READ_FAILED"
@@ -52,6 +55,8 @@ public enum CLIErrorCode {
   // Lifecycle
   public static let createFailed = "CREATE_FAILED"
   public static let closeFailed = "CLOSE_FAILED"
+  public static let profileNotFound = "PROFILE_NOT_FOUND"
+  public static let profileNotUnique = "PROFILE_NOT_UNIQUE"
 
   // Tab
   public static let tabFailed = "TAB_FAILED"

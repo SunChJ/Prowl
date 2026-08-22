@@ -5,6 +5,11 @@ struct TerminalClient {
   var send: @MainActor @Sendable (Command) -> Void
   /// Creates and selects a tab synchronously so Canvas can target its exact ID.
   var createTabInDirectory: @MainActor @Sendable (Worktree, URL) -> TerminalTabID?
+  /// Launches a compiled profile request synchronously and returns the exact tab
+  /// and pane identities. This is the CLI/workflow boundary; the legacy command
+  /// remains event-driven for menu and palette launches.
+  var launchAgentProfile:
+    @MainActor @Sendable (Worktree, AgentProfileLaunchRequest) -> Result<LaunchedSurface, AgentProfileLaunchError>
   var events: @MainActor @Sendable () -> AsyncStream<Event>
   var canvasFocusedWorktreeID: @MainActor @Sendable () -> Worktree.ID?
   /// Active surface in the selected tab. Lets the reducer capture the target
@@ -101,6 +106,7 @@ extension TerminalClient: DependencyKey {
   static let liveValue = TerminalClient(
     send: { _ in fatalError("TerminalClient.send not configured") },
     createTabInDirectory: { _, _ in fatalError("TerminalClient.createTabInDirectory not configured") },
+    launchAgentProfile: { _, _ in fatalError("TerminalClient.launchAgentProfile not configured") },
     events: { fatalError("TerminalClient.events not configured") },
     canvasFocusedWorktreeID: { nil },
     selectedSurfaceID: { _ in nil },
@@ -117,6 +123,7 @@ extension TerminalClient: DependencyKey {
   static let testValue = TerminalClient(
     send: { _ in },
     createTabInDirectory: { _, _ in nil },
+    launchAgentProfile: { _, _ in .failure(.tabCreationFailed) },
     events: { AsyncStream { $0.finish() } },
     canvasFocusedWorktreeID: { nil },
     selectedSurfaceID: { _ in nil },

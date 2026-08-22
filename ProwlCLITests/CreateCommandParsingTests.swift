@@ -39,4 +39,36 @@ final class CreateCommandParsingTests: XCTestCase {
     XCTAssertThrowsError(try mixed.makeInput())
     XCTAssertThrowsError(try bareNumber.makeInput())
   }
+
+  func testTabParsesProfileLaunchAndBackground() throws {
+    let command = try CreateTabCommand.parse(["App", "--profile", "Reviewer", "--background"])
+    let input = try command.makeInput()
+
+    XCTAssertEqual(input.launch, CreateLaunchInput(profile: "Reviewer"))
+    XCTAssertTrue(input.background)
+  }
+
+  func testPaneParsesProfileLaunchAndBackground() throws {
+    let command = try CreatePaneCommand.parse([
+      "p12", "--direction", "right", "--profile", "Reviewer", "--background",
+    ])
+    let input = try command.makeInput()
+
+    XCTAssertEqual(input.launch, CreateLaunchInput(profile: "Reviewer"))
+    XCTAssertTrue(input.background)
+  }
+
+  func testPromptAcceptsOnlyTheStdinSentinel() throws {
+    let inline = try CreateTabCommand.parse(["App", "--profile", "Reviewer", "--prompt", "inline"])
+
+    XCTAssertThrowsError(try inline.makeInput())
+  }
+
+  func testPromptAndBackgroundRequireAProfile() throws {
+    let prompt = try CreateTabCommand.parse(["App", "--prompt", "-"])
+    let background = try CreatePaneCommand.parse(["p12", "--direction", "right", "--background"])
+
+    XCTAssertThrowsError(try prompt.makeInput())
+    XCTAssertThrowsError(try background.makeInput())
+  }
 }

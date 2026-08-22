@@ -74,6 +74,22 @@ pane="$(prowl create pane "$PROWL_PANE_ID" --direction right --json | jq -r '.da
 
 Directions are `right`, `left`, `up`, `down`; the anchor must be a pane UUID or current `pN`. The new pane inherits the anchor's working directory, becomes focused, and Prowl selects its worktree and tab (as `create tab` does). Run input afterwards with an explicit `prowl send --pane "$pane" …`.
 
+Launch a reviewer beside yourself after the identity guard in **Who You Are** has verified `$me`:
+
+```bash
+launch="$(prowl create pane "$PROWL_PANE_ID" --direction right --profile Reviewer --prompt - --json <<'EOF'
+Review the current branch against its base. Report only actionable findings with file and line references.
+EOF
+)"
+pane="$(printf '%s\n' "$launch" | jq -r '.data.target.pane.id')"
+prowl read --pane "$pane" --last 200 --wait-stable --json
+```
+
+The returned pane is the launched agent; `.data.launch` records the resolved Profile. Use
+`read --wait-stable` today. When `agents wait` ships, prefer it for deterministic completion
+before the final read. Add `--background` when the split must not change focus or select a
+hidden anchor's tab/worktree.
+
 Create a fresh tab in a listed worktree:
 
 ```bash
@@ -122,7 +138,8 @@ Key fields by command:
 - `agents read` → `.data.agent`, `.data.blocker.text`, `.data.result.{state,text}` — `pending`, `unavailable`, `missing`, `incomplete`, `too_large` carry no partial text.
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode`, `.data.source`; `.data.stabilized` / `.data.waited_ms` with `--wait-stable`.
 - `send` → `.data.input`, `.data.wait.{exit_code,duration_ms}` when waiting, `.data.capture.{text,line_count,truncated}` with `--capture`.
-- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`.
+- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`.
+- `profiles list` → `.data.profiles[]` with `.id`, `.name`, `.enabled`, `.runtime`, `.availability.{status,reason}`.
 
 Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `.content`, `.output`, or `.stdout`.
 
@@ -165,6 +182,7 @@ done
 - `SOCKET_PERMISSION_DENIED`: the sandbox or filesystem blocked `connect()`; report a permission problem, not an app-liveness problem.
 - `TRANSPORT_FAILED`: the connection broke or the socket path is invalid (`ENOTSOCK`, too-long `PROWL_CLI_SOCKET`).
 - `TARGET_NOT_FOUND` / `TARGET_NOT_UNIQUE`: re-run `prowl list --json` and pass an explicit UUID or a current `pN`.
+- `PROFILE_NOT_FOUND` / `PROFILE_NOT_UNIQUE`: re-run `prowl profiles list --json`; choose an enabled Profile UUID.
 - `NO_ACTIVE_PANE`: focused-pane targeting found nothing — pass `--pane`. `SOURCE_REQUIRED`: `handoff` was run outside a Prowl pane without a selector.
 - `EMPTY_INPUT`, `INVALID_ARGUMENT`, `UNSUPPORTED_KEY`, `INVALID_REPEAT`: fix the arguments (`prowl <cmd> --help`).
 - `CAPTURE_UNSUPPORTED`: drop `--capture` and use `read --wait-stable` or file redirection. `WAIT_TIMEOUT`: raise `--timeout` or use `--no-wait`.
@@ -190,4 +208,4 @@ Required sections are `## Objective`, `## Current State`, and `## Next Steps`; o
 
 ## Command Set
 
-`list`, `agents`, `agents read`, `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.
+`list`, `agents`, `agents read`, `profiles list`, `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.

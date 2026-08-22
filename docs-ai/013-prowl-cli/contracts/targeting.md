@@ -58,12 +58,16 @@ not rely on a focus fallback.
 Lifecycle commands intentionally do not use generic worktree projection:
 
 ```text
-create tab <WorktreeRef> | --worktree <WorktreeRef>
-create pane <PaneUUID|pN> | --pane <PaneUUID|pN>
+create tab <WorktreeRef> [--profile <name|uuid> [--prompt -] [--background]]
+create tab --worktree <WorktreeRef> [--profile <name|uuid> [--prompt -] [--background]]
+create pane <PaneUUID|pN> --direction <direction> [--profile <name|uuid> [--prompt -] [--background]]
+create pane --pane <PaneUUID|pN> --direction <direction> [--profile <name|uuid> [--prompt -] [--background]]
 close <PaneUUID|TabUUID|pN|tN> | --pane <PaneUUID|pN|N> | --tab <TabUUID|tN|N>
 ```
 
 `create pane` requires `--direction right|left|up|down`; it resolves its anchor
 directly and rejects `--target`, `--worktree`, `--tab`, bare-number anchors, and
-mixed positional/flag targeting. `close` rejects `--target`, `--worktree`,
+mixed positional/flag targeting. Profile launch does not change selector resolution:
+foreground placement selects only after the explicit target is resolved and creation
+succeeds; `--background` preserves current selection. `close` rejects `--target`, `--worktree`,
 bare-number positionals, UI-focus fallback, and mixed positional/flag targeting.

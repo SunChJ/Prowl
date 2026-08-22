@@ -15,6 +15,7 @@ The bundle has one versioned success-or-error response schema for every wire com
 | `list` | `#/$defs/listResponse` |
 | `agents` | `#/$defs/agentsResponse` |
 | `agents.read` | `#/$defs/agentsReadResponse` |
+| `profiles` | `#/$defs/profilesResponse` |
 | `focus` | `#/$defs/focusResponse` |
 | `send` | `#/$defs/sendResponse` |
 | `key` | `#/$defs/keyResponse` |

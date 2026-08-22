@@ -17,6 +17,9 @@
       "$ref": "#/$defs/agentsReadResponse"
     },
     {
+      "$ref": "#/$defs/profilesResponse"
+    },
+    {
       "$ref": "#/$defs/focusResponse"
     },
     {
@@ -173,6 +176,29 @@
         }
       }
     },
+    "lifecycleLaunch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "profile_name",
+        "agent"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "profile_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "createData": {
       "oneOf": [
         {
@@ -185,6 +211,9 @@
           "properties": {
             "resource": {
               "const": "tab"
+            },
+            "launch": {
+              "$ref": "#/$defs/lifecycleLaunch"
             },
             "target": {
               "$ref": "#/$defs/target"
@@ -214,6 +243,9 @@
                 "up",
                 "down"
               ]
+            },
+            "launch": {
+              "$ref": "#/$defs/lifecycleLaunch"
             },
             "target": {
               "$ref": "#/$defs/target"
@@ -587,6 +619,77 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/agent"
+          }
+        }
+      }
+    },
+    "profileAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "runtime",
+        "availability"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availability": {
+          "$ref": "#/$defs/profileAvailability"
+        }
+      }
+    },
+    "profilesData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "profiles"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/profile"
           }
         }
       }
@@ -1549,6 +1652,58 @@
             },
             "schema_version": {
               "const": "prowl.cli.agents.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "profilesResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "profiles"
+            },
+            "schema_version": {
+              "const": "prowl.cli.profiles.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/profilesData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "profiles"
+            },
+            "schema_version": {
+              "const": "prowl.cli.profiles.v1"
             },
             "error": {
               "$ref": "#/$defs/error"

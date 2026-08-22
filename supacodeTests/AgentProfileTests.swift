@@ -285,6 +285,39 @@ struct AgentProfileTests {
     #expect(plan.previewText == plan.invocation.terminalInput)
   }
 
+  @Test func plannerForwardsPromptIntentThroughTheProfileAdapter() throws {
+    var preset = profile(name: "Codex · Reviewer")
+    preset.model = "gpt-5.4"
+
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: preset,
+      intent: .prompt("Review the current diff."),
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.invocation.executable == "codex")
+    #expect(plan.invocation.arguments == ["--model", "gpt-5.4", "Review the current diff."])
+  }
+
+  @Test func plannerKeepsInteractiveAsTheDefaultIntent() throws {
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: profile(name: "Codex"),
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.invocation.arguments.isEmpty)
+  }
+
+  @Test func plannerPreservesAmpPromptRejection() {
+    #expect(throws: AgentRuntimeError.unsupportedStartIntent(.amp, .prompt("Review."))) {
+      try AgentProfileLaunchPlanner.plan(
+        for: profile(name: "Amp", runtime: .amp),
+        intent: .prompt("Review."),
+        homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+      )
+    }
+  }
+
   @Test func boundProfilePlanDerivesHomeFromUUIDInsideBase() throws {
     var bound = profile(name: "Codex · Work")
     bound.bindsDedicatedHome = true

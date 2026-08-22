@@ -38,10 +38,16 @@ respawn.
   one click launches the Recommended profile directly, skipping the popover.
 - **Command Palette** (`⌘P`) — "Launch Agent: <name>" rows dispatch the exact
   same action, and carry the same availability warning in their subtitle.
+- **CLI** — `prowl profiles list` returns enabled and disabled Profiles with their
+  runtime and shell-probe availability. Launch into a deterministic new tab or anchored
+  split with `prowl create tab|pane … --profile <name|uuid>`; add `--prompt -` to read a
+  kickoff prompt from stdin and `--background` to preserve the current selection/focus.
+  Disabled Profiles cannot launch; availability warnings never block an attempt.
 
-A launch creates a **new** tab (or split, per placement) in the current
-worktree, running the agent interactively with no initial prompt. Prowl never
-types into an existing shell. The new pane records its profile identity at
+Every launch creates a **new** tab or split; Prowl never types the invocation into an
+existing shell. Toolbar and Command Palette launches use the Profile's saved placement in
+the current worktree and start interactively with no initial prompt. CLI launches override
+placement from the `create tab|pane` command and may supply the kickoff prompt. The new pane records its profile identity at
 creation: the Active Agents rows and the capsule show the profile's display
 name (frozen at launch — later renames don't relabel live panes). The identity
 lives exactly as long as the launched agent: once it exits, any agent started
@@ -187,9 +193,8 @@ control; Extra Arguments stay available for expert overrides.
 
 Amp has one additional limitation: it supports bare interactive Profile launch
 and `--execute` headless launch, but has no argv form that seeds a prompt and
-then remains interactive. Current Agent Profiles always launch bare, so this
-does not block the shipped UI; it does prevent treating Amp as an interactive
-prompt receiver in a future handoff workflow without another transport.
+then remains interactive. Toolbar/Command Palette and CLI launches without `--prompt`
+still work; `create … --profile <amp-profile> --prompt -` fails without creating a pane.
 
 ## Where things live on disk
 

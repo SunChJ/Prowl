@@ -15,6 +15,51 @@ struct CreateCommand: ParsableCommand {
   )
 }
 
+struct CreateLaunchOptions: ParsableArguments {
+  @Option(name: .long, help: "Agent Profile name or UUID to launch in the new resource.")
+  var profile: String?
+
+  @Option(name: .long, help: "Kickoff prompt source; the only supported value is '-' for stdin.")
+  var prompt: String?
+
+  @Flag(name: .long, help: "Create the profile launch without changing the current selection or focus.")
+  var background = false
+
+  func resolve() throws -> (launch: CreateLaunchInput?, background: Bool) {
+    guard let profile else {
+      if prompt != nil || background {
+        throw ExitError(
+          code: CLIErrorCode.invalidArgument,
+          message: "--prompt and --background require --profile."
+        )
+      }
+      return (nil, false)
+    }
+    guard !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw ExitError(code: CLIErrorCode.invalidArgument, message: "--profile must not be empty.")
+    }
+    guard let prompt else {
+      return (CreateLaunchInput(profile: profile), background)
+    }
+    guard prompt == "-" else {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "--prompt accepts only '-' to read the kickoff prompt from stdin."
+      )
+    }
+    guard
+      let data = try? FileHandle.standardInput.readToEnd(),
+      let text = String(data: data, encoding: .utf8)
+    else {
+      throw ExitError(code: CLIErrorCode.emptyInput, message: "Failed to read the kickoff prompt from stdin.")
+    }
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw ExitError(code: CLIErrorCode.emptyInput, message: "The kickoff prompt is empty.")
+    }
+    return (CreateLaunchInput(profile: profile, prompt: text), background)
+  }
+}
+
 struct CreateTabCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "tab",
@@ -25,6 +70,7 @@ struct CreateTabCommand: ParsableCommand {
   var worktree: String?
 
   @OptionGroup var selector: LifecycleSelectorOptions
+  @OptionGroup var launchOptions: CreateLaunchOptions
   @OptionGroup var options: GlobalOptions
 
   @Option(name: .long, help: "Working directory for the new tab.")
@@ -41,10 +87,13 @@ struct CreateTabCommand: ParsableCommand {
   }
 
   func makeInput() throws -> CreateInput {
-    CreateInput(
+    let resolvedLaunch = try launchOptions.resolve()
+    return CreateInput(
       resource: .tab,
       selector: try selector.resolveWorktree(positionalTarget: worktree),
-      path: normalizedPath()
+      path: normalizedPath(),
+      launch: resolvedLaunch.launch,
+      background: resolvedLaunch.background
     )
   }
 
@@ -83,6 +132,7 @@ struct CreatePaneCommand: ParsableCommand {
   var anchor: String?
 
   @OptionGroup var selector: LifecycleSelectorOptions
+  @OptionGroup var launchOptions: CreateLaunchOptions
   @OptionGroup var options: GlobalOptions
 
   @Option(name: .long, help: "Split direction: right, left, up, or down.")
@@ -99,10 +149,13 @@ struct CreatePaneCommand: ParsableCommand {
   }
 
   func makeInput() throws -> CreateInput {
-    CreateInput(
+    let resolvedLaunch = try launchOptions.resolve()
+    return CreateInput(
       resource: .pane,
       selector: try selector.resolvePane(positionalTarget: anchor),
-      direction: direction.value
+      direction: direction.value,
+      launch: resolvedLaunch.launch,
+      background: resolvedLaunch.background
     )
   }
 }

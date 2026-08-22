@@ -63,6 +63,50 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   var previewText: String { terminalInput }
 }
 
+/// One deterministic profile launch request shared by the CLI, workflow runner,
+/// and terminal layer. The compiled plan remains the single adapter-rendered
+/// invocation/environment seam; placement and directory are per-launch choices.
+nonisolated struct AgentProfileLaunchRequest: Equatable, Sendable {
+  nonisolated enum Placement: Equatable, Sendable {
+    case tab(background: Bool)
+    case split(
+      anchor: UUID?,
+      direction: UserCustomSplitDirection,
+      background: Bool
+    )
+  }
+
+  let plan: AgentProfileLaunchPlan
+  let placement: Placement
+  let workingDirectoryOverride: URL?
+  let title: String?
+
+  init(
+    plan: AgentProfileLaunchPlan,
+    placement: Placement,
+    workingDirectoryOverride: URL? = nil,
+    title: String? = nil
+  ) {
+    self.plan = plan
+    self.placement = placement
+    self.workingDirectoryOverride = workingDirectoryOverride
+    self.title = title
+  }
+}
+
+nonisolated struct LaunchedSurface: Equatable, Sendable {
+  let tabID: TerminalTabID
+  let surfaceID: UUID
+}
+
+nonisolated enum AgentProfileLaunchError: Error, Equatable, Sendable {
+  case homeProvisioningFailed
+  case splitAnchorUnavailable
+  case splitCreationFailed(SplitCreationError)
+  case tabCreationFailed
+  case launchedSurfaceMissing(TerminalTabID)
+}
+
 /// Which env variable names a profile override may set, shared by the planner
 /// (filtering) and the editor (inline row diagnostics) so they can never
 /// disagree (docs-ai 053/004).
@@ -200,6 +244,7 @@ nonisolated enum AgentProfileLaunchPlanner {
   /// home provisioning happens at the launch boundary, not here.
   static func plan(
     for profile: AgentProfile,
+    intent: AgentStartIntent = .interactive,
     homeBaseDirectory: URL
   ) throws -> AgentProfileLaunchPlan {
     guard let adapter = AgentRuntimeAdapterRegistry.profileAdapter(for: profile.runtime) else {
@@ -238,7 +283,7 @@ nonisolated enum AgentProfileLaunchPlanner {
     let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
       AgentStartRequest(
         runtime: profile.runtime,
-        intent: .interactive,
+        intent: intent,
         configuration: configuration,
         dedicatedHome: dedicatedHome
       )
