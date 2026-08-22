@@ -38,10 +38,10 @@ reads a non-empty kickoff prompt from piped UTF-8 stdin; an interactive terminal
 instead of waiting for EOF. The UTF-8 payload is capped at 256 KiB; oversized input returns
 `INVALID_ARGUMENT` before any surface exists. `--prompt` and `--background` require
 `--profile`. Prompt text is carried in a reserved surface-environment carrier and expanded as
-one quoted argv token; it is not written through Ghostty's initial PTY input stream. Before
-starting the Profile process, the shell copies the value into an unexported temporary variable
-and unsets the carrier; after the process exits it unsets the temporary value. NUL bytes are
-rejected.
+one quoted argv token; it is not written through Ghostty's initial PTY input stream. The typed
+line is one `env -u` command with no assignment statement or shell builtin, so the same form
+runs in zsh, bash, and fish. `env -u` keeps the carrier out of the Profile process; the pane
+shell retains the reserved carrier for its lifetime. NUL bytes are rejected.
 
 Foreground profile launches select the destination worktree/tab and focus the returned pane.
 A background tab is created without changing the selected worktree, tab, or pane. A
@@ -107,15 +107,10 @@ an older app:
   "launch": {
     "profile_id": "…",
     "profile_name": "Reviewer",
-    "agent": "claude",
-    "prompt_delivery": "surface_env_v1"
+    "agent": "claude"
   }
 }
 ```
-
-`prompt_delivery` is present only for prompted launches. When `--prompt -` was requested, the
-CLI requires `surface_env_v1`; launch metadata without that delivery marker is a contract
-failure because an older app may still have used literal canonical-PTY input.
 
 ## Errors
 

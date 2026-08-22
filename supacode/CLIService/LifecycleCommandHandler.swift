@@ -284,8 +284,7 @@ final class LifecycleCommandHandler: CommandHandler {
       launch: LifecycleCommandLaunch(
         profileID: profile.id.uuidString,
         profileName: profile.name,
-        agent: profile.runtime.agent.rawValue,
-        promptDelivery: launch.prompt == nil ? nil : .surfaceEnvironmentV1
+        agent: profile.runtime.agent.rawValue
       )
     )
   }

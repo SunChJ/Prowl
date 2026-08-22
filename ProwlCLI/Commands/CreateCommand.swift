@@ -16,23 +16,17 @@ struct CreateCommand: ParsableCommand {
 
   static func validateProfileLaunchResponse(
     _ response: CommandResponse,
-    requested launchInput: CreateLaunchInput?
+    requested: Bool
   ) throws {
-    guard let launchInput else { return }
+    guard requested else { return }
     guard
       let data = response.data,
       let payload = try? data.decode(as: LifecycleCommandPayload.self),
-      let launch = payload.launch
+      payload.launch != nil
     else {
       throw ExitError(
         code: CLIErrorCode.createFailed,
         message: "The running Prowl app did not honor the Profile launch. An ordinary shell may have been created; inspect prowl list and close it before retrying. Update or restart Prowl."
-      )
-    }
-    if launchInput.prompt != nil, launch.promptDelivery != .surfaceEnvironmentV1 {
-      throw ExitError(
-        code: CLIErrorCode.createFailed,
-        message: "The running Prowl app did not confirm safe prompt delivery. A Profile pane may have been created with a truncated prompt; inspect prowl list and close it before retrying. Update or restart Prowl."
       )
     }
   }
@@ -122,7 +116,7 @@ struct CreateTabCommand: ParsableCommand {
         command: .create(input)
       )
       try CLIRunner.execute(envelope) { response in
-        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch)
+        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch != nil)
       }
     }
   }
@@ -187,7 +181,7 @@ struct CreatePaneCommand: ParsableCommand {
         command: .create(input)
       )
       try CLIRunner.execute(envelope) { response in
-        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch)
+        try CreateCommand.validateProfileLaunchResponse(response, requested: input.launch != nil)
       }
     }
   }

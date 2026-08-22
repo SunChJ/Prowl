@@ -202,8 +202,7 @@ struct CLILifecycleCommandHandlerTests {
         == LifecycleCommandLaunch(
           profileID: profile.id.uuidString,
           profileName: "Reviewer",
-          agent: "claude",
-          promptDelivery: .surfaceEnvironmentV1
+          agent: "claude"
         )
     )
   }

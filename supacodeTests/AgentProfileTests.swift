@@ -300,22 +300,18 @@ struct AgentProfileTests {
     #expect(plan.invocation.arguments == ["--model", "gpt-5.4", prompt])
     #expect(plan.surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == prompt)
     #expect(!plan.terminalInput.contains(prompt))
-    #expect(
-      plan.terminalInput.hasPrefix(
-        "PROWL_LAUNCH_PROMPT_VALUE=\"$PROWL_LAUNCH_PROMPT\"; unset PROWL_LAUNCH_PROMPT; "
-      )
-    )
-    #expect(plan.terminalInput.contains("env -u PROWL_LAUNCH_PROMPT_VALUE "))
-    #expect(plan.terminalInput.contains("\"$PROWL_LAUNCH_PROMPT_VALUE\""))
-    #expect(plan.terminalInput.hasSuffix("; unset PROWL_LAUNCH_PROMPT_VALUE"))
+    #expect(plan.terminalInput.hasPrefix("env -u \(AgentProfileLaunchPlanner.promptCarrierName) "))
+    #expect(plan.terminalInput.contains("\"$\(AgentProfileLaunchPlanner.promptCarrierName)\""))
+    #expect(!plan.terminalInput.contains(";"))
+    #expect(!plan.terminalInput.contains("unset "))
+    #expect(!plan.terminalInput.contains("\(AgentProfileLaunchPlanner.promptCarrierName)="))
     #expect(plan.terminalInput.utf8.count < 1_024)
   }
 
-  @Test func promptedTerminalInputCleansCarrierAndTemporaryShellValue() throws {
+  @Test func promptedTerminalInputRunsThroughSupportedInteractiveShellSyntax() throws {
     let prompt = "Review the current diff."
     let carrier = AgentProfileLaunchPlanner.promptCarrierName
-    let valueVariable = AgentProfileLaunchPlanner.promptShellValueName
-    let childCheck = "[[ \"$1\" == \"\(prompt)\" && -z ${\(carrier)+x} && -z ${\(valueVariable)+x} ]]"
+    let childCheck = "[[ \"$1\" == \"\(prompt)\" && -z ${\(carrier)+x} ]]"
     let plan = AgentProfileLaunchPlan(
       profileID: UUID(),
       profileName: "Reviewer",
@@ -330,19 +326,27 @@ struct AgentProfileTests {
       surfaceEnvironment: [carrier: prompt],
       dedicatedHome: nil
     )
-    let parentCheck = "[[ -z ${\(carrier)+x} && -z ${\(valueVariable)+x} ]]"
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-    process.arguments = ["-f", "-c", "\(plan.terminalInput); \(parentCheck)"]
-    var environment = ProcessInfo.processInfo.environment
-    environment[carrier] = prompt
-    environment[valueVariable] = "stale-exported-value"
-    process.environment = environment
+    let shellCandidates = [
+      "/bin/zsh",
+      "/bin/bash",
+      "/opt/homebrew/bin/fish",
+      "/usr/local/bin/fish",
+    ]
+    let shells = shellCandidates.filter(FileManager.default.isExecutableFile(atPath:))
 
-    try process.run()
-    process.waitUntilExit()
+    for shell in shells {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: shell)
+      process.arguments = ["-c", plan.terminalInput]
+      var environment = ProcessInfo.processInfo.environment
+      environment[carrier] = prompt
+      process.environment = environment
 
-    #expect(process.terminationStatus == 0)
+      try process.run()
+      process.waitUntilExit()
+
+      #expect(process.terminationStatus == 0, "Prompt launch syntax failed in \(shell)")
+    }
   }
 
   @Test func plannerRejectsPromptThatCannotRideInTheSurfaceEnvironment() {
