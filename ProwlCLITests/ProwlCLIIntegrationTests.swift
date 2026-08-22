@@ -426,6 +426,34 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     }
   }
 
+  func testCreatePaneCommandRendersAnchorAndDirection() throws {
+    let socketPath = temporarySocketPath(suffix: "create-pane-human")
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(
+        encoding: makeLifecyclePayload(
+          resource: .pane,
+          anchor: makeTabTarget(paneID: "anchor-pane"),
+          direction: .upward
+        )
+      )
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "pane", "p12", "--direction", "up", "--no-color"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stdout.contains("Created pane"), result.stdout)
+    XCTAssertTrue(result.stdout.contains("pane-123"), result.stdout)
+    XCTAssertTrue(result.stdout.contains("anchor: anchor-pane"), result.stdout)
+    XCTAssertTrue(result.stdout.contains("direction: up"), result.stdout)
+  }
+
   func testCloseCommandRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "close-pane")
     let response = try CommandResponse(

@@ -30,6 +30,7 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | --- | --- | --- | --- | --- |
 | 1 | **C0** Settings IA: `Section("Agents")` with Profiles (renamed) + Command Line Tool (from Advanced); no Workflows page yet | 063 | — | CLI install lives with Agents |
 | 1 | **A1** `prowl create pane` (#699) + anchored split primitive | 063 | 060 | CLI can split |
+| 1 | **A1b** `PROWL_PANE_ID` per-pane environment variable (joins `PROWL_WORKTREE_PATH` / `PROWL_ROOT_PATH`) + `prowl-cli` skill self-identification rewrite | 063 | A1 | agents address their own pane deterministically (`--pane "$PROWL_PANE_ID"`) instead of guessing from `focused` |
 | 1 | **065-S0/K1** skill-target spike; `embed-skills` + `ProwlSkills` registry | 065 | — | skills ship in the bundle; D1 prerequisite |
 | 2 | **A2** profile launch boundary + `create tab\|pane --profile <p> --prompt -` + `profiles list` | 063 | A1 | CLI launches a profile with a kickoff prompt and gets the pane back |
 | 2 | **S1** signal bus + `ObservedAgentState` multicast observer + `prowl agents signal` | 064 | — | layer-0 signals for every runtime |
@@ -88,6 +89,8 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-22 — A1 review: added **A1b** (`PROWL_PANE_ID`) to R1; `create pane` keeps an explicit
+  anchor (no caller-pane default) and a background placement stays with A2.
 - 2026-08-22 — first version: three releases agreed; `ObservedAgentState` observer moved
   from 063-B3 to 064-S1; C0 ships without the Workflows page; `prowl agents wait` owned by
   064-S2.

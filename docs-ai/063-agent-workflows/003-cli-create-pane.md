@@ -18,6 +18,9 @@ Release R1 needs deterministic split creation for both direct CLI orchestration 
 - Pane creation inherits the anchor through Ghostty's existing split-surface configuration path; A1 does not add command execution or profile launch behavior.
 - The provider selects the created pane only after direct anchored creation succeeds. This preserves normal focused-result behavior without using focus as an input to targeting.
 - Bare numeric handles are rejected for the new pane anchor. Only UUIDs and explicit `pN` handles participate in this pane-only grammar.
+- The anchor stays explicit (review decision 2026-08-22): no caller-pane default, so an unset shell variable fails with `INVALID_ARGUMENT` instead of silently splitting the caller's own pane. Agent self-identification is delivered separately through a per-pane `PROWL_PANE_ID` environment variable (its own R1 slice in [release-plan.md](release-plan.md)).
+- Creating beside a non-visible anchor selects the anchor's worktree and tab, mirroring `create tab`; a background placement is deferred to A2's launch `placement`.
+- The `anchor` payload is the pre-split resolution snapshot, so its `focused` / `selected` flags describe the state before creation.
 
 ## Verification
 

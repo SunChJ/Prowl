@@ -27,7 +27,10 @@ terminal layer's internal top direction. The operation resolves the anchor direc
 focuses a different pane as an intermediate targeting step.
 
 The new pane inherits the anchor's working directory and split surface configuration. On
-success it becomes the focused pane in the anchor tab, following normal tab-local focus behavior.
+success it becomes the focused pane in the anchor tab, and Prowl selects the anchor's
+worktree and tab exactly as `create tab` selects the target worktree — an anchor in another
+tab or worktree therefore brings that tab into view. A background placement is not part of
+V1; it belongs to the profile launch placement work (063-A2).
 
 ## Success: tab
 
@@ -72,7 +75,10 @@ success it becomes the focused pane in the anchor tab, following normal tab-loca
 ```
 
 `target` identifies the newly created resource. Pane creation additionally records the resolved
-`anchor` and public `direction`. UUID fields are the automation-safe output of this command.
+`anchor` and public `direction`. `anchor` is the snapshot taken when the selector was resolved,
+before the split: its `focused` / `selected` flags describe the pre-split state and may read
+`true` alongside the same flags on `target`. UUID fields are the automation-safe output of this
+command.
 
 ## Errors
 

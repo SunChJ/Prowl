@@ -127,6 +127,36 @@ struct CLILifecycleCommandHandlerTests {
     #expect(!didCreate)
   }
 
+  @Test func createPaneReportsCreateFailedWhenTheSplitCannotBeMade() async throws {
+    let anchor = makeTarget(tabID: "anchor-tab", paneID: "anchor-pane")
+    var createAttempts = 0
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(anchor) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: anchor)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in
+        createAttempts += 1
+        return nil
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(resource: .pane, selector: .pane("p12"), direction: .down)
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.createFailed)
+    #expect(createAttempts == 1)
+    #expect(response.data == nil)
+  }
+
   @Test func closeUsesResolvedResourceAndReturnsClosePayload() async throws {
     let target = makeTarget(tabID: "tab-to-close", paneID: "pane-to-close")
     var closedPane: TabResolvedTarget?

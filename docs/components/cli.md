@@ -289,7 +289,9 @@ pane="$(prowl create pane "$anchor" --direction right --json | jq -r '.data.targ
 
 Directions are `right`, `left`, `up`, and `down`. The created pane inherits the anchor's
 working directory and terminal configuration, becomes focused in that tab, and is returned
-as `.data.target.pane.id`. `.data.anchor` records the resolved source pane and
+as `.data.target.pane.id`. Like `create tab`, the command selects the anchor's worktree and
+tab, so an anchor in another tab or worktree is brought into view. `.data.anchor` records the
+source pane as resolved before the split (its `focused` flag is pre-split state) and
 `.data.direction` records the public direction. The operation targets the anchor directly;
 it never depends on current UI focus. Use `prowl send --pane "$pane" …` after creation when
 you want to run input.

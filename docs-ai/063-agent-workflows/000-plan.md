@@ -409,6 +409,7 @@ attaches hooks through A2's launch boundary.
 | --- | --- | --- | --- |
 | **C0** | C | — | Settings IA: `Section("Agents")` with **Profiles** (today's Agents page, renamed) and **Command Line Tool** (moved from Advanced); the Workflows page comes with D1. Independent, small; decides where everything lands. |
 | **A1** | A | 060 | `prowl create pane` (#699) + target-surface split primitive returning the surface id; CLI four layers. Foundation for every `launch` into a split. |
+| **A1b** | A | A1 | `PROWL_PANE_ID` injected into every pane's environment (beside `PROWL_WORKTREE_PATH` / `PROWL_ROOT_PATH`), documented in `docs/components/cli.md`, and the `prowl-cli` skill's self-identification rewritten around it. Convenience identity only — trusted attribution (064 `agents signal`, `workflow done`) stays on caller-PID resolution. |
 | **A2** | A | A1 | Profile launch boundary (`.prompt`, placement override, anchor, background, synchronous `LaunchedSurface` result) + `prowl create tab/pane --profile --prompt -` + `prowl profiles list`; exposes the seam 064-S3 uses for launch-scoped hooks. Unlocks the CLI-driven route; the runner's `launch` boundary. |
 | **B1** | B | — | Definitions: Yams, `AgentWorkflow` model + validator + JSON Schema, three-source discovery, `prowl workflow list/validate/schema`. Makes the DSL concrete and authorable (no user-facing surface until R2). |
 | **B2** | B | B1 | Runner core (pure): run state machine incl. `repeat`, run store, template renderer, `WorkflowRequestRegistry`, action registry, watchdog with injected clock — tested against fake boundaries. |
@@ -586,5 +587,5 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
-- Updated 2026-08-22: Implemented A1 with the direct anchored split primitive and schema-governed `prowl create pane` command — see [002-cli-create-pane.md](002-cli-create-pane.md).
 - Updated 2026-08-22: Shipped C0 with the Agents sidebar group, Profiles page, and Command Line Tool page; Workflows remains deferred to D1 — see [002-settings-agents-group.md](002-settings-agents-group.md).
+- Updated 2026-08-22: Implemented A1 with the direct anchored split primitive and schema-governed `prowl create pane` command — see [003-cli-create-pane.md](003-cli-create-pane.md).

@@ -358,8 +358,14 @@ enum OutputRenderer {
       return "\(verb) tab \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
         + "  \(tab.id.dim)\n  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)"
     case .pane:
-      return "\(verb) pane \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
-        + "  \(pane.id.dim)"
+      var lines = [
+        "\(verb) pane \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
+          + "  \(pane.id.dim)"
+      ]
+      if let anchor = payload.anchor, let direction = payload.direction {
+        lines.append("  \("anchor:".dim) \(anchor.pane.id.dim)  \("direction:".dim) \(direction.rawValue)")
+      }
+      return lines.joined(separator: "\n")
     }
   }
 
