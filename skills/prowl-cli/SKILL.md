@@ -6,7 +6,16 @@ description: >-
 
 # Prowl CLI
 
-Use `prowl` only when the task is to inspect or control the running Prowl GUI app: read panes, check sibling agents, focus a pane, open a repo/path in Prowl, send text, send keys, or create/close panes and tabs. Do not use it merely because the current shell is inside the Prowl repo. The authoritative per-command reference is `docs/components/cli.md`.
+Use `prowl` only when the task is to inspect or control the running Prowl GUI app: read panes, check sibling agents, focus a pane, open a repo/path in Prowl, send text, send keys, or create/close panes and tabs. Do not use it merely because the current shell is inside the Prowl repo.
+
+The authoritative per-command reference is Prowl's manual, `components/cli.md` under the docs folder. That folder is `docs/` in a Prowl source checkout; otherwise it ships inside the app bundle, which you can locate from the installed CLI (normally `/Applications/Prowl.app/Contents/Resources/docs`):
+
+```bash
+prowl_docs="$(dirname "$(dirname "$(readlink -f "$(command -v prowl)")")")/docs"
+ls "$prowl_docs/components/"   # cli.md, agent-detection.md, handoff.md, …
+```
+
+Other `docs/components/*.md` references below live in that same folder.
 
 ## Who You Are
 
@@ -118,7 +127,7 @@ done
 ```
 
 - Rendered screens can truncate or fold content. When you need an agent's complete output, have the command write a file (`… > /tmp/out.txt`) and read that; shell redirection avoids the agent's own sandbox prompts.
-- `read` returning fewer lines than `--last` with `truncated: false` means the pane simply has less history — do not retry. `--source detection` returns the exact detector input instead of the viewport; it exists for diagnosing agent-state detection (see `docs/components/agent-detection.md`), not for everyday reading.
+- `read` returning fewer lines than `--last` with `truncated: false` means the pane simply has less history — do not retry. `--source detection` returns the exact detector input instead of the viewport; it exists for diagnosing agent-state detection (see `components/agent-detection.md` in the docs folder), not for everyday reading.
 
 ## Targeting & Arguments
 
@@ -164,7 +173,7 @@ prowl handoff to codex --brief - <<'EOF'
 EOF
 ```
 
-Required sections are `## Objective`, `## Current State`, and `## Next Steps`; optional ones are `## What Has Been Done`, `## Open Questions`, `## Risks / Watch Out`, and `## Suggested Prompt For Next Agent`. The receiver launches in a background tab of the same worktree; your session stays open. `prowl handoff save --brief -` checkpoints the same briefing without launching anyone; `--no-brief` is for an intentional context-only handoff; `--pane` hands off a pane other than your own. Details: `docs/components/handoff.md`.
+Required sections are `## Objective`, `## Current State`, and `## Next Steps`; optional ones are `## What Has Been Done`, `## Open Questions`, `## Risks / Watch Out`, and `## Suggested Prompt For Next Agent`. The receiver launches in a background tab of the same worktree; your session stays open. `prowl handoff save --brief -` checkpoints the same briefing without launching anyone; `--no-brief` is for an intentional context-only handoff; `--pane` hands off a pane other than your own. Details: `components/handoff.md` in the docs folder.
 
 ## Command Set
 
