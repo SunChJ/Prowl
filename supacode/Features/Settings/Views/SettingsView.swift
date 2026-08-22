@@ -36,8 +36,13 @@ struct SettingsView: View {
           .tag(SettingsSection.github)
         Label("Commands", systemImage: "globe")
           .tag(SettingsSection.customCommands)
-        Label("Agents", systemImage: "sparkles")
-          .tag(SettingsSection.agents)
+
+        Section("Agents") {
+          Label("Profiles", systemImage: "person.crop.circle")
+            .tag(SettingsSection.profiles)
+          Label("Command Line Tool", systemImage: "terminal")
+            .tag(SettingsSection.commandLineTool)
+        }
 
         Section("Repositories") {
           ForEach(repositories) { repository in
@@ -102,7 +107,7 @@ struct SettingsView: View {
               .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
         }
-      case .agents:
+      case .profiles:
         SettingsDetailView {
           if let agentProfilesStore = settingsStore.scope(
             state: \.agentProfiles,
@@ -113,6 +118,11 @@ struct SettingsView: View {
             ProgressView()
               .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
+        }
+      case .commandLineTool:
+        SettingsDetailView {
+          CommandLineToolSettingsView(store: settingsStore)
+            .navigationTitle("Command Line Tool")
         }
       case .repository(let repositoryID):
         if let repository = repositories[id: repositoryID] {

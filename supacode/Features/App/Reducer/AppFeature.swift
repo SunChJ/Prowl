@@ -380,7 +380,7 @@ struct AppFeature {
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = .init()
           state.settings.agentProfiles = nil
-        case .agents:
+        case .profiles:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = .init()
@@ -407,7 +407,7 @@ struct AppFeature {
           state.settings.repositorySettings = repoSettingsState
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
-        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github:
+        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github, .commandLineTool:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
@@ -715,7 +715,7 @@ struct AppFeature {
         return launchAgentProfile(profileID, state: &state)
 
       case .openAgentProfilesSettings:
-        return openSettingsEffect(selecting: .agents)
+        return openSettingsEffect(selecting: .profiles)
 
       case .runCustomCommand(let commandID):
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
