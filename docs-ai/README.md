@@ -39,6 +39,9 @@ Living documents hosted here:
 - `013-prowl-cli/contracts/` — normative CLI contracts
 - `017-upstream-sync-process/upstream-ledger.md` — upstream review ledger (baseline + decisions)
 - `020-observability/runbook.md` — observability/diagnostics runbook
+- `063-agent-workflows/dsl-spec.md` — Agent Workflow DSL (`prowl.workflow/v1`) normative spec
+- `063-agent-workflows/release-plan.md` — release/order plan shared by 063 and 064
+- `064-agent-completion-signals/research-agent-completion-signals.md` — per-runtime completion-signal matrix
 
 Some entries also host verbatim historical attachments migrated from doc-onevcat (e.g.
 `023-shelf-mode/jank-investigation.md`, `017-.../batch-2026-07-06-post-v0.10.5.md`,
@@ -114,3 +117,5 @@ agent-facing manual for that).
 | 060 | [prowl-cli-targeting-and-contract-governance](060-prowl-cli-targeting-and-contract-governance/000-plan.md) | 2026-08-16 | Unified target grammar, CLI contract rebaseline, and durable documentation governance |
 | 061 | [native-toolbar-controls](061-native-toolbar-controls/000-plan.md) | 2026-08-17 | Native macOS toolbar grouping, Liquid Glass ownership, and review standards |
 | 062 | [workspace-child-diff](062-workspace-child-diff/000-plan.md) | 2026-08-19 | Per-repository diff for workspace children via unified DiffTarget routing |
+| 063 | [agent-workflows](063-agent-workflows/000-plan.md) | 2026-08-21 | Agent Workflows: YAML-declared, profile-bound multi-agent orchestration (runner, `prowl workflow` CLI, status center, built-in handoff/adversarial review); successor to 047's fixed handoff flow |
+| 064 | [agent-completion-signals](064-agent-completion-signals/000-plan.md) | 2026-08-22 | Layered agent signal bus (cooperative / launch-scoped hooks / transcript+process+OSC / heuristic), `prowl agents signal` + `agents wait` with source/confidence, per-runtime hook research |
