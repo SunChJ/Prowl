@@ -15,14 +15,16 @@ onevcat explicitly asks for a `docs-ai/` record.
 docs-ai/NNN-<slug>/
   000-plan.md      # plan before implementation (RFC-like)
   001-action.md    # what was actually done, verified against the code
-  002-<topic>.md   # amendments: follow-up waves, corrections (indexed in 000-plan.md)
+  002-<topic>.md   # amendments: follow-up waves, corrections, or one record per slice of a multi-PR entry (indexed in 000-plan.md)
   <living>.md      # non-numbered = living doc (runbook/ledger/reference), updated in place
 ```
 
 Rules for writing new entries live in the `write-ai-doc` skill
 (`.claude/skills/write-ai-doc/SKILL.md`). In short: select only qualifying product work,
 then plan first, act second, amend in place for in-frame follow-ups, and open a new numbered
-entry for large pivots. Numbered files are immutable history; non-numbered files are living
+entry for large pivots. An entry delivered across several PRs records each slice as an
+amendment (`002+`, shipped with its PR) and writes `001-action.md` once, when the last slice
+lands, summarizing them. Numbered files are immutable history; non-numbered files are living
 documents.
 
 Entries `001`–`045` were backfilled on 2026-07-12 from PRs, commits, and the former

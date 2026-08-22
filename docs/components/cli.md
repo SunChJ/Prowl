@@ -22,9 +22,11 @@ inside a repo, and not for how-to questions about Prowl's settings.
 
 ## Install
 
-From the app: **Settings → Advanced → Install Command Line Tool**, or Command
+From the app: **Settings → Agents → Command Line Tool → Install**, or Command
 Palette → "Install Command Line Tool". This symlinks `prowl` into
-`/usr/local/bin` (prompting for admin if needed).
+`/usr/local/bin` (prompting for admin if needed). The Settings page also shows
+the local Unix socket path `prowl` uses to reach the app (`PROWL_CLI_SOCKET`
+overrides it for both processes).
 
 ## Global options
 

@@ -32,7 +32,8 @@ respawn.
   row shows the profile name with the runtime name trailing. Rows for runtimes
   that look unavailable are dimmed with a warning but stay clickable —
   availability signals can be wrong, so they never block a launch. "Manage
-  Agent Profiles…" opens Settings → Agents. When launch rows exist the capsule
+  Agent Profiles…" opens Settings → Agents → Profiles. When launch rows exist
+  the capsule
   carries a trailing **quick-launch segment** (a `play.circle` split button):
   one click launches the Recommended profile directly, skipping the popover.
 - **Command Palette** (`⌘P`) — "Launch Agent: <name>" rows dispatch the exact
@@ -52,8 +53,8 @@ launched" memory behind the Recommended resolution.
 
 ## Managing profiles
 
-Open **Settings → Agents** to see the ordered profile list. Click a profile to
-push its editor; the native Back control returns to the list while the Settings
+Open **Settings → Agents → Profiles** to see the ordered profile list. Click a
+profile to push its editor; the native Back control returns to the list while the Settings
 sidebar remains available. Adding a profile opens the same editor immediately.
 Changing another Settings sidebar section leaves the editor and opens that
 section's root.
