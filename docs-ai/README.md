@@ -39,6 +39,9 @@ Living documents hosted here:
 - `013-prowl-cli/contracts/` — normative CLI contracts
 - `017-upstream-sync-process/upstream-ledger.md` — upstream review ledger (baseline + decisions)
 - `020-observability/runbook.md` — observability/diagnostics runbook
+- `063-agent-workflows/dsl-spec.md` — Agent Workflow DSL (`prowl.workflow/v1`) normative spec
+- `063-agent-workflows/release-plan.md` — release/order plan shared by 063 and 064
+- `064-agent-completion-signals/research-agent-completion-signals.md` — per-runtime completion-signal matrix
 
 Some entries also host verbatim historical attachments migrated from doc-onevcat (e.g.
 `023-shelf-mode/jank-investigation.md`, `017-.../batch-2026-07-06-post-v0.10.5.md`,

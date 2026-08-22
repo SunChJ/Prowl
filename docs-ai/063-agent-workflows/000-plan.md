@@ -5,7 +5,7 @@
 | **Status** | Planned (design in discussion; see Open questions) |
 | **Anchor date** | 2026-08-21 |
 | **Primary PRs** | TBD (see Delivery slicing) |
-| **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
+| **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
 
 ## Background
 
@@ -377,54 +377,27 @@ Shapes are intentionally close to what exists so the runner and the CLI share on
 
 ### Delivery slicing
 
-Four tracks — terminal/CLI primitives (A), definitions/runner (B), UI (C), built-ins and
-docs (D) — plus 064's signal slices (S), shipped as **three releases** (decision
-2026-08-22, keeping Prowl's small-step cadence; PRs still merge to `main` one at a time
-and engine PRs without a user-facing surface simply stay dormant until their release):
+This section defines **what** each slice contains. **When** it ships and in what order —
+including the interleaving with 064's signal slices — is owned by the living
+[release-plan.md](release-plan.md) (three releases: R1 CLI primitives + signals, R2 Agent
+Workflows, R3 handoff migration; decision 2026-08-22). Only two couplings cross the two
+entries: 064-S1 delivers the `ObservedAgentState` observer that B3 consumes, and 064-S3
+attaches hooks through A2's launch boundary.
 
-- **R1 — CLI orchestration primitives + completion signals**: C0 (Agents settings group
-  with Profiles + Command Line Tool only), A1, A2, 064-S1 (signal bus, `ObservedAgentState`
-  observer, `prowl agents signal`), 064-S2 (`prowl agents wait`, `signals` field,
-  `--include-screen`, skill rubric), 064-S3 wave 1 (launch-scoped hooks for the tier-A
-  runtimes). Outcome: onevcat's daily CLI-driven orchestration is first-class
-  (`create pane --profile --prompt -` → `agents wait` → `send`), deterministic for
-  Prowl-launched agents. Docs: `cli.md`, `agent-detection.md`, `prowl-cli` skill.
-- **R2 — Agent Workflows**: B1, B2, B3, C1, C2, D1 (incl. the Settings › Workflows page),
-  D2, and the 064-S5 part where the watchdog consumes exact signals. Outcome: the engine,
-  the GUI entry points, the first built-in (`prowl.adversarial-review`), custom workflows.
-  The shipped handoff (HUD + `prowl handoff`) stays untouched in R2. Docs:
-  `workflows.md`, `command-palette.md`, `active-agents.md`, `settings.md`.
-- **R3 — Handoff migration + signal completion**: D3 (`prowl.handoff` /
-  `prowl.handoff-checkpoint`, `HANDOFF_RETIRED` stubs, HUD removal), 064-S3 wave 2
-  (dedicated-home runtimes) and S4 (transcript file-watch / OSC producers), first V2 items
-  as capacity allows (observe mode, `on_attention: ask`, retention). The stubs are deleted
-  one release after R3. Docs: `handoff.md` rewrite.
-
-If R2 proves too large, it splits into R2a (B1+B2+B3+C1: workflows runnable from the CLI,
-visible in the status center) and R2b (C2+D1+D2: GUI entry, Settings, skills, E2E); the
-default is a single R2 because "runnable but no GUI entry" is hard to explain to users.
-
-Within a release the order below applies; C0 ∥ A1, A2 ∥ S1, and B1 ∥ B2 can proceed in
-parallel.
-
-| Release | Order | PR | Track | Depends | Expectation |
-| --- | --- | --- | --- | --- | --- |
-| R1 | 1 | **C0** Settings IA: `Section("Agents")` with **Profiles** (today's Agents page, renamed) and **Command Line Tool** (moved from Advanced); no Workflows page yet | C | — | Independent, small; decides where everything lands |
-| R1 | 2 | **A1** `prowl create pane` (#699) + target-surface split primitive returning the surface id; CLI four layers | A | 060 | Foundation for every `launch` into a split |
-| R1 | 3 | **A2** Profile launch boundary (`.prompt`, placement override, anchor, background, synchronous `LaunchedSurface` result) + `prowl create tab/pane --profile --prompt -` + `prowl profiles list`; the boundary exposes the seam 064-S3 uses to attach launch-scoped hooks | A | A1 | Unlocks the CLI-driven route and is the runner's `launch` boundary |
-| R1 | 4 | **064-S1** signal bus + `ObservedAgentState` multicast observer (moved here from B3) + `prowl agents signal` | S | — | Layer 0 for every runtime; B3 later consumes the same observer |
-| R1 | 5 | **064-S2** `prowl agents wait` + `agents` `signals` field + `--include-screen` + skill rubric | S | S1 | Route B usable; heuristic fallback honest |
-| R1 | 6 | **064-S3 wave 1** launch-scoped hooks for Claude Code, Codex (`notify`), Copilot, Droid, Qoder, Pi, OMP, OpenCode + self-check | S | A2, S1 | `agents wait` deterministic for Prowl-launched agents |
-| R2 | 7 | **B1** Definitions: Yams, `AgentWorkflow` model + validator + JSON Schema, three-source discovery, `prowl workflow list/validate/schema` | B | — | Makes the DSL concrete and authorable (may merge during R1 without user-facing surface) |
-| R2 | 8 | **B2** Runner core (pure): run state machine incl. `repeat`, run store, template renderer, `WorkflowRequestRegistry`, action registry, watchdog with injected clock — tested against fake boundaries | B | B1 | Parallel with B1's tail |
-| R2 | 9 | **B3** Runner wiring: `WorkflowRunsFeature` effects, observer consumption via `AppFeature`, CLI preflight, `prowl workflow run/status/done/cancel` + contracts | B | A2, S1, B2 | Engine first powered on |
-| R2 | 10 | **C1** Status center fifth state + run panel + attention triggers + notifications (061 visual verification) | C | B3 | Runs become visible |
-| R2 | 11 | **C2** Start sheet (bindings, suggestion-based profile creation, don't-ask-again, `--skip` equivalent) + entry points (capsule popover, palette, Active Agents context menu) | C | B3 | GUI-initiated runs |
-| R2 | 12 | **D1** `embed-skills`, `prowl-workflows` authoring skill, `docs/components/workflows.md`, Settings › Workflows page (enable/validate/Reveal/New/Ask-agent/per-workflow auto) added to the Agents group | D | B1, C2 | Distribution and docs |
-| R2 | 13 | **D2** `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification; watchdog consumes exact signals (064-S5 part) | D | A2, C2, D1, S3 | Proves the engine on a fresh flow before touching shipped behavior |
-| R3 | 14 | **D3** `prowl.handoff` + `prowl.handoff-checkpoint` built-ins + `handoff.transition`/`handoff.checkpoint` actions; `prowl handoff to|save` → `HANDOFF_RETIRED` stubs; remove `HandoffHudFeature`, `HandoffCommandHandler`, `HandoffRequestRegistry`; rewrite `docs/components/handoff.md` and the `prowl-cli` skill | D | D2 | Migrate the shipped feature last |
-| R3 | 15 | **064-S3 wave 2** (dedicated-home runtimes) + **064-S4** (transcript file-watch / OSC producers) | S | S3, 053 homes | More runtimes get exact signals |
-| R3+ | 16 | V2: observe mode (`expect.status` + `agents read`/hook `last_assistant_message`), `on_attention: ask <role>`, fan-out (`count`, `wait all`), run persistence/resume, retention, cross-worktree roles, GUI editor | — | — | — |
+| Slice | Track | Depends | Contents / expectation |
+| --- | --- | --- | --- |
+| **C0** | C | — | Settings IA: `Section("Agents")` with **Profiles** (today's Agents page, renamed) and **Command Line Tool** (moved from Advanced); the Workflows page comes with D1. Independent, small; decides where everything lands. |
+| **A1** | A | 060 | `prowl create pane` (#699) + target-surface split primitive returning the surface id; CLI four layers. Foundation for every `launch` into a split. |
+| **A2** | A | A1 | Profile launch boundary (`.prompt`, placement override, anchor, background, synchronous `LaunchedSurface` result) + `prowl create tab/pane --profile --prompt -` + `prowl profiles list`; exposes the seam 064-S3 uses for launch-scoped hooks. Unlocks the CLI-driven route; the runner's `launch` boundary. |
+| **B1** | B | — | Definitions: Yams, `AgentWorkflow` model + validator + JSON Schema, three-source discovery, `prowl workflow list/validate/schema`. Makes the DSL concrete and authorable (no user-facing surface until R2). |
+| **B2** | B | B1 | Runner core (pure): run state machine incl. `repeat`, run store, template renderer, `WorkflowRequestRegistry`, action registry, watchdog with injected clock — tested against fake boundaries. |
+| **B3** | B | A2, 064-S1, B2 | Runner wiring: `WorkflowRunsFeature` effects, observer consumption via `AppFeature`, CLI preflight, `prowl workflow run/status/done/cancel` + contracts. Engine first powered on. |
+| **C1** | C | B3 | Status center fifth state + run panel + attention triggers + notifications (061 visual verification). Runs become visible. |
+| **C2** | C | B3 | Start sheet (bindings, suggestion-based profile creation, don't-ask-again, `--skip` equivalent) + entry points (capsule popover, palette, Active Agents context menu). GUI-initiated runs. |
+| **D1** | D | B1, C2 | `embed-skills`, `prowl-workflows` authoring skill, `docs/components/workflows.md`, Settings › Workflows page (enable/validate/Reveal/New/Ask-agent/per-workflow auto) added to the Agents group. Distribution and docs. |
+| **D2** | D | A2, C2, D1, 064-S3 wave 1 | `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification; the watchdog consumes exact signals (064-S5 part). Proves the engine on a fresh flow before touching shipped behavior. |
+| **D3** | D | D2 | `prowl.handoff` + `prowl.handoff-checkpoint` built-ins + `handoff.transition`/`handoff.checkpoint` actions; `prowl handoff to\|save` → `HANDOFF_RETIRED` stubs; remove `HandoffHudFeature`, `HandoffCommandHandler`, `HandoffRequestRegistry`; rewrite `docs/components/handoff.md` and the `prowl-cli` skill. Migrate the shipped feature last. |
+| **V2** | — | — | observe mode (`expect.status` + `agents read` / hook `last_assistant_message`), `on_attention: ask <role>`, fan-out (`count`, `wait all`), run persistence/resume, retention, cross-worktree roles, GUI editor. |
 
 ## Alternatives & decisions
 
@@ -507,10 +480,11 @@ parallel.
   when it is truly complete, and attention states that never discard a late delivery.
 - **PR order / releases** (revised 2026-08-22): three releases — R1 = C0, A1, A2,
   064-S1/S2/S3-wave-1 (CLI orchestration + signals); R2 = B1, B2, B3, C1, C2, D1, D2
-  (Agent Workflows); R3 = D3, 064-S3-wave-2/S4, first V2 items (handoff migration) — see
-  Delivery slicing. The new Adversarial Review flow validates the engine before the shipped
-  handoff is migrated; the `ObservedAgentState` observer moved from B3 to 064-S1 so R1 can
-  ship `agents wait`.
+  (Agent Workflows); R3 = D3, 064-S3-wave-2/S4, first V2 items (handoff migration). The
+  single source for order and release assignment is [release-plan.md](release-plan.md);
+  the slice tables in 063/064 define contents only. The new Adversarial Review flow
+  validates the engine before the shipped handoff is migrated; the `ObservedAgentState`
+  observer moved from B3 to 064-S1 so R1 can ship `agents wait`.
 - **Review round (2026-08-22)** — accepted corrections: runner as an `AppFeature` child
   fed by the single event subscription + a per-surface multicast observer for CLI waits;
   opaque per-step delivery tokens for `done`; `LegacyHandoffAdapter` with a full parameter

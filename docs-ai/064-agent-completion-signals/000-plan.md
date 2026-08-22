@@ -146,20 +146,19 @@ permission or question dialog), tells the agent to use `--include-screen` and
 
 ### Delivery slicing
 
-Release mapping (decision 2026-08-22, shared with 063): **R1** ships S1, S2, and S3
-wave 1 together with 063's C0/A1/A2 — the "CLI orchestration primitives + completion
-signals" release; **R2** (Agent Workflows) consumes the signals in the runner's watchdog
-(S5 part); **R3** ships S3 wave 2 and S4 alongside the handoff migration.
+This section defines **what** each slice contains; **when** it ships, and how it
+interleaves with 063's slices, is owned by the shared living
+[release-plan.md](../063-agent-workflows/release-plan.md) (R1: S1, S2, S3 wave 1 with
+063's C0/A1/A2; R2: the S5 watchdog part; R3: S3 wave 2 and S4).
 
-| Release | Order | Slice | Depends | Notes |
-| --- | --- | --- | --- | --- |
-| R1 | 1 | **S1** Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; moved here from 063-B3 so it ships first) + `prowl agents signal` (CLI four layers) | — | Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer |
-| R1 | 2 | **S2** `prowl agents wait` + `agents` `signals` field + `--include-screen` + skill rubric | S1 | Route B usable; heuristic fallback honest |
-| R1 | 3 | **S3 wave 1** Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (turn-complete only; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT` | 063 A2, S1, research matrix | `agents wait` deterministic for Prowl-launched agents on these runtimes |
-| R2 | 4 | **S5 (part)** 063's watchdog consumes exact signals (nudge on `turn-complete` without `done`, immediate attention on `needs-input`) | 063 C1, S3 | Recorded in 063 amendments |
-| R3 | 5 | **S3 wave 2** tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only; tier C (Cursor, Amp: project files) is not attached | S3 wave 1, 053 dedicated homes | More runtimes get exact signals |
-| R3 | 6 | **S4** Transcript file-watch and OSC producers | S1 | Layer 2 without hooks |
-| R3+ | 7 | **S5 (rest)** 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>` | S3, S4, 063 V2 | — |
+| Slice | Depends | Contents / expectation |
+| --- | --- | --- |
+| **S1** | — | Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; first specified in 063, delivered here so it ships first) + `prowl agents signal` (CLI four layers). Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer. |
+| **S2** | S1 | `prowl agents wait` + `agents` `signals` field + `--include-screen` + skill rubric. Route B usable; heuristic fallback honest. |
+| **S3 wave 1** | 063-A2, S1, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (turn-complete only; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
+| **S3 wave 2** | S3 wave 1, 053 dedicated homes | Tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only; tier C (Cursor, Amp: project files) is not attached. |
+| **S4** | S1 | Transcript file-watch and OSC producers — layer 2 without hooks. |
+| **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-complete` without `done`, immediate attention on `needs-input`) — ships with 063-D2; later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
 
 ### Verification
 
