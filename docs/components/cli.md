@@ -98,8 +98,8 @@ The variable is inherited, not verified: a process that scrubbed its environment
 different pane reports the pane its server started in. A value that matches no
 `pane.id` usually means `prowl` reached a different Prowl instance than the one hosting
 your pane (see [Transport & app launch](#transport--app-launch)). A match proves the pane
-exists, not that you run in it: trust the value only when your process is a direct child
-of the pane's shell — under tmux/screen or a detached wrapper it names the pane the
+exists, not that you run in it: trust the value only when your process ancestry reaches
+the pane's shell — under tmux/screen or a detached wrapper it names the pane the
 server started in, so identify your pane by other means (`prowl agents --json` for the
 pane hosting your agent session, a unique `pane.cwd`) and pass it explicitly. Keep every
 step that depends on knowing yourself inside the success branch. When it is unset or
@@ -147,9 +147,10 @@ good for coordination but lags a screen by ~2–3 s and can flip to idle **befor
 TUI finishes painting — confirm with `read --wait-stable`.
 
 Your own pane is `$PROWL_PANE_ID` (see [Identity](#identity-which-pane-am-i)); gate
-every action on a target behind the check, which fails closed when the id is unset:
+every action on a target behind the identity lookup result `me` from that section —
+not the bare variable, which could be stale — so the check fails closed:
 ```bash
-[ -n "$PROWL_PANE_ID" ] && [ "$pane" != "$PROWL_PANE_ID" ] && prowl send --pane "$pane" '…' --json
+[ -n "$me" ] && [ "$pane" != "$PROWL_PANE_ID" ] && prowl send --pane "$pane" '…' --json
 ```
 
 ### `prowl agents`
@@ -493,9 +494,10 @@ artifacts and terminal excerpts do not appear in `git status`.
 ## A complete loop (run, read, clean up)
 
 ```bash
+me="$(prowl list --json | jq -c --arg p "$PROWL_PANE_ID" '.data.items[] | select(.pane.id == $p)')"
 pane="$(prowl create tab MyApp --json | jq -r '.data.target.pane.id')"
-if [ -z "$PROWL_PANE_ID" ] || [ "$pane" = "$PROWL_PANE_ID" ]; then
-  echo "refusing: no verified pane of my own, or \$pane is me" >&2
+if [ -z "$me" ] || [ "$pane" = "$PROWL_PANE_ID" ]; then
+  echo "refusing: self identity is unverified, or \$pane is me" >&2
 else
   prowl send --pane "$pane" 'swift build' --capture --timeout 300 --json
   prowl read --pane "$pane" --last 100 --wait-stable --json
