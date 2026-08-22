@@ -14,7 +14,7 @@ Release R1 starts by establishing the Settings information architecture that lat
 
 ## Deviations from plan
 
-- The plan listed an “Ask your agent” entry on the Command Line Tool page. The existing Ask-Agent-About-Prowl prompt (Help menu, sidebar footer) is a user-onboarding prompt, not a CLI one, so it was not duplicated here. What this page should eventually carry is agent *skill* distribution: bundling the official skills (`skills/prowl-cli`, later review/handoff skills) into the app, a `prowl skills` CLI that links them into user or project skill folders, and an install/update UI mirroring the CLI one. That is a separate slice with its own plan; until it lands the page has no agent-help section.
+- The plan listed an “Ask your agent” entry on the Command Line Tool page. The existing Ask-Agent-About-Prowl prompt (Help menu, sidebar footer) is a user-onboarding prompt, not a CLI one, so it was not duplicated here. What this page should eventually carry is agent *skill* distribution — bundling the official skills (`skills/prowl-cli`, later workflow skills) into the app, a `prowl skills` CLI that links them into user or project skill folders, and an **Agent Skills** section on this very page mirroring the install row. That is [065-bundled-agent-skills](../065-bundled-agent-skills/000-plan.md) (#712); until its K3 lands the page has no agent-help section.
 - Slice records in 063 are amendments starting at `002`; `001-action.md` is written when the entry completes (see `docs-ai/README.md`).
 
 ## Current state
@@ -24,7 +24,7 @@ The selection boundary is `SettingsSection.profiles` / `.commandLineTool` (`supa
 ## Deferred
 
 - Socket listening status: a `CLISocketServer` start failure is only logged (`supacode/App/supacodeApp.swift`), so the page cannot tell “should listen here” from “is listening”. Surfacing `listening / failed(reason)` needs the server state plumbed into `SettingsFeature`; its natural home is the 063-D1 CLI preflight, which needs the same reachability signal.
-- Skill distribution (`prowl skills` + Settings UI): separate plan.
+- Skill distribution (`prowl skills` + the Agent Skills section here): [065-bundled-agent-skills](../065-bundled-agent-skills/000-plan.md), K3.
 
 ## Verification
 
