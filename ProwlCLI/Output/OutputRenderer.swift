@@ -76,6 +76,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "profiles",
+         let data = response.data,
+         let payload = try? data.decode(as: ProfilesCommandPayload.self)
+      {
+        print(renderProfiles(payload))
+        return
+      }
+
       if response.command == "focus",
          let data = response.data,
          let payload = try? data.decode(as: FocusCommandPayload.self)
@@ -267,6 +275,24 @@ enum OutputRenderer {
     }.joined(separator: "\n")
   }
 
+  private static func renderProfiles(_ payload: ProfilesCommandPayload) -> String {
+    guard !payload.profiles.isEmpty else { return "No Agent Profiles found." }
+    return payload.profiles.map { profile in
+      let enabled = profile.enabled ? "enabled".green : "disabled".dim
+      let availability: String
+      switch profile.availability.status {
+      case .available:
+        availability = "available".green
+      case .unavailable:
+        availability = "unavailable".yellow
+      case .unknown:
+        availability = "unknown".dim
+      }
+      let reason = profile.availability.reason.map { "  \($0.dim)" } ?? ""
+      return "\(profile.name.bold)  \(profile.runtime)  \(enabled)  \(availability)  \(profile.id.dim)\(reason)"
+    }.joined(separator: "\n")
+  }
+
   private static func renderAgentsRead(_ payload: AgentReadCommandPayload) {
     if let data = agentReadResultOnlyData(payload) {
       FileHandle.standardOutput.write(data)
@@ -355,8 +381,15 @@ enum OutputRenderer {
 
     switch payload.resource {
     case .tab:
-      return "\(verb) tab \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
-        + "  \(tab.id.dim)\n  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)"
+      var lines = [
+        "\(verb) tab \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(tab.title.yellow)"
+          + "  \(tab.id.dim)",
+        "  \("pane:".dim) \(pane.title.green)  \(pane.id.dim)",
+      ]
+      if let launch = payload.launch {
+        lines.append("  \("profile:".dim) \(launch.profileName)  \("agent:".dim) \(launch.agent)")
+      }
+      return lines.joined(separator: "\n")
     case .pane:
       var lines = [
         "\(verb) pane \(projectName.cyan.bold)\(":".dim)\(wt.name) → \(pane.title.green)"
@@ -364,6 +397,9 @@ enum OutputRenderer {
       ]
       if let anchor = payload.anchor, let direction = payload.direction {
         lines.append("  \("anchor:".dim) \(anchor.pane.id.dim)  \("direction:".dim) \(direction.rawValue)")
+      }
+      if let launch = payload.launch {
+        lines.append("  \("profile:".dim) \(launch.profileName)  \("agent:".dim) \(launch.agent)")
       }
       return lines.joined(separator: "\n")
     }

@@ -157,6 +157,394 @@ struct CLILifecycleCommandHandlerTests {
     #expect(response.data == nil)
   }
 
+  @Test func createTabLaunchesAnEnabledProfileByExactNameAndReturnsMetadata() async throws {
+    let base = makeTarget(tabID: "base-tab", paneID: "base-pane")
+    let created = makeTarget(tabID: "created-tab", paneID: "created-pane")
+    let profile = AgentProfile(name: "Reviewer", runtime: .claude)
+    var launchRequest: CLIProfileLaunchRequest?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(base) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: base)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { request in
+        launchRequest = request
+        return .success(created)
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review the diff."),
+            background: true
+          )
+        )
+      )
+    )
+
+    #expect(response.ok)
+    #expect(launchRequest?.profile == profile)
+    #expect(launchRequest?.target == base)
+    #expect(launchRequest?.prompt == "Review the diff.")
+    #expect(launchRequest?.background == true)
+    let data = try #require(response.data)
+    let payload = try data.decode(as: LifecycleCommandPayload.self)
+    #expect(
+      payload.launch
+        == LifecycleCommandLaunch(
+          profileID: profile.id.uuidString,
+          profileName: "Reviewer",
+          agent: "claude"
+        )
+    )
+  }
+
+  @Test func disabledNamesDoNotMakeAnEnabledProfileNonUnique() async {
+    let target = makeTarget()
+    let enabled = AgentProfile(name: "Reviewer", runtime: .claude)
+    let disabled = AgentProfile(name: "Reviewer", isEnabled: false, runtime: .codex)
+    var launchedProfile: AgentProfile?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [disabled, enabled] },
+      launchAgentProfile: { request in
+        launchedProfile = request.profile
+        return .success(target)
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .pane,
+            selector: .pane("p12"),
+            direction: .right,
+            launch: CreateLaunchInput(profile: "Reviewer")
+          )
+        )
+      )
+    )
+
+    #expect(response.ok)
+    #expect(launchedProfile?.id == enabled.id)
+  }
+
+  @Test func profileUUIDWinsOverAnExactNameMatch() async {
+    let target = makeTarget()
+    let byID = AgentProfile(name: "By ID", runtime: .claude)
+    let byName = AgentProfile(name: byID.id.uuidString, runtime: .codex)
+    var launchedProfile: AgentProfile?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [byName, byID] },
+      launchAgentProfile: { request in
+        launchedProfile = request.profile
+        return .success(target)
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: byID.id.uuidString)
+          )
+        )
+      )
+    )
+
+    #expect(response.ok)
+    #expect(launchedProfile?.id == byID.id)
+  }
+
+  @Test func disabledProfileUUIDIsNotLaunchable() async {
+    let target = makeTarget()
+    let disabled = AgentProfile(name: "Reviewer", isEnabled: false, runtime: .claude)
+    let handler = makeProfileLookupHandler(target: target, profiles: [disabled])
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: disabled.id.uuidString)
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.profileNotFound)
+  }
+
+  @Test func duplicateEnabledProfileNameIsRejected() async {
+    let target = makeTarget()
+    let profiles = [
+      AgentProfile(name: "Reviewer", runtime: .claude),
+      AgentProfile(name: "Reviewer", runtime: .codex),
+    ]
+    let handler = makeProfileLookupHandler(target: target, profiles: profiles)
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.profileNotUnique)
+  }
+
+  @Test func profileLaunchFailureClassifiesPlanningAndCreationErrors() {
+    let profile = AgentProfile(name: "Reviewer", runtime: .amp)
+
+    #expect(
+      CLIProfileLaunchFailure.planning(
+        AgentRuntimeError.unsupportedStartIntent(.amp, .prompt("Review.")),
+        profile: profile
+      )
+        == .invalidArgument("Agent Profile “Reviewer” does not support kickoff prompts.")
+    )
+    #expect(
+      CLIProfileLaunchFailure.creation(.splitAnchorUnavailable, profile: profile)
+        == .createFailed("The split anchor for Agent Profile “Reviewer” is no longer available.")
+    )
+  }
+
+  @Test func profileLaunchFailurePreservesTheCreationReason() async {
+    let target = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .claude)
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { _ in
+        .failure(.createFailed("The split anchor is no longer available."))
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.createFailed)
+    #expect(response.error?.message == "The split anchor is no longer available.")
+  }
+
+  @Test func unsupportedPromptIntentMapsToInvalidArgument() async {
+    let target = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .amp)
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { _ in
+        .failure(.invalidArgument("Agent Profile “Reviewer” does not support kickoff prompts."))
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review.")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(response.error?.message == "Agent Profile “Reviewer” does not support kickoff prompts.")
+  }
+
+  @Test func emptyProfilePromptIsRejectedBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "  \n")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.emptyInput)
+    #expect(!didResolve)
+  }
+
+  @Test func profilePromptContainingNULIsRejectedBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review\0this")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(!didResolve)
+  }
+
+  @Test func oversizedProfilePromptIsRejectedBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(
+              profile: "Reviewer",
+              prompt: String(
+                repeating: "x",
+                count: CreateLaunchInput.maximumPromptUTF8ByteCount + 1
+              )
+            )
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(!didResolve)
+  }
+
+  @Test func backgroundWithoutProfileIsRejectedBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(resource: .tab, selector: .worktree("App"), background: true)
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(!didResolve)
+  }
+
   @Test func closeUsesResolvedResourceAndReturnsClosePayload() async throws {
     let target = makeTarget(tabID: "tab-to-close", paneID: "pane-to-close")
     var closedPane: TabResolvedTarget?
@@ -188,6 +576,22 @@ struct CLILifecycleCommandHandlerTests {
     let payload = try data.decode(as: LifecycleCommandPayload.self)
     #expect(payload.resource == .pane)
     #expect(payload.target.pane.id == "pane-to-close")
+  }
+
+  private func makeProfileLookupHandler(
+    target: TabResolvedTarget,
+    profiles: [AgentProfile]
+  ) -> LifecycleCommandHandler {
+    LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { profiles },
+      launchAgentProfile: { _ in .success(target) },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
   }
 
   private func makeTarget(

@@ -352,6 +352,9 @@ struct SupacodeApp: App {
       createTabInDirectory: { worktree, directory in
         terminalManager.createTabInDirectory(worktree, directory: directory)
       },
+      launchAgentProfile: { worktree, request in
+        terminalManager.launchAgentProfile(request, in: worktree)
+      },
       events: {
         terminalManager.eventStream()
       },
@@ -673,6 +676,14 @@ struct SupacodeApp: App {
         terminalManager: terminalManager
       )
     }
+    let profilesHandler = ProfilesCommandHandler {
+      @Shared(.userGlobalSettings) var settings
+      @Shared(.agentRuntimeAvailabilityProbeResults) var probeResults
+      return ProfilesRuntimeSnapshot(
+        profiles: settings.agentProfiles,
+        probeResults: probeResults
+      )
+    }
     let agentsHandler = AgentsCommandHandler {
       var screenDetectionsBySurfaceID: [UUID: AgentScreenDetection] = [:]
       for terminalState in terminalManager.activeWorktreeStates {
@@ -878,6 +889,17 @@ struct SupacodeApp: App {
       resolveCloseTarget: resolveLifecycleTarget,
       createTab: createTab,
       createPane: createPane,
+      profiles: {
+        @Shared(.userGlobalSettings) var settings
+        return settings.agentProfiles
+      },
+      launchAgentProfile: { request in
+        launchCLIProfile(
+          request,
+          appStore: appStore,
+          terminalManager: terminalManager
+        )
+      },
       closeTab: closeTab,
       closePane: closePane
     )
@@ -965,6 +987,7 @@ struct SupacodeApp: App {
       listHandler: listHandler,
       agentsHandler: agentsHandler,
       agentsReadHandler: agentReadHandler,
+      profilesHandler: profilesHandler,
       focusHandler: focusHandler,
       sendHandler: sendHandler,
       keyHandler: keyHandler,
@@ -1223,6 +1246,82 @@ struct SupacodeApp: App {
       }
     }
     return nil
+  }
+
+  private static func launchCLIProfile(
+    _ request: CLIProfileLaunchRequest,
+    appStore: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager
+  ) -> Result<TabResolvedTarget, CLIProfileLaunchFailure> {
+    let repositories = Array(appStore.state.repositories.repositories)
+    guard
+      let worktree = resolveCLITerminalWorktree(
+        id: request.target.worktreeID,
+        repositories: repositories
+      )
+    else {
+      return .failure(.createFailed("The resolved worktree is no longer available."))
+    }
+
+    let intent = request.prompt.map(AgentStartIntent.prompt) ?? .interactive
+    let plan: AgentProfileLaunchPlan
+    do {
+      plan = try AgentProfileLaunchPlanner.plan(
+        for: request.profile,
+        intent: intent,
+        homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory
+      )
+    } catch {
+      return .failure(.planning(error, profile: request.profile))
+    }
+
+    let placement: AgentProfileLaunchRequest.Placement
+    switch request.resource {
+    case .tab:
+      placement = .tab(background: request.background)
+    case .pane:
+      guard
+        let anchor = UUID(uuidString: request.target.paneID),
+        let direction = request.direction
+      else {
+        return .failure(.createFailed("The resolved split anchor is invalid."))
+      }
+      placement = .split(
+        anchor: anchor,
+        direction: direction.terminalSplitDirection,
+        background: request.background
+      )
+    }
+    let directory = request.path.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let launchRequest = AgentProfileLaunchRequest(
+      plan: plan,
+      placement: placement,
+      workingDirectoryOverride: directory,
+      title: request.profile.name
+    )
+    let launched: LaunchedSurface
+    switch terminalManager.launchAgentProfile(launchRequest, in: worktree) {
+    case .success(let surface):
+      launched = surface
+    case .failure(let error):
+      return .failure(.creation(error, profile: request.profile))
+    }
+
+    if !request.background {
+      selectCLIWorktreeContext(
+        worktreeID: request.target.worktreeID,
+        appStore: appStore,
+        terminalManager: terminalManager
+      )
+      terminalManager.state(for: worktree).selectTab(launched.tabID)
+    }
+    let resolver = makeTargetResolver(appStore: appStore, terminalManager: terminalManager)
+    switch resolver.resolve(.pane(launched.surfaceID.uuidString)) {
+    case .success(let resolved):
+      return .success(TabResolvedTarget(from: resolved))
+    case .failure:
+      return .failure(.createFailed("The launched Profile pane could not be resolved."))
+    }
   }
 
   private static func createCLIPane(

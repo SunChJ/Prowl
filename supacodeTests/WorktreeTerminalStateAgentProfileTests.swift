@@ -14,12 +14,140 @@ struct WorktreeTerminalStateAgentProfileTests {
     let plan = makePlan(
       dedicatedHome: URL(filePath: "/tmp/prowl-test-outside-base/home", directoryHint: .isDirectory)
     )
+    let request = AgentProfileLaunchRequest(
+      plan: plan,
+      placement: .tab(background: false)
+    )
 
-    let surfaceID = state.launchAgentProfile(plan)
+    let result = state.launchAgentProfile(request)
 
-    #expect(surfaceID == nil)
+    #expect(result == .failure(.homeProvisioningFailed))
     #expect(state.tabManager.tabs.isEmpty)
     #expect(state.launchProfilesBySurface.isEmpty)
+  }
+
+  @Test func explicitAnchorWinsOverCurrentSelectionAndReturnsBothIdentities() throws {
+    let state = makeState()
+    let anchor = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    let selected = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    #expect(state.tabManager.selectedTabId == selected.tabID)
+
+    let launched = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil, runtime: .claude),
+        placement: .split(anchor: anchor.surfaceID, direction: .left, background: false)
+      )
+    ).get()
+
+    #expect(launched.tabID == anchor.tabID)
+    #expect(launched.surfaceID != anchor.surfaceID)
+    #expect(state.tabID(containing: launched.surfaceID) == anchor.tabID)
+    #expect(state.focusedSurfaceId(in: anchor.tabID) == launched.surfaceID)
+    #expect(state.launchProfilesBySurface[launched.surfaceID]?.runtime == .claude)
+  }
+
+  @Test func requestPlacementOverridesTheProfilePlan() throws {
+    let state = makeState()
+    let anchor = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    let plan = makePlan(dedicatedHome: nil, runtime: .claude, placement: .tab)
+
+    let launched = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: plan,
+        placement: .split(anchor: anchor.surfaceID, direction: .down, background: false)
+      )
+    ).get()
+
+    #expect(state.tabManager.tabs.count == 1)
+    #expect(launched.tabID == anchor.tabID)
+    #expect(state.tabID(containing: launched.surfaceID) == anchor.tabID)
+  }
+
+  @Test func backgroundTabPreservesTheSelectedTabAndFocusedSurface() throws {
+    let state = makeState()
+    let foreground = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+
+    let background = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil, runtime: .claude),
+        placement: .tab(background: true)
+      )
+    ).get()
+
+    #expect(background.tabID != foreground.tabID)
+    #expect(background.surfaceID != foreground.surfaceID)
+    #expect(state.tabManager.selectedTabId == foreground.tabID)
+    #expect(state.currentFocusedSurfaceId() == foreground.surfaceID)
+    #expect(state.tabID(containing: background.surfaceID) == background.tabID)
+  }
+
+  @Test func backgroundSplitPreservesTheAnchorFocus() throws {
+    let state = makeState()
+    let anchor = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+
+    let background = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil, runtime: .claude),
+        placement: .split(anchor: anchor.surfaceID, direction: .right, background: true)
+      )
+    ).get()
+
+    #expect(background.tabID == anchor.tabID)
+    #expect(state.focusedSurfaceId(in: anchor.tabID) == anchor.surfaceID)
+    #expect(state.currentFocusedSurfaceId() == anchor.surfaceID)
+  }
+
+  @Test func explicitSplitFailureDoesNotFallBackToATab() {
+    let state = makeState()
+    let missingAnchor = UUID()
+
+    let result = state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil, placement: .split),
+        placement: .split(anchor: missingAnchor, direction: .right, background: false)
+      )
+    )
+
+    #expect(result == .failure(.splitCreationFailed(.anchorNotFound(missingAnchor))))
+    #expect(state.tabManager.tabs.isEmpty)
+  }
+
+  @Test func compatibilityWrapperKeepsSplitToTabFallback() throws {
+    let state = makeState()
+
+    let surfaceID = try #require(
+      state.launchAgentProfile(
+        makePlan(dedicatedHome: nil, placement: .split)
+      )
+    )
+
+    #expect(state.tabManager.tabs.count == 1)
+    #expect(state.tabID(containing: surfaceID) == state.tabManager.tabs.first?.id)
   }
 
   @Test func launchProfileNameOnlyAppliesToTheLaunchedRuntime() {

@@ -9,7 +9,7 @@ and the executable [schema bundle](schema.md).
 ```text
 prowl [path]
 prowl open [path]
-prowl list | agents | focus | read | send | key | handoff | create | close
+prowl list | agents | profiles | focus | read | send | key | handoff | create | close
 ```
 
 Bare path forms (`/`, `./`, `../`, `~/`, `file://`, `.`, `..`) enter `open`.
@@ -36,10 +36,11 @@ succeeds.
 ## Lifecycle grammar
 
 ```bash
-prowl create tab <worktree> [--path <directory>]
-prowl create tab --worktree <worktree> [--path <directory>]
-prowl create pane <pN|pane-uuid> --direction <right|left|up|down>
-prowl create pane --pane <pN|pane-uuid> --direction <right|left|up|down>
+prowl create tab <worktree> [--path <directory>] [--profile <name|uuid> [--prompt -] [--background]]
+prowl create tab --worktree <worktree> [--path <directory>] [--profile <name|uuid> [--prompt -] [--background]]
+prowl create pane <pN|pane-uuid> --direction <right|left|up|down> [--profile <name|uuid> [--prompt -] [--background]]
+prowl create pane --pane <pN|pane-uuid> --direction <right|left|up|down> [--profile <name|uuid> [--prompt -] [--background]]
+prowl profiles list
 prowl close <pN|tN|uuid> [--force]
 prowl close --pane <uuid|pN|N> [--force]
 prowl close --tab <uuid|tN|N> [--force]
@@ -47,7 +48,10 @@ prowl close --tab <uuid|tN|N> [--force]
 
 `create tab` requires a worktree-only target. `create pane` requires a pane-only
 anchor and explicit direction; it rejects `--target`, `--worktree`, `--tab`, bare
-numbers, and focus fallback. `close` requires a pane-or-tab-only target and rejects
+numbers, and focus fallback. `--prompt` accepts only `-`, reads non-empty UTF-8 piped
+stdin up to 256 KiB, rejects an interactive terminal and NUL bytes, and requires `--profile`;
+`--background` also requires `--profile`. `profiles list`
+is a read-only global snapshot and accepts no target. `close` requires a pane-or-tab-only target and rejects
 `--target`, `--worktree`, bare-number positions, and focus fallback. See
 [create.md](create.md) and [close.md](close.md).
 
@@ -60,7 +64,7 @@ stderr warning; new automation must use the lifecycle grammar above.
 - `agents read <pN|pane-uuid>` is a pane-only semantic snapshot, no selectors or
   focus fallback.
 - `handoff` defaults to the calling pane, not UI focus.
-- `list` and `agents` are global discovery commands with no target selector.
+- `list`, `agents`, and `profiles list` are global discovery commands with no target selector.
 - `open` consumes a path rather than a target.
 
 ## Transport request model

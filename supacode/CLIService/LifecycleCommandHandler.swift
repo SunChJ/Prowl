@@ -5,6 +5,71 @@ struct LifecycleResolvedTarget: Sendable, Equatable {
   let target: TabResolvedTarget
 }
 
+struct CLIProfileLaunchRequest: Sendable, Equatable {
+  let resource: LifecycleResource
+  let target: TabResolvedTarget
+  let profile: AgentProfile
+  let prompt: String?
+  let path: String?
+  let direction: CreatePaneDirection?
+  let background: Bool
+}
+
+private enum CLIProfileLookupError: Error {
+  case notFound(String)
+  case notUnique(String)
+}
+
+enum CLIProfileLaunchFailure: Error, Equatable, Sendable {
+  case invalidArgument(String)
+  case createFailed(String)
+
+  static func planning(_ error: any Error, profile: AgentProfile) -> Self {
+    if let runtimeError = error as? AgentRuntimeError {
+      switch runtimeError {
+      case .unsupportedStartIntent:
+        return .invalidArgument("Agent Profile “\(profile.name)” does not support kickoff prompts.")
+      case .unsupportedAgent:
+        return .createFailed("Agent Profile “\(profile.name)” uses an unsupported runtime.")
+      }
+    }
+    if let planningError = error as? AgentProfileLaunchPlanError {
+      switch planningError {
+      case .runtimeUnavailable:
+        return .createFailed("Agent Profile “\(profile.name)” uses an unavailable runtime.")
+      case .accountIsolationUnsupported:
+        return .createFailed("Agent Profile “\(profile.name)” cannot use a dedicated home.")
+      case .promptContainsNUL:
+        return .invalidArgument("The kickoff prompt must not contain NUL bytes.")
+      case .promptArgumentUnavailable:
+        return .createFailed("Agent Profile “\(profile.name)” produced an invalid prompted invocation.")
+      case .homeEscapesBase:
+        return .createFailed("Agent Profile “\(profile.name)” resolved outside the managed home directory.")
+      case .homeIsSymbolicLink:
+        return .createFailed("Agent Profile “\(profile.name)” has a symbolic-link managed home.")
+      }
+    }
+    return .createFailed("Failed to prepare Agent Profile “\(profile.name)”.")
+  }
+
+  static func creation(_ error: AgentProfileLaunchError, profile: AgentProfile) -> Self {
+    let message =
+      switch error {
+      case .homeProvisioningFailed:
+        "Failed to provision the managed home for Agent Profile “\(profile.name)”."
+      case .splitAnchorUnavailable, .splitCreationFailed(.anchorNotFound):
+        "The split anchor for Agent Profile “\(profile.name)” is no longer available."
+      case .splitCreationFailed(.insertionFailed):
+        "Failed to insert the split for Agent Profile “\(profile.name)”."
+      case .tabCreationFailed:
+        "Failed to create a tab for Agent Profile “\(profile.name)”."
+      case .launchedSurfaceMissing:
+        "The tab for Agent Profile “\(profile.name)” was created without a terminal surface."
+      }
+    return .createFailed(message)
+  }
+}
+
 @MainActor
 final class LifecycleCommandHandler: CommandHandler {
   typealias ResolveCreateTargetProvider = @MainActor (TargetSelector) -> Result<TabResolvedTarget, TargetResolverError>
@@ -12,6 +77,9 @@ final class LifecycleCommandHandler: CommandHandler {
     @MainActor (TargetSelector) -> Result<LifecycleResolvedTarget, TargetResolverError>
   typealias CreateTabProvider = @MainActor (TabResolvedTarget, String?) -> TabResolvedTarget?
   typealias CreatePaneProvider = @MainActor (TabResolvedTarget, CreatePaneDirection) -> TabResolvedTarget?
+  typealias ProfilesProvider = @MainActor () -> [AgentProfile]
+  typealias ProfileLaunchProvider =
+    @MainActor (CLIProfileLaunchRequest) -> Result<TabResolvedTarget, CLIProfileLaunchFailure>
   typealias CloseTabProvider = @MainActor (TabResolvedTarget, Bool) -> Bool
   typealias ClosePaneProvider = @MainActor (TabResolvedTarget, Bool) -> Bool
 
@@ -19,6 +87,8 @@ final class LifecycleCommandHandler: CommandHandler {
   private let resolveCloseTarget: ResolveCloseTargetProvider
   private let createTab: CreateTabProvider
   private let createPane: CreatePaneProvider
+  private let profiles: ProfilesProvider
+  private let launchAgentProfile: ProfileLaunchProvider
   private let closeTab: CloseTabProvider
   private let closePane: ClosePaneProvider
 
@@ -27,6 +97,10 @@ final class LifecycleCommandHandler: CommandHandler {
     resolveCloseTarget: @escaping ResolveCloseTargetProvider,
     createTab: @escaping CreateTabProvider,
     createPane: @escaping CreatePaneProvider,
+    profiles: @escaping ProfilesProvider = { [] },
+    launchAgentProfile: @escaping ProfileLaunchProvider = {
+      _ in .failure(.createFailed("Failed to launch the Agent Profile."))
+    },
     closeTab: @escaping CloseTabProvider,
     closePane: @escaping ClosePaneProvider
   ) {
@@ -34,6 +108,8 @@ final class LifecycleCommandHandler: CommandHandler {
     self.resolveCloseTarget = resolveCloseTarget
     self.createTab = createTab
     self.createPane = createPane
+    self.profiles = profiles
+    self.launchAgentProfile = launchAgentProfile
     self.closeTab = closeTab
     self.closePane = closePane
   }
@@ -52,6 +128,29 @@ final class LifecycleCommandHandler: CommandHandler {
   }
 
   private func handleCreate(_ input: CreateInput) -> CommandResponse {
+    if let prompt = input.launch?.prompt {
+      if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return errorResponse(
+          command: "create",
+          code: CLIErrorCode.emptyInput,
+          message: "The kickoff prompt is empty."
+        )
+      }
+      if prompt.contains("\0") {
+        return errorResponse(
+          command: "create",
+          code: CLIErrorCode.invalidArgument,
+          message: "The kickoff prompt must not contain NUL bytes."
+        )
+      }
+      if prompt.utf8.count > CreateLaunchInput.maximumPromptUTF8ByteCount {
+        return errorResponse(
+          command: "create",
+          code: CLIErrorCode.invalidArgument,
+          message: "The kickoff prompt exceeds the 256 KiB UTF-8 limit."
+        )
+      }
+    }
     switch input.resource {
     case .tab:
       return handleCreateTab(input)
@@ -67,6 +166,9 @@ final class LifecycleCommandHandler: CommandHandler {
         code: CLIErrorCode.invalidArgument,
         message: "create tab requires a worktree target and does not accept a direction."
       )
+    }
+    guard input.launch != nil || !input.background else {
+      return backgroundRequiresProfileError()
     }
 
     let target: TabResolvedTarget
@@ -85,6 +187,14 @@ final class LifecycleCommandHandler: CommandHandler {
         message: "Tab path must be inside the resolved worktree."
       )
     }
+    if let launch = input.launch {
+      return handleProfileLaunch(
+        input: input,
+        launch: launch,
+        target: target,
+        path: path
+      )
+    }
     guard let createdTarget = createTab(target, path) else {
       return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: "Failed to create tab.")
     }
@@ -99,6 +209,9 @@ final class LifecycleCommandHandler: CommandHandler {
         message: "create pane requires a pane target and an explicit direction."
       )
     }
+    guard input.launch != nil || !input.background else {
+      return backgroundRequiresProfileError()
+    }
 
     let anchor: TabResolvedTarget
     switch resolveCreateTarget(input.selector) {
@@ -108,6 +221,14 @@ final class LifecycleCommandHandler: CommandHandler {
       return mapResolverError(command: "create", error: error)
     }
 
+    if let launch = input.launch {
+      return handleProfileLaunch(
+        input: input,
+        launch: launch,
+        target: anchor,
+        path: nil
+      )
+    }
     guard let createdTarget = createPane(anchor, direction) else {
       return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: "Failed to create pane.")
     }
@@ -117,6 +238,84 @@ final class LifecycleCommandHandler: CommandHandler {
       target: createdTarget,
       anchor: anchor,
       direction: direction
+    )
+  }
+
+  private func handleProfileLaunch(
+    input: CreateInput,
+    launch: CreateLaunchInput,
+    target: TabResolvedTarget,
+    path: String?
+  ) -> CommandResponse {
+    let profile: AgentProfile
+    switch resolveProfile(launch.profile) {
+    case .success(let resolved):
+      profile = resolved
+    case .failure(.notFound(let message)):
+      return errorResponse(command: "create", code: CLIErrorCode.profileNotFound, message: message)
+    case .failure(.notUnique(let message)):
+      return errorResponse(command: "create", code: CLIErrorCode.profileNotUnique, message: message)
+    }
+
+    let request = CLIProfileLaunchRequest(
+      resource: input.resource,
+      target: target,
+      profile: profile,
+      prompt: launch.prompt,
+      path: path,
+      direction: input.direction,
+      background: input.background
+    )
+    let createdTarget: TabResolvedTarget
+    switch launchAgentProfile(request) {
+    case .success(let target):
+      createdTarget = target
+    case .failure(.invalidArgument(let message)):
+      return errorResponse(command: "create", code: CLIErrorCode.invalidArgument, message: message)
+    case .failure(.createFailed(let message)):
+      return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: message)
+    }
+    return success(
+      command: "create",
+      resource: input.resource,
+      target: createdTarget,
+      anchor: input.resource == .pane ? target : nil,
+      direction: input.direction,
+      launch: LifecycleCommandLaunch(
+        profileID: profile.id.uuidString,
+        profileName: profile.name,
+        agent: profile.runtime.agent.rawValue
+      )
+    )
+  }
+
+  private func resolveProfile(_ reference: String) -> Result<AgentProfile, CLIProfileLookupError> {
+    let allProfiles = profiles()
+    if let id = UUID(uuidString: reference),
+      let profile = allProfiles.first(where: { $0.id == id })
+    {
+      guard profile.isEnabled else {
+        return .failure(.notFound("Agent Profile “\(profile.name)” is disabled."))
+      }
+      return .success(profile)
+    }
+    let enabledProfiles = allProfiles.filter(\.isEnabled)
+    let named = enabledProfiles.filter { $0.name == reference }
+    switch named.count {
+    case 1:
+      return .success(named[0])
+    case 0:
+      return .failure(.notFound("No enabled Agent Profile matches “\(reference)”."))
+    default:
+      return .failure(.notUnique("Multiple enabled Agent Profiles are named “\(reference)”; use a UUID."))
+    }
+  }
+
+  private func backgroundRequiresProfileError() -> CommandResponse {
+    errorResponse(
+      command: "create",
+      code: CLIErrorCode.invalidArgument,
+      message: "--background requires an Agent Profile launch."
     )
   }
 
@@ -176,7 +375,8 @@ final class LifecycleCommandHandler: CommandHandler {
     resource: LifecycleResource,
     target: TabResolvedTarget,
     anchor: TabResolvedTarget? = nil,
-    direction: CreatePaneDirection? = nil
+    direction: CreatePaneDirection? = nil,
+    launch: LifecycleCommandLaunch? = nil
   ) -> CommandResponse {
     do {
       return try CommandResponse(
@@ -188,6 +388,7 @@ final class LifecycleCommandHandler: CommandHandler {
             resource: resource,
             anchor: anchor.map { makePayloadTarget(from: $0) },
             direction: direction,
+            launch: launch,
             target: makePayloadTarget(from: target)
           )
         )

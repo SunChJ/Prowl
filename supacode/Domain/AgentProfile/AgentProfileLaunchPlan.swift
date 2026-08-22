@@ -55,12 +55,68 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   }
 
   /// The exact line typed into the new pane; doubles as the launch preview.
+  /// Prompt text rides in the surface environment so canonical PTY limits and
+  /// line-editor key interpretation cannot truncate or mutate it.
   var terminalInput: String {
-    guard !commandEnvironmentTokens.isEmpty else { return invocation.terminalInput }
-    return (["env"] + commandEnvironmentTokens + [invocation.terminalInput]).joined(separator: " ")
+    let promptCarrier =
+      surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == nil
+      ? nil : AgentProfileLaunchPlanner.promptCarrierName
+    let invocationInput = invocation.terminalInput(
+      replacingFinalArgumentWithEnvironmentVariable: promptCarrier
+    )
+    var environmentTokens = commandEnvironmentTokens
+    if let promptCarrier {
+      environmentTokens.insert(contentsOf: ["-u", promptCarrier], at: 0)
+    }
+    guard !environmentTokens.isEmpty else { return invocationInput }
+    return (["env"] + environmentTokens + [invocationInput]).joined(separator: " ")
   }
 
   var previewText: String { terminalInput }
+}
+
+/// One deterministic profile launch request shared by the CLI, workflow runner,
+/// and terminal layer. The compiled plan remains the single adapter-rendered
+/// invocation/environment seam; placement and directory are per-launch choices.
+nonisolated struct AgentProfileLaunchRequest: Equatable, Sendable {
+  nonisolated enum Placement: Equatable, Sendable {
+    case tab(background: Bool)
+    case split(
+      anchor: UUID?,
+      direction: UserCustomSplitDirection,
+      background: Bool
+    )
+  }
+
+  let plan: AgentProfileLaunchPlan
+  let placement: Placement
+  let workingDirectoryOverride: URL?
+  let title: String?
+
+  init(
+    plan: AgentProfileLaunchPlan,
+    placement: Placement,
+    workingDirectoryOverride: URL? = nil,
+    title: String? = nil
+  ) {
+    self.plan = plan
+    self.placement = placement
+    self.workingDirectoryOverride = workingDirectoryOverride
+    self.title = title
+  }
+}
+
+nonisolated struct LaunchedSurface: Equatable, Sendable {
+  let tabID: TerminalTabID
+  let surfaceID: UUID
+}
+
+nonisolated enum AgentProfileLaunchError: Error, Equatable, Sendable {
+  case homeProvisioningFailed
+  case splitAnchorUnavailable
+  case splitCreationFailed(SplitCreationError)
+  case tabCreationFailed
+  case launchedSurfaceMissing(TerminalTabID)
 }
 
 /// Which env variable names a profile override may set, shared by the planner
@@ -191,15 +247,22 @@ nonisolated extension AgentProfile {
 nonisolated enum AgentProfileLaunchPlanError: Error, Equatable, Sendable {
   case runtimeUnavailable(AgentProfileRuntime)
   case accountIsolationUnsupported(AgentProfileRuntime)
+  case promptContainsNUL
+  case promptArgumentUnavailable(AgentProfileRuntime)
   case homeEscapesBase(URL)
   case homeIsSymbolicLink(URL)
 }
 
 nonisolated enum AgentProfileLaunchPlanner {
+  /// Reserved surface-environment carrier for prompted starts. The prompt is
+  /// expanded as one quoted argv token and never enters Ghostty initial_input.
+  static let promptCarrierName = "PROWL_LAUNCH_PROMPT"
+
   /// Resolves a profile into one launch plan. Pure: no filesystem access —
   /// home provisioning happens at the launch boundary, not here.
   static func plan(
     for profile: AgentProfile,
+    intent: AgentStartIntent = .interactive,
     homeBaseDirectory: URL
   ) throws -> AgentProfileLaunchPlan {
     guard let adapter = AgentRuntimeAdapterRegistry.profileAdapter(for: profile.runtime) else {
@@ -238,11 +301,20 @@ nonisolated enum AgentProfileLaunchPlanner {
     let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
       AgentStartRequest(
         runtime: profile.runtime,
-        intent: .interactive,
+        intent: intent,
         configuration: configuration,
         dedicatedHome: dedicatedHome
       )
     )
+    if let prompt = intent.promptText {
+      guard !prompt.contains("\0") else {
+        throw AgentProfileLaunchPlanError.promptContainsNUL
+      }
+      guard invocation.arguments.last == prompt else {
+        throw AgentProfileLaunchPlanError.promptArgumentUnavailable(profile.runtime)
+      }
+      surfaceEnvironment[promptCarrierName] = prompt
+    }
     let overrides = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
     for name in overrides.keys.sorted() {
       let carrier = AgentProfileEnvironmentPolicy.carrierName(for: name)

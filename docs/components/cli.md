@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl profiles list, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -227,6 +227,22 @@ no heading or added newline. For every other result state it exits non-zero with
 `SESSION_UNRESOLVED`, `RESULT_NOT_FOUND`, `RESULT_INCOMPLETE`, or
 `RESULT_TOO_LARGE`. Empty `agents` roster output remains `No agents found.`.
 
+### `prowl profiles list`
+
+Read-only snapshot of every configured Agent Profile, including disabled profiles, in
+Settings order:
+
+```bash
+prowl profiles list --json
+```
+
+Each `.data.profiles[]` item contains `id`, `name`, `enabled`, `runtime`, and
+`availability`. `availability.status` is `available`, `unavailable`, or `unknown` and
+reflects the login-shell executable probe only; `reason` provides optional human context.
+Availability is advisory and never blocks launch. Disabled profiles remain visible but
+cannot be passed to `create --profile`. Use the Profile UUID for stable automation; an
+exact enabled name also works when unique.
+
 ### `prowl read [target]`
 Read a pane's content.
 
@@ -320,6 +336,29 @@ either positionally or with `--worktree`; `--path` must remain inside it.
 pane="$(prowl create tab "$wt" --json | jq -r '.data.target.pane.id')"
 ```
 
+Add `--profile <name|uuid>` to launch an enabled Agent Profile instead of a shell. An
+optional kickoff prompt uses the sole stdin spelling `--prompt -`:
+
+```bash
+pane="$(
+  prowl create tab "$wt" --profile Reviewer --prompt - --json <<'EOF' | jq -r '.data.target.pane.id'
+Review the current diff and report actionable findings.
+EOF
+)"
+```
+
+`--prompt -` requires a pipe or heredoc; it rejects interactive stdin instead of waiting
+for `Ctrl-D`. Prowl carries the prompt outside the terminal's initial PTY input and expands
+it as one quoted argument, so multiline, tab-containing, and long review instructions are
+not interpreted by the shell line editor. The portable typed command runs unchanged in zsh,
+bash, and fish; it removes the carrier from the Profile process environment, while the pane
+shell retains the reserved carrier. NUL bytes remain invalid, and UTF-8 prompt input over
+256 KiB is rejected before creating a surface. For larger requirement sets, keep the content
+in a repository file and use the kickoff prompt to tell the Profile which file to read.
+
+`--background` is Profile-only and creates the tab without changing the selected
+worktree, tab, or pane.
+
 ### `prowl create pane`
 Create a split beside an explicit pane anchor. The anchor is a pane UUID or current-process
 `pN` handle, supplied positionally or with `--pane`; `--direction` is required.
@@ -328,14 +367,20 @@ Create a split beside an explicit pane anchor. The anchor is a pane UUID or curr
 pane="$(prowl create pane "$anchor" --direction right --json | jq -r '.data.target.pane.id')"
 ```
 
-Directions are `right`, `left`, `up`, and `down`. The created pane inherits the anchor's
-working directory and terminal configuration, becomes focused in that tab, and is returned
-as `.data.target.pane.id`. Like `create tab`, the command selects the anchor's worktree and
-tab, so an anchor in another tab or worktree is brought into view. `.data.anchor` records the
-source pane as resolved before the split (its `focused` flag is pre-split state) and
-`.data.direction` records the public direction. The operation targets the anchor directly;
-it never depends on current UI focus. Use `prowl send --pane "$pane" …` after creation when
-you want to run input.
+Directions are `right`, `left`, `up`, and `down`. Without `--profile`, the created pane
+inherits the anchor's working directory and terminal configuration, becomes focused in that
+tab, and is returned as `.data.target.pane.id`. Like `create tab`, the command selects the
+anchor's worktree and tab. With `--profile`, it launches the selected Profile and may take a
+kickoff prompt from `--prompt -`; `--background` inserts the split without focusing it or
+selecting a hidden anchor's worktree/tab.
+
+`.data.anchor` records the source pane as resolved before the split (its `focused` flag is
+pre-split state), `.data.direction` records the public direction, and a Profile launch adds
+`.data.launch.{profile_id,profile_name,agent}`. The CLI requires this metadata for
+`--profile`, so an older app cannot silently return an ordinary shell. A mismatch error warns
+that the older app may already have created a resource; inspect `prowl list` and close it
+before retrying. The operation targets the anchor directly; it never depends on current UI
+focus.
 
 ### `prowl close`
 Close one explicit tab or pane. The positional form uses a UUID, `pN`, or `tN`; the
@@ -469,6 +514,8 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `SOCKET_PERMISSION_DENIED` | The socket exists but the client cannot connect, usually because a sandbox blocked the Unix socket. Allowlist the socket path, run outside the sandbox, or use matching `PROWL_CLI_SOCKET` values for both app and CLI. |
 | `TARGET_NOT_FOUND` | Selector matched nothing — re-run `list` and pick a UUID or current short handle. |
 | `TARGET_NOT_UNIQUE` | Selector matched several — be more specific (use `--pane`). |
+| `PROFILE_NOT_FOUND` | No enabled Profile matches the UUID or exact name — re-run `profiles list`; disabled Profiles cannot launch. |
+| `PROFILE_NOT_UNIQUE` | Several enabled Profiles have the exact name — use the Profile UUID from `profiles list`. |
 | `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code. Re-run `agents`. |
 | `BLOCKER_UNREADABLE` | A blocked screen was detected but Prowl could not safely extract its current interaction text. Re-run `agents read` or inspect with `read`. |
 | `SESSION_UNRESOLVED` / `RESULT_NOT_FOUND` / `RESULT_INCOMPLETE` / `RESULT_TOO_LARGE` | `agents read --result-only` could not provide one trustworthy complete result. Drop `--result-only` to retain the live snapshot and inspect `.data.result`. |
@@ -481,7 +528,7 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path. |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
 | `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
-| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
+| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `PROFILES_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
 
 ## Safety & self-targeting
 

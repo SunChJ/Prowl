@@ -39,4 +39,73 @@ final class CreateCommandParsingTests: XCTestCase {
     XCTAssertThrowsError(try mixed.makeInput())
     XCTAssertThrowsError(try bareNumber.makeInput())
   }
+
+  func testTabParsesProfileLaunchAndBackground() throws {
+    let command = try CreateTabCommand.parse(["App", "--profile", "Reviewer", "--background"])
+    let input = try command.makeInput()
+
+    XCTAssertEqual(input.launch, CreateLaunchInput(profile: "Reviewer"))
+    XCTAssertTrue(input.background)
+  }
+
+  func testPaneParsesProfileLaunchAndBackground() throws {
+    let command = try CreatePaneCommand.parse([
+      "p12", "--direction", "right", "--profile", "Reviewer", "--background",
+    ])
+    let input = try command.makeInput()
+
+    XCTAssertEqual(input.launch, CreateLaunchInput(profile: "Reviewer"))
+    XCTAssertTrue(input.background)
+  }
+
+  func testPromptAcceptsOnlyTheStdinSentinel() throws {
+    let inline = try CreateTabCommand.parse(["App", "--profile", "Reviewer", "--prompt", "inline"])
+
+    XCTAssertThrowsError(try inline.makeInput())
+  }
+
+  func testPromptRejectsInteractiveStdinWithoutReading() {
+    var options = CreateLaunchOptions()
+    options.profile = "Reviewer"
+    options.prompt = "-"
+    var didRead = false
+
+    XCTAssertThrowsError(
+      try options.resolve(
+        stdinIsTerminal: true,
+        readStdin: {
+          didRead = true
+          return Data()
+        }
+      )
+    ) { error in
+      XCTAssertEqual((error as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
+    XCTAssertFalse(didRead)
+  }
+
+  func testPromptRejectsOversizedUTF8Input() {
+    var options = CreateLaunchOptions()
+    options.profile = "Reviewer"
+    options.prompt = "-"
+
+    XCTAssertThrowsError(
+      try options.resolve(
+        stdinIsTerminal: false,
+        readStdin: {
+          Data(repeating: 0x78, count: CreateLaunchInput.maximumPromptUTF8ByteCount + 1)
+        }
+      )
+    ) { error in
+      XCTAssertEqual((error as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
+  }
+
+  func testPromptAndBackgroundRequireAProfile() throws {
+    let prompt = try CreateTabCommand.parse(["App", "--prompt", "-"])
+    let background = try CreatePaneCommand.parse(["p12", "--direction", "right", "--background"])
+
+    XCTAssertThrowsError(try prompt.makeInput())
+    XCTAssertThrowsError(try background.makeInput())
+  }
 }

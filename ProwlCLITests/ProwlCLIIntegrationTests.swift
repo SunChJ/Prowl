@@ -426,6 +426,169 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     }
   }
 
+  func testCreateTabProfileRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "create-tab-profile")
+    let launch = LifecycleCommandLaunch(
+      profileID: UUID().uuidString,
+      profileName: "Reviewer",
+      agent: "claude"
+    )
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .tab, launch: launch))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "tab", "App", "--profile", launch.profileID, "--background", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .create(let input) = envelope.command {
+      XCTAssertEqual(input.launch, CreateLaunchInput(profile: launch.profileID))
+      XCTAssertTrue(input.background)
+    } else {
+      XCTFail("Expected create command envelope")
+    }
+  }
+
+  func testCreateProfileFailsClosedWhenTheAppOmitsLaunchMetadata() throws {
+    let socketPath = temporarySocketPath(suffix: "create-profile-version-skew")
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(encoding: makeLifecyclePayload(resource: .tab))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "tab", "App", "--profile", "Reviewer", "--json"]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let output = try jsonObject(from: result.stdout)
+    let error = try XCTUnwrap(output["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.createFailed)
+    XCTAssertTrue((error["message"] as? String)?.contains("ordinary shell may have been created") == true)
+    XCTAssertTrue((error["message"] as? String)?.contains("prowl list") == true)
+  }
+
+  func testCreatePaneProfilePromptRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "create-pane-profile")
+    let launch = LifecycleCommandLaunch(
+      profileID: UUID().uuidString,
+      profileName: "Reviewer",
+      agent: "claude"
+    )
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(
+        encoding: makeLifecyclePayload(
+          resource: .pane,
+          anchor: makeTabTarget(paneID: "anchor-pane"),
+          direction: .right,
+          launch: launch
+        )
+      )
+    )
+    let prompt = "Review the current diff and report only actionable findings.\n"
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: [
+        "create", "pane", "p12", "--direction", "right", "--profile", "Reviewer",
+        "--prompt", "-", "--background", "--json",
+      ],
+      stdinData: Data(prompt.utf8)
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .create(let input) = envelope.command {
+      XCTAssertEqual(input.launch, CreateLaunchInput(profile: "Reviewer", prompt: prompt))
+      XCTAssertTrue(input.background)
+    } else {
+      XCTFail("Expected create command envelope")
+    }
+    let output = try jsonObject(from: result.stdout)
+    let data = try XCTUnwrap(output["data"] as? [String: Any])
+    let outputLaunch = try XCTUnwrap(data["launch"] as? [String: Any])
+    XCTAssertEqual(outputLaunch["profile_name"] as? String, "Reviewer")
+    XCTAssertEqual(outputLaunch["agent"] as? String, "claude")
+  }
+
+  func testProfilesListRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "profiles-list")
+    let profile = ProfilesCommandProfile(
+      id: UUID().uuidString,
+      name: "Reviewer",
+      enabled: true,
+      runtime: "claude",
+      availability: ProfilesCommandAvailability(status: .available)
+    )
+    let response = try CommandResponse(
+      ok: true,
+      command: "profiles",
+      schemaVersion: "prowl.cli.profiles.v1",
+      data: RawJSON(encoding: ProfilesCommandPayload(count: 1, profiles: [profile]))
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["profiles", "list", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .profiles = envelope.command {
+      // Expected read-only profile snapshot command.
+    } else {
+      XCTFail("Expected profiles command envelope")
+    }
+    let output = try jsonObject(from: result.stdout)
+    XCTAssertEqual(output["schema_version"] as? String, "prowl.cli.profiles.v1")
+  }
+
+  func testProfilesListRendersAvailability() throws {
+    let socketPath = temporarySocketPath(suffix: "profiles-list-human")
+    let profile = ProfilesCommandProfile(
+      id: UUID().uuidString,
+      name: "Reviewer",
+      enabled: false,
+      runtime: "claude",
+      availability: ProfilesCommandAvailability(
+        status: .unknown,
+        reason: "Availability check has not completed"
+      )
+    )
+    let response = try CommandResponse(
+      ok: true,
+      command: "profiles",
+      schemaVersion: "prowl.cli.profiles.v1",
+      data: RawJSON(encoding: ProfilesCommandPayload(count: 1, profiles: [profile]))
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["profiles", "list", "--no-color"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stdout.contains("Reviewer  claude  disabled  unknown"), result.stdout)
+    XCTAssertTrue(result.stdout.contains("Availability check has not completed"), result.stdout)
+  }
+
   func testCreatePaneCommandRendersAnchorAndDirection() throws {
     let socketPath = temporarySocketPath(suffix: "create-pane-human")
     let response = try CommandResponse(
@@ -2220,18 +2383,25 @@ final class ProwlCLIIntegrationTests: XCTestCase {
   private func runWithMockServer(
     socketPath: String,
     response: CommandResponse,
-    args: [String]
+    args: [String],
+    stdinData: Data? = nil
   ) throws -> (Data, CommandResult) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let responseData = try encoder.encode(response)
-    return try runWithMockServer(socketPath: socketPath, responseData: responseData, args: args)
+    return try runWithMockServer(
+      socketPath: socketPath,
+      responseData: responseData,
+      args: args,
+      stdinData: stdinData
+    )
   }
 
   private func runWithMockServer(
     socketPath: String,
     responseData: Data,
-    args: [String]
+    args: [String],
+    stdinData: Data? = nil
   ) throws -> (Data, CommandResult) {
     try assertResponseMatchesSchema(responseData)
     let server = try MockSocketServer(socketPath: socketPath, responseData: responseData)
@@ -2240,7 +2410,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
 
     let result = try runProwl(
       args: args,
-      environment: [ProwlSocket.environmentKey: socketPath]
+      environment: [ProwlSocket.environmentKey: socketPath],
+      stdinData: stdinData
     )
 
     let requestData = try XCTUnwrap(server.waitForRequest(timeout: 2.0), "No request received by mock server")
@@ -2264,12 +2435,14 @@ final class ProwlCLIIntegrationTests: XCTestCase {
   private func makeLifecyclePayload(
     resource: LifecycleResource,
     anchor: TabTarget? = nil,
-    direction: CreatePaneDirection? = nil
+    direction: CreatePaneDirection? = nil,
+    launch: LifecycleCommandLaunch? = nil
   ) -> LifecycleCommandPayload {
     LifecycleCommandPayload(
       resource: resource,
       anchor: anchor,
       direction: direction,
+      launch: launch,
       target: makeTabTarget()
     )
   }

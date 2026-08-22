@@ -30,6 +30,10 @@ public struct AgentsInput: Codable, Sendable {
   public init() {}
 }
 
+public struct ProfilesInput: Codable, Sendable {
+  public init() {}
+}
+
 public struct AgentReadInput: Codable, Sendable {
   public static let defaultMaxBytes = 1_024 * 1_024
   public static let maximumMaxBytes = 4 * 1_024 * 1_024
@@ -212,22 +216,61 @@ public enum CreatePaneDirection: String, Codable, CaseIterable, Sendable, Equata
   case down
 }
 
+public struct CreateLaunchInput: Codable, Sendable, Equatable {
+  /// Keeps the surface-shell spawn and prompted child exec comfortably below
+  /// macOS ARG_MAX, including the inherited environment and configured argv.
+  public static let maximumPromptUTF8ByteCount = 256 * 1_024
+
+  public let profile: String
+  public let prompt: String?
+
+  public init(profile: String, prompt: String? = nil) {
+    self.profile = profile
+    self.prompt = prompt
+  }
+}
+
 public struct CreateInput: Codable, Sendable {
   public let resource: LifecycleResource
   public let selector: TargetSelector
   public let path: String?
   public let direction: CreatePaneDirection?
+  public let launch: CreateLaunchInput?
+  public let background: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case resource
+    case selector
+    case path
+    case direction
+    case launch
+    case background
+  }
 
   public init(
     resource: LifecycleResource,
     selector: TargetSelector,
     path: String? = nil,
-    direction: CreatePaneDirection? = nil
+    direction: CreatePaneDirection? = nil,
+    launch: CreateLaunchInput? = nil,
+    background: Bool = false
   ) {
     self.resource = resource
     self.selector = selector
     self.path = path
     self.direction = direction
+    self.launch = launch
+    self.background = background
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    resource = try container.decode(LifecycleResource.self, forKey: .resource)
+    selector = try container.decode(TargetSelector.self, forKey: .selector)
+    path = try container.decodeIfPresent(String.self, forKey: .path)
+    direction = try container.decodeIfPresent(CreatePaneDirection.self, forKey: .direction)
+    launch = try container.decodeIfPresent(CreateLaunchInput.self, forKey: .launch)
+    background = try container.decodeIfPresent(Bool.self, forKey: .background) ?? false
   }
 }
 

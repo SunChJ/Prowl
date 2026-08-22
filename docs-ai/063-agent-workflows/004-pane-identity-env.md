@@ -26,4 +26,5 @@ The A1 review (PR #710) showed that the `prowl-cli` skill taught agents to find 
 
 - Slice: 063-A1b (release plan R1)
 - Branch: `feat/cli-pane-identity-env`
+- PR: #713
 - Follows: [003-cli-create-pane.md](003-cli-create-pane.md)

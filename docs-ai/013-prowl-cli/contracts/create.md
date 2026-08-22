@@ -9,10 +9,10 @@ Current version: `prowl.cli.create.v1`.
 ## Input
 
 ```bash
-prowl create tab <worktree> [--path <directory>] [--json]
-prowl create tab --worktree <worktree> [--path <directory>] [--json]
-prowl create pane <pane> --direction <right|left|up|down> [--json]
-prowl create pane --pane <pane> --direction <right|left|up|down> [--json]
+prowl create tab <worktree> [--path <directory>] [--profile <name|uuid> [--prompt -] [--background]] [--json]
+prowl create tab --worktree <worktree> [--path <directory>] [--profile <name|uuid> [--prompt -] [--background]] [--json]
+prowl create pane <pane> --direction <right|left|up|down> [--profile <name|uuid> [--prompt -] [--background]] [--json]
+prowl create pane --pane <pane> --direction <right|left|up|down> [--profile <name|uuid> [--prompt -] [--background]] [--json]
 ```
 
 `create tab` requires exactly one positional worktree reference or `--worktree`. `--pane`,
@@ -26,11 +26,28 @@ bare numeric handles, `--path`, and positional-plus-flag targeting. Public `up` 
 terminal layer's internal top direction. The operation resolves the anchor directly; it never
 focuses a different pane as an intermediate targeting step.
 
-The new pane inherits the anchor's working directory and split surface configuration. On
-success it becomes the focused pane in the anchor tab, and Prowl selects the anchor's
-worktree and tab exactly as `create tab` selects the target worktree — an anchor in another
-tab or worktree therefore brings that tab into view. A background placement is not part of
-V1; it belongs to the profile launch placement work (063-A2).
+Without `--profile`, the new pane inherits the anchor's working directory and split surface
+configuration, becomes focused, and Prowl selects the anchor's worktree and tab exactly as
+`create tab` selects the target worktree.
+
+`--profile` launches one enabled Agent Profile in the new resource. Lookup tries a matching
+UUID first, then an exact name among enabled profiles; duplicate enabled names fail with
+`PROFILE_NOT_UNIQUE`, while missing or disabled profiles fail with `PROFILE_NOT_FOUND`.
+Runtime availability is advisory and never blocks launch. `--prompt` accepts only `-` and
+reads a non-empty kickoff prompt from piped UTF-8 stdin; an interactive terminal is rejected
+instead of waiting for EOF. The UTF-8 payload is capped at 256 KiB; oversized input returns
+`INVALID_ARGUMENT` before any surface exists. `--prompt` and `--background` require
+`--profile`. Prompt text is carried in a reserved surface-environment carrier and expanded as
+one quoted argv token; it is not written through Ghostty's initial PTY input stream. The typed
+line is one `env -u` command with no assignment statement or shell builtin, so the same form
+runs in zsh, bash, and fish. `env -u` keeps the carrier out of the Profile process; the pane
+shell retains the reserved carrier for its lifetime. NUL bytes are rejected.
+
+Foreground profile launches select the destination worktree/tab and focus the returned pane.
+A background tab is created without changing the selected worktree, tab, or pane. A
+background split is inserted beside the resolved anchor without focusing it and without
+selecting a hidden anchor's worktree/tab. Split creation always targets the pre-resolved
+anchor directly and inherits its working directory; `--path` remains tab-only.
 
 ## Success: tab
 
@@ -80,8 +97,28 @@ before the split: its `focused` / `selected` flags describe the pre-split state 
 `true` alongside the same flags on `target`. UUID fields are the automation-safe output of this
 command.
 
+A successful Profile launch adds the following field to either tab or pane data; ordinary
+shell creation omits it. When the CLI requested `--profile`, omission of this metadata is a
+contract failure, preventing a newer CLI from silently accepting an ordinary shell created by
+an older app:
+
+```json
+{
+  "launch": {
+    "profile_id": "…",
+    "profile_name": "Reviewer",
+    "agent": "claude"
+  }
+}
+```
+
 ## Errors
 
-`INVALID_ARGUMENT`, `TARGET_NOT_FOUND`, `TARGET_NOT_UNIQUE`, `PATH_NOT_ALLOWED`, and
-`CREATE_FAILED` use the common error envelope in
+`INVALID_ARGUMENT`, `EMPTY_INPUT`, `TARGET_NOT_FOUND`, `TARGET_NOT_UNIQUE`,
+`PROFILE_NOT_FOUND`, `PROFILE_NOT_UNIQUE`, `PATH_NOT_ALLOWED`, and `CREATE_FAILED` use the
+common error envelope. Unsupported prompted starts and invalid prompt values return
+`INVALID_ARGUMENT`; creation/provisioning failures retain a specific human-readable reason
+under `CREATE_FAILED`. Client-side version mismatch errors warn that an ordinary shell or
+Profile pane may already have been created and direct the caller to inspect `prowl list` and
+close it. See
 [`cli-output-schema.json`](../../../ProwlCLIContracts/Resources/cli-output-schema.json).

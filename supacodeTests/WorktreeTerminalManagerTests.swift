@@ -133,6 +133,51 @@ struct WorktreeTerminalManagerTests {
     state.cleanupAllAgentDetectionState()
   }
 
+  @Test func backgroundProfileSplitInHiddenWorktreePreservesVisibleSelection() throws {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let visibleWorktree = makeWorktree(id: "/tmp/repo/visible", name: "visible")
+    let hiddenWorktree = makeWorktree(id: "/tmp/repo/hidden", name: "hidden")
+    let visibleState = manager.state(for: visibleWorktree)
+    let hiddenState = manager.state(for: hiddenWorktree)
+    defer {
+      visibleState.cleanupAllAgentDetectionState()
+      hiddenState.cleanupAllAgentDetectionState()
+    }
+
+    let visibleTab = try #require(visibleState.createTab())
+    let visiblePane = try #require(visibleState.focusedSurfaceId(in: visibleTab))
+    let hiddenTab = try #require(hiddenState.createTab())
+    let hiddenAnchor = try #require(hiddenState.focusedSurfaceId(in: hiddenTab))
+    manager.selectedWorktreeID = visibleWorktree.id
+    let profileID = UUID()
+    let plan = AgentProfileLaunchPlan(
+      profileID: profileID,
+      profileName: "Reviewer",
+      runtime: .claude,
+      invocation: AgentInvocation(executable: ":", arguments: []),
+      commandEnvironmentTokens: [],
+      placement: .split,
+      splitDirection: .right,
+      surfaceEnvironment: [:],
+      dedicatedHome: nil
+    )
+
+    let launched = try manager.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: plan,
+        placement: .split(anchor: hiddenAnchor, direction: .right, background: true)
+      ),
+      in: hiddenWorktree
+    ).get()
+
+    #expect(manager.selectedWorktreeID == visibleWorktree.id)
+    #expect(visibleState.tabManager.selectedTabId == visibleTab)
+    #expect(visibleState.currentFocusedSurfaceId() == visiblePane)
+    #expect(hiddenState.tabManager.selectedTabId == hiddenTab)
+    #expect(hiddenState.focusedSurfaceId(in: hiddenTab) == hiddenAnchor)
+    #expect(launched.tabID == hiddenTab)
+  }
+
   @Test func firstTabUsesTabSurfaceContext() throws {
     let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
     let worktree = makeWorktree()

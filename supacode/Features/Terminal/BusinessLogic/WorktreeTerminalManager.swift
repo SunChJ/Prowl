@@ -60,6 +60,15 @@ final class WorktreeTerminalManager {
     createTabAsync(in: worktree, runSetupScriptIfNew: false, workingDirectory: directory)
   }
 
+  /// Synchronous launch boundary used by the CLI and workflow runner. Menu and
+  /// palette launch events remain owned by the compatibility command below.
+  func launchAgentProfile(
+    _ request: AgentProfileLaunchRequest,
+    in worktree: Worktree
+  ) -> Result<LaunchedSurface, AgentProfileLaunchError> {
+    state(for: worktree).launchAgentProfile(request)
+  }
+
   /// The launch outcome is reported as an event either way: the reducer
   /// records the per-repo launch memory only on success and surfaces the
   /// failure as a toast (docs-ai 053/005).

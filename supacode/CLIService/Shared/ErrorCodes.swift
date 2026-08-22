@@ -31,6 +31,9 @@ public enum CLIErrorCode {
   public static let resultIncomplete = "RESULT_INCOMPLETE"
   public static let resultTooLarge = "RESULT_TOO_LARGE"
 
+  // Profiles
+  public static let profilesFailed = "PROFILES_FAILED"
+
   // Focus
   public static let focusFailed = "FOCUS_FAILED"
 
@@ -52,6 +55,8 @@ public enum CLIErrorCode {
   // Lifecycle
   public static let createFailed = "CREATE_FAILED"
   public static let closeFailed = "CLOSE_FAILED"
+  public static let profileNotFound = "PROFILE_NOT_FOUND"
+  public static let profileNotUnique = "PROFILE_NOT_UNIQUE"
 
   // Tab
   public static let tabFailed = "TAB_FAILED"
