@@ -843,6 +843,14 @@ struct SupacodeApp: App {
         return nil
       }
     }
+    let createPane: LifecycleCommandHandler.CreatePaneProvider = { anchor, direction in
+      createCLIPane(
+        anchor: anchor,
+        direction: direction,
+        appStore: appStore,
+        terminalManager: terminalManager
+      )
+    }
     let closeTab: TabCommandHandler.CloseTabProvider = { target, force in
       guard let tabUUID = UUID(uuidString: target.tabID),
         let state = terminalManager.stateIfExists(for: target.worktreeID)
@@ -869,6 +877,7 @@ struct SupacodeApp: App {
       resolveCreateTarget: resolveTabTarget,
       resolveCloseTarget: resolveLifecycleTarget,
       createTab: createTab,
+      createPane: createPane,
       closeTab: closeTab,
       closePane: closePane
     )
@@ -1214,6 +1223,50 @@ struct SupacodeApp: App {
       }
     }
     return nil
+  }
+
+  private static func createCLIPane(
+    anchor: TabResolvedTarget,
+    direction: CreatePaneDirection,
+    appStore: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager
+  ) -> TabResolvedTarget? {
+    guard let anchorPaneID = UUID(uuidString: anchor.paneID),
+      let state = terminalManager.stateIfExists(for: anchor.worktreeID)
+    else {
+      return nil
+    }
+    let createdPaneID: UUID
+    switch state.createSplit(
+      of: anchorPaneID,
+      direction: direction.terminalSplitDirection,
+      initialInput: nil,
+      additionalEnvironment: [:],
+      focusing: true
+    ) {
+    case .success(let paneID):
+      createdPaneID = paneID
+    case .failure:
+      return nil
+    }
+
+    // Resolve and split the explicit anchor before changing any UI focus.
+    // Selection happens only after creation so mutable focus can never retarget the split.
+    selectCLIWorktreeContext(
+      worktreeID: anchor.worktreeID,
+      appStore: appStore,
+      terminalManager: terminalManager
+    )
+    if let tabID = state.tabId(containing: createdPaneID) {
+      state.selectTab(tabID)
+    }
+    let resolver = makeTargetResolver(appStore: appStore, terminalManager: terminalManager)
+    switch resolver.resolve(.pane(createdPaneID.uuidString)) {
+    case .success(let resolved):
+      return TabResolvedTarget(from: resolved)
+    case .failure:
+      return nil
+    }
   }
 
   private static func selectCLIWorktreeContext(

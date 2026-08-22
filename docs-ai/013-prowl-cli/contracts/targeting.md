@@ -59,10 +59,11 @@ Lifecycle commands intentionally do not use generic worktree projection:
 
 ```text
 create tab <WorktreeRef> | --worktree <WorktreeRef>
+create pane <PaneUUID|pN> | --pane <PaneUUID|pN>
 close <PaneUUID|TabUUID|pN|tN> | --pane <PaneUUID|pN|N> | --tab <TabUUID|tN|N>
 ```
 
-`close` rejects `--target`, `--worktree`, bare-number positionals, UI-focus
-fallback, and mixed positional/flag targeting. `create pane` is reserved for
-[#699](https://github.com/onevcat/Prowl/issues/699): it will require a pane-only
-anchor and direction.
+`create pane` requires `--direction right|left|up|down`; it resolves its anchor
+directly and rejects `--target`, `--worktree`, `--tab`, bare-number anchors, and
+mixed positional/flag targeting. `close` rejects `--target`, `--worktree`,
+bare-number positionals, UI-focus fallback, and mixed positional/flag targeting.

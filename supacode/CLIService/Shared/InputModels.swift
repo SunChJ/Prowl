@@ -205,15 +205,29 @@ public enum LifecycleResource: String, Codable, Sendable, Equatable {
   case pane
 }
 
+public enum CreatePaneDirection: String, Codable, CaseIterable, Sendable, Equatable {
+  case right
+  case left
+  case upward = "up"
+  case down
+}
+
 public struct CreateInput: Codable, Sendable {
   public let resource: LifecycleResource
   public let selector: TargetSelector
   public let path: String?
+  public let direction: CreatePaneDirection?
 
-  public init(resource: LifecycleResource, selector: TargetSelector, path: String? = nil) {
+  public init(
+    resource: LifecycleResource,
+    selector: TargetSelector,
+    path: String? = nil,
+    direction: CreatePaneDirection? = nil
+  ) {
     self.resource = resource
     self.selector = selector
     self.path = path
+    self.direction = direction
   }
 }
 

@@ -38,14 +38,18 @@ succeeds.
 ```bash
 prowl create tab <worktree> [--path <directory>]
 prowl create tab --worktree <worktree> [--path <directory>]
+prowl create pane <pN|pane-uuid> --direction <right|left|up|down>
+prowl create pane --pane <pN|pane-uuid> --direction <right|left|up|down>
 prowl close <pN|tN|uuid> [--force]
 prowl close --pane <uuid|pN|N> [--force]
 prowl close --tab <uuid|tN|N> [--force]
 ```
 
-`create tab` requires a worktree-only target. `close` requires a pane-or-tab-only
-target and rejects `--target`, `--worktree`, bare-number positions, and focus
-fallback. See [create.md](create.md) and [close.md](close.md).
+`create tab` requires a worktree-only target. `create pane` requires a pane-only
+anchor and explicit direction; it rejects `--target`, `--worktree`, `--tab`, bare
+numbers, and focus fallback. `close` requires a pane-or-tab-only target and rejects
+`--target`, `--worktree`, bare-number positions, and focus fallback. See
+[create.md](create.md) and [close.md](close.md).
 
 `tab create`, `tab close`, and `pane close` remain deprecated aliases for one
 shipped release. They keep their legacy parser/transport behavior while emitting a

@@ -3,6 +3,11 @@ import CoreGraphics
 import Foundation
 import GhosttyKit
 
+enum SplitCreationError: Error, Equatable, Sendable {
+  case anchorNotFound(UUID)
+  case insertionFailed
+}
+
 extension WorktreeTerminalState {
   func confirmCloseIfNeeded(
     tabIds: [TerminalTabID],
@@ -91,6 +96,55 @@ extension WorktreeTerminalState {
     return tree
   }
 
+  /// Splits an explicit anchor surface and returns the new pane identity.
+  /// The anchor is resolved directly; callers never need to mutate UI focus before splitting.
+  @discardableResult
+  func createSplit(
+    of anchorSurfaceID: UUID,
+    direction: UserCustomSplitDirection,
+    initialInput: String?,
+    additionalEnvironment: [String: String] = [:],
+    focusing: Bool = true
+  ) -> Result<UUID, SplitCreationError> {
+    guard let tabID = tabId(containing: anchorSurfaceID),
+      let tree = trees[tabID],
+      let anchorSurface = surfaces[anchorSurfaceID]
+    else {
+      return .failure(.anchorNotFound(anchorSurfaceID))
+    }
+
+    let newSurface = createSurface(
+      tabId: tabID,
+      initialInput: initialInput.flatMap { runScriptInput($0) },
+      inheritingFromSurfaceId: anchorSurfaceID,
+      context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+      additionalEnvironment: additionalEnvironment
+    )
+    do {
+      let newTree = try tree.inserting(
+        view: newSurface,
+        at: anchorSurface,
+        direction: mapUserSplitDirection(direction)
+      )
+      updateTree(newTree, for: tabID)
+      if isCanvasManaged {
+        newSurface.setOcclusion(true)
+      }
+      if focusing {
+        focusSurface(newSurface, in: tabID)
+      }
+      _ = registerTargetHandle(for: newSurface.id)
+      return .success(newSurface.id)
+    } catch {
+      newSurface.closeSurface()
+      surfaces.removeValue(forKey: newSurface.id)
+      surfaceRunningStartedAtById.removeValue(forKey: newSurface.id)
+      cleanupCommandDetectorState(forSurfaceId: newSurface.id)
+      cleanupAgentDetectionState(forSurfaceId: newSurface.id)
+      return .failure(.insertionFailed)
+    }
+  }
+
   /// Splits the currently focused surface and seeds the new pane with `initialInput`.
   /// Returns the new surface id, or nil if the split could not be created.
   @discardableResult
@@ -99,41 +153,18 @@ extension WorktreeTerminalState {
     initialInput: String,
     additionalEnvironment: [String: String] = [:]
   ) -> UUID? {
-    guard let tabId = tabManager.selectedTabId,
-      let parentSurfaceId = focusedSurfaceIdByTab[tabId],
-      let tree = trees[tabId],
-      let parentSurface = surfaces[parentSurfaceId]
+    guard let tabID = tabManager.selectedTabId,
+      let anchorSurfaceID = focusedSurfaceIdByTab[tabID]
     else {
       return nil
     }
-    let newSurface = createSurface(
-      tabId: tabId,
-      initialInput: runScriptInput(initialInput),
-      inheritingFromSurfaceId: parentSurfaceId,
-      context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-      additionalEnvironment: additionalEnvironment
-    )
-    do {
-      let newTree = try tree.inserting(
-        view: newSurface,
-        at: parentSurface,
-        direction: mapUserSplitDirection(direction)
-      )
-      updateTree(newTree, for: tabId)
-      if isCanvasManaged {
-        newSurface.setOcclusion(true)
-      }
-      focusSurface(newSurface, in: tabId)
-      _ = registerTargetHandle(for: newSurface.id)
-      return newSurface.id
-    } catch {
-      newSurface.closeSurface()
-      surfaces.removeValue(forKey: newSurface.id)
-      surfaceRunningStartedAtById.removeValue(forKey: newSurface.id)
-      cleanupCommandDetectorState(forSurfaceId: newSurface.id)
-      cleanupAgentDetectionState(forSurfaceId: newSurface.id)
-      return nil
-    }
+    return try? createSplit(
+      of: anchorSurfaceID,
+      direction: direction,
+      initialInput: initialInput,
+      additionalEnvironment: additionalEnvironment,
+      focusing: true
+    ).get()
   }
 
   /// Returns the focused surface id for a given tab, if any.
@@ -193,33 +224,15 @@ extension WorktreeTerminalState {
 
     switch action {
     case .newSplit(let direction):
-      let newSurface = createSurface(
-        tabId: tabId,
+      switch createSplit(
+        of: surfaceId,
+        direction: mapGhosttySplitDirection(direction),
         initialInput: nil,
-        inheritingFromSurfaceId: surfaceId,
-        context: GHOSTTY_SURFACE_CONTEXT_SPLIT
-      )
-      do {
-        let newTree = try tree.inserting(
-          view: newSurface,
-          at: targetSurface,
-          direction: mapSplitDirection(direction)
-        )
-        updateTree(newTree, for: tabId)
-        // Canvas manages occlusion directly; ensure the new pane renders.
-        if isCanvasManaged {
-          newSurface.setOcclusion(true)
-        }
-        focusSurface(newSurface, in: tabId)
-        _ = registerTargetHandle(for: newSurface.id)
+        focusing: true
+      ) {
+      case .success:
         return true
-      } catch {
-        newSurface.closeSurface()
-        surfaces.removeValue(forKey: newSurface.id)
-        surfaceRunningStartedAtById.removeValue(forKey: newSurface.id)
-        cleanupCommandDetectorState(forSurfaceId: newSurface.id)
-        cleanupAgentDetectionState(forSurfaceId: newSurface.id)
-
+      case .failure:
         return false
       }
 
@@ -737,9 +750,7 @@ extension WorktreeTerminalState {
     }
   }
 
-  func mapSplitDirection(_ direction: GhosttySplitAction.NewDirection)
-    -> SplitTree<GhosttySurfaceView>.NewDirection
-  {
+  func mapGhosttySplitDirection(_ direction: GhosttySplitAction.NewDirection) -> UserCustomSplitDirection {
     switch direction {
     case .left:
       return .left

@@ -10,6 +10,7 @@ struct CreateCommand: ParsableCommand {
     abstract: "Create a terminal resource.",
     subcommands: [
       CreateTabCommand.self,
+      CreatePaneCommand.self,
     ]
   )
 }
@@ -33,16 +34,18 @@ struct CreateTabCommand: ParsableCommand {
     try CLIExecution.run(command: "create", output: options.outputMode, colorEnabled: options.colorEnabled) {
       let envelope = CommandEnvelope(
         output: options.outputMode,
-        command: .create(
-          CreateInput(
-            resource: .tab,
-            selector: try selector.resolveWorktree(positionalTarget: worktree),
-            path: normalizedPath()
-          )
-        )
+        command: .create(try makeInput())
       )
       try CLIRunner.execute(envelope)
     }
+  }
+
+  func makeInput() throws -> CreateInput {
+    CreateInput(
+      resource: .tab,
+      selector: try selector.resolveWorktree(positionalTarget: worktree),
+      path: normalizedPath()
+    )
   }
 
   private func normalizedPath() -> String? {
@@ -51,6 +54,56 @@ struct CreateTabCommand: ParsableCommand {
       .standardizedFileURL
       .path(percentEncoded: false)
       .trimmingTrailingSlash()
+  }
+}
+
+struct CreatePaneCommand: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "pane",
+    abstract: "Create a split pane beside an existing pane."
+  )
+
+  enum Direction: String, ExpressibleByArgument {
+    case right
+    case left
+    case up
+    case down
+
+    var value: CreatePaneDirection {
+      switch self {
+      case .right: .right
+      case .left: .left
+      case .up: .upward
+      case .down: .down
+      }
+    }
+  }
+
+  @Argument(help: "Anchor pane UUID or short handle (for example, p3).")
+  var anchor: String?
+
+  @OptionGroup var selector: LifecycleSelectorOptions
+  @OptionGroup var options: GlobalOptions
+
+  @Option(name: .long, help: "Split direction: right, left, up, or down.")
+  var direction: Direction
+
+  mutating func run() throws {
+    try CLIExecution.run(command: "create", output: options.outputMode, colorEnabled: options.colorEnabled) {
+      let envelope = CommandEnvelope(
+        output: options.outputMode,
+        command: .create(try makeInput())
+      )
+      try CLIRunner.execute(envelope)
+    }
+  }
+
+  func makeInput() throws -> CreateInput {
+    CreateInput(
+      resource: .pane,
+      selector: try selector.resolvePane(positionalTarget: anchor),
+      direction: direction.value
+    )
   }
 }
 
