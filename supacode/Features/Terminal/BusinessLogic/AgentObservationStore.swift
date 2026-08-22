@@ -60,6 +60,9 @@ final class AgentObservationStore {
     return stream
   }
 
+  /// Callers must establish that the surface is live before publishing. The
+  /// manager owns that invariant: detector callbacks come only from live state,
+  /// and cooperative signals pass its `containsSurface` guard.
   func publishAgentChanged(_ entry: ActiveAgentEntry) {
     var record = records[entry.surfaceID] ?? SurfaceRecord()
     guard record.agent != entry else { return }
@@ -77,6 +80,7 @@ final class AgentObservationStore {
     publish(.removed, surfaceID: surfaceID)
   }
 
+  /// The manager validates surface liveness before this publication seam.
   func publishSignal(_ signal: AgentSignal, surfaceID: UUID) {
     var record = records[surfaceID] ?? SurfaceRecord()
     record.latestSignal = signal
@@ -106,22 +110,21 @@ final class AgentObservationStore {
   }
 
   private func publish(_ event: ObservedAgentState, surfaceID: UUID) {
-    guard var record = records[surfaceID] else { return }
-    for (subscriberID, continuation) in record.subscribers {
+    guard let subscribers = records[surfaceID]?.subscribers else { return }
+    for (subscriberID, continuation) in subscribers {
       switch continuation.yield(event) {
       case .enqueued:
         continue
       case .dropped:
         continuation.finish(throwing: AgentObservationError.bufferOverflow)
-        record.subscribers.removeValue(forKey: subscriberID)
+        records[surfaceID]?.subscribers.removeValue(forKey: subscriberID)
       case .terminated:
-        record.subscribers.removeValue(forKey: subscriberID)
+        records[surfaceID]?.subscribers.removeValue(forKey: subscriberID)
       @unknown default:
         continuation.finish(throwing: AgentObservationError.bufferOverflow)
-        record.subscribers.removeValue(forKey: subscriberID)
+        records[surfaceID]?.subscribers.removeValue(forKey: subscriberID)
       }
     }
-    records[surfaceID] = record
   }
 
   private func removeSubscriber(_ subscriberID: UUID, surfaceID: UUID) {

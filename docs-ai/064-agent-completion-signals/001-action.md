@@ -80,4 +80,19 @@ post-review validation will repeat the Debug build and basic socket/E2E checks.
 
 ## Review record
 
-To be completed after the required adversarial Claude Code rounds.
+### Round 1 — `99f0baa9`
+
+Independent adversarial review found no P0/P1 defects after reading the full diff and running
+60 focused tests. It confirmed snapshot atomicity, overflow signaling, teardown ordering,
+MainActor discipline, caller attribution, four-layer CLI parity, and S2 decision consistency.
+Four credible P3 hardening/docs findings were accepted before the next round:
+
+- document the manager-owned live-surface invariant at lazy publication sites;
+- remove whole-record copy/write-back from subscriber publication so future synchronous
+  termination reentrancy cannot clobber subscriber-map mutations;
+- reconcile the pre-existing S2 exit contract to `--until exit`;
+- document the defensive `AGENTS_FAILED` receipt-encoding failure.
+
+Format-category filtering was deferred as optional S2 hardening; the pre-existing blocking
+socket-framing architecture remains outside S1 and should be revisited before high-volume
+hook fan-in. Rounds 2–3 review the updated HEAD independently.

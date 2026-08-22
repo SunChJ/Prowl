@@ -82,6 +82,7 @@ Optional fields are omitted rather than encoded as `null`. The executable schema
 - `SOURCE_REQUIRED` — the socket peer process cannot be attributed to a live Prowl pane
   (including an external terminal or ancestry broken by tmux/detached wrappers).
 - `AGENT_GONE` — the attributed pane closed before the signal was recorded.
+- `AGENTS_FAILED` — the app could not encode the signal receipt.
 
 ## Deferred paired completion
 

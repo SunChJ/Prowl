@@ -178,7 +178,7 @@ cancellation removes the subscriber, and `surfaceClosed` terminates the stream. 
 subscriber receives an explicit `bufferOverflow` error instead of silently losing signal or
 lifecycle evidence; S2's `agents wait` re-subscribes and evaluates the newer snapshot before
 surfacing an error. `agents wait` maps `removed` /
-`surfaceClosed` to a terminal `AGENT_GONE` error (not to `done`) unless `--until changed`
+`surfaceClosed` to a terminal `AGENT_GONE` error (not to `done`) unless `--until exit`
 was requested. The runner's watchdog likewise reads the role's *current* state first and
 schedules cancellable grace deadlines on the injected clock; it never relies on a later
 event alone.
