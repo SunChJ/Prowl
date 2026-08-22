@@ -33,7 +33,7 @@ producer's business judgment authoritative. `--origin` is caller-authored metada
 cannot upgrade source/confidence or satisfy a future native-hook capability check.
 
 `--session` and `--origin` are non-empty, control-free UTF-8 up to 256 bytes. `--detail`
-is non-empty, control-free UTF-8 up to 4096 bytes. Detail is a short result or reason returned
+is non-empty, control-free UTF-8 up to 32768 bytes. Detail is a short result or reason returned
 with the signal; it is not logged and does not change confidence. Large results use
 `agents read`; workflow outputs use `workflow done -`.
 

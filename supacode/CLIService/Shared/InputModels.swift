@@ -41,7 +41,7 @@ public enum AgentSignalEvent: String, Codable, CaseIterable, Sendable {
 public struct AgentSignalInput: Codable, Sendable {
   public static let maximumSessionIDBytes = 256
   public static let maximumOriginBytes = 256
-  public static let maximumDetailBytes = 4 * 1_024
+  public static let maximumDetailBytes = 32 * 1_024
 
   public let event: AgentSignalEvent
   public let progress: Int?

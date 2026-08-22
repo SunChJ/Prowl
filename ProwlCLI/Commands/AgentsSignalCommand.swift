@@ -22,7 +22,7 @@ struct AgentsSignalCommand: ParsableCommand {
   @Option(name: .customLong("session"), help: "Opaque agent session identifier.")
   var sessionID: String?
 
-  @Option(name: .long, help: "Short result or reason returned with the signal (maximum 4096 UTF-8 bytes).")
+  @Option(name: .long, help: "Short result or reason returned with the signal (maximum 32768 UTF-8 bytes).")
   var detail: String?
 
   @OptionGroup var options: GlobalOptions

@@ -232,6 +232,10 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-23 before merge: owner raised bounded signal `--detail` from 4 KiB to
+  32 KiB (32768 UTF-8 bytes). The larger bound remains well below the 32 MiB socket frame and
+  macOS argument budget, accommodates useful completion summaries, and preserves the rule
+  that transcript/workflow-sized output uses its dedicated channels.
 - Updated 2026-08-22 before S1 implementation: owner review separated runtime `turn-ended`
   from S2's cooperative `dispatch-complete`; retained bounded `--detail`; made public origin
   claimed metadata only; required explicit overflow/resnapshot; and moved the complete

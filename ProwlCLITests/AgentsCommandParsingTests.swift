@@ -55,6 +55,17 @@ final class AgentsCommandParsingTests: XCTestCase {
     XCTAssertThrowsError(try AgentsSignalCommand.parse(["complete"]))
     XCTAssertThrowsError(try AgentsSignalCommand.parse(["turn-ended", "--progress", "1"]))
     XCTAssertThrowsError(try AgentsSignalCommand.parse(["progress", "--progress", "101"]))
-    XCTAssertThrowsError(try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "x", count: 4_097)]))
+    XCTAssertNoThrow(
+      try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "x", count: 32_768)])
+    )
+    XCTAssertNoThrow(
+      try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "界", count: 10_922)])
+    )
+    XCTAssertThrowsError(
+      try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "x", count: 32_769)])
+    )
+    XCTAssertThrowsError(
+      try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "界", count: 10_923)])
+    )
   }
 }

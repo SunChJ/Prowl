@@ -745,7 +745,7 @@
             "detail": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 4096
+              "maxLength": 32768
             },
             "claimed_origin": {
               "type": "string",

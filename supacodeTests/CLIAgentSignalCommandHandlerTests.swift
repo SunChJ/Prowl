@@ -121,6 +121,12 @@ struct CLIAgentSignalCommandHandlerTests {
       },
       recordSignal: { _, _ in true }
     )
+    let maximumDetail = AgentSignalInput(
+      event: .needsInput,
+      detail: String(repeating: "x", count: 32_768)
+    )
+    #expect(maximumDetail.validationErrorMessage == nil)
+
     let invalidInputs = [
       AgentSignalInput(event: .turnEnded, progress: 1),
       AgentSignalInput(event: .progress, progress: -1),
@@ -128,7 +134,7 @@ struct CLIAgentSignalCommandHandlerTests {
       AgentSignalInput(event: .needsInput, sessionID: ""),
       AgentSignalInput(event: .needsInput, origin: "bad\norigin"),
       AgentSignalInput(event: .needsInput, detail: "bad\u{0}detail"),
-      AgentSignalInput(event: .needsInput, detail: String(repeating: "x", count: 4_097)),
+      AgentSignalInput(event: .needsInput, detail: String(repeating: "x", count: 32_769)),
     ]
 
     for input in invalidInputs {

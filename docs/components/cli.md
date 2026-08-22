@@ -241,7 +241,7 @@ Events are `turn-ended`, `needs-input`, `session-start`, `session-end`, and `pro
 `turn-ended` means one runtime interaction ended; it does not complete a workflow or prove
 an assigned task is done. `--progress` accepts 0–100 and is valid only for `progress`.
 Optional `--session` and claimed `--origin` are limited to 256 UTF-8 bytes; `--detail`
-carries a short result/reason up to 4096 bytes. Values must be non-empty and control-free.
+carries a short result/reason up to 32768 UTF-8 bytes. Values must be non-empty and control-free.
 
 The command accepts no target: Prowl attributes the kernel socket peer PID through process
 ancestry to a live pane. It never uses UI focus or `PROWL_PANE_ID`; external terminals,

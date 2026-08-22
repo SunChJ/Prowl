@@ -68,7 +68,7 @@ prowl agents signal <turn-ended|needs-input|session-start|session-end|progress>
 ```
 
 `--progress` is valid only with `progress`; omitting it means indeterminate progress.
-Session/origin are at most 256 UTF-8 bytes and detail is at most 4096. All are non-empty
+Session/origin are at most 256 UTF-8 bytes and detail is at most 32768. All are non-empty
 and control-free when present. Parser and handler enforce the same shared validation.
 See [agents-signal.md](agents-signal.md).
 
