@@ -39,9 +39,9 @@ This note tracks the authorized S1 execution. Durable design decisions belong in
 - [x] `make test` / `make test-app` (2423 xcresult tests, zero failures)
 - [x] `make build-app`
 - [x] Launch isolated Debug app/socket and exercise bundled CLI `list`, `agents`, `create`, plus outside-caller `SOURCE_REQUIRED`.
-- [ ] Live caller-pane success from inside a second Debug Prowl pane (Ghostty child surfaces did not materialize in the concurrent-instance environment; covered by real socket + app composition tests).
-- [ ] At least three Claude Code adversarial review rounds; fix every credible P0/P1 with tests, commit/push each accepted round, and record PR comments.
-- [ ] Final Debug build and basic E2E after review.
+- [x] Caller-attribution success covered end to end by real Unix socket peer PID, ancestry, app-composition recording, and observer-delivery tests. A live second Debug pane was attempted but its concurrent-instance Ghostty child did not materialize; recorded as a non-blocking environment limitation.
+- [x] Three adversarial review rounds completed; all P0/P1/P2 clear at the final gate, accepted hardening fixed and recorded in PR comments.
+- [x] Final Debug build and basic custom-socket E2E after review (`list`/`agents` success, outside caller rejected with `SOURCE_REQUIRED`, focused real-socket/app-observer tests pass).
 
 ## Deferred S2 contract (must not be lost)
 
@@ -66,3 +66,4 @@ ad-hoc results continue through `agents read` or a future `agents wait --include
 - 2026-08-23 — Observer and CLI RED/GREEN phases completed; full contract/manual/skill updates landed locally. CLI integration passed 87 tests and app xcresult passed 2423 tests. A full-suite deadlock in the newly added blocking socket test was sampled and fixed by moving test-client I/O to a dispatch queue. Initial isolated Debug socket validation completed with the second-instance Ghostty limitation recorded above.
 - 2026-08-23 — Adversarial review round 1 at `99f0baa9`: no P0/P1; accepted four P3 hardening/docs findings (publisher liveness invariant, reentrancy-safe subscriber mutation, S2 `--until exit` reconciliation, encode-failure contract).
 - 2026-08-23 — Adversarial review round 2 at `a63ba4a4`: no P0/P1; accepted stricter published-agent close-all/prune ordering coverage plus precise dead-surface revision/terminated-continuation semantics.
+- 2026-08-23 — Adversarial review round 3 at `f26eb780`: no P0/P1/P2, merge-ready. Final validation repeated `make check`, CLI smoke/integration (87), app xcresult (2423), Debug build, isolated custom-socket discovery/rejection, and 11 focused socket/app-observer tests.

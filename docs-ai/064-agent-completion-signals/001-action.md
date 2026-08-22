@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feat/agent-completion-signal-bus`; adversarial review and final post-review E2E are in progress.
+Complete on `feat/agent-completion-signal-bus`; PR #715 is ready for merge.
 
 ## Slice objective
 
@@ -75,8 +75,14 @@ An isolated Debug app was also launched on a custom socket. The bundled CLI succ
 exercised `list`, `agents`, `create`, and outside-caller rejection (`SOURCE_REQUIRED`). A
 second app instance did not materialize Ghostty child surfaces (blank pane, no command/read),
 so an inside-pane GUI signal could not be attested in that environment; the real Unix-socket
-context test and app-composition observer test cover that path automatically. Final
-post-review validation will repeat the Debug build and basic socket/E2E checks.
+context test and app-composition observer test cover that path automatically.
+
+After round 3, final validation repeated `make check`, CLI smoke/integration (87 tests), the
+app xcresult (2423 tests), and `make build-app`. An isolated custom-socket Debug launch again
+passed `list`/`agents` and returned `SOURCE_REQUIRED` for an outside `agents signal`; 11
+focused tests re-verified real kernel peer-PID framing, app signal recording, and observer
+delivery. All final commands passed; only the documented concurrent-instance Ghostty UI
+limitation remains.
 
 ## Review record
 
@@ -105,4 +111,12 @@ now pin `changed → removed → surfaceClosed → finish` with a published agen
 dead-surface snapshots explicitly document that `surfaceClosed` is authoritative after the
 revision resets. Already-terminated continuations are no longer mislabeled as overflow.
 The internal subscriber-count seam remains deliberately available for diagnostics/S2 health.
-Round 3 reviews the updated HEAD independently.
+
+### Round 3 — `f26eb780`
+
+The final merge-gate pass re-derived the full design from HEAD and ran `make test-app`
+(2423 tests), CLI integration (87 tests), and `make check`. It found no P0/P1/P2 and declared
+the PR merge-ready. No code changes were requested. The known second-instance Debug Ghostty
+limitation remains non-blocking because kernel peer-PID framing, ancestry resolution, app
+composition, signal recording, and observer delivery are covered by executable tests; a
+single-app live pane check remains a cheap follow-up after the next normal Debug install.
