@@ -86,3 +86,4 @@ build/
 # Release-only credentials (analytics, crash reporting)
 Config/Secrets.env
 .build-benchmark/
+scripts/__pycache__/
