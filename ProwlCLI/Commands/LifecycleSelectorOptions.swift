@@ -19,6 +19,52 @@ struct LifecycleSelectorOptions: ParsableArguments {
     try resolve(positionalTarget: positionalTarget, acceptedSelector: .worktree)
   }
 
+  func resolvePane(positionalTarget: String?) throws -> TargetSelector {
+    let provided = [worktree, tab, pane].compactMap { $0 }
+    guard provided.count <= 1 else {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "At most one target selector (--worktree, --tab, --pane) is allowed."
+      )
+    }
+
+    if let positionalTarget {
+      guard provided.isEmpty else {
+        throw ExitError(
+          code: CLIErrorCode.invalidArgument,
+          message: "Use either a positional pane or --pane."
+        )
+      }
+      guard isPaneReference(positionalTarget) else {
+        throw ExitError(
+          code: CLIErrorCode.invalidArgument,
+          message: "create pane requires a pane UUID or prefixed handle (pN)."
+        )
+      }
+      return .pane(positionalTarget)
+    }
+
+    if worktree != nil || tab != nil {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "create pane accepts only --pane, not --worktree or --tab."
+      )
+    }
+    guard let pane else {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "create pane requires an explicit pane anchor."
+      )
+    }
+    guard isPaneReference(pane) else {
+      throw ExitError(
+        code: CLIErrorCode.invalidArgument,
+        message: "create pane requires a pane UUID or prefixed handle (pN)."
+      )
+    }
+    return .pane(pane)
+  }
+
   func resolveTerminalTarget(positionalTarget: String?) throws -> TargetSelector {
     let provided = [worktree, tab, pane].compactMap { $0 }
     guard provided.count <= 1 else {
@@ -98,7 +144,11 @@ struct LifecycleSelectorOptions: ParsableArguments {
   }
 
   private func isTerminalReference(_ value: String) -> Bool {
-    UUID(uuidString: value) != nil || isPrefixedHandle(value, prefix: "p") || isPrefixedHandle(value, prefix: "t")
+    isPaneReference(value) || isPrefixedHandle(value, prefix: "t")
+  }
+
+  private func isPaneReference(_ value: String) -> Bool {
+    UUID(uuidString: value) != nil || isPrefixedHandle(value, prefix: "p")
   }
 
   private func isPrefixedHandle(_ value: String, prefix: Character) -> Bool {

@@ -277,6 +277,21 @@ either positionally or with `--worktree`; `--path` must remain inside it.
 pane="$(prowl create tab "$wt" --json | jq -r '.data.target.pane.id')"
 ```
 
+### `prowl create pane`
+Create a split beside an explicit pane anchor. The anchor is a pane UUID or current-process
+`pN` handle, supplied positionally or with `--pane`; `--direction` is required.
+
+```bash
+pane="$(prowl create pane "$anchor" --direction right --json | jq -r '.data.target.pane.id')"
+```
+
+Directions are `right`, `left`, `up`, and `down`. The created pane inherits the anchor's
+working directory and terminal configuration, becomes focused in that tab, and is returned
+as `.data.target.pane.id`. `.data.anchor` records the resolved source pane and
+`.data.direction` records the public direction. The operation targets the anchor directly;
+it never depends on current UI focus. Use `prowl send --pane "$pane" …` after creation when
+you want to run input.
+
 ### `prowl close`
 Close one explicit tab or pane. The positional form uses a UUID, `pN`, or `tN`; the
 long forms are `--pane <uuid|pN|N>` and `--tab <uuid|tN|N>`. `close` rejects
@@ -444,6 +459,6 @@ prowl close "$pane" --json
   when you need all panes, including ordinary shells.
 - `--capture` needs shell integration; otherwise `read --wait-stable` or file
   redirection.
-- `open` is navigation, not a guaranteed new pane — use `create tab`.
+- `open` is navigation, not a guaranteed new pane — use `create tab` or `create pane`.
 - In zsh, don't name a variable `status` (it's readonly).
 - Pass shell values into `jq` with `--arg`.

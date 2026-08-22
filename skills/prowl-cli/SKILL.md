@@ -67,7 +67,18 @@ test "$pane" != "$self_pane"
 
 Prefer a `worktree.id` or `worktree.name` returned by `prowl list` over a hand-typed path; list preserves normalization such as trailing slashes. Use `--path` only for the new tab's working directory inside the selected worktree.
 
-`prowl open /path` opens or focuses a matching project/path and may create a tab when needed. It is not guaranteed to create a new pane. Use `prowl create tab` for deterministic new terminal sessions.
+Create a sibling split from a positively identified anchor pane and capture the new UUID:
+
+```bash
+pane="$(prowl create pane "$anchor" --direction right --json | jq -r '.data.target.pane.id')"
+test "$pane" != "$anchor"
+```
+
+The anchor must be a pane UUID or current `pN` handle. Directions are `right`, `left`, `up`,
+and `down`. Creation inherits the anchor's working directory and returns the exact new pane;
+run input afterward with an explicit `prowl send --pane "$pane" …`.
+
+`prowl open /path` opens or focuses a matching project/path and may create a tab when needed. It is not guaranteed to create a new pane. Use `prowl create tab` or `prowl create pane` for deterministic new terminal sessions.
 
 Run a command and capture its result:
 
@@ -129,6 +140,12 @@ created="$(prowl create tab "$worktree" --json)"
 printf '%s\n' "$created" | jq -r '.data.target.pane.id'
 printf '%s\n' "$created" | jq -r '.data.target.tab.id'
 
+# create pane: resolved anchor, direction, and new pane id
+split="$(prowl create pane "$anchor" --direction right --json)"
+printf '%s\n' "$split" | jq -r '.data.anchor.pane.id'
+printf '%s\n' "$split" | jq -r '.data.direction'
+printf '%s\n' "$split" | jq -r '.data.target.pane.id'
+
 # list / agents: ids and status
 prowl list --json   | jq -r '.data.items[].pane.id'
 prowl list --json   | jq -r '.data.items[] | select(.pane.focused) | .pane.id'
@@ -145,6 +162,7 @@ Key fields by command (see `docs/components/cli.md` for the full contract):
 - `list` / `agents` → `.data.items[]` / `.data.agents[]`, each with `.pane.id`, `.tab.id`, and `.worktree.{id,name,path}`. Agent entries also include `.status`, `.raw_state`, and optional `.detection_reason`; list entries include `.task.status`.
 - `agents read` → `.data.agent` (current status/reason), `.data.blocker.text` when blocked, and `.data.result`. Only `.data.result.state == "complete"` carries `.data.result.text`; `pending`, `unavailable`, `missing`, `incomplete`, and `too_large` deliberately carry no partial text.
 - `create tab` / `open` → `.data.target.{pane,tab,worktree}`.
+- `create pane` → `.data.anchor`, `.data.direction`, and the created `.data.target.{pane,tab,worktree}`.
 
 ## Reading Agent Output
 
@@ -288,7 +306,7 @@ Avoid outer double quotes around payloads containing `$PWD`, `$VAR`, backticks, 
 - Never omit `--pane` for `send`, `key`, `read`, or `focus` in automation.
 - Use `prowl agents --json` for discovery and `prowl agents read <pN|uuid> --json` for a supported agent's current semantic snapshot; use `prowl list --json` for all panes and worktree-level `task.status`.
 - `open /path` is a project/path navigation command. It may refocus an existing pane and is not a deterministic create command.
-- Use `create tab` when automation needs a fresh shell, and capture the returned `pane.id` before sending input.
+- Use `create tab` or `create pane` when automation needs a fresh shell, and capture the returned `pane.id` before sending input.
 - Focused pane is not stable; `open` and `focus` change it.
 - `read --wait-stable` sees rendered screen only. It cannot recover content folded by a TUI.
 - `read` returning fewer lines than `--last` requested is normally `truncated: false` — the pane simply has less history and you already have it all, so do not retry for more. `truncated: true` flags a possibly-incomplete result (the full scrollback could not be read).
@@ -354,4 +372,4 @@ Write the briefing from your current working knowledge — required sections are
 
 ## Command Set
 
-Current commands: `list`, `agents`, `agents read`, `read`, `send`, `key`, `focus`, `create tab`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close` target. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.
+Current commands: `list`, `agents`, `agents read`, `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close` target. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.

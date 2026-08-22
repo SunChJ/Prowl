@@ -173,6 +173,55 @@
         }
       }
     },
+    "createData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "resource",
+            "target"
+          ],
+          "properties": {
+            "resource": {
+              "const": "tab"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "resource",
+            "anchor",
+            "direction",
+            "target"
+          ],
+          "properties": {
+            "resource": {
+              "const": "pane"
+            },
+            "anchor": {
+              "$ref": "#/$defs/target"
+            },
+            "direction": {
+              "enum": [
+                "right",
+                "left",
+                "up",
+                "down"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            }
+          }
+        }
+      ]
+    },
     "lifecycleData": {
       "type": "object",
       "additionalProperties": false,
@@ -1790,7 +1839,7 @@
               "const": "prowl.cli.create.v1"
             },
             "data": {
-              "$ref": "#/$defs/lifecycleData"
+              "$ref": "#/$defs/createData"
             }
           }
         },

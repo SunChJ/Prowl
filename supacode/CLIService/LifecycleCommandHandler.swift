@@ -11,12 +11,14 @@ final class LifecycleCommandHandler: CommandHandler {
   typealias ResolveCloseTargetProvider =
     @MainActor (TargetSelector) -> Result<LifecycleResolvedTarget, TargetResolverError>
   typealias CreateTabProvider = @MainActor (TabResolvedTarget, String?) -> TabResolvedTarget?
+  typealias CreatePaneProvider = @MainActor (TabResolvedTarget, CreatePaneDirection) -> TabResolvedTarget?
   typealias CloseTabProvider = @MainActor (TabResolvedTarget, Bool) -> Bool
   typealias ClosePaneProvider = @MainActor (TabResolvedTarget, Bool) -> Bool
 
   private let resolveCreateTarget: ResolveCreateTargetProvider
   private let resolveCloseTarget: ResolveCloseTargetProvider
   private let createTab: CreateTabProvider
+  private let createPane: CreatePaneProvider
   private let closeTab: CloseTabProvider
   private let closePane: ClosePaneProvider
 
@@ -24,12 +26,14 @@ final class LifecycleCommandHandler: CommandHandler {
     resolveCreateTarget: @escaping ResolveCreateTargetProvider,
     resolveCloseTarget: @escaping ResolveCloseTargetProvider,
     createTab: @escaping CreateTabProvider,
+    createPane: @escaping CreatePaneProvider,
     closeTab: @escaping CloseTabProvider,
     closePane: @escaping ClosePaneProvider
   ) {
     self.resolveCreateTarget = resolveCreateTarget
     self.resolveCloseTarget = resolveCloseTarget
     self.createTab = createTab
+    self.createPane = createPane
     self.closeTab = closeTab
     self.closePane = closePane
   }
@@ -48,18 +52,20 @@ final class LifecycleCommandHandler: CommandHandler {
   }
 
   private func handleCreate(_ input: CreateInput) -> CommandResponse {
-    guard input.resource == .tab else {
-      return errorResponse(
-        command: "create",
-        code: CLIErrorCode.invalidArgument,
-        message: "create pane is not available yet."
-      )
+    switch input.resource {
+    case .tab:
+      return handleCreateTab(input)
+    case .pane:
+      return handleCreatePane(input)
     }
-    guard case .worktree = input.selector else {
+  }
+
+  private func handleCreateTab(_ input: CreateInput) -> CommandResponse {
+    guard case .worktree = input.selector, input.direction == nil else {
       return errorResponse(
         command: "create",
         code: CLIErrorCode.invalidArgument,
-        message: "create tab requires a worktree target."
+        message: "create tab requires a worktree target and does not accept a direction."
       )
     }
 
@@ -83,6 +89,35 @@ final class LifecycleCommandHandler: CommandHandler {
       return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: "Failed to create tab.")
     }
     return success(command: "create", resource: .tab, target: createdTarget)
+  }
+
+  private func handleCreatePane(_ input: CreateInput) -> CommandResponse {
+    guard case .pane = input.selector, input.path == nil, let direction = input.direction else {
+      return errorResponse(
+        command: "create",
+        code: CLIErrorCode.invalidArgument,
+        message: "create pane requires a pane target and an explicit direction."
+      )
+    }
+
+    let anchor: TabResolvedTarget
+    switch resolveCreateTarget(input.selector) {
+    case .success(let resolved):
+      anchor = resolved
+    case .failure(let error):
+      return mapResolverError(command: "create", error: error)
+    }
+
+    guard let createdTarget = createPane(anchor, direction) else {
+      return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: "Failed to create pane.")
+    }
+    return success(
+      command: "create",
+      resource: .pane,
+      target: createdTarget,
+      anchor: anchor,
+      direction: direction
+    )
   }
 
   private func handleClose(_ input: CloseInput) -> CommandResponse {
@@ -136,13 +171,26 @@ final class LifecycleCommandHandler: CommandHandler {
       .trimmingTrailingSlash()
   }
 
-  private func success(command: String, resource: LifecycleResource, target: TabResolvedTarget) -> CommandResponse {
+  private func success(
+    command: String,
+    resource: LifecycleResource,
+    target: TabResolvedTarget,
+    anchor: TabResolvedTarget? = nil,
+    direction: CreatePaneDirection? = nil
+  ) -> CommandResponse {
     do {
       return try CommandResponse(
         ok: true,
         command: command,
         schemaVersion: "prowl.cli.\(command).v1",
-        data: RawJSON(encoding: LifecycleCommandPayload(resource: resource, target: makePayloadTarget(from: target)))
+        data: RawJSON(
+          encoding: LifecycleCommandPayload(
+            resource: resource,
+            anchor: anchor.map { makePayloadTarget(from: $0) },
+            direction: direction,
+            target: makePayloadTarget(from: target)
+          )
+        )
       )
     } catch {
       return errorResponse(command: command, code: CLIErrorCode.createFailed, message: "Failed to encode response.")
@@ -188,6 +236,17 @@ final class LifecycleCommandHandler: CommandHandler {
       schemaVersion: "prowl.cli.\(command).v1",
       error: CommandError(code: code, message: message)
     )
+  }
+}
+
+extension CreatePaneDirection {
+  var terminalSplitDirection: UserCustomSplitDirection {
+    switch self {
+    case .right: .right
+    case .left: .left
+    case .upward: .top
+    case .down: .down
+    }
   }
 }
 

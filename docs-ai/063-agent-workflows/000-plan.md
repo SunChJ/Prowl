@@ -564,4 +564,4 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
-(append `- Updated 2026-MM-DD: ... — see [00N-topic.md](00N-topic.md)` lines here)
+- Updated 2026-08-22: Implemented A1 with the direct anchored split primitive and schema-governed `prowl create pane` command — see [002-cli-create-pane.md](002-cli-create-pane.md).

@@ -393,6 +393,39 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     }
   }
 
+  func testCreatePaneCommandRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "create-pane")
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(
+        encoding: makeLifecyclePayload(
+          resource: .pane,
+          anchor: makeTabTarget(paneID: "anchor-pane"),
+          direction: .upward
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "pane", "p12", "--direction", "up", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    if case .create(let input) = envelope.command {
+      XCTAssertEqual(input.resource, .pane)
+      XCTAssertEqual(input.selector, .pane("p12"))
+      XCTAssertEqual(input.direction, .upward)
+      XCTAssertNil(input.path)
+    } else {
+      XCTFail("Expected create command envelope")
+    }
+  }
+
   func testCloseCommandRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "close-pane")
     let response = try CommandResponse(
@@ -2200,8 +2233,17 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     )
   }
 
-  private func makeLifecyclePayload(resource: LifecycleResource) -> LifecycleCommandPayload {
-    LifecycleCommandPayload(resource: resource, target: makeTabTarget())
+  private func makeLifecyclePayload(
+    resource: LifecycleResource,
+    anchor: TabTarget? = nil,
+    direction: CreatePaneDirection? = nil
+  ) -> LifecycleCommandPayload {
+    LifecycleCommandPayload(
+      resource: resource,
+      anchor: anchor,
+      direction: direction,
+      target: makeTabTarget()
+    )
   }
 
   private func makeTabPayload(action: TabAction) -> TabCommandPayload {
@@ -2252,7 +2294,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     )
   }
 
-  private func makeTabTarget() -> TabTarget {
+  private func makeTabTarget(paneID: String = "pane-123") -> TabTarget {
     TabTarget(
       worktree: TabTargetWorktree(
         id: "App:/Projects/App",
@@ -2262,7 +2304,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
         kind: "git"
       ),
       tab: TabTargetTab(id: "tab-123", title: "App 1", selected: true),
-      pane: TabTargetPane(id: "pane-123", title: "zsh", cwd: "/Projects/App", focused: true)
+      pane: TabTargetPane(id: paneID, title: "zsh", cwd: "/Projects/App", focused: true)
     )
   }
 

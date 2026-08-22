@@ -5,6 +5,13 @@ import Testing
 
 @MainActor
 struct CLILifecycleCommandHandlerTests {
+  @Test func createPaneDirectionsMapToTerminalDirections() {
+    #expect(CreatePaneDirection.right.terminalSplitDirection == .right)
+    #expect(CreatePaneDirection.left.terminalSplitDirection == .left)
+    #expect(CreatePaneDirection.upward.terminalSplitDirection == .top)
+    #expect(CreatePaneDirection.down.terminalSplitDirection == .down)
+  }
+
   @Test func createTabResolvesWorktreeCreatesTabAndReturnsCreatePayload() async throws {
     let base = makeTarget(tabID: "base-tab", paneID: "base-pane")
     let created = makeTarget(tabID: "created-tab", paneID: "created-pane")
@@ -20,6 +27,7 @@ struct CLILifecycleCommandHandlerTests {
         createPath = path
         return created
       },
+      createPane: { _, _ in nil },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
     )
@@ -42,6 +50,83 @@ struct CLILifecycleCommandHandlerTests {
     #expect(payload.target.tab.id == "created-tab")
   }
 
+  @Test func createPaneUsesResolvedAnchorAndReturnsCreatePayload() async throws {
+    let anchor = makeTarget(tabID: "anchor-tab", paneID: "anchor-pane")
+    let created = makeTarget(tabID: "anchor-tab", paneID: "created-pane")
+    var resolvedSelector: TargetSelector?
+    var createdFrom: TabResolvedTarget?
+    var createdDirection: CreatePaneDirection?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { selector in
+        resolvedSelector = selector
+        return .success(anchor)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: anchor)) },
+      createTab: { _, _ in nil },
+      createPane: { target, direction in
+        createdFrom = target
+        createdDirection = direction
+        return created
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(resource: .pane, selector: .pane("p12"), direction: .upward)
+        )
+      )
+    )
+
+    #expect(response.ok)
+    #expect(resolvedSelector == .pane("p12"))
+    #expect(createdFrom == anchor)
+    #expect(createdDirection == .upward)
+    let data = try #require(response.data)
+    let payload = try data.decode(as: LifecycleCommandPayload.self)
+    #expect(payload.resource == .pane)
+    #expect(payload.anchor?.pane.id == "anchor-pane")
+    #expect(payload.direction == .upward)
+    #expect(payload.target.pane.id == "created-pane")
+  }
+
+  @Test func createPaneRejectsNonPaneSocketInputBeforeResolution() async {
+    let target = makeTarget()
+    var didResolve = false
+    var didCreate = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in
+        didResolve = true
+        return .success(target)
+      },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in
+        didCreate = true
+        return target
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(resource: .pane, selector: .worktree("App"), direction: .right)
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.invalidArgument)
+    #expect(!didResolve)
+    #expect(!didCreate)
+  }
+
   @Test func closeUsesResolvedResourceAndReturnsClosePayload() async throws {
     let target = makeTarget(tabID: "tab-to-close", paneID: "pane-to-close")
     var closedPane: TabResolvedTarget?
@@ -52,6 +137,7 @@ struct CLILifecycleCommandHandlerTests {
         return .success(LifecycleResolvedTarget(resource: .pane, target: target))
       },
       createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
       closeTab: { _, _ in false },
       closePane: { target, force in
         #expect(force)
