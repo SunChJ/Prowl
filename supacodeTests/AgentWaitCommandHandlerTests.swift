@@ -369,6 +369,59 @@ struct AgentWaitCommandHandlerTests {
     #expect(store.subscriberCount(surfaceID: surfaceID) == 0)
   }
 
+  @Test func genericNonExitWaitReturnsAgentGoneWhenSurfaceCloses() async throws {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let entry = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .working)
+    var snapshotReads = 0
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        snapshotReads += 1
+        let isLive = snapshotReads <= 2
+        return .init(
+          agent: isLive ? entry : nil,
+          signal: nil,
+          revision: isLive ? 1 : 0,
+          isLive: isLive,
+          signals: .empty
+        )
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(
+        envelope: CommandEnvelope(
+          output: .json,
+          command: .agentsWait(
+            .init(
+              mode: .condition,
+              pane: target.paneID,
+              condition: .blocked,
+              timeoutSeconds: 1,
+              minimumConfidence: .exact
+            )
+          )
+        ))
+    }
+
+    for _ in 0..<5 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.agentGone)
+    let details = try #require(response.error?.details).decode(as: AgentWaitErrorDetails.self)
+    guard case .condition(let condition) = details else {
+      Issue.record("Expected condition error details")
+      return
+    }
+    #expect(condition.observation?.source == "surface")
+    #expect(condition.observation?.confidence == "exact")
+  }
+
   @Test func genericWaitResubscribesAfterObservationOverflow() async {
     let clock = TestClock()
     let target = resolvedTarget()

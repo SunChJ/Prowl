@@ -342,8 +342,13 @@ final class AgentWaitCommandHandler: CommandHandler {
     }
 
     let initial = conditionSnapshot(target)
-    guard initial.agent != nil || condition == .exit else {
-      return failure(code: CLIErrorCode.agentNotFound, message: "No detected agent is active in the selected pane.")
+    if let initialFailure = await initialConditionFailure(
+      condition: condition,
+      target: target,
+      snapshot: initial,
+      includeScreenLines: input.includeScreenLines
+    ) {
+      return initialFailure
     }
     let baselineRevision = initial.revision
     let baselineSignal = initial.changedSignal
@@ -362,6 +367,15 @@ final class AgentWaitCommandHandler: CommandHandler {
           return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
         }
         let snapshot = conditionSnapshot(target)
+        if !snapshot.isLive, condition != .exit {
+          return await conditionGoneFailure(
+            condition: condition,
+            waitedMilliseconds: elapsedMilliseconds,
+            target: target,
+            snapshot: snapshot,
+            includeScreenLines: input.includeScreenLines
+          )
+        }
         if let observation = exactMatch(
           condition: condition,
           snapshot: snapshot,
@@ -554,6 +568,64 @@ final class AgentWaitCommandHandler: CommandHandler {
       confidence: "heuristic",
       timestamp: formatter.string(from: snapshot.agent?.lastChangedAt ?? now()),
       revision: Int(clamping: snapshot.revision)
+    )
+  }
+
+  private func initialConditionFailure(
+    condition: AgentWaitCondition,
+    target: TabResolvedTarget,
+    snapshot: ConditionSnapshot,
+    includeScreenLines: Int?
+  ) async -> CommandResponse? {
+    if !snapshot.isLive, condition != .exit {
+      return await conditionGoneFailure(
+        condition: condition,
+        waitedMilliseconds: 0,
+        target: target,
+        snapshot: snapshot,
+        includeScreenLines: includeScreenLines
+      )
+    }
+    guard snapshot.agent != nil || condition == .exit else {
+      return failure(
+        code: CLIErrorCode.agentNotFound,
+        message: "No detected agent is active in the selected pane."
+      )
+    }
+    return nil
+  }
+
+  private func conditionGoneFailure(
+    condition: AgentWaitCondition,
+    waitedMilliseconds: Int,
+    target: TabResolvedTarget,
+    snapshot: ConditionSnapshot,
+    includeScreenLines: Int?
+  ) async -> CommandResponse {
+    let payloadTarget = TabTarget(from: target)
+    let observation = AgentWaitObservation(
+      status: .done,
+      rawState: "gone",
+      source: "surface",
+      confidence: "exact",
+      timestamp: formatter.string(from: now()),
+      revision: Int(clamping: snapshot.revision)
+    )
+    return failure(
+      code: CLIErrorCode.agentGone,
+      message: "The selected agent pane is gone.",
+      details: .condition(
+        AgentConditionWaitErrorDetails(
+          condition: condition,
+          waitedMilliseconds: waitedMilliseconds,
+          target: payloadTarget,
+          observation: observation,
+          signals: snapshot.signals,
+          screen: await stableScreen(
+            requestedLines: includeScreenLines,
+            target: payloadTarget
+          )
+        ))
     )
   }
 

@@ -105,6 +105,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Review follow-up bounded first-generation attachment by process start time. A
   launch generation started within ten seconds still attaches even if observed late; a process
   started after that window rotates the epoch and cannot drive the missed dispatch.
+- 2026-08-23 — Adversarial review round 1 found that generic non-exit waits ignored exact
+  surface closure and timed out. They now return structured `AGENT_GONE` immediately with an
+  exact surface observation and optional requested screen evidence.
 
 ## Fresh Debug E2E
 
