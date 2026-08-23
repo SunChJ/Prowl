@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 merged in #715; S2 implemented in draft PR #718 |
+| **Status** | In progress — S1 merged in #715; S2 merged in #718; S3 wave 1 is next |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); #718 (S2, draft) |
+| **Primary PRs** | #715 (S1); #718 (S2); S3 wave 1 TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -242,6 +242,9 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-23 after S2 merged in #718: the paired dispatch and agent-wait slice is on
+  `main`; S3 wave 1 is now the next R1 orchestration critical-path slice. The independent
+  065-S0/K1 bundled-skills work may continue in parallel.
 - Updated 2026-08-23 during S2 review: corrected explicit slice dependencies to
   063-A2 + S1 → S2 → S3 wave 1. S3 consumes S2's wait/channel/self-check infrastructure;
   A2 and S1 are transitive rather than parallel alternatives.

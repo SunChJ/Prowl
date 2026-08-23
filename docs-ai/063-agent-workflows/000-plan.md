@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — R1 foundations C0/A1/A1b/A2 and 064-S1 merged; 064-S2 is next |
+| **Status** | In progress — R1 foundations C0/A1/A1b/A2 and 064-S1/S2 merged; 064-S3 wave 1 is next |
 | **Anchor date** | 2026-08-21 |
 | **Primary PRs** | R1 foundations: #709 (C0), #710 (A1), #713 (A1b), #714 (A2); B1–D3 TBD |
 | **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
@@ -593,6 +593,10 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-23: 064-S2 merged in #718 after full validation and authenticated
+  Claude/Codex dispatch E2E. The next R1 orchestration critical-path slice is 064-S3 wave 1;
+  065-S0/K1 remains independent parallel work — see [release-plan.md](release-plan.md) and
+  [064.005](../064-agent-completion-signals/005-s2-action.md).
 - Updated 2026-08-23: 064-S1 merged in #715 and the owner locked S2's paired dispatch and
   evidence-wait contract, leaving S2 as the next R1 critical-path PR — see
   [064.003](../064-agent-completion-signals/003-s2-dispatch-wait-design.md).

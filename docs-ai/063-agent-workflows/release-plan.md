@@ -33,14 +33,13 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A1b | Merged | #713 |
 | A2 | Merged | #714 |
 | S1 | Merged | #715: bus, multicast observer, `agents signal` |
-| S2 | Draft PR #718 | Paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
-| S3 wave 1 | Planned | Follows S2: tier-A launch hooks consume S2 wait/channel infrastructure |
+| S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
+| S3 wave 1 | Planned, next | Tier-A launch hooks consume S2 wait/channel infrastructure |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 
-A2 completes 063's R1 implementation work, S1 is on `main`, and S2 is in draft review.
-The next orchestration critical-path slice after merge is S3 wave 1; 065-S0/K1 may proceed
-independently in parallel.
+A2 completes 063's R1 implementation work, and S1/S2 are on `main`. The next orchestration
+critical-path slice is S3 wave 1; 065-S0/K1 may proceed independently in parallel.
 
 ### R1 — CLI orchestration primitives + completion signals
 
@@ -108,6 +107,9 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-23 — S2 merged in #718 after full gates, authenticated Claude/Codex dispatch E2E,
+  and two adversarial review rounds. The next R1 orchestration critical-path slice is S3
+  wave 1; 065-S0/K1 remains independent parallel work.
 - 2026-08-23 — S2 review corrected the explicit critical path to A2 + S1 → S2 → S3 wave 1;
   S3 consumes the wait/channel/self-check infrastructure delivered by S2 rather than branching
   directly from its two transitive prerequisites.
