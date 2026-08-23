@@ -93,6 +93,11 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Applied Skill Workshop proposal `prowl-cli-20260823-a59b46f453` after owner
   authorization. The managed workspace skill is live and scan-clean; direct synchronization
   into the repository copy remains prohibited by the current Workshop target model.
+- 2026-08-23 — GitHub Actions exposed a runner-dependent test fixture: synthetic PID `400`
+  happened to be live on the hosted runner, so the default process start-date lookup added an
+  unexpected ancestry generation. The resolver test now injects a nil start-date provider for
+  its fake PID graph. Focused tests passed 3/3, `make check` passed, and the full gate again
+  passed 2453 reported / 2455 verified tests with zero failures.
 
 ## Fresh Debug E2E
 
