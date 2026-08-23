@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 merged in #715; S2 implemented on `feat/agent-dispatch-wait-s2`, draft PR pending |
+| **Status** | In progress — S1 merged in #715; S2 implemented in draft PR #718 |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); S2 draft PR pending |
+| **Primary PRs** | #715 (S1); #718 (S2, draft) |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background

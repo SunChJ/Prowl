@@ -8,6 +8,7 @@ recorded in the existing 064 plan/action documents.
 
 - Branch: `feat/agent-dispatch-wait-s2`
 - Base: `origin/main` at `e93b73c2`
+- Draft PR: [#718](https://github.com/onevcat/Prowl/pull/718)
 - PR #716: merged; owner-reviewed S2 design and both review dispositions are frozen acceptance criteria
 - Worktree: clean at branch creation
 - Protected ignored path: `scripts/__pycache__/` (do not touch)
