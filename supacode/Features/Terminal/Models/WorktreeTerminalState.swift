@@ -95,6 +95,7 @@ final class WorktreeTerminalState {
   let runtime: GhosttyRuntime
   let worktree: Worktree
   private let targetHandleRegistry: TerminalTargetHandleRegistry
+  let skipsSurfaceCreationForTesting: Bool
   @ObservationIgnored
   @SharedReader private var repositorySettings: RepositorySettings
   var trees: [TerminalTabID: SplitTree<GhosttySurfaceView>] = [:]
@@ -285,11 +286,13 @@ final class WorktreeTerminalState {
     runSetupScript: Bool = false,
     defaultFontSize: Float32? = nil,
     targetHandleRegistry: TerminalTargetHandleRegistry? = nil,
-    titleFlushClock: any Clock<Duration> = ContinuousClock()
+    titleFlushClock: any Clock<Duration> = ContinuousClock(),
+    skipsSurfaceCreationForTesting: Bool = false
   ) {
     self.runtime = runtime
     self.worktree = worktree
     self.targetHandleRegistry = targetHandleRegistry ?? TerminalTargetHandleRegistry()
+    self.skipsSurfaceCreationForTesting = skipsSurfaceCreationForTesting
     self.pendingSetupScript = runSetupScript
     self.defaultFontSize = defaultFontSize
     self.tabManager = TerminalTabManager(titleFlushClock: titleFlushClock)
@@ -628,12 +631,13 @@ final class WorktreeTerminalState {
     {
       applyResolvedIcon(icon, surfaceId: surface.surfaceID, tabId: surface.tabID)
     }
-    guard onAgentProfileSurfacePrepared?(surface.surfaceID, plan) != false,
-      let view = surfaces[surface.surfaceID],
-      view.armSurfaceCreation()
-    else {
+    guard onAgentProfileSurfacePrepared?(surface.surfaceID, plan) != false else {
       rollbackAgentProfileSurface(surface, placement: request.placement)
       return .failure(.hookRegistrationFailed)
+    }
+    guard let view = surfaces[surface.surfaceID], view.armSurfaceCreation() else {
+      rollbackAgentProfileSurface(surface, placement: request.placement)
+      return .failure(.surfaceCreationFailed)
     }
     wakeAgentDetection(for: view, tabId: surface.tabID)
     return launched

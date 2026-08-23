@@ -370,11 +370,11 @@ final class GhosttySurfaceView: NSView, Identifiable {
     surfaceCreationArmed = true
     guard !skipsSurfaceCreationForTesting else { return true }
     createSurface()
-    if let surface {
-      surfaceRef = runtime.registerSurface(surface)
+    guard let surface else {
+      surfaceCreationArmed = false
+      return false
     }
-    // Surface construction has historically been best-effort at this layer;
-    // lifecycle failure is reported by the surrounding state boundary.
+    surfaceRef = runtime.registerSurface(surface)
     return true
   }
 

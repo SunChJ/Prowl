@@ -111,6 +111,35 @@ listener loss, notifier forwarding, and app composition are executable automated
 single-app visible-pane matrix remains a required manual/owner follow-up when a GUI session is
 available.
 
+## Adversarial review
+
+### Round 1 — trust, launch transaction, epochs, and forwarding lifecycle
+
+The first independent full-diff review blocked on five valid P1 findings. All were reproduced
+against the current code and corrected with focused regression coverage:
+
+- Codex preflight now resolves an absolute executable plus `HOME`/`CODEX_HOME` through the same
+  non-logging login-shell environment a Profile command uses. An unprovable/non-absolute result
+  degrades without injection; the app's launchd PATH/home can no longer authorize notifier
+  replacement.
+- Peer/task cancellation is checked after every preparation await, before and after forwarding
+  record creation, and immediately before dispatch issuance. Capacity/failure/cancellation paths
+  explicitly discard unexposed records; the cancellation test deliberately returns a successful
+  preparation after observing cancellation and still proves no issue/launch.
+- Managed-hook session identity is independent from detector hints. Detector `nil` cannot erase a
+  verified session, and detector-first same-process replacement remains unverified until Claude
+  sends the matching `SessionStart`.
+- Deferred Ghostty arming now fails when `ghostty_surface_new` returns nil, resets its armed state,
+  and rolls back the exact tab/split registration instead of reporting a launch with no process.
+- Forwarding cleanup initializes an orphan sweep at app startup and owns a clock-driven retry loop
+  until every retired record can take the exclusive lease; one busy first pass no longer leaves
+  sensitive argv indefinitely.
+
+The review also confirmed the peer-PID ancestry boundary, pre-input order, bounded early-event
+buffer, exact cwd rejection (including memories), hidden bridge silence/deadline/`execvp`, payload
+exclusion, carrier redaction, and owner/mode/no-follow/lease checks. Focused validation after the
+fixes passed 89 tests plus `make check` (34 script tests).
+
 ## Deferred scope
 
 S3b owns Copilot/Droid/Qoder adapters. S3c owns Pi/OMP/OpenCode adapters and the Active Agents exact

@@ -1,3 +1,4 @@
+import Clocks
 import Darwin
 import Foundation
 import Testing
@@ -45,6 +46,32 @@ struct CodexForwardingRecordStoreTests {
 
     lease.close()
     store.cleanupRetired()
+    #expect(!FileManager.default.fileExists(atPath: record.locator.path(percentEncoded: false)))
+  }
+
+  @Test func scheduledCleanupRetriesAfterTheFirstLeaseConflict() async throws {
+    let base = temporaryDirectory("forward-scheduled-retire")
+    defer { try? FileManager.default.removeItem(at: base) }
+    var now = Date(timeIntervalSince1970: 100)
+    let clock = TestClock()
+    let store = try CodexForwardingRecordStore(
+      baseDirectory: base,
+      retirementGrace: 1,
+      now: { now },
+      retirementClock: clock
+    )
+    let record = try store.create(argv: ["/tmp/notifier"])
+    let lease = try CodexForwardingRecordReader.open(record.locator)
+    store.retire(record)
+    await Task.yield()
+
+    now.addTimeInterval(2)
+    await clock.advance(by: .seconds(1))
+    #expect(FileManager.default.fileExists(atPath: record.locator.path(percentEncoded: false)))
+
+    lease.close()
+    now.addTimeInterval(2)
+    await clock.advance(by: .seconds(1))
     #expect(!FileManager.default.fileExists(atPath: record.locator.path(percentEncoded: false)))
   }
 

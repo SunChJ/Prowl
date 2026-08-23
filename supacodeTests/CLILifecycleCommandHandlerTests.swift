@@ -234,6 +234,7 @@ struct CLILifecycleCommandHandlerTests {
     let clock = TestClock()
     var issued = false
     var launched = false
+    var cancelledPreparation = false
     let handler = LifecycleCommandHandler(
       resolveCreateTarget: { _ in .success(base) },
       resolveCloseTarget: { _ in .success(.init(resource: .pane, target: base)) },
@@ -245,13 +246,16 @@ struct CLILifecycleCommandHandlerTests {
           try await clock.sleep(for: .seconds(10))
           return .success(request)
         } catch {
-          return .failure(.createFailed("Cancelled."))
+          // Model a production resolver that catches cancellation and returns
+          // an ordinary degraded/successful preparation.
+          return .success(request)
         }
       },
       launchAgentProfile: { _ in
         launched = true
         return .success(base)
       },
+      cancelProfilePreparation: { _ in cancelledPreparation = true },
       issueDispatch: {
         issued = true
         return .failure(.capacityExceeded)
@@ -280,6 +284,7 @@ struct CLILifecycleCommandHandlerTests {
 
     #expect(!issued)
     #expect(!launched)
+    #expect(cancelledPreparation)
   }
 
   @Test func promptedLaunchFailureCancelsIssuedDispatch() async {
@@ -325,6 +330,7 @@ struct CLILifecycleCommandHandlerTests {
     let base = makeTarget()
     let profile = AgentProfile(name: "Reviewer", runtime: .claude)
     var didLaunch = false
+    var cancelledPreparation = false
     let handler = LifecycleCommandHandler(
       resolveCreateTarget: { _ in .success(base) },
       resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: base)) },
@@ -335,6 +341,7 @@ struct CLILifecycleCommandHandlerTests {
         didLaunch = true
         return .success(base)
       },
+      cancelProfilePreparation: { _ in cancelledPreparation = true },
       issueDispatch: { .failure(.capacityExceeded) },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
@@ -356,6 +363,7 @@ struct CLILifecycleCommandHandlerTests {
     #expect(!response.ok)
     #expect(response.error?.code == CLIErrorCode.dispatchCapacityExceeded)
     #expect(!didLaunch)
+    #expect(cancelledPreparation)
   }
 
   @Test func unpromptedProfileLaunchDoesNotIssueOrBindDispatch() async throws {

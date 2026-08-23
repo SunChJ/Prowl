@@ -96,6 +96,10 @@ enum CLIProfileLaunchFailure: Error, Equatable, Sendable {
         "The tab for Agent Profile “\(profile.name)” was created without a terminal surface."
       case .hookRegistrationFailed:
         "The managed signal channel for Agent Profile “\(profile.name)” could not be registered."
+      case .surfaceCreationFailed:
+        "The terminal surface for Agent Profile “\(profile.name)” could not be created."
+      case .preparationCancelled:
+        "Agent Profile “\(profile.name)” launch preparation was cancelled."
       }
     return .createFailed(message)
   }
@@ -113,6 +117,7 @@ final class LifecycleCommandHandler: CommandHandler {
     @MainActor (CLIProfileLaunchRequest) async -> Result<CLIProfileLaunchRequest, CLIProfileLaunchFailure>
   typealias ProfileLaunchProvider =
     @MainActor (CLIProfileLaunchRequest) -> Result<TabResolvedTarget, CLIProfileLaunchFailure>
+  typealias CancelProfilePreparationProvider = @MainActor (CLIProfileLaunchRequest) -> Void
   typealias IssueDispatchProvider =
     @MainActor () -> Result<DispatchPendingRecord, AgentDispatchStoreError>
   typealias BindDispatchProvider =
@@ -129,6 +134,7 @@ final class LifecycleCommandHandler: CommandHandler {
   private let profiles: ProfilesProvider
   private let prepareAgentProfile: PrepareProfileLaunchProvider
   private let launchAgentProfile: ProfileLaunchProvider
+  private let cancelProfilePreparation: CancelProfilePreparationProvider
   private let issueDispatch: IssueDispatchProvider
   private let bindDispatch: BindDispatchProvider
   private let cancelDispatch: CancelDispatchProvider
@@ -146,6 +152,7 @@ final class LifecycleCommandHandler: CommandHandler {
     launchAgentProfile: @escaping ProfileLaunchProvider = {
       _ in .failure(.createFailed("Failed to launch the Agent Profile."))
     },
+    cancelProfilePreparation: @escaping CancelProfilePreparationProvider = { _ in },
     issueDispatch: @escaping IssueDispatchProvider = { .failure(.capacityExceeded) },
     bindDispatch: @escaping BindDispatchProvider = { _, _ in .failure(.notFound) },
     cancelDispatch: @escaping CancelDispatchProvider = { _ in },
@@ -160,6 +167,7 @@ final class LifecycleCommandHandler: CommandHandler {
     self.profiles = profiles
     self.prepareAgentProfile = prepareAgentProfile
     self.launchAgentProfile = launchAgentProfile
+    self.cancelProfilePreparation = cancelProfilePreparation
     self.issueDispatch = issueDispatch
     self.bindDispatch = bindDispatch
     self.cancelDispatch = cancelDispatch
@@ -330,8 +338,15 @@ final class LifecycleCommandHandler: CommandHandler {
       )
     }
 
+    if Task.isCancelled {
+      cancelProfilePreparation(preparedRequest)
+      return cancelledPreparationResponse()
+    }
     let dispatchResult = issuedDispatch(prompt: launch.prompt)
-    if let response = dispatchResult.response { return response }
+    if let response = dispatchResult.response {
+      cancelProfilePreparation(preparedRequest)
+      return response
+    }
     let dispatch = dispatchResult.record
     let pairedRequest = CLIProfileLaunchRequest(
       resource: preparedRequest.resource,
@@ -350,9 +365,11 @@ final class LifecycleCommandHandler: CommandHandler {
       createdTarget = target
     case .failure(.invalidArgument(let message)):
       if let dispatch { cancelDispatch(dispatch.id) }
+      cancelProfilePreparation(preparedRequest)
       return errorResponse(command: "create", code: CLIErrorCode.invalidArgument, message: message)
     case .failure(.createFailed(let message)):
       if let dispatch { cancelDispatch(dispatch.id) }
+      cancelProfilePreparation(preparedRequest)
       return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: message)
     }
     if let dispatch {
@@ -396,6 +413,14 @@ final class LifecycleCommandHandler: CommandHandler {
     case .failure(.createFailed(let message)):
       return (nil, errorResponse(command: "create", code: CLIErrorCode.createFailed, message: message))
     }
+  }
+
+  private func cancelledPreparationResponse() -> CommandResponse {
+    errorResponse(
+      command: "create",
+      code: CLIErrorCode.createFailed,
+      message: "Agent Profile launch preparation was cancelled."
+    )
   }
 
   private func issuedDispatch(

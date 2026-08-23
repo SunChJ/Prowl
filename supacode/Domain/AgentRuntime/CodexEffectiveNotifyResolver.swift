@@ -172,6 +172,9 @@ nonisolated struct CodexLaunchContext: Equatable, Sendable {
       codexHome = dedicatedHome
     } else if let configured = environment["CODEX_HOME"], !configured.isEmpty {
       codexHome = URL(filePath: configured, directoryHint: .isDirectory)
+    } else if let home = environment["HOME"], !home.isEmpty {
+      codexHome = URL(filePath: home, directoryHint: .isDirectory)
+        .appending(path: ".codex", directoryHint: .isDirectory)
     } else {
       codexHome = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: ".codex", directoryHint: .isDirectory)

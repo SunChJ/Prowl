@@ -134,7 +134,10 @@ struct WorktreeTerminalManagerTests {
   }
 
   @Test func backgroundProfileSplitInHiddenWorktreePreservesVisibleSelection() throws {
-    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      skipsSurfaceCreationForTesting: true
+    )
     let visibleWorktree = makeWorktree(id: "/tmp/repo/visible", name: "visible")
     let hiddenWorktree = makeWorktree(id: "/tmp/repo/hidden", name: "hidden")
     let visibleState = manager.state(for: visibleWorktree)
@@ -178,10 +181,33 @@ struct WorktreeTerminalManagerTests {
     #expect(launched.tabID == hiddenTab)
   }
 
+  @Test func startupHookMaintenanceSweepsAgedCrashForwardingRecords() throws {
+    let base = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-tests-forward-startup-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: base) }
+    let oldStore = try CodexForwardingRecordStore(
+      baseDirectory: base,
+      orphanMaximumAge: 60,
+      now: { Date(timeIntervalSince1970: 100) }
+    )
+    let oldRecord = try oldStore.create(argv: ["/tmp/notifier"])
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      forwardingRecordBaseDirectory: base
+    )
+
+    manager.startAgentHookRuntimeMaintenance()
+
+    #expect(!FileManager.default.fileExists(atPath: oldRecord.locator.path(percentEncoded: false)))
+  }
+
   @Test func unavailableHookResourcesWarnOnceAndLaunchTheOriginalInvocation() async throws {
     let manager = WorktreeTerminalManager(
       runtime: GhosttyRuntime(),
-      hookResourcesProvider: { nil }
+      hookResourcesProvider: { nil },
+      skipsSurfaceCreationForTesting: true
     )
     let worktree = makeWorktree()
     let original = AgentProfileLaunchPlan(
@@ -209,7 +235,10 @@ struct WorktreeTerminalManagerTests {
   }
 
   @Test func promptedManagedHookLaunchBindsDispatchToTheRegistrationEpoch() throws {
-    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      skipsSurfaceCreationForTesting: true
+    )
     let worktree = makeWorktree()
     let state = manager.state(for: worktree)
     let base = AgentProfileLaunchPlan(

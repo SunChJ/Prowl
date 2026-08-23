@@ -177,6 +177,30 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.surfaceView(for: launched.surfaceID)?.surfaceCreationArmed == true)
   }
 
+  @Test func deferredGhosttyCreationFailureRollsBackRegistrationAndSurface() {
+    let state = makeState(skipsSurfaceCreationForTesting: false)
+    var registeredSurface: UUID?
+    var closedSurface: UUID?
+    state.onAgentProfileSurfacePrepared = { surfaceID, _ in
+      registeredSurface = surfaceID
+      return true
+    }
+    state.onSurfaceClosed = { closedSurface = $0 }
+
+    let result = state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    )
+
+    #expect(result == .failure(.surfaceCreationFailed))
+    #expect(closedSurface == registeredSurface)
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.surfaces.isEmpty)
+    #expect(state.launchProfilesBySurface.isEmpty)
+  }
+
   @Test func registrationFailureRollsBackBeforeLeavingALiveSurface() {
     let state = makeState()
     state.onAgentProfileSurfacePrepared = { _, _ in false }
@@ -311,7 +335,9 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.tabManager.tabs.first?.iconLock == .script)
   }
 
-  private func makeState() -> WorktreeTerminalState {
+  private func makeState(
+    skipsSurfaceCreationForTesting: Bool = true
+  ) -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),
       worktree: Worktree(
@@ -320,7 +346,8 @@ struct WorktreeTerminalStateAgentProfileTests {
         detail: "",
         workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
         repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
-      )
+      ),
+      skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting
     )
   }
 

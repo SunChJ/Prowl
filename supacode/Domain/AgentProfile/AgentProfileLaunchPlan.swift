@@ -259,6 +259,8 @@ nonisolated enum AgentProfileLaunchError: Error, Equatable, Sendable {
   case tabCreationFailed
   case launchedSurfaceMissing(TerminalTabID)
   case hookRegistrationFailed
+  case surfaceCreationFailed
+  case preparationCancelled
 }
 
 /// Which env variable names a profile override may set, shared by the planner

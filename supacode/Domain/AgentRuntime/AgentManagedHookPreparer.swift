@@ -11,7 +11,7 @@ nonisolated struct AgentManagedHookPreparation: Equatable, Sendable {
 nonisolated enum AgentManagedHookPreparer {
   private struct CodexPreparationOptions {
     let promptIndex: Int?
-    let processEnvironment: [String: String]
+    let shellEnvironment: CodexShellLaunchEnvironment?
     let configReadProcess: CodexConfigReadProcess
   }
 
@@ -23,7 +23,7 @@ nonisolated enum AgentManagedHookPreparer {
     plan: AgentProfileLaunchPlan,
     inheritedCWD: URL,
     resources: AgentHookResources?,
-    processEnvironment: [String: String],
+    codexShellEnvironment: CodexShellLaunchEnvironment? = nil,
     codexConfigReadProcess: CodexConfigReadProcess = CodexConfigReadProcess()
   ) async -> AgentManagedHookPreparation {
     guard
@@ -68,7 +68,7 @@ nonisolated enum AgentManagedHookPreparer {
         resources: resources,
         options: CodexPreparationOptions(
           promptIndex: promptIndex,
-          processEnvironment: processEnvironment,
+          shellEnvironment: codexShellEnvironment,
           configReadProcess: codexConfigReadProcess
         )
       )
@@ -117,13 +117,25 @@ nonisolated enum AgentManagedHookPreparer {
     resources: AgentHookResources,
     options: CodexPreparationOptions
   ) async -> AgentManagedHookPreparation {
+    guard let shellEnvironment = options.shellEnvironment else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The effective Codex shell environment could not be resolved."
+      )
+    }
+    let invocation = AgentInvocation(
+      executable: shellEnvironment.executableURL.path(percentEncoded: false),
+      arguments: plan.invocation.arguments
+    )
     let context: CodexLaunchContext
     do {
       context = try CodexLaunchContext.capture(
-        invocation: plan.invocation,
+        invocation: invocation,
         inheritedCWD: inheritedCWD,
         dedicatedHome: plan.dedicatedHome,
-        environment: options.processEnvironment,
+        environment: shellEnvironment.processEnvironment,
         promptArgumentIndex: options.promptIndex
       )
     } catch {
@@ -136,12 +148,12 @@ nonisolated enum AgentManagedHookPreparer {
     }
     let resolver = CodexEffectiveNotifyResolver(
       bundledCLIPath: resources.bundledCLIPath,
-      query: options.configReadProcess.query
+      query: options.configReadProcess.usingExecutable(shellEnvironment.executableURL).query
     )
     switch await resolver.resolve(context) {
     case .absent:
       return preparedCodex(
-        plan: plan,
+        invocation: invocation,
         capability: capability,
         context: context,
         resources: resources,
@@ -152,7 +164,7 @@ nonisolated enum AgentManagedHookPreparer {
       )
     case .present(let argv):
       return preparedCodex(
-        plan: plan,
+        invocation: invocation,
         capability: capability,
         context: context,
         resources: resources,
@@ -172,7 +184,7 @@ nonisolated enum AgentManagedHookPreparer {
   }
 
   private static func preparedCodex(
-    plan: AgentProfileLaunchPlan,
+    invocation: AgentInvocation,
     capability: AgentSignalHookCapability,
     context: CodexLaunchContext,
     resources: AgentHookResources,
@@ -180,7 +192,7 @@ nonisolated enum AgentManagedHookPreparer {
   ) -> AgentManagedHookPreparation {
     AgentManagedHookPreparation(
       preparedInvocation: CodexManagedNotifyRenderer.prepare(
-        invocation: plan.invocation,
+        invocation: invocation,
         bundledCLIPath: resources.bundledCLIPath,
         promptArgumentIndex: options.promptIndex
       ),

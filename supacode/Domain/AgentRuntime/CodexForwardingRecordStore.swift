@@ -17,18 +17,22 @@ final class CodexForwardingRecordStore {
   private let retirementGrace: TimeInterval
   private let orphanMaximumAge: TimeInterval
   private let now: @MainActor () -> Date
+  private let retirementClock: any Clock<Duration>
   private var retired: [URL: Date] = [:]
+  private var cleanupTask: Task<Void, Never>?
 
   init(
     baseDirectory: URL,
     retirementGrace: TimeInterval = 2,
     orphanMaximumAge: TimeInterval = 24 * 60 * 60,
-    now: @escaping @MainActor () -> Date = Date.init
+    now: @escaping @MainActor () -> Date = Date.init,
+    retirementClock: any Clock<Duration> = ContinuousClock()
   ) throws {
     self.baseDirectory = baseDirectory.standardizedFileURL
     self.retirementGrace = max(0, retirementGrace)
     self.orphanMaximumAge = max(0, orphanMaximumAge)
     self.now = now
+    self.retirementClock = retirementClock
     try Self.ensureOwnerOnlyDirectory(self.baseDirectory)
     sessionDirectory = self.baseDirectory.appending(
       path: "session-\(UUID().uuidString)",
@@ -101,6 +105,7 @@ final class CodexForwardingRecordStore {
 
   func retire(_ record: CodexForwardingRecord) {
     retired[record.locator] = now().addingTimeInterval(retirementGrace)
+    scheduleCleanupIfNeeded()
   }
 
   func cleanupRetired() {
@@ -109,6 +114,23 @@ final class CodexForwardingRecordStore {
       if removeIfExclusivelyLeased(locator) {
         retired.removeValue(forKey: locator)
       }
+    }
+  }
+
+  private func scheduleCleanupIfNeeded() {
+    guard cleanupTask == nil else { return }
+    let clock = retirementClock
+    let milliseconds = max(100, Int(retirementGrace * 1_000))
+    cleanupTask = Task { @MainActor [weak self] in
+      while let self, !retired.isEmpty {
+        do {
+          try await clock.sleep(for: .milliseconds(milliseconds))
+        } catch {
+          break
+        }
+        cleanupRetired()
+      }
+      self?.cleanupTask = nil
     }
   }
 

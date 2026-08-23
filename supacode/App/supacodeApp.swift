@@ -198,6 +198,7 @@ struct SupacodeApp: App {
       runtime: runtime,
       preferredFontSize: initialSettings.terminalFontSize
     )
+    terminalManager.startAgentHookRuntimeMaintenance()
     _terminalManager = State(initialValue: terminalManager)
     let worktreeInfoWatcher = WorktreeInfoWatcherManager()
     _worktreeInfoWatcher = State(initialValue: worktreeInfoWatcher)
@@ -1027,6 +1028,10 @@ struct SupacodeApp: App {
           appStore: appStore,
           terminalManager: terminalManager
         )
+      },
+      cancelProfilePreparation: { request in
+        guard let preparation = request.preparedLaunch else { return }
+        terminalManager.discardPreparedAgentProfileLaunch(preparation)
       },
       issueDispatch: {
         do {

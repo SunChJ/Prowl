@@ -48,6 +48,14 @@ nonisolated struct CodexConfigReadProcess: Sendable {
     self.timeout = max(0.05, timeout)
   }
 
+  func usingExecutable(_ executableURL: URL) -> CodexConfigReadProcess {
+    CodexConfigReadProcess(
+      executableURL: executableURL,
+      temporaryBaseDirectory: temporaryBaseDirectory,
+      timeout: timeout
+    )
+  }
+
   func query(_ query: CodexConfigQuery) async throws -> Data {
     let fileManager = FileManager.default
     var parserHome: URL?

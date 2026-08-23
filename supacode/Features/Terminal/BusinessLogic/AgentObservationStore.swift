@@ -17,6 +17,7 @@ private struct ManagedHookRegistrationRecord {
   let launch: AgentHookLaunchRegistration
   var evidenceEpoch: UUID
   var processGeneration: AgentProcessGeneration?
+  var sessionID: String?
   var verified = false
   var pendingSignals: [PendingManagedHookSignal] = []
 }
@@ -291,7 +292,7 @@ final class AgentObservationStore {
     }
 
     if input.runtime == .claude, input.signal.event == .sessionStart,
-      let currentSession = record.sessionID,
+      let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
     {
       record.evidenceEpoch = UUID()
@@ -301,12 +302,13 @@ final class AgentObservationStore {
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       managed.evidenceEpoch = record.evidenceEpoch
       managed.verified = false
-    } else if let currentSession = record.sessionID,
+    } else if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
     {
       return .rejected
     }
     record.sessionID = input.signal.sessionID
+    managed.sessionID = input.signal.sessionID
     managed.verified = true
     let runtime = AgentProfileRuntime(rawValue: input.runtime.rawValue) ?? .claude
     let signal = AgentSignal(
@@ -412,7 +414,7 @@ final class AgentObservationStore {
       managed.pendingSignals.removeAll()
       record.managedHook = managed
       record.processGeneration = processGeneration
-      record.sessionID = sessionID
+      if let sessionID { record.sessionID = sessionID }
       records[surfaceID] = record
       for pendingSignal in pending {
         if case .accepted(let signal, _) = recordManagedHook(
@@ -426,7 +428,7 @@ final class AgentObservationStore {
       return update
     }
     record.processGeneration = processGeneration
-    record.sessionID = sessionID
+    if let sessionID { record.sessionID = sessionID }
     records[surfaceID] = record
     return update
   }

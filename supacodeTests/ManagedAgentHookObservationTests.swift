@@ -86,6 +86,103 @@ struct ManagedAgentHookObservationTests {
     )
   }
 
+  @Test func detectorNilCannotEraseVerifiedClaudeSessionOrAdmitDifferentStopSession() {
+    let now = Date(timeIntervalSince1970: 100)
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(
+      surfaceID: surfaceID,
+      processGeneration: generation,
+      sessionID: nil
+    )
+    let start = makeInput(
+      runtime: .claude,
+      token: registration.token,
+      nativeEvent: "SessionStart",
+      event: .sessionStart,
+      cwd: "/tmp/project",
+      sessionID: "session-1"
+    )
+    #expect(
+      store.recordManagedHook(start, callerAncestry: [generation], surfaceID: surfaceID).isAccepted
+    )
+
+    _ = store.updateEvidenceEpoch(
+      surfaceID: surfaceID,
+      processGeneration: generation,
+      sessionID: nil
+    )
+    let wrongStop = makeInput(
+      runtime: .claude,
+      token: registration.token,
+      nativeEvent: "Stop",
+      event: .turnEnded,
+      cwd: "/tmp/project",
+      sessionID: "session-2"
+    )
+
+    #expect(
+      store.recordManagedHook(wrongStop, callerAncestry: [generation], surfaceID: surfaceID)
+        == .rejected
+    )
+  }
+
+  @Test func detectorSessionReplacementRequiresClaudeSessionStartBeforeReverification() throws {
+    let now = Date(timeIntervalSince1970: 100)
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+    let first = makeInput(
+      runtime: .claude,
+      token: registration.token,
+      nativeEvent: "SessionStart",
+      event: .sessionStart,
+      cwd: "/tmp/project",
+      sessionID: "session-1"
+    )
+    #expect(store.recordManagedHook(first, callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+
+    _ = store.updateEvidenceEpoch(
+      surfaceID: surfaceID,
+      processGeneration: generation,
+      sessionID: "session-2"
+    )
+    let stop = makeInput(
+      runtime: .claude,
+      token: registration.token,
+      nativeEvent: "Stop",
+      event: .turnEnded,
+      cwd: "/tmp/project",
+      sessionID: "session-2"
+    )
+    #expect(store.recordManagedHook(stop, callerAncestry: [generation], surfaceID: surfaceID) == .rejected)
+    #expect(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true)
+        .channels.isEmpty
+    )
+
+    let second = makeInput(
+      runtime: .claude,
+      token: registration.token,
+      nativeEvent: "SessionStart",
+      event: .sessionStart,
+      cwd: "/tmp/project",
+      sessionID: "session-2"
+    )
+    #expect(store.recordManagedHook(second, callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true)
+        .channels.first
+    )
+    #expect(channel.sessionID == "session-2")
+  }
+
   @Test func processReplacementRevokesTrustAndReturnsForwardRecordForRetirement() {
     let now = Date(timeIntervalSince1970: 100)
     let store = AgentObservationStore(bufferCapacity: 8, now: { now })
