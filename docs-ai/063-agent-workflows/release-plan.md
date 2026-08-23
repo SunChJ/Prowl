@@ -34,7 +34,7 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A2 | Merged | #714 |
 | S1 | Merged | #715: bus, multicast observer, `agents signal` |
 | S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
-| S3 wave 1 | S3a implementation review | S3a Claude/Codex foundation implemented; S3b/S3c remain sequential before the slice is complete |
+| S3 wave 1 | S3a PR #721 | S3a foundation implemented; S3b/S3c remain sequential before the slice is complete |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 

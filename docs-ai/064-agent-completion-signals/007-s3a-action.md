@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feat/agent-signal-hooks-s3a-implementation`; implementation PR pending.
+Implemented on `feat/agent-signal-hooks-s3a-implementation`; implementation PR [#721](https://github.com/onevcat/Prowl/pull/721).
 S3 wave 1 remains incomplete until S3b and S3c merge.
 
 ## Delivered behavior
