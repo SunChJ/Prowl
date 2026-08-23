@@ -123,13 +123,16 @@ marker: Gemini, Cursor, Droid, Qwen 0.21.3, Cline, Pi/OMP (infer from assistant
 | Tier | Runtimes | Channel Prowl can attach at launch |
 | --- | --- | --- |
 | **A — flag/env per launch, no user config touched** | Claude Code (`--settings`), Codex (`-c notify=[…]`, turn-complete only), Copilot CLI (`--plugin-dir`), Factory Droid (`--settings`), Qoder CLI (`--settings`), Pi (`-e`), Oh My Pi (`--hook`), OpenCode (`OPENCODE_CONFIG_CONTENT`) | `signalHooks = .launchFlag` — first S3 wave |
-| **B — only via a Prowl-owned home** | Gemini (`GEMINI_CLI_HOME`), Qwen (`QWEN_HOME`), Grok (`GROK_HOME`), Cline (`CLINE_DIR`), Kimi (`KIMI_SHARE_DIR`; or full-config replacement), plus Claude/Codex/Copilot for completeness | `signalHooks = .configDirOnly` — available only for profiles that bind a dedicated home (053); Prowl writes the hook file into the provisioned home |
-| **C — project files only** | Cursor Agent (`<workspace>/.cursor/hooks.json`), Amp (`.amp/plugins/`) | not attached (Prowl does not write into the user's project); layers 2–3 only |
+| **B — requires a Prowl-owned home** | Gemini (`GEMINI_CLI_HOME`), Qwen (`QWEN_HOME`), Grok (`GROK_HOME`), Cline (`CLINE_DIR`), Kimi (`KIMI_SHARE_DIR`; or full-config replacement) | unsupported for managed hooks; Prowl does not write hook configuration into dedicated homes |
+| **C — project files only** | Cursor Agent (`<workspace>/.cursor/hooks.json`), Amp (`.amp/plugins/`) | unsupported for managed hooks; Prowl does not write into the user's project |
 
-Blocked/permission coverage via hooks: Claude, Codex (trust-gated), Gemini (tool
-permission), Copilot, Droid, Qoder, Qwen, Grok, OpenCode (plugin), OMP (only with an
-approval handler). Runtimes where blocked detection stays heuristic/transcript-only: Cursor,
-Cline, Kimi (transcript `ApprovalRequest`), Amp, Pi.
+S3 has no second wave. Only tier A receives Prowl-managed hooks; tiers B and C remain on
+cooperative, transcript/process, OSC, or heuristic evidence.
+
+Within supported tier A, managed blocked/permission coverage is available for Claude,
+Copilot, Droid, Qoder, and OpenCode; OMP requires an approval handler. Codex's permission
+hooks are trust-gated and therefore omitted, while Pi has no permission system. Native hook
+capabilities in unsupported tiers remain research facts only and are not Prowl-managed.
 
 Payloads with `last_assistant_message` (Claude, Codex, Qoder, Qwen, Grok, Gemini) let 063's
 V2 observe mode capture a result without transcript parsing for those runtimes.

@@ -82,10 +82,11 @@ R2b = C2–D2 (GUI entry, Settings, skills, E2E). Default is one R2. Docs: `work
 | Order | Slice | Entry | Depends | Outcome |
 | --- | --- | --- | --- | --- |
 | 1 | **D3** `prowl.handoff` + `prowl.handoff-checkpoint` built-ins, `HANDOFF_RETIRED` stubs, removal of `HandoffHudFeature` / `HandoffCommandHandler` / `HandoffRequestRegistry`, `docs/components/handoff.md` rewrite | 063 | D2 | handoff is a workflow |
-| 1 | **S3 wave 2** tier-B runtimes via dedicated-home profiles (Gemini, Qwen, Grok, Cline, Kimi) | 064 | S3 wave 1, 053 homes | more runtimes exact |
 | 1 | **S4** transcript file-watch + OSC producers | 064 | S1 | layer-2 signals without hooks |
 
-The `HANDOFF_RETIRED` stubs are deleted one release after R3.
+There is no S3 wave 2. Runtimes that require writes to a global config, dedicated home, or
+project file do not receive Prowl-managed hooks. The `HANDOFF_RETIRED` stubs are deleted one
+release after R3.
 
 ### R3+ — V2
 
@@ -101,12 +102,15 @@ R1:  C0            A1 ──► A1b
                           S1 ──┘
      065-S0/K1 ──► 065-K2 ──► 065-K3
 R2:  B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1 ──► C2 ──► D1 (◄ 065-K1) ──► D2 (◄ S3w1)
-R3:  D3 (◄ D2)        S3w2 (◄ S3w1)        S4 (◄ S1)
+R3:  D3 (◄ D2)        S4 (◄ S1)
 R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 ```
 
 ## Change log
 
+- 2026-08-23 — S3 wave 2 was removed. Prowl ships launch-scoped hooks only for tier-A
+  runtimes that need no global-config, dedicated-home, or project-file writes; Gemini,
+  Qwen, Grok, Cline, Kimi, Cursor, and Amp remain on non-hook evidence layers.
 - 2026-08-23 — S2 merged in #718 after full gates, authenticated Claude/Codex dispatch E2E,
   and two adversarial review rounds. The next R1 orchestration critical-path slice is S3
   wave 1; 065-S0/K1 remains independent parallel work.
