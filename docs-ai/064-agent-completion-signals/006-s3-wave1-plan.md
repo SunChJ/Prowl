@@ -26,9 +26,11 @@ but release documentation must not call S3 wave 1 complete before S3c.
 
 ## S3a objective
 
-Make every Prowl Agent Profile launch of Claude Code or Codex automatically report supported
+Make Prowl Agent Profile launches of Claude Code or Codex automatically report supported
 native runtime events into the existing S1/S2 signal bus, with honest `verified_live`
-coverage and no global configuration writes.
+coverage, no global configuration writes, and no loss of an existing user notifier. When
+Prowl cannot prepare a managed hook without preserving user behavior, the launch proceeds
+without that hook and exposes no exact coverage.
 
 S3a normalizes only runtime facts:
 
@@ -99,6 +101,15 @@ or launch path.
 6. **Codex internal work.** Codex can emit notify events for internal memories work. The
    decoder/registration must reject a cwd outside the effective launch directory, including
    `~/.codex/memories`.
+7. **Codex notifier preservation.** Codex accepts one effective `notify: array<string>`
+   command. Prowl may replace it process-locally only after resolving the complete effective
+   user notifier and registering a transparent forward target. If resolution fails, Prowl
+   preserves the user's launch and omits its managed Codex hook instead of swallowing a
+   notifier it cannot reproduce.
+8. **Asynchronous launch preparation.** Codex's own `app-server config/read` is the source of
+   truth for merged config parsing and must run with a bounded timeout off the main actor.
+   Every A2 launcher therefore needs one shared asynchronous preparation boundary before
+   exact surface creation, while preview remains pure and deterministic.
 
 ## Proposed S3a design
 
@@ -120,10 +131,53 @@ Runtime-specific rendering:
   user/project/local settings continue to merge additively. If a Profile already supplies an
   explicit `--settings`, merge it only when it is safely readable/parseable; otherwise retain
   the user's launch and omit managed hooks with honest degradation.
-- Codex: one structured TOML `-c notify=[...]` override containing the bundled CLI absolute
-  path and hidden native-hook arguments. Never pass `--dangerously-bypass-hook-trust`.
+- Codex: when notifier preparation succeeds, one structured TOML `-c notify=[...]` override
+  containing the bundled CLI absolute path and hidden native-hook arguments. Never pass
+  `--dangerously-bypass-hook-trust`; never inject the override until any displaced notifier
+  has an exact forwarding registration.
 
-### 2. Execution-scoped token and child-only transport
+### 2. Codex effective-notifier resolver and transparent dispatcher
+
+Before a Codex surface is created, a bounded `CodexEffectiveNotifyResolver` resolves the
+notifier that the user's unmodified launch would execute:
+
+1. query Codex 0.149's official `app-server config/read` protocol with the effective
+   `CODEX_HOME`, launch cwd, and relevant `-c/--config` overrides;
+2. structurally recognize `-p/--profile`, whose profile file has higher precedence than the
+   base config; because `codex app-server` rejects `--profile`, let Codex parse that file in an
+   isolated temporary parser home and use only a profile-owned `notify` value, otherwise fall
+   back to the merged base result;
+3. let the final top-level CLI `-c notify=...` override win, preserving the exact decoded argv;
+4. reject empty, malformed, oversized, or recursively Prowl-managed forwarding targets.
+
+The resolver never edits user, dedicated-home, or project config. Temporary parser state is
+owner-only, contains no generated agent account, and is removed immediately. It does not log
+or persist returned config or notifier argv. A timeout, unsupported Codex protocol, malformed
+response, or unreadable selected profile preserves the original launch, omits the Prowl
+`notify` override, and exposes no `verified_live` Codex channel. The launch still succeeds but
+returns one non-blocking degradation warning.
+
+After resolving the argv, Prowl atomically creates one session-scoped forwarding record under
+a random directory in its private runtime area. The directory is `0700`, the record is `0600`,
+and only an opaque locator—not its contents—crosses the child-only launch carrier. The record
+contains no hook token or provider config and is never placed in user config, a dedicated
+agent home, the worktree, terminal input, preview, logs, or durable Prowl state.
+
+The hidden bridge reads and validates that record, makes the bounded Prowl signal attempt, and
+then `exec`s the original notifier directly—no shell—with the inherited cwd/environment and
+the original Codex JSON payload appended unchanged. Before `exec`, it removes Prowl's internal
+hook token and forwarding locator from the environment. Prowl transport success or failure
+cannot suppress forwarding, and the original notifier retains the process/exit semantics Codex
+would have observed. Prowl evidence and user forwarding are independent and each occurs at
+most once per native notification.
+
+Surface creation failure removes the prepared record. Surface close, process replacement, and
+rollback revoke and delete it; app startup and an age-bounded orphan sweep clean records left
+by crashes without touching registered live records. Record creation, permission enforcement,
+validation, or cleanup setup failure is a pre-launch degradation: preserve the original Codex
+launch and do not inject Prowl's `notify` override.
+
+### 3. Execution-scoped token and child-only transport
 
 Immediately before surface creation, `WorktreeTerminalManager` generates an opaque UUID
 channel token and patches only the execution copy of the launch plan:
@@ -135,14 +189,16 @@ channel token and patches only the execution copy of the launch plan:
   runtime does not inherit the channel.
 
 After exact tab/surface creation succeeds, the manager begins one Profile launch epoch and
-registers `{token, surface, runtime, launch cwd, covered events, epoch}`. Surface creation
-failure creates no registration. Target-resolution rollback, process replacement, and surface
-close revoke it.
+registers `{token, surface, runtime, launch cwd, covered events, epoch, optional forward record}`.
+Surface creation failure creates no registration. Target-resolution rollback, process
+replacement, and surface close revoke it and remove any forwarding record.
 
 The token is a correctness capability, not a hostile-process secret. It never appears in CLI
-arguments, prompt text, output payloads, logs, or persisted Profile/run state.
+arguments, prompt text, output payloads, logs, or persisted Profile/run state. A displaced user
+notifier may contain credentials, so its argv is sensitive: the only at-rest copy Prowl creates
+is the owner-only ephemeral forwarding record, and neither its contents nor path is public API.
 
-### 3. Hidden native-hook bridge over the existing signal command
+### 4. Hidden native-hook bridge over the existing signal command
 
 Add a hidden `prowl agents _hook <runtime> <native-event>` leaf. It is bundled-internal, not a
 user command or targetable API.
@@ -158,12 +214,14 @@ user command or targetable API.
   `source=cooperative_cli`.
 - The app validates token, exact caller pane, configured runtime/native event, launch cwd, and
   current/pending process generation before constructing `.hook(...)`.
+- Codex forwarding is driven by the private launch record, not by a successful app response;
+  public `agents signal` never receives forwarding instructions or record contents.
 
 The hook bridge uses the app-bundled CLI path, not `PATH` or `/usr/local/bin/prowl`, suppresses
 all output, does not auto-launch Prowl, and has bounded connect/read/write behavior. Delivery
 failure exits zero so observation cannot interfere with the runtime.
 
-### 4. Channel verification and lifecycle
+### 5. Channel verification and lifecycle
 
 Keep registration state inside `AgentObservationStore`; do not add a parallel store.
 Internally a registration may be pending, verified, or degraded, but the existing public
@@ -196,7 +254,7 @@ verification where unit tests cannot prove third-party behavior.
 - Use scratch homes/directories only; never edit live user/global config.
 - Add representative official native payload fixtures, including optional/unknown fields,
   malformed data, oversized strings, Codex memories cwd, and paths with spaces/non-ASCII.
-- Resolve the owner decision under **Open owner decisions** before production rendering.
+- Record the resolved Codex notifier-preservation decision before production rendering.
 
 ### Phase 1 — pure models, renderers, and decoders
 
@@ -204,8 +262,9 @@ RED/GREEN coverage:
 
 - Claude settings JSON generation and native event mapping;
 - existing settings collision parsing (`--settings value` / `--settings=value`);
-- Codex TOML argv rendering and exact top-level `notify` collision detection;
-- no hook trust bypass;
+- Codex TOML argv rendering and structural `-p/--profile` plus top-level
+  `-c/--config notify` recognition;
+- no hook trust bypass or recursive Prowl forwarding target;
 - Claude stdin and Codex final-argv decoding;
 - unknown native events and malformed/oversized payloads fail closed;
 - session/thread extraction, cwd validation, and last-message exclusion;
@@ -218,7 +277,28 @@ Primary files/tests:
 - `supacodeTests/AgentRuntimeAdapterTests.swift`;
 - new `AgentNativeHookPayloadTests`.
 
-### Phase 2 — deterministic plan and generalized carriers
+### Phase 2 — Codex effective-notifier resolution
+
+RED/GREEN coverage:
+
+- bounded app-server JSONL initialization and `config/read` request/response handling;
+- effective base/system notifier resolution under the launch `CODEX_HOME` and cwd;
+- selected profile notifier wins base, absent profile notifier falls back to base;
+- final top-level CLI `-c notify` wins profile, while unrelated config overrides do not;
+- exact argv preservation for spaces, empty arguments, Unicode, quotes, and secret-like values;
+- unsupported protocol, timeout, malformed config/response, unreadable profile, empty argv, and
+  recursive Prowl target all produce a no-injection degradation rather than user-notifier loss;
+- temporary parser homes are owner-only and removed on success, failure, and cancellation;
+- no effective config or notifier argv reaches logs, durable settings/state, previews, or
+  terminal carriers; only the private ephemeral forwarding record may hold resolved argv.
+
+Primary files/tests:
+
+- new focused `CodexEffectiveNotifyResolver` and app-server protocol models;
+- `supacodeTests/CodexEffectiveNotifyResolverTests.swift`;
+- scratch-home live contract test against the pinned Codex CLI.
+
+### Phase 3 — deterministic plan and generalized carriers
 
 RED/GREEN coverage:
 
@@ -236,7 +316,7 @@ Primary files/tests:
 - `supacodeTests/AgentProfileTests.swift`;
 - `supacodeTests/AppFeatureAgentProfileTests.swift`.
 
-### Phase 3 — launch epoch, registration, and rollback
+### Phase 4 — launch epoch, registration, and rollback
 
 RED/GREEN coverage:
 
@@ -247,7 +327,16 @@ RED/GREEN coverage:
 - target-resolution rollback, split/tab failure, process replacement, and surface close clean
   registrations and pending events;
 - typed CLI and menu/palette compatibility launches both register exact resulting surfaces;
-- unprompted Profile launch gets hooks; manual shell launch does not.
+- unprompted Profile launch gets hooks; manual shell launch does not;
+- Codex forwarding records use random paths, `0700`/`0600` permissions, atomic creation, and
+  exact cleanup on failure, rollback, process replacement, surface close, and orphan sweep;
+- record contents never enter the child environment; only an opaque locator does;
+- GUI and CLI Profile launchers both await the same bounded preparation before creating a
+  surface, without blocking the main actor;
+- a degraded GUI launch emits exactly one non-blocking warning toast, while a degraded CLI
+  launch succeeds with one additive structured warning and human-readable warning output;
+- degradation never becomes a persistent public channel state and never changes dispatch
+  receipt behavior.
 
 Primary files/tests:
 
@@ -259,7 +348,7 @@ Primary files/tests:
 - `supacodeTests/WorktreeTerminalStateAgentProfileTests.swift`;
 - `supacodeTests/CLILifecycleCommandHandlerTests.swift`.
 
-### Phase 4 — hidden CLI ingress and schema contract
+### Phase 5 — hidden CLI ingress, forwarding, and schema contract
 
 RED/GREEN coverage:
 
@@ -268,6 +357,11 @@ RED/GREEN coverage:
 - native hook input round-trips over a real framed Unix socket with kernel peer PID ancestry;
 - stale/missing token and outside-pane callers fail closed in the app while the hook process
   itself stays silent and exits zero;
+- Codex forwarding uses exact argv boundaries and the unchanged native payload, never a shell;
+- the bridge scrubs Prowl's token/locator and `exec`s the original notifier after the bounded
+  signal attempt, whether that attempt succeeds or fails;
+- user notifier failure cannot suppress a recorded Prowl signal, and Prowl transport failure
+  cannot suppress, recursively invoke, or duplicate the user notifier;
 - bounded payload and socket deadlines; listener loss and malformed responses do not affect
   the runtime;
 - hook response sources validate as `hook_claude` / `hook_codex` without exposing a token.
@@ -283,7 +377,7 @@ Primary files/tests:
 - `supacodeTests/CLIAgentSignalCommandHandlerTests.swift`;
 - `supacodeTests/CLISocketServerTests.swift`.
 
-### Phase 5 — current docs and live acceptance
+### Phase 6 — current docs and live acceptance
 
 Update:
 
@@ -311,8 +405,14 @@ Codex:
 
 1. `agent-turn-complete` resolves with `source=hook_codex` and no trust-bypass flag.
 2. Internal memories cwd is ignored.
-3. The exact owner-approved notify replacement/collision policy is observed.
-4. A manually launched Codex remains honestly heuristic/cooperative.
+3. Existing base, selected-profile, and explicit CLI-override notifiers each receive the exact
+   original payload once while Prowl also records the hook once.
+4. User notifier exit failure cannot alter Codex or Prowl evidence; resolver failure preserves
+   the original notifier and omits exact Prowl coverage.
+5. Notifier argv containing secret-like values appears only in the private `0600` session
+   record—not logs, preview, terminal input/environment, durable registration, or public CLI
+   output—and the record is deleted with its launch.
+6. A manually launched Codex remains honestly heuristic/cooperative.
 
 Both:
 
@@ -344,35 +444,68 @@ make build-app
 - Unverified coverage never suppresses heuristic `auto` fallback.
 - The base Profile and preview remain deterministic; execution tokens are memory-only and
   surface-scoped.
-- No token, user environment value, full assistant result, credential, or provider config is
-  logged or persisted by Prowl.
+- No token, user environment value, full assistant result, credential, notifier argv, or
+  provider config is logged or durably persisted by Prowl. The sole notifier-argv exception is
+  the owner-only ephemeral forwarding record required for transport-independent chaining.
+- A process-scoped Codex `notify` override is legal only while the displaced effective user
+  notifier has a validated private forwarding record; uncertain resolution or record setup
+  preserves the user's launch and forfeits the managed hook.
 
-## Open owner decisions
+## Resolved owner decisions
 
-### 1. Codex `notify` ownership — blocking
+### 1. Codex `notify` ownership — resolved 2026-08-23
 
-Codex exposes one legacy `notify: array<string>` command. A CLI `-c notify=[...]` override
-replaces the effective user notifier for that Prowl-launched process; it cannot append another
-notifier. Native lifecycle hooks would require `--dangerously-bypass-hook-trust`, which Prowl
-will not pass, and Codex exposes no reliable side-effect-free command for resolving and
-chaining the complete effective notifier.
+Codex exposes one legacy `notify: array<string>` command rather than an additive notifier list.
+The owner accepted transparent dispatcher semantics:
 
-Recommended policy:
+- resolve the notifier that the unmodified Prowl Agent Profile launch would execute;
+- inject Prowl's process-scoped notifier only after preparing exact, once-per-event forwarding
+  of the unchanged Codex payload;
+- if resolution is uncertain, preserve the user's launch, omit Prowl's managed Codex hook, and
+  expose no `verified_live` coverage;
+- never rewrite user config, place notifier argv in a terminal carrier, durably persist/log
+  returned config, or pass hook trust bypass.
 
-- permit Prowl's process-scoped notify override for ordinary Prowl Agent Profile launches and
-  document that the user's global Codex notifier does not run in that launched session;
-- if the Profile's own `extraArguments` explicitly set top-level `notify`, preserve that
-  explicit Profile intent, omit Prowl's managed Codex hook, and expose no `verified_live`
-  coverage;
-- never inspect/rewrite the user's global Codex config and never pass hook trust bypass.
+### 2. Codex launch-degradation disclosure — resolved 2026-08-23
 
-This decision must be resolved through `/grill-me` before S3a implementation.
+The owner accepted a successful launch plus one explicit warning:
+
+- GUI launch shows one non-blocking warning toast;
+- CLI launch remains successful and adds an optional structured warning to
+  `prowl.cli.create.v1`, rendered once in human-readable output;
+- no persistent degraded state or repeated toast is added before S3c's exact-channel badge;
+- S2 dispatch receipts and runtime behavior remain unchanged.
+
+The supported worst case is bounded launch-preflight latency followed by the whole session
+falling back to pre-S3 heuristic/cooperative observation. Generic wait may become less precise
+or time out, but the user notifier, Codex process, config, and S2 receipt path remain intact;
+degradation must never create false exact evidence.
+
+### 3. Codex forwarding durability — resolved 2026-08-23
+
+The owner accepted the recommended private session-record tradeoff so user forwarding does not
+depend on a live Prowl socket response:
+
+- random Prowl runtime directory `0700`, forwarding record `0600`;
+- opaque child-only locator; notifier argv never enters command text, shell history, environment,
+  logs, or durable settings/state;
+- bridge attempts Prowl delivery, scrubs internal variables, then `exec`s the original notifier
+  regardless of Prowl transport outcome;
+- exact lifecycle cleanup plus startup/age-bounded orphan cleanup;
+- any inability to prepare this boundary degrades before override injection.
 
 ## Residual risks
 
 - Claude workspace trust can indefinitely delay every hook; fallback must remain honest.
-- Codex legacy `notify` may be deprecated in favor of native hooks; keep its renderer/decoder
-  isolated behind the adapter capability.
+- Codex legacy `notify` may be deprecated in favor of native hooks; keep its resolver,
+  renderer, decoder, and dispatcher isolated behind the adapter capability.
+- `app-server config/read` adds bounded launch-preparation latency and may drift independently
+  of `codex` runtime flags; pin fixtures, time out safely, and preserve the user launch on any
+  mismatch. Local scratch measurements were 24 ms warm median and 210 ms cold, so use a 1-second
+  hard timeout rather than an unbounded launch stall.
+- Forwarding records temporarily hold sensitive argv. Enforce owner-only creation, refuse
+  symlinks/non-regular files or permission drift, never print contents, and test every cleanup
+  edge plus stale-orphan collection.
 - Third-party payloads and flag semantics can drift. Fixture tests pin supported shapes, while
   live gates record the exact shipping versions.
 - Early-event buffering and dispatch epoch adoption touch S2 correctness boundaries; focused
