@@ -87,7 +87,11 @@ Optional fields are omitted rather than encoded as `null`. The executable schema
 ## Deferred paired completion
 
 `dispatch-complete` is deliberately not part of v1 S1. S2 ships one atomic paired path:
-`create --profile --prompt` returns an opaque `dispatch_id`; the agent reports
-`dispatch-complete --detail`; a bounded in-memory receipt survives pane closure but not app
-restart; and `agents wait --dispatch` re-snapshots after observer overflow. Generic runtime
-`turn-ended` never substitutes for that dispatch receipt or `workflow done`.
+CLI `create tab|pane --profile --prompt` returns an opaque `dispatch_id`; the agent reports
+`dispatch-complete --outcome succeeded|failed --summary <non-empty-summary>` from its
+launch-scoped context; a bounded in-memory receipt survives pane closure but not app restart;
+and ID-only `agents wait --dispatch` re-snapshots after observer overflow. Generic runtime
+`turn-ended` never substitutes for that dispatch receipt or `workflow done`. This paragraph
+is a forward reference, not a shipped command contract; the owner-reviewed S2 design is
+[064.003](../../064-agent-completion-signals/003-s2-dispatch-wait-design.md), and normative
+wait/completion contracts ship with the implementation.
