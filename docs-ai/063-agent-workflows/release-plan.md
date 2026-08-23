@@ -34,12 +34,26 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A2 | Merged | #714 |
 | S1 | Merged | #715: bus, multicast observer, `agents signal` |
 | S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
-| S3 wave 1 | Planned, next | Tier-A launch hooks consume S2 wait/channel infrastructure |
+| S3 wave 1 | Planning, next | Three merge-safe PRs (S3a–S3c); tier-A launch hooks consume S2 wait/channel infrastructure |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 
 A2 completes 063's R1 implementation work, and S1/S2 are on `main`. The next orchestration
 critical-path slice is S3 wave 1; 065-S0/K1 may proceed independently in parallel.
+
+#### S3 wave 1 PR breakdown
+
+S3 wave 1 remains one R1 release slice but lands as three sequential, independently
+reviewable PRs. The slice is complete only after S3c:
+
+| PR | Runtime scope | Foundation / closure scope | Depends |
+| --- | --- | --- | --- |
+| **S3a** | Claude Code, Codex | Trusted launch-channel registration, native-hook ingress, payload normalization, self-check/channel lifecycle, bundled hook-resource boundary | S2 |
+| **S3b** | Copilot, Droid, Qoder | Plugin/settings adapters and fixtures on the S3a foundation | S3a |
+| **S3c** | Pi, OMP, OpenCode | Extension/plugin adapters, Active Agents exact-channel badge, complete docs and tier-A live verification | S3b |
+
+The detailed implementation and verification plan starts in
+[064.006](../064-agent-completion-signals/006-s3-wave1-plan.md).
 
 ### R1 — CLI orchestration primitives + completion signals
 
