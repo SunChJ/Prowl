@@ -216,7 +216,10 @@ struct WorktreeTerminalStateAgentProfileTests {
   }
 
   @Test func deferredGhosttyCreationFailureRollsBackRegistrationAndSurface() {
-    let state = makeState(skipsSurfaceCreationForTesting: false)
+    let state = makeState(
+      skipsSurfaceCreationForTesting: false,
+      failsSurfaceCreationForTesting: true
+    )
     var registeredSurface: UUID?
     var closedSurface: UUID?
     state.onAgentProfileSurfacePrepared = { surfaceID, _ in
@@ -374,7 +377,8 @@ struct WorktreeTerminalStateAgentProfileTests {
   }
 
   private func makeState(
-    skipsSurfaceCreationForTesting: Bool = true
+    skipsSurfaceCreationForTesting: Bool = true,
+    failsSurfaceCreationForTesting: Bool = false
   ) -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),
@@ -385,7 +389,8 @@ struct WorktreeTerminalStateAgentProfileTests {
         workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
         repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
       ),
-      skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting
+      skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting,
+      failsSurfaceCreationForTesting: failsSurfaceCreationForTesting
     )
   }
 

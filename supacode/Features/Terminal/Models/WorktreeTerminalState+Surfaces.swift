@@ -374,6 +374,7 @@ extension WorktreeTerminalState {
       context: context,
       environment: worktree.scriptEnvironment.merging(additionalEnvironment) { _, patched in patched },
       skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting,
+      failsSurfaceCreationForTesting: failsSurfaceCreationForTesting,
       defersSurfaceCreation: defersSurfaceCreation
     )
     // Sending a no-op font size action marks the Ghostty surface as

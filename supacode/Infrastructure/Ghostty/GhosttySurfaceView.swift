@@ -145,6 +145,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     context
   }
   private let skipsSurfaceCreationForTesting: Bool
+  private let failsSurfaceCreationForTesting: Bool
   private(set) var surfaceCreationArmed = false
   private var trackingArea: NSTrackingArea?
   private var lastBackingSize: CGSize = .zero
@@ -269,6 +270,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     context: ghostty_surface_context_e,
     environment: [String: String] = [:],
     skipsSurfaceCreationForTesting: Bool = false,
+    failsSurfaceCreationForTesting: Bool = false,
     defersSurfaceCreation: Bool = false
   ) {
     let id = UUID()
@@ -278,6 +280,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     self.fontSize = fontSize ?? 0
     self.context = context
     self.skipsSurfaceCreationForTesting = skipsSurfaceCreationForTesting
+    self.failsSurfaceCreationForTesting = failsSurfaceCreationForTesting
     if let workingDirectory {
       let path = Self.normalizedWorkingDirectoryPath(
         workingDirectory.path(percentEncoded: false)
@@ -369,6 +372,10 @@ final class GhosttySurfaceView: NSView, Identifiable {
     guard !surfaceCreationArmed else { return true }
     surfaceCreationArmed = true
     guard !skipsSurfaceCreationForTesting else { return true }
+    guard !failsSurfaceCreationForTesting else {
+      surfaceCreationArmed = false
+      return false
+    }
     createSurface()
     guard let surface else {
       surfaceCreationArmed = false

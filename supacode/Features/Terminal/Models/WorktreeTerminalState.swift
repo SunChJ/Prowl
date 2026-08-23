@@ -96,6 +96,7 @@ final class WorktreeTerminalState {
   let worktree: Worktree
   private let targetHandleRegistry: TerminalTargetHandleRegistry
   let skipsSurfaceCreationForTesting: Bool
+  let failsSurfaceCreationForTesting: Bool
   @ObservationIgnored
   @SharedReader private var repositorySettings: RepositorySettings
   var trees: [TerminalTabID: SplitTree<GhosttySurfaceView>] = [:]
@@ -287,12 +288,14 @@ final class WorktreeTerminalState {
     defaultFontSize: Float32? = nil,
     targetHandleRegistry: TerminalTargetHandleRegistry? = nil,
     titleFlushClock: any Clock<Duration> = ContinuousClock(),
-    skipsSurfaceCreationForTesting: Bool = false
+    skipsSurfaceCreationForTesting: Bool = false,
+    failsSurfaceCreationForTesting: Bool = false
   ) {
     self.runtime = runtime
     self.worktree = worktree
     self.targetHandleRegistry = targetHandleRegistry ?? TerminalTargetHandleRegistry()
     self.skipsSurfaceCreationForTesting = skipsSurfaceCreationForTesting
+    self.failsSurfaceCreationForTesting = failsSurfaceCreationForTesting
     self.pendingSetupScript = runSetupScript
     self.defaultFontSize = defaultFontSize
     self.tabManager = TerminalTabManager(titleFlushClock: titleFlushClock)
