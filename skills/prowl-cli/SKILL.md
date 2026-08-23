@@ -91,15 +91,24 @@ Review the current branch against its base. Report only actionable findings with
 EOF
 )"
 pane="$(printf '%s\n' "$launch" | jq -r '.data.target.pane.id')"
-prowl read --pane "$pane" --last 200 --wait-stable --json
+dispatch="$(printf '%s\n' "$launch" | jq -r '.data.dispatch.id')"
+if result="$(prowl agents wait --dispatch "$dispatch" --include-screen 40 --json)"; then
+  printf '%s\n' "$result" | jq -r '.data.receipt.summary, .data.target.pane.id'
+else
+  printf '%s\n' "$result" | jq '.error.code, .error.details'
+fi
 ```
 
-The returned pane is the launched agent; `.data.launch` records the resolved Profile. `--prompt -`
-requires a pipe or heredoc (never interactive stdin); Prowl carries up to 256 KiB outside initial
-PTY input through a command portable across zsh, bash, and fish. Put larger requirement sets in
-a repository file and prompt the Profile to read it. Use `read --wait-stable` today. When
-`agents wait` ships, prefer it for deterministic completion before the final read. Add
-`--background` when the split must not change focus or select a hidden anchor's tab/worktree.
+The returned pane is the launched agent; `.data.launch` records the resolved Profile and
+`.data.dispatch` is the exact assignment receipt. `--prompt -` requires a pipe or heredoc
+(never interactive stdin); Prowl carries up to 256 KiB outside initial PTY input through a
+command portable across zsh, bash, and fish. Put larger requirement sets in a repository file
+and prompt the Profile to read it. Add `--background` when the split must not change focus or
+select a hidden anchor's tab/worktree.
+
+Only a succeeded dispatch receipt proves that prompted assignment completed. The receipt may
+arrive before the TUI paints its final response; if the next action sends another prompt to the
+same pane, wait for an idle condition or read a stable screen first.
 
 Create a fresh tab in a listed worktree:
 
@@ -140,7 +149,7 @@ prowl close --tab "$tab" --force --json   # --force skips the GUI confirmation f
 
 ## Parsing JSON Output
 
-Every `--json` response is `{ "ok", "command", "schema_version", "data": {...} }`; failures are `{ "ok": false, "command", "schema_version", "error": { "code", "message" } }`. Parser errors (bad flags) print plain text even with `--json`, so check the exit code before piping into `jq`. When JSON sits in a shell variable, use `printf '%s\n' "$json" | jq …` — zsh `echo` can turn `\u001B` escapes back into control characters. Pass shell values into `jq` with `--arg`.
+Every `--json` response is `{ "ok", "command", "schema_version", "data": {...} }`; failures are `{ "ok": false, "command", "schema_version", "error": { "code", "message", "details"? } }`. Wait failures use governed `.error.details` for the retained dispatch record or last condition evidence. Parser errors (bad flags) print plain text even with `--json`, so check the exit code before piping into `jq`. When JSON sits in a shell variable, use `printf '%s\n' "$json" | jq …` — zsh `echo` can turn `\u001B` escapes back into control characters. Pass shell values into `jq` with `--arg`.
 
 Key fields by command:
 
@@ -148,9 +157,11 @@ Key fields by command:
 - `agents` → `.data.agents[]` with `.status`, `.raw_state`, `.detection_reason`, `.type`, `.name`, `.pane.{id,focused,cwd}`, `.tab`, `.worktree`, `.project.{name,branch,path}`.
 - `agents read` → `.data.agent`, `.data.blocker.text`, `.data.result.{state,text}` — `pending`, `unavailable`, `missing`, `incomplete`, `too_large` carry no partial text.
 - `agents signal` → `.data.pane.{id,worktree_id}`, `.data.signal.{event,source,confidence,at,session_id,detail,claimed_origin}`; optional fields are omitted.
+- `agents wait --dispatch` → `.data.receipt`, immutable `.data.target`, `.data.signals`, optional `.data.screen`; nonzero results retain the record and evidence under `.error.details`.
+- `agents wait <pane> --until …` → `.data.observation.{status,raw_state,source,confidence,at,revision}`, `.data.signals`, and optional `.data.screen`.
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode`, `.data.source`; `.data.stabilized` / `.data.waited_ms` with `--wait-stable`.
 - `send` → `.data.input`, `.data.wait.{exit_code,duration_ms}` when waiting, `.data.capture.{text,line_count,truncated}` with `--capture`.
-- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`.
+- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`, and prompted launches require `.data.dispatch.{id,state,created_at}`.
 - `profiles list` → `.data.profiles[]` with `.id`, `.name`, `.enabled`, `.runtime`, `.availability.{status,reason}`.
 
 Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `.content`, `.output`, or `.stdout`.
@@ -158,16 +169,21 @@ Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `
 ## Reading Agent Output
 
 - For Codex/Claude Code, `prowl agents read` beats scraping: check `.data.agent.status`, inspect `.data.blocker.text` before answering a prompt with `send`/`key` (read and write are not atomic), and only trust `.data.result.text` when `state == "complete"`. `--result-only` prints the raw trusted result and fails otherwise; it cannot combine with `--json`.
-- For everything else, `prowl read --pane "$pane" --last 200 --wait-stable --json` blocks until the screen stops changing. `task.status` flips to `idle` before a TUI finishes painting, so poll it only to wait for a `working` agent, then still read with `--wait-stable`:
+- For an unpaired or manually launched agent, use one condition wait instead of a polling loop:
 
 ```bash
-for i in 1 2 3 4 5 6; do
-  task_state="$(prowl list --json | jq -r --arg p "$pane" '.data.items[] | select(.pane.id == $p) | .task.status')"
-  [ "$task_state" = idle ] && break
-  sleep 1
-done
+result="$(prowl agents wait "$pane" --until idle --include-screen 40 --timeout 600 --json)"
+printf '%s\n' "$result" | jq '.data.observation, .data.screen'
 ```
 
+  Exact/high evidence can establish the requested observable condition. If
+  `jq -e '.data.observation.confidence == "heuristic"'` matches, inspect the included stable
+  screen and, when needed, `prowl agents read "$pane" --json`. A finished answer with an empty
+  prompt is positive evidence; a spinner/tool footer means working; a permission dialog or
+  explicit question means blocked. Always use task context, and never treat heuristic evidence as task completion or perform destructive follow-up from it alone. A timeout leaves the task unresolved: inspect the pane, then re-arm the wait rather than assuming completion.
+- `DISPATCH_NEEDS_INPUT` means the exact worker needs intervention. `DISPATCH_INCOMPLETE` means
+  its turn ended without the required receipt. Both retain a pending receipt, so inspect
+  `.error.details`, respond or nudge as appropriate, and wait again.
 - Rendered screens can truncate or fold content. When you need an agent's complete output, have the command write a file (`… > /tmp/out.txt`) and read that; shell redirection avoids the agent's own sandbox prompts.
 - `read` returning fewer lines than `--last` with `truncated: false` means the pane simply has less history — do not retry. `--source detection` returns the exact detector input instead of the viewport; it exists for diagnosing agent-state detection (see `components/agent-detection.md` in the docs folder), not for everyday reading.
 
@@ -197,7 +213,10 @@ done
 - `PROFILE_NOT_FOUND` / `PROFILE_NOT_UNIQUE`: re-run `prowl profiles list --json`; choose an enabled Profile UUID.
 - `NO_ACTIVE_PANE`: focused-pane targeting found nothing — pass `--pane`. `SOURCE_REQUIRED`: a caller-owned command (`agents signal`, selector-free `handoff`) could not map process ancestry to a Prowl pane. `AGENT_GONE`: the signal's caller pane closed before recording.
 - `EMPTY_INPUT`, `INVALID_ARGUMENT`, `UNSUPPORTED_KEY`, `INVALID_REPEAT`: fix the arguments (`prowl <cmd> --help`).
-- `CAPTURE_UNSUPPORTED`: drop `--capture` and use `read --wait-stable` or file redirection. `WAIT_TIMEOUT`: raise `--timeout` or use `--no-wait`.
+- `CAPTURE_UNSUPPORTED`: drop `--capture` and use `read --wait-stable` or file redirection.
+- `WAIT_TIMEOUT`: inspect `.error.details`, then re-arm the wait if the task remains active.
+- `DISPATCH_FAILED` / `DISPATCH_ABANDONED` / `AGENT_GONE`: the exact dispatch is terminal; inspect its retained record and immutable target in `.error.details`.
+- `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE`: the dispatch remains pending; inspect, intervene if appropriate, and wait again.
 - `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED`: fix the path given to `open` or `create tab --path`.
 
 ## Handing Off Your Task
@@ -220,4 +239,4 @@ Required sections are `## Objective`, `## Current State`, and `## Next Steps`; o
 
 ## Command Set
 
-`list`, `agents`, `agents read`, `agents signal`, `profiles list`, `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.
+`list`, `agents`, `agents read`, `agents signal`, `agents dispatch-complete`, `agents dispatch-abandon`, `agents wait`, `profiles list`, `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.

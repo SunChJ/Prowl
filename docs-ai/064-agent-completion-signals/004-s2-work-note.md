@@ -56,12 +56,10 @@ recorded in the existing 064 plan/action documents.
   resolution also closes the exact just-launched tab or pane before returning failure.
 - Focused tests for the final audit passed 22/22; the final full gate passed 2453 reported /
   2455 verified tests with zero failures.
-- Durable skill governance forbids editing skill files directly in this environment. Skill
-  Workshop proposal `prowl-cli-20260823-a59b46f453` was applied after explicit owner
-  authorization and installed the S2 command/rubric update as the managed workspace
-  `prowl-cli` skill with a clean scan. Workshop has no repository-target selector, so the
-  tracked `skills/prowl-cli/SKILL.md` copy remains unchanged; repository bundling is the one
-  remaining delivery gap rather than an approval wait.
+- Skill Workshop proposal `prowl-cli-20260823-a59b46f453` was applied to the managed workspace
+  during the original implementation. Review follow-up then synchronized the approved dispatch
+  wait flow, heuristic rubric, and structured errors into tracked `skills/prowl-cli/SKILL.md`,
+  with a repository contract test preventing the bundled copy from drifting back to polling.
 
 ## Progress log
 
@@ -98,6 +96,9 @@ recorded in the existing 064 plan/action documents.
   unexpected ancestry generation. The resolver test now injects a nil start-date provider for
   its fake PID graph. Focused tests passed 3/3, `make check` passed, and the full gate again
   passed 2453 reported / 2455 verified tests with zero failures.
+- 2026-08-23 — Review follow-up synchronized the approved S2 flow and heuristic rubric into the
+  tracked bundled skill. Repository tests now require strict dispatch waiting, structured error
+  details, timeout re-arming, and explicit rejection of heuristic task completion.
 
 ## Fresh Debug E2E
 
