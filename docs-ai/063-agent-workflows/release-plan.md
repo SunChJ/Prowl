@@ -24,7 +24,7 @@ that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launc
 PRs merge to `main` one at a time (each keeps `main` shippable); engine PRs without a
 user-facing surface may merge before "their" release and stay dormant. Three releases:
 
-### Current R1 status (2026-08-22)
+### Current R1 status (2026-08-23)
 
 | Slice(s) | State | PR / next action |
 | --- | --- | --- |
@@ -32,14 +32,14 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A1 | Merged | #710 |
 | A1b | Merged | #713 |
 | A2 | Merged | #714 |
-| S1 | In progress | `feat/agent-completion-signal-bus`: bus, multicast observer, `agents signal` |
-| S2 | Planned | Follows S1: atomic dispatch ID → completion receipt → `agents wait` path and honest heuristic fallback |
+| S1 | Merged | #715: bus, multicast observer, `agents signal` |
+| S2 | Design locked; next | [064.003](../064-agent-completion-signals/003-s2-dispatch-wait-design.md): paired dispatch receipt, strict ID wait, generic evidence wait |
 | S3 wave 1 | Planned | Follows A2 + S1: tier-A launch hooks |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 
-A2 completes 063's R1 implementation work. The orchestration critical path now moves to
-064-S1 → S2 → S3 wave 1; 065-S0/K1 may proceed independently in parallel.
+A2 completes 063's R1 implementation work, and S1 is now on `main`. The orchestration
+critical path is S2 → S3 wave 1; 065-S0/K1 may proceed independently in parallel.
 
 ### R1 — CLI orchestration primitives + completion signals
 
@@ -52,7 +52,7 @@ A2 completes 063's R1 implementation work. The orchestration critical path now m
 | 2 | **A2** profile launch boundary + `create tab\|pane --profile <p> --prompt -` + `profiles list` | 063 | A1 | CLI launches a profile with a kickoff prompt and gets the pane back |
 | 2 | **S1** signal bus + `ObservedAgentState` multicast observer + `prowl agents signal` (`turn-ended`, needs-input/session/progress, bounded detail) | 064 | — | layer-0 signals for every runtime |
 | 2 | **065-K2** shared `SymlinkInstaller` + `prowl skills list\|install\|uninstall\|path` | 065 | 065-K1 | one command installs Prowl's skills into agent skill folders |
-| 3 | **S2** atomic dispatch pairing (`create` dispatch ID, cooperative `dispatch-complete --detail`, bounded receipt retention, `agents wait --dispatch` with overflow resnapshot) + `source`/`confidence`, `--include-screen`, `agents` `signals`, and skill rubric | 064 | S1 | no hand-written polling or stale completion; heuristic results are labelled |
+| 3 | **S2** prompted-profile dispatch pairing (`create` dispatch ID, required `dispatch-complete --outcome ... --summary`, 256-entry receipt retention, strict ID-only `agents wait --dispatch`) + generic evidence wait, `source`/`confidence`, `--include-screen`, live `agents.signals`, and skill rubric | 064 | S1 | no hand-written polling or stale completion; deterministic task receipts stay separate from labelled heuristics |
 | 3 | **065-K3** Agent Skills section on Settings › Command Line Tool | 065 | 065-K2 | GUI users install skills without a terminal |
 | 4 | **S3 wave 1** launch-scoped hooks for tier-A runtimes (Claude Code, Codex `notify`, Copilot, Droid, Qoder, Pi, OMP, OpenCode) + self-check | 064 | A2, S1 | `agents wait` is deterministic for Prowl-launched agents |
 
@@ -107,6 +107,10 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-23 — S1 merged in #715. Owner review then locked S2: prompted launches always
+  create a dispatch, completion has an immutable succeeded/failed summary receipt, strict
+  dispatch waits never accept heuristic completion, and generic waits retain honest auto
+  fallback. See [064.003](../064-agent-completion-signals/003-s2-dispatch-wait-design.md).
 - 2026-08-22 — S1 started on `feat/agent-completion-signal-bus`; owner review moved the
   complete dispatch-ID issuance/receipt/wait protocol into S2, renamed the runtime edge to
   `turn-ended`, retained bounded detail, and required explicit overflow resnapshot.

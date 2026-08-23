@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete on `feat/agent-completion-signal-bus`; PR #715 is ready for merge.
+Complete and merged in PR #715.
 
 ## Slice objective
 
@@ -19,7 +19,9 @@ S1 does not add `agents wait`, launch-scoped runtime hooks, workflow completion,
 
 - Continue the 064 path before the 063 workflow runner. `prowl workflow done` remains the only command that completes a workflow step; agent signals are observation/control-plane evidence.
 - Rename the runtime edge from ambiguous `turn-complete` to `turn-ended`. A runtime hook can prove that a turn ended, not that an assigned task completed.
-- Reserve `dispatch-complete` for S2's paired dispatch protocol. S2 must ship the entire path atomically: `create` returns a `dispatch_id`, the agent reports `dispatch-complete --detail`, a bounded in-memory receipt survives pane closure (but not app restart), and `agents wait --dispatch` consumes it without destructive read semantics.
+- Reserve `dispatch-complete` for S2's paired dispatch protocol. S1 recorded the provisional
+  shape; the final owner-reviewed command and receipt contract is in
+  [003-s2-dispatch-wait-design.md](003-s2-dispatch-wait-design.md).
 - Keep bounded `--detail` in S1 so a cooperative producer can attach a short result/reason without forcing another CLI command. The owner raised its limit from 4 KiB to 32 KiB before merge: this remains small relative to the 32 MiB socket frame and 1 MiB macOS argument budget while accommodating useful completion summaries. Detail is caller-authored metadata, never logged, never raises confidence, and is not a replacement for large transcript/workflow output channels.
 - Public `--origin` is only a claimed origin. It cannot mark a channel as verified, raise confidence, or satisfy future hook self-checks. S3 may upgrade provenance only through a Prowl-configured launch-scoped capability; this is a correctness boundary, not a heavyweight security boundary.
 - Each observer has bounded buffering. State churn may be recovered by a newer snapshot. Signal/lifecycle loss is never silent: overflow terminates with an explicit internal error, and S2's waiter must re-subscribe/resnapshot before exposing a failure.

@@ -45,6 +45,10 @@ This note tracks the authorized S1 execution. Durable design decisions belong in
 
 ## Deferred S2 contract (must not be lost)
 
+This was the provisional S1 handoff. The owner-reviewed S2 command spelling, outcomes,
+receipt lifecycle, and wait semantics are finalized in
+[003-s2-dispatch-wait-design.md](003-s2-dispatch-wait-design.md).
+
 S2 owns one atomic paired-dispatch slice:
 
 ```text

@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — R1 foundations C0/A1/A1b implemented; A2 implemented in PR #714 |
+| **Status** | In progress — R1 foundations C0/A1/A1b/A2 and 064-S1 merged; 064-S2 is next |
 | **Anchor date** | 2026-08-21 |
 | **Primary PRs** | R1 foundations: #709 (C0), #710 (A1), #713 (A1b), #714 (A2); B1–D3 TBD |
 | **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
@@ -593,6 +593,9 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-23: 064-S1 merged in #715 and the owner locked S2's paired dispatch and
+  evidence-wait contract, leaving S2 as the next R1 critical-path PR — see
+  [064.003](../064-agent-completion-signals/003-s2-dispatch-wait-design.md).
 - Updated 2026-08-22: Shipped C0 with the Agents sidebar group, Profiles page, and Command Line Tool page; Workflows remains deferred to D1 — see [002-settings-agents-group.md](002-settings-agents-group.md).
 - Updated 2026-08-22: Implemented A1 with the direct anchored split primitive and schema-governed `prowl create pane` command — see [003-cli-create-pane.md](003-cli-create-pane.md).
 - Updated 2026-08-22: Implemented A1b — `PROWL_PANE_ID` in every pane's environment, manual identity section, and the `prowl-cli` skill rewritten around it — see [004-pane-identity-env.md](004-pane-identity-env.md).
