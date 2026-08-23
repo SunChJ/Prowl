@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and fully validated on `feat/agent-dispatch-wait-s2`; draft PR [#718](https://github.com/onevcat/Prowl/pull/718).
+Complete and merged in PR [#718](https://github.com/onevcat/Prowl/pull/718).
 
 ## Delivered behavior
 

@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 merged in #715; S2 implemented in draft PR #718 |
+| **Status** | In progress — S1 merged in #715; S2 merged in #718; S3 wave 1 planning is active |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); #718 (S2, draft) |
+| **Primary PRs** | #715 (S1); #718 (S2); S3a–S3c TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -171,14 +171,15 @@ permission or question dialog), tells the agent to use `--include-screen` and
 This section defines **what** each slice contains; **when** it ships, and how it
 interleaves with 063's slices, is owned by the shared living
 [release-plan.md](../063-agent-workflows/release-plan.md) (R1: S1, S2, S3 wave 1 with
-063's C0/A1/A2; R2: the S5 watchdog part; R3: S3 wave 2 and S4).
+063's C0/A1/A2; R2: the S5 watchdog part; R3: S4). S3 ends after wave 1: runtimes that
+require global-config, dedicated-home, or project-file writes do not receive Prowl-managed
+hooks.
 
 | Slice | Depends | Contents / expectation |
 | --- | --- | --- |
 | **S1** | — | Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; first specified in 063, delivered here so it ships first) + `prowl agents signal` for `turn-ended`, `needs-input`, session, and progress events (CLI four layers, bounded detail). Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer. |
 | **S2** | 063-A2, S1 | One atomic paired-dispatch path: every CLI `create tab|pane --profile --prompt` appends the completion protocol and returns `dispatch_id`; cooperative `dispatch-complete --outcome succeeded|failed --summary`; 256-entry non-destructive in-memory receipts; ID-only strict `prowl agents wait --dispatch`; generic `wait --until` with automatic overflow resnapshot and honest heuristic fallback; `agents` current evidence field; `--include-screen`; skill rubric. Route B becomes usable without polling or stale completion. |
-| **S3 wave 1** | S2, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
-| **S3 wave 2** | S3 wave 1, 053 dedicated homes | Tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only; tier C (Cursor, Amp: project files) is not attached. |
+| **S3 wave 1** | S2, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. This is the complete S3 hook scope, delivered as S3a–S3c in [006-s3-wave1-plan.md](006-s3-wave1-plan.md). |
 | **S4** | S1 | Transcript file-watch and OSC producers — layer 2 without hooks. |
 | **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-ended` without `done`, immediate attention on `needs-input`) — ships with 063-D2; later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
 
@@ -214,8 +215,9 @@ installed locally; live hook runs for claude, codex, copilot, kimi, droid, pi, o
 opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusions:
 
 - Eight runtimes accept a Prowl hook **per launch without touching user config**
-  (tier A above); five more only through a Prowl-owned home (tier B, i.e. dedicated-home
-  profiles); Cursor Agent and Amp only via project files (not attached).
+  (tier A above) and form the complete S3 scope. Gemini, Qwen, Grok, Cline, and Kimi require
+  a Prowl-owned home; Cursor Agent and Amp require project files. Prowl does not attach hooks
+  for either group.
 - Codex's hook system is trust-gated per command hash; per-launch `-c hooks.*` needs
   `--dangerously-bypass-hook-trust`, which Prowl will **not** pass. Codex gets the native
   `agent-turn-complete` event (mapped to `turn-ended`) through ungated `notify`; its permission prompts stay
@@ -223,8 +225,8 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 - Claude Code holds all hooks in interactive sessions until the workspace-trust dialog is
   accepted — the self-check grace must tolerate that, and a trust prompt is itself a
   `blocked` state worth surfacing.
-- Kimi's `--config-file` replaces the whole config; per-launch hooks there mean Prowl
-  re-supplying the user's provider config — deferred to tier B.
+- Kimi's `--config-file` replaces the whole config; per-launch hooks there would require
+  Prowl to re-supply the user's provider config, so Kimi does not receive managed hooks.
 - Several payloads carry `last_assistant_message` (Claude, Codex, Qoder, Qwen, Grok,
   Gemini) — a cheap result channel for 063's V2 observe mode on those runtimes.
 - Terminal escapes (OSC 9/99/777/BEL, 9;4) are focus-/threshold-gated everywhere and
@@ -242,6 +244,17 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-23: split S3 wave 1 into three merge-safe PRs: S3a foundation plus
+  Claude/Codex, S3b Copilot/Droid/Qoder, and S3c Pi/OMP/OpenCode plus UI/docs/full closure.
+  Detailed S3a research, implementation phases, and validation live in
+  [006-s3-wave1-plan.md](006-s3-wave1-plan.md).
+- Updated 2026-08-23: removed S3 wave 2. Managed hooks are limited to tier-A runtimes that
+  accept per-launch flag/environment injection without configuration writes. Gemini, Qwen,
+  Grok, Cline, Kimi, Cursor, and Amp remain on cooperative, transcript/process, OSC, or
+  heuristic evidence; dedicated homes and project files are not hook-installation surfaces.
+- Updated 2026-08-23 after S2 merged in #718: the paired dispatch and agent-wait slice is on
+  `main`; S3 wave 1 is now the next R1 orchestration critical-path slice. The independent
+  065-S0/K1 bundled-skills work may continue in parallel.
 - Updated 2026-08-23 during S2 review: corrected explicit slice dependencies to
   063-A2 + S1 → S2 → S3 wave 1. S3 consumes S2's wait/channel/self-check infrastructure;
   A2 and S1 are transitive rather than parallel alternatives.

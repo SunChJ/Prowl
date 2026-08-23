@@ -33,14 +33,27 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A1b | Merged | #713 |
 | A2 | Merged | #714 |
 | S1 | Merged | #715: bus, multicast observer, `agents signal` |
-| S2 | Draft PR #718 | Paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
-| S3 wave 1 | Planned | Follows S2: tier-A launch hooks consume S2 wait/channel infrastructure |
+| S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
+| S3 wave 1 | Planning, next | Three merge-safe PRs (S3a–S3c); tier-A launch hooks consume S2 wait/channel infrastructure |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 
-A2 completes 063's R1 implementation work, S1 is on `main`, and S2 is in draft review.
-The next orchestration critical-path slice after merge is S3 wave 1; 065-S0/K1 may proceed
-independently in parallel.
+A2 completes 063's R1 implementation work, and S1/S2 are on `main`. The next orchestration
+critical-path slice is S3 wave 1; 065-S0/K1 may proceed independently in parallel.
+
+#### S3 wave 1 PR breakdown
+
+S3 wave 1 remains one R1 release slice but lands as three sequential, independently
+reviewable PRs. The slice is complete only after S3c:
+
+| PR | Runtime scope | Foundation / closure scope | Depends |
+| --- | --- | --- | --- |
+| **S3a** | Claude Code, Codex | Trusted launch-channel registration, native-hook ingress, payload normalization, self-check/channel lifecycle, bundled hook-resource boundary | S2 |
+| **S3b** | Copilot, Droid, Qoder | Plugin/settings adapters and fixtures on the S3a foundation | S3a |
+| **S3c** | Pi, OMP, OpenCode | Extension/plugin adapters, Active Agents exact-channel badge, complete docs and tier-A live verification | S3b |
+
+The detailed implementation and verification plan starts in
+[064.006](../064-agent-completion-signals/006-s3-wave1-plan.md).
 
 ### R1 — CLI orchestration primitives + completion signals
 
@@ -83,10 +96,11 @@ R2b = C2–D2 (GUI entry, Settings, skills, E2E). Default is one R2. Docs: `work
 | Order | Slice | Entry | Depends | Outcome |
 | --- | --- | --- | --- | --- |
 | 1 | **D3** `prowl.handoff` + `prowl.handoff-checkpoint` built-ins, `HANDOFF_RETIRED` stubs, removal of `HandoffHudFeature` / `HandoffCommandHandler` / `HandoffRequestRegistry`, `docs/components/handoff.md` rewrite | 063 | D2 | handoff is a workflow |
-| 1 | **S3 wave 2** tier-B runtimes via dedicated-home profiles (Gemini, Qwen, Grok, Cline, Kimi) | 064 | S3 wave 1, 053 homes | more runtimes exact |
 | 1 | **S4** transcript file-watch + OSC producers | 064 | S1 | layer-2 signals without hooks |
 
-The `HANDOFF_RETIRED` stubs are deleted one release after R3.
+There is no S3 wave 2. Runtimes that require writes to a global config, dedicated home, or
+project file do not receive Prowl-managed hooks. The `HANDOFF_RETIRED` stubs are deleted one
+release after R3.
 
 ### R3+ — V2
 
@@ -102,12 +116,18 @@ R1:  C0            A1 ──► A1b
                           S1 ──┘
      065-S0/K1 ──► 065-K2 ──► 065-K3
 R2:  B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1 ──► C2 ──► D1 (◄ 065-K1) ──► D2 (◄ S3w1)
-R3:  D3 (◄ D2)        S3w2 (◄ S3w1)        S4 (◄ S1)
+R3:  D3 (◄ D2)        S4 (◄ S1)
 R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 ```
 
 ## Change log
 
+- 2026-08-23 — S3 wave 2 was removed. Prowl ships launch-scoped hooks only for tier-A
+  runtimes that need no global-config, dedicated-home, or project-file writes; Gemini,
+  Qwen, Grok, Cline, Kimi, Cursor, and Amp remain on non-hook evidence layers.
+- 2026-08-23 — S2 merged in #718 after full gates, authenticated Claude/Codex dispatch E2E,
+  and two adversarial review rounds. The next R1 orchestration critical-path slice is S3
+  wave 1; 065-S0/K1 remains independent parallel work.
 - 2026-08-23 — S2 review corrected the explicit critical path to A2 + S1 → S2 → S3 wave 1;
   S3 consumes the wait/channel/self-check infrastructure delivered by S2 rather than branching
   directly from its two transitive prerequisites.
