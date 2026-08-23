@@ -122,6 +122,44 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.currentFocusedSurfaceId() == anchor.surfaceID)
   }
 
+  @Test func frozenDynamicProfileContextRejectsFocusAndInheritedCWDDrift() throws {
+    let state = makeState()
+    let first = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    _ = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    let request = AgentProfileLaunchRequest(
+      plan: makePlan(dedicatedHome: nil),
+      placement: .tab(background: false)
+    )
+    let frozen = try state.freezeAgentProfileLaunchContext(request).get()
+    #expect(state.isAgentProfileLaunchContextValid(frozen))
+
+    #expect(state.focusSurface(id: first.surfaceID))
+    #expect(!state.isAgentProfileLaunchContextValid(frozen))
+    let cwdOnly = FrozenAgentProfileLaunchContext(
+      request: frozen.request,
+      inheritedCWD: frozen.inheritedCWD,
+      anchorSurfaceID: frozen.anchorSurfaceID,
+      tracksFocusedAnchor: false,
+      tracksInheritedCWD: true
+    )
+    #expect(
+      !state.isAgentProfileLaunchContextValid(
+        cwdOnly,
+        inheritedCWDOverride: URL(filePath: "/tmp/repo/changed", directoryHint: .isDirectory)
+      )
+    )
+  }
+
   @Test func explicitSplitFailureDoesNotFallBackToATab() {
     let state = makeState()
     let missingAnchor = UUID()

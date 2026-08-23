@@ -1,11 +1,5 @@
 import Foundation
 
-#if canImport(Darwin)
-  import Darwin
-#elseif canImport(Glibc)
-  import Glibc
-#endif
-
 nonisolated enum ClaudeSettingsReadResult: Equatable, Sendable {
   case stable(Data)
   case changed
@@ -14,34 +8,17 @@ nonisolated enum ClaudeSettingsReadResult: Equatable, Sendable {
 }
 
 nonisolated enum ClaudeSettingsStableReader {
-  static func read(_ url: URL, maximumBytes: Int) -> ClaudeSettingsReadResult {
-    let descriptor = Darwin.open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW)
-    guard descriptor >= 0 else { return .unreadable }
-    defer { Darwin.close(descriptor) }
-    var before = stat()
-    guard fstat(descriptor, &before) == 0,
-      (before.st_mode & S_IFMT) == S_IFREG,
-      before.st_uid == geteuid(),
-      before.st_size >= 0
-    else { return .unreadable }
-    guard before.st_size <= maximumBytes else { return .oversized }
-    var data = Data(count: Int(before.st_size))
-    var offset = 0
-    while offset < data.count {
-      let count = data.withUnsafeMutableBytes { buffer in
-        Darwin.read(descriptor, buffer.baseAddress?.advanced(by: offset), buffer.count - offset)
-      }
-      guard count > 0 else { return .unreadable }
-      offset += count
+  static func read(
+    _ url: URL,
+    maximumBytes: Int,
+    afterRead: () -> Void = {}
+  ) -> ClaudeSettingsReadResult {
+    switch StableOwnerFileReader.read(url, maximumBytes: maximumBytes, afterRead: afterRead) {
+    case .stable(let data): .stable(data)
+    case .changed: .changed
+    case .oversized: .oversized
+    case .unreadable: .unreadable
     }
-    var after = stat()
-    guard fstat(descriptor, &after) == 0,
-      before.st_ino == after.st_ino,
-      before.st_size == after.st_size,
-      before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
-      before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec
-    else { return .changed }
-    return .stable(data)
   }
 }
 
@@ -123,8 +100,7 @@ nonisolated enum ClaudeHookSettingsPreparer {
       let insertionIndex =
         resolvedPromptIndex(
           promptArgumentIndex,
-          arguments: arguments,
-          executable: invocation.executable
+          arguments: arguments
         ) ?? arguments.endIndex
       arguments.insert(contentsOf: ["--settings", "{}"], at: insertionIndex)
       carrierIndex = insertionIndex + 1
@@ -268,14 +244,10 @@ nonisolated enum ClaudeHookSettingsPreparer {
 
   private static func resolvedPromptIndex(
     _ explicit: Int?,
-    arguments: [String],
-    executable: String
+    arguments: [String]
   ) -> Int? {
-    if let explicit, arguments.indices.contains(explicit) { return explicit }
-    if executable == "claude", arguments.first == "-p", arguments.count >= 2 {
-      return arguments.index(before: arguments.endIndex)
-    }
-    return nil
+    guard let explicit, arguments.indices.contains(explicit) else { return nil }
+    return explicit
   }
 
   private static func degraded(_ invocation: AgentInvocation) -> AgentHookPreparationOutcome {
@@ -310,15 +282,10 @@ nonisolated enum CodexManagedNotifyRenderer {
     )
     let notifyJSON = notifyData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
     var arguments = invocation.arguments
-    let inferredPromptIndex: Int? =
-      if let promptArgumentIndex, arguments.indices.contains(promptArgumentIndex) {
-        promptArgumentIndex
-      } else if arguments.first == "exec", arguments.count >= 2 {
-        arguments.index(before: arguments.endIndex)
-      } else {
-        nil
-      }
-    let insertionIndex = inferredPromptIndex ?? arguments.endIndex
+    let explicitPromptIndex = promptArgumentIndex.flatMap {
+      arguments.indices.contains($0) ? $0 : nil
+    }
+    let insertionIndex = explicitPromptIndex ?? arguments.endIndex
     arguments.insert(contentsOf: ["-c", "notify=[]"], at: insertionIndex)
     return AgentHookPreparedInvocation(
       invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),

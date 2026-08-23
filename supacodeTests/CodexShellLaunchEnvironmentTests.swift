@@ -6,30 +6,25 @@ import Testing
 struct CodexShellLaunchEnvironmentTests {
   @Test func probeUsesLoginShellAndReturnsOnlyValidatedLaunchFacts() async throws {
     let cwd = URL(filePath: "/tmp/Project Space/界", directoryHint: .isDirectory)
-    let shell = ShellClient(
-      run: { _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) },
-      runLoginImpl: { executable, arguments, currentDirectory, log in
-        #expect(executable.path(percentEncoded: false) == "/bin/sh")
-        #expect(arguments.first == "-c")
-        #expect(currentDirectory == cwd)
-        #expect(!log)
-        return ShellOutput(
-          stdout: """
-            __PROWL_CODEX_EXECUTABLE__/opt/custom/bin/codex
-            __PROWL_CODEX_HOME_BASE__/Users/tester
-            __PROWL_CODEX_HOME__/tmp/codex-home
+    let run: @Sendable (URL, String) async throws -> ShellOutput = { currentDirectory, script in
+      #expect(currentDirectory == cwd)
+      #expect(script.contains("command -v -- codex"))
+      return ShellOutput(
+        stdout: """
+          __PROWL_CODEX_EXECUTABLE__/opt/custom/bin/codex
+          __PROWL_CODEX_HOME_BASE__/Users/tester
+          __PROWL_CODEX_HOME__/tmp/codex-home
 
-            """,
-          stderr: "ignored",
-          exitCode: 0
-        )
-      }
-    )
+          """,
+        stderr: "ignored",
+        exitCode: 0
+      )
+    }
 
     let environment = try #require(
       await CodexShellLaunchEnvironmentProbe.resolve(
         cwd: cwd,
-        shell: shell,
+        run: run,
         isExecutable: { $0 == "/opt/custom/bin/codex" }
       )
     )
@@ -66,18 +61,34 @@ struct CodexShellLaunchEnvironmentTests {
         exitCode: 1
       ),
     ] {
-      let shell = ShellClient(
-        run: { _, _, _ in output },
-        runLoginImpl: { _, _, _, _ in output }
-      )
       #expect(
         await CodexShellLaunchEnvironmentProbe.resolve(
           cwd: URL(filePath: "/tmp", directoryHint: .isDirectory),
-          shell: shell,
+          run: { _, _ in output },
           isExecutable: { $0 == "/opt/codex" }
         ) == nil
       )
     }
+  }
+
+  @Test func profilePATHOverrideParticipatesInExecutableResolution() async throws {
+    let output = """
+      __PROWL_CODEX_EXECUTABLE__/custom/bin/codex
+      __PROWL_CODEX_HOME_BASE__/Users/tester
+      __PROWL_CODEX_HOME__
+
+      """
+    let result = await CodexShellLaunchEnvironmentProbe.resolve(
+      cwd: URL(filePath: "/tmp", directoryHint: .isDirectory),
+      pathOverride: "/custom/bin:/usr/bin",
+      run: { _, script in
+        #expect(script.contains("PATH='/custom/bin:/usr/bin'; export PATH"))
+        return ShellOutput(stdout: output, stderr: "", exitCode: 0)
+      },
+      isExecutable: { $0 == "/custom/bin/codex" }
+    )
+
+    #expect(result?.executableURL.path(percentEncoded: false) == "/custom/bin/codex")
   }
 
   @Test func capturedShellHomeDefinesDefaultCodexHome() throws {

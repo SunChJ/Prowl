@@ -18,16 +18,22 @@ nonisolated enum CodexShellLaunchEnvironmentProbe {
 
   static func resolve(
     cwd: URL,
-    shell: ShellClient = .live,
+    pathOverride: String? = nil,
+    run: (@Sendable (URL, String) async throws -> ShellOutput)? = nil,
     isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
   ) async -> CodexShellLaunchEnvironment? {
+    let execute =
+      run ?? { cwd, script in
+        try await CodexShellProbeProcess().run(cwd: cwd, script: script)
+      }
+    let effectiveScript: String
+    if let pathOverride {
+      effectiveScript = "PATH=\(AgentInvocation.shellQuote(pathOverride)); export PATH\n" + script
+    } else {
+      effectiveScript = script
+    }
     guard
-      let output = try? await shell.runLogin(
-        URL(filePath: "/bin/sh", directoryHint: .notDirectory),
-        ["-c", script],
-        cwd,
-        log: false
-      ),
+      let output = try? await execute(cwd, effectiveScript),
       output.exitCode == 0,
       output.stdout.utf8.count <= 16 * 1_024,
       let values = parse(output.stdout),

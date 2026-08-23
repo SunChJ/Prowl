@@ -124,34 +124,11 @@ nonisolated struct CodexConfigReadProcess: Sendable {
   }
 
   private func readStableProfile(_ url: URL) throws -> Data {
-    let path = url.path(percentEncoded: false)
-    let descriptor = open(path, O_RDONLY | O_NOFOLLOW)
-    guard descriptor >= 0 else { throw CodexConfigReadProcessError.invalidProfile }
-    defer { close(descriptor) }
-    var before = stat()
-    guard fstat(descriptor, &before) == 0,
-      (before.st_mode & S_IFMT) == S_IFREG,
-      before.st_uid == geteuid(),
-      before.st_size >= 0,
-      before.st_size <= 256 * 1_024
-    else {
-      throw CodexConfigReadProcessError.invalidProfile
-    }
-    var data = Data(count: Int(before.st_size))
-    var offset = 0
-    while offset < data.count {
-      let count = data.withUnsafeMutableBytes { buffer in
-        read(descriptor, buffer.baseAddress?.advanced(by: offset), buffer.count - offset)
-      }
-      guard count > 0 else { throw CodexConfigReadProcessError.invalidProfile }
-      offset += count
-    }
-    var after = stat()
-    guard fstat(descriptor, &after) == 0,
-      before.st_ino == after.st_ino,
-      before.st_size == after.st_size,
-      before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
-      before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec
+    guard
+      case .stable(let data) = StableOwnerFileReader.read(
+        url,
+        maximumBytes: 256 * 1_024
+      )
     else {
       throw CodexConfigReadProcessError.invalidProfile
     }

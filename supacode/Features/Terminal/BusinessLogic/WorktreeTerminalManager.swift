@@ -16,7 +16,8 @@ final class WorktreeTerminalManager {
   @ObservationIgnored private let agentObservationStore: AgentObservationStore
   @ObservationIgnored private let agentDispatchStore: AgentDispatchStore
   @ObservationIgnored private let codexConfigReadProcess: CodexConfigReadProcess
-  @ObservationIgnored private let codexShellEnvironmentResolver: @Sendable (URL) async -> CodexShellLaunchEnvironment?
+  @ObservationIgnored private let codexShellEnvironmentResolver:
+    @Sendable (URL, String?) async -> CodexShellLaunchEnvironment?
   @ObservationIgnored private let hookResourcesProvider: @MainActor () -> AgentHookResources?
   @ObservationIgnored private let forwardingRecordBaseDirectory: URL
   @ObservationIgnored private var codexForwardingRecordStore: CodexForwardingRecordStore?
@@ -46,8 +47,8 @@ final class WorktreeTerminalManager {
     agentObservationBufferCapacity: Int = 64,
     agentDispatchStore: AgentDispatchStore = AgentDispatchStore(),
     codexConfigReadProcess: CodexConfigReadProcess = CodexConfigReadProcess(),
-    codexShellEnvironmentResolver: @escaping @Sendable (URL) async -> CodexShellLaunchEnvironment? = {
-      await CodexShellLaunchEnvironmentProbe.resolve(cwd: $0)
+    codexShellEnvironmentResolver: @escaping @Sendable (URL, String?) async -> CodexShellLaunchEnvironment? = {
+      await CodexShellLaunchEnvironmentProbe.resolve(cwd: $0, pathOverride: $1)
     },
     hookResourcesProvider: @escaping @MainActor () -> AgentHookResources? = {
       guard let url = SupacodePaths.bundledCLIURL else { return nil }
@@ -118,7 +119,10 @@ final class WorktreeTerminalManager {
       let resources = hookResourcesProvider()
       let codexShellEnvironment: CodexShellLaunchEnvironment?
       if context.request.plan.runtime == .codex, resources != nil {
-        codexShellEnvironment = await codexShellEnvironmentResolver(context.inheritedCWD)
+        codexShellEnvironment = await codexShellEnvironmentResolver(
+          context.inheritedCWD,
+          context.request.plan.profileEnvironmentOverrides["PATH"]
+        )
       } else {
         codexShellEnvironment = nil
       }
@@ -188,7 +192,9 @@ final class WorktreeTerminalManager {
           title: context.request.title
         ),
         inheritedCWD: context.inheritedCWD,
-        anchorSurfaceID: context.anchorSurfaceID
+        anchorSurfaceID: context.anchorSurfaceID,
+        tracksFocusedAnchor: context.tracksFocusedAnchor,
+        tracksInheritedCWD: context.tracksInheritedCWD
       )
       return .success(
         PreparedAgentProfileLaunch(
@@ -1246,7 +1252,7 @@ final class WorktreeTerminalManager {
       self.agentObservationStore = AgentObservationStore(bufferCapacity: 64)
       self.agentDispatchStore = AgentDispatchStore()
       self.codexConfigReadProcess = CodexConfigReadProcess()
-      self.codexShellEnvironmentResolver = { _ in nil }
+      self.codexShellEnvironmentResolver = { _, _ in nil }
       self.hookResourcesProvider = { nil }
       self.forwardingRecordBaseDirectory = SupacodePaths.agentHookForwardingDirectory
       self.baselineFontSize = 13

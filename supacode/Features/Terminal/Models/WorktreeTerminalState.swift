@@ -492,16 +492,19 @@ final class WorktreeTerminalState {
   ) -> Result<FrozenAgentProfileLaunchContext, AgentProfileLaunchError> {
     let anchor: UUID?
     let context: ghostty_surface_context_e
+    let tracksFocusedAnchor: Bool
     switch request.placement {
     case .tab:
       anchor = request.inheritanceAnchor ?? currentFocusedSurfaceId()
       context = GHOSTTY_SURFACE_CONTEXT_TAB
+      tracksFocusedAnchor = request.inheritanceAnchor == nil
     case .split(let requestedAnchor, _, _):
       guard let resolved = requestedAnchor ?? currentFocusedSurfaceId(), surfaces[resolved] != nil else {
         return .failure(.splitAnchorUnavailable)
       }
       anchor = resolved
       context = GHOSTTY_SURFACE_CONTEXT_SPLIT
+      tracksFocusedAnchor = requestedAnchor == nil
     }
     let inheritedCWD =
       request.workingDirectoryOverride
@@ -523,14 +526,34 @@ final class WorktreeTerminalState {
           title: request.title
         ),
         inheritedCWD: inheritedCWD.standardizedFileURL,
-        anchorSurfaceID: anchor
+        anchorSurfaceID: anchor,
+        tracksFocusedAnchor: tracksFocusedAnchor,
+        tracksInheritedCWD: request.workingDirectoryOverride == nil
       )
     )
   }
 
-  func isAgentProfileLaunchContextValid(_ context: FrozenAgentProfileLaunchContext) -> Bool {
-    guard let anchor = context.anchorSurfaceID else { return true }
-    return surfaces[anchor] != nil
+  func isAgentProfileLaunchContextValid(
+    _ context: FrozenAgentProfileLaunchContext,
+    inheritedCWDOverride: URL? = nil
+  ) -> Bool {
+    if let anchor = context.anchorSurfaceID, surfaces[anchor] == nil { return false }
+    if context.tracksFocusedAnchor, currentFocusedSurfaceId() != context.anchorSurfaceID { return false }
+    guard context.tracksInheritedCWD else { return true }
+    let surfaceContext: ghostty_surface_context_e =
+      switch context.request.placement {
+      case .tab: GHOSTTY_SURFACE_CONTEXT_TAB
+      case .split: GHOSTTY_SURFACE_CONTEXT_SPLIT
+      }
+    let currentCWD =
+      inheritedCWDOverride
+      ?? inheritedSurfaceConfig(
+        fromSurfaceId: context.anchorSurfaceID,
+        context: surfaceContext
+      ).workingDirectory
+      ?? worktree.workingDirectory
+    return AgentProfileLaunchPlanner.pathString(currentCWD)
+      == AgentProfileLaunchPlanner.pathString(context.inheritedCWD)
   }
 
   /// Launches an agent profile through the deterministic A2 boundary. Explicit

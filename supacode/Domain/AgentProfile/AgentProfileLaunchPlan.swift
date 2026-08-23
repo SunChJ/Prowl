@@ -42,6 +42,8 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   /// nothing but the launch command reads them, and the real variable names
   /// never exist in the pane's shell.
   let surfaceEnvironment: [String: String]
+  /// Validated user overrides retained in-memory for preflight facts such as PATH.
+  let profileEnvironmentOverrides: [String: String]
   /// Dedicated home to provision before launch; nil for pure presets.
   let dedicatedHome: URL?
   /// Runtime-specific session root under the managed home. This is direct for
@@ -60,6 +62,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     placement: AgentProfilePlacement,
     splitDirection: UserCustomSplitDirection,
     surfaceEnvironment: [String: String],
+    profileEnvironmentOverrides: [String: String] = [:],
     dedicatedHome: URL?,
     sessionConfigRoot: URL? = nil
   ) {
@@ -73,6 +76,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     self.placement = placement
     self.splitDirection = splitDirection
     self.surfaceEnvironment = surfaceEnvironment
+    self.profileEnvironmentOverrides = profileEnvironmentOverrides
     self.dedicatedHome = dedicatedHome
     self.sessionConfigRoot = sessionConfigRoot ?? dedicatedHome
   }
@@ -163,6 +167,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
       placement: placement,
       splitDirection: splitDirection,
       surfaceEnvironment: environment,
+      profileEnvironmentOverrides: profileEnvironmentOverrides,
       dedicatedHome: dedicatedHome,
       sessionConfigRoot: sessionConfigRoot
     )
@@ -196,6 +201,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
       placement: placement,
       splitDirection: splitDirection,
       surfaceEnvironment: environment,
+      profileEnvironmentOverrides: profileEnvironmentOverrides,
       dedicatedHome: dedicatedHome,
       sessionConfigRoot: sessionConfigRoot
     )
@@ -240,6 +246,22 @@ nonisolated struct FrozenAgentProfileLaunchContext: Equatable, Sendable {
   let request: AgentProfileLaunchRequest
   let inheritedCWD: URL
   let anchorSurfaceID: UUID?
+  let tracksFocusedAnchor: Bool
+  let tracksInheritedCWD: Bool
+
+  init(
+    request: AgentProfileLaunchRequest,
+    inheritedCWD: URL,
+    anchorSurfaceID: UUID?,
+    tracksFocusedAnchor: Bool = false,
+    tracksInheritedCWD: Bool = false
+  ) {
+    self.request = request
+    self.inheritedCWD = inheritedCWD
+    self.anchorSurfaceID = anchorSurfaceID
+    self.tracksFocusedAnchor = tracksFocusedAnchor
+    self.tracksInheritedCWD = tracksInheritedCWD
+  }
 }
 
 nonisolated struct PreparedAgentProfileLaunch: Equatable, Sendable {
@@ -501,6 +523,7 @@ nonisolated enum AgentProfileLaunchPlanner {
       placement: profile.placement,
       splitDirection: profile.splitDirection,
       surfaceEnvironment: surfaceEnvironment,
+      profileEnvironmentOverrides: overrides,
       dedicatedHome: dedicatedHome,
       sessionConfigRoot: sessionConfigRoot
     )

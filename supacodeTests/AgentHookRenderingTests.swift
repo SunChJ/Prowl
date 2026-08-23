@@ -96,6 +96,23 @@ struct AgentHookRenderingTests {
     #expect(stop.count == 1)
   }
 
+  @Test func stableReaderRejectsAtomicPathReplacement() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-settings-replacement-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let settings = directory.appending(path: "settings.json", directoryHint: .notDirectory)
+    try Data(#"{"version":1}"#.utf8).write(to: settings)
+
+    let result = ClaudeSettingsStableReader.read(settings, maximumBytes: 1_024) {
+      try? Data(#"{"version":2}"#.utf8).write(to: settings, options: .atomic)
+    }
+
+    #expect(result == .changed)
+  }
+
   @Test func claudeMalformedChangedAndOversizedSettingsPreserveInvocation() {
     let invocation = AgentInvocation(executable: "claude", arguments: ["--settings", "bad.json", "Prompt"])
     let missingValue = ClaudeHookSettingsPreparer.prepare(
@@ -134,6 +151,7 @@ struct AgentHookRenderingTests {
     let claudeOutcome = ClaudeHookSettingsPreparer.prepare(
       invocation: claude,
       launchDirectory: URL(filePath: "/tmp", directoryHint: .isDirectory),
+      promptArgumentIndex: 1,
       hookCommands: hookCommands,
       readFile: { _, _ in .unreadable }
     )
@@ -143,12 +161,40 @@ struct AgentHookRenderingTests {
 
     let codex = CodexManagedNotifyRenderer.prepare(
       invocation: AgentInvocation(executable: "codex", arguments: ["exec", "Prompt"]),
-      bundledCLIPath: "/Applications/Prowl Debug.app/Contents/Resources/prowl-cli/prowl"
+      bundledCLIPath: "/Applications/Prowl Debug.app/Contents/Resources/prowl-cli/prowl",
+      promptArgumentIndex: 1
     )
     #expect(codex.invocation.arguments.last == "Prompt")
     #expect(codex.invocation.arguments.contains("-c"))
     #expect(codex.argumentValues.values.first?.contains("notify=") == true)
     #expect(codex.argumentValues.values.first?.contains("dangerously-bypass-hook-trust") == false)
+  }
+
+  @Test func unpromptedOptionValuePairsAreNeverInferredAsPrompts() throws {
+    let claude = ClaudeHookSettingsPreparer.prepare(
+      invocation: AgentInvocation(executable: "claude", arguments: ["-p", "--model", "opus"]),
+      launchDirectory: URL(filePath: "/tmp", directoryHint: .isDirectory),
+      hookCommands: hookCommands,
+      readFile: { _, _ in .unreadable }
+    )
+    let preparedClaude = try #require(claude.prepared)
+    #expect(
+      Array(preparedClaude.invocation.arguments.prefix(3))
+        == ["-p", "--model", "opus"]
+    )
+    #expect(preparedClaude.invocation.arguments.suffix(2) == ["--settings", "{}"])
+
+    for original in [
+      ["exec", "-C", "/tmp/project"],
+      ["exec", "--cd=/tmp/project"],
+    ] {
+      let codex = CodexManagedNotifyRenderer.prepare(
+        invocation: AgentInvocation(executable: "codex", arguments: original),
+        bundledCLIPath: "/bundle/prowl"
+      )
+      #expect(Array(codex.invocation.arguments.prefix(original.count)) == original)
+      #expect(codex.invocation.arguments.suffix(2) == ["-c", "notify=[]"])
+    }
   }
 
   @Test func arbitraryArgumentCarriersNeverRenderValuesIntoTerminalInput() {

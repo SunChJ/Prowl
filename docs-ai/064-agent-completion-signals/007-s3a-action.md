@@ -140,6 +140,26 @@ buffer, exact cwd rejection (including memories), hidden bridge silence/deadline
 exclusion, carrier redaction, and owner/mode/no-follow/lease checks. Focused validation after the
 fixes passed 89 tests plus `make check` (34 script tests).
 
+### Round 2 — races, cancellation, argv rendering, and runtime compatibility
+
+The second independent review accepted four additional P1 findings:
+
+- Login-shell environment resolution had no hard deadline or streaming output cap. It now uses a
+  purpose-built process runner with a one-second deadline, combined stdout/stderr bound,
+  cancellation, TERM-to-KILL escalation, and tests for a noisy shell plus a TERM-ignoring hang.
+- Frozen menu/palette target validation checked only anchor existence. It now tracks whether focus
+  and cwd were inherited dynamically, re-reads both immediately after preflight, and retries or
+  degrades rather than launching a stale context.
+- Renderer fallback inferred any final argv after `exec`/`-p` as a prompt. Only the planner-owned
+  prompt index can move insertion before a prompt now; arbitrary option/value argv remains exact.
+- Stable settings/profile reads compared only the open descriptor. Claude and Codex now share one
+  bounded owner-file reader that also `lstat`s the source path and compares device/inode/type,
+  size, and mtime, so atomic replacement degrades safely.
+
+A follow-up hardening discovered while verifying the first finding also carries an explicit Profile
+`PATH` override into login-shell executable resolution; the prepared runtime invocation then uses
+the attested absolute executable. Focused round-2 validation passed 77 tests plus `make check`.
+
 ## Deferred scope
 
 S3b owns Copilot/Droid/Qoder adapters. S3c owns Pi/OMP/OpenCode adapters and the Active Agents exact

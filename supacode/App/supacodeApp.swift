@@ -1516,7 +1516,9 @@ struct SupacodeApp: App {
               title: preparation.context.request.title
             ),
             inheritedCWD: preparation.context.inheritedCWD,
-            anchorSurfaceID: preparation.context.anchorSurfaceID
+            anchorSurfaceID: preparation.context.anchorSurfaceID,
+            tracksFocusedAnchor: preparation.context.tracksFocusedAnchor,
+            tracksInheritedCWD: preparation.context.tracksInheritedCWD
           ),
           warnings: preparation.warnings
         )

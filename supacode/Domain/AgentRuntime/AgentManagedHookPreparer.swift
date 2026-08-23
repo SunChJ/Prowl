@@ -98,7 +98,7 @@ nonisolated enum AgentManagedHookPreparer {
         launchDirectory: inheritedCWD,
         promptArgumentIndex: promptIndex,
         hookCommands: hookCommands,
-        readFile: ClaudeSettingsStableReader.read
+        readFile: { ClaudeSettingsStableReader.read($0, maximumBytes: $1) }
       )
     }.value
     return AgentManagedHookPreparation(
