@@ -938,7 +938,7 @@ struct SupacodeApp: App {
         else {
           return nil
         }
-        return surface.readScreenContentsForCLI()
+        return surface.readActiveContentsForCLI()
       }
     )
     let createTab: TabCommandHandler.CreateTabProvider = { target, path in

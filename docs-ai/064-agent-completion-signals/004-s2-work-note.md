@@ -108,6 +108,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Adversarial review round 1 found that generic non-exit waits ignored exact
   surface closure and timed out. They now return structured `AGENT_GONE` immediately with an
   exact surface observation and optional requested screen evidence.
+- 2026-08-23 — The same review found that wait screen evidence read the scrollback-inclusive
+  screen while labelling it `detection`. The provider now uses the active detection buffer,
+  enforced by a source-contract regression test.
 
 ## Fresh Debug E2E
 
