@@ -324,6 +324,8 @@ struct AgentProfileTests {
     #expect(effectivePrompt.contains("Prowl dispatch completion protocol v1"))
     #expect(effectivePrompt.contains("prowl agents dispatch-complete"))
     #expect(effectivePrompt.contains("--outcome succeeded|failed"))
+    #expect(effectivePrompt.contains("single line"))
+    #expect(effectivePrompt.contains("no control characters"))
     #expect(!effectivePrompt.contains(dispatchID))
     #expect(
       plan.surfaceEnvironment[AgentProfileLaunchPlanner.dispatchCarrierName] == dispatchID

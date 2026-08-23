@@ -398,8 +398,9 @@ nonisolated enum AgentDispatchPrompt {
     Prowl dispatch completion protocol v\(protocolVersion):
     Before ending this task, choose exactly one terminal outcome and make this command your final tool action:
     prowl agents dispatch-complete --outcome succeeded|failed --summary "<concise result>"
-    Use succeeded only when the assigned work is complete and verified. Use failed when it cannot be completed,
-    and explain why in the required summary. Do not omit the command; Prowl supplies its dispatch context
+    Use succeeded only when the assigned work is complete and verified. Use failed when it cannot be completed.
+    Keep the required summary to a single line with no control characters, and explain the result clearly.
+    Do not omit the command; Prowl supplies its dispatch context
     automatically.
     """
   }

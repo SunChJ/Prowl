@@ -111,6 +111,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — The same review found that wait screen evidence read the scrollback-inclusive
   screen while labelling it `detection`. The provider now uses the active detection buffer,
   enforced by a source-contract regression test.
+- 2026-08-23 — The injected completion protocol now states that summaries are single-line and
+  control-free, matching validation instead of letting real agents discover the constraint only
+  after a rejected final tool action.
 
 ## Fresh Debug E2E
 

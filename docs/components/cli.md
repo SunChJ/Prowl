@@ -262,8 +262,9 @@ prowl agents dispatch-complete --outcome succeeded --summary "Implemented and ve
 prowl agents dispatch-complete --outcome failed --summary "Blocked by an invalid fixture"
 ```
 
-The command accepts no public dispatch id. Prowl reads the launch-scoped environment value
-and independently verifies the socket caller's process ancestry against the immutable launch
+The required summary must be one non-empty line with no control characters and at most 32 KiB
+of UTF-8. The command accepts no public dispatch id. Prowl reads the launch-scoped environment
+value and independently verifies the socket caller's process ancestry against the immutable launch
 pane. Repeating identical completion is safe; a conflicting retry is rejected. Unprompted
 Profile launches remain interactive and do not create a dispatch.
 

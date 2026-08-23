@@ -134,9 +134,10 @@ prowl agents dispatch-complete \
   --summary "The required SDK is unavailable on this deployment target."
 ```
 
-`--outcome succeeded|failed` and a non-empty `--summary` are required. Summary is capped at
-32 KiB of UTF-8 and is the concise result retained with the receipt, not a transcript or
-artifact transport. S1 keeps optional `agents signal --detail`: signal detail is event
+`--outcome succeeded|failed` and a non-empty, single-line, control-free `--summary` are
+required. Summary is capped at 32 KiB of UTF-8 and is the concise result retained with the
+receipt, not a transcript or artifact transport. S1 keeps optional `agents signal --detail`:
+signal detail is event
 context or a reason, whereas dispatch summary is the required terminal delivery synopsis.
 An accepted completion command returns success for either outcome because it recorded the
 receipt correctly; `outcome: failed` becomes nonzero only when a coordinator later consumes
