@@ -157,20 +157,28 @@ reducer stream and typed so that disappearance is observable. The observer is de
 by 064-S1 in release R1 (it was first specified here) and consumed by this entry's B3:
 
 ```swift
-enum ObservedAgentState: Sendable {
-  case snapshot(ActiveAgentEntry?)   // always the first element, even when no agent is detected
-  case changed(ActiveAgentEntry)
-  case removed                       // agent process gone; entry removed (today: agentEntryRemoved)
-  case surfaceClosed                 // pane closed; stream finishes after this
+struct AgentObservationSnapshot: Sendable {
+  let agent: ActiveAgentEntry?
+  let latestSignal: AgentSignal?
+  let revision: UInt64
 }
-func observeAgentState(surfaceID: UUID) -> AsyncStream<ObservedAgentState>
+enum ObservedAgentState: Sendable {
+  case snapshot(AgentObservationSnapshot) // always first, including a normal shell
+  case changed(ActiveAgentEntry)
+  case removed                            // published agent gone; pane may remain alive
+  case signal(AgentSignal)
+  case surfaceClosed                      // pane closed; stream finishes after this
+}
+func observeAgentState(surfaceID: UUID) -> AsyncThrowingStream<ObservedAgentState, Error>
 ```
 
-Each subscriber gets its own bounded buffer (newest-wins coalescing, like
-`TerminalEventCoalescer`); registration and snapshot capture happen in one main-actor
-step so no change can fall between them, the snapshot precedes live events, cancellation
-removes the subscriber, and `surfaceClosed` terminates the stream. `agents wait` maps `removed` /
-`surfaceClosed` to a terminal `AGENT_GONE` error (not to `done`) unless `--until changed`
+Each subscriber gets its own bounded buffer. Registration and snapshot capture happen in
+one main-actor step so no change can fall between them, the snapshot precedes live events,
+cancellation removes the subscriber, and `surfaceClosed` terminates the stream. A slow
+subscriber receives an explicit `bufferOverflow` error instead of silently losing signal or
+lifecycle evidence; S2's `agents wait` re-subscribes and evaluates the newer snapshot before
+surfacing an error. `agents wait` maps `removed` /
+`surfaceClosed` to a terminal `AGENT_GONE` error (not to `done`) unless `--until exit`
 was requested. The runner's watchdog likewise reads the role's *current* state first and
 schedules cancellable grace deadlines on the injected clock; it never relies on a later
 event alone.

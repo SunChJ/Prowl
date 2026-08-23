@@ -17,6 +17,9 @@
       "$ref": "#/$defs/agentsReadResponse"
     },
     {
+      "$ref": "#/$defs/agentsSignalResponse"
+    },
+    {
       "$ref": "#/$defs/profilesResponse"
     },
     {
@@ -671,6 +674,85 @@
         },
         "availability": {
           "$ref": "#/$defs/profileAvailability"
+        }
+      }
+    },
+    "agentSignalData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pane",
+        "signal"
+      ],
+      "properties": {
+        "pane": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "worktree_id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "worktree_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "signal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "source",
+            "confidence",
+            "at"
+          ],
+          "properties": {
+            "event": {
+              "enum": [
+                "turn-ended",
+                "needs-input",
+                "session-start",
+                "session-end",
+                "progress"
+              ]
+            },
+            "progress": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "source": {
+              "const": "cooperative_cli"
+            },
+            "confidence": {
+              "const": "exact"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32768
+            },
+            "claimed_origin": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
         }
       }
     },
@@ -1652,6 +1734,58 @@
             },
             "schema_version": {
               "const": "prowl.cli.agents.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsSignalResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents.signal"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.signal.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentSignalData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents.signal"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.signal.v1"
             },
             "error": {
               "$ref": "#/$defs/error"

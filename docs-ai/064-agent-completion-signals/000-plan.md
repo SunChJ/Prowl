@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | Planned (research matrix recorded 2026-08-22) |
+| **Status** | In progress — S1 implementation on `feat/agent-completion-signal-bus` |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | TBD |
+| **Primary PRs** | S1 TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -38,9 +38,10 @@ at launch and have the agent report to Prowl through the bundled `prowl` binary.
      exit, OSC progress/notification sequences the CLI emits itself;
   3. heuristic screen/process detection (existing).
 - Add `prowl agents signal <event>` so any agent (or a hook it runs) can report
-  `turn-complete` / `needs-input` / `session-start` / `session-end`, attributed by the
-  caller pane (a hook is a child of the agent process, so process ancestry still resolves
-  the pane).
+  `turn-ended` / `needs-input` / `session-start` / `session-end`, attributed by the caller
+  pane (a hook is a child of the agent process, so process ancestry still resolves the
+  pane). `turn-ended` deliberately means a runtime turn edge, not assigned-task or workflow
+  completion.
 - Add `prowl agents wait <pane> --until … [--timeout] [--min-confidence] [--include-screen]`
   that resolves on the bus and reports *what kind* of signal it got.
 - Make `prowl agents` honest about what each pane can offer (`signals` field) and make
@@ -71,18 +72,22 @@ where
 
 ```swift
 struct AgentSignal: Sendable, Equatable {
-  enum Kind { case turnComplete, needsInput, sessionStart, sessionEnd, progress(Int?) }
-  enum Source { case cli, hook(runtime: AgentProfileRuntime, event: String), transcript, process, osc, screen }
+  enum Kind { case turnEnded, needsInput, sessionStart, sessionEnd, progress(Int?) }
+  enum Source {
+    case cooperativeCLI
+    case hook(runtime: AgentProfileRuntime, event: String)
+    case transcript, process, osc, screen
+  }
   enum Confidence { case exact, high, heuristic }
-  let kind: Kind; let source: Source; let confidence: Confidence; let at: Date
-  let sessionID: String?; let detail: String?        // e.g. hook payload excerpt; never secrets
+  let kind: Kind; let source: Source; let confidence: Confidence; let timestamp: Date
+  let sessionID: String?; let detail: String?; let claimedOrigin: String?
 }
 ```
 
 | Producer | Mechanism | Confidence |
 | --- | --- | --- |
-| `prowl agents signal` | CLI handler, caller-pane attribution, optional `--origin hook:<runtime>.<event>` and `--session <id>` | exact |
-| Launch-scoped hooks | adapter capability `signalHooks` renders the launch flag/config that makes the CLI run `<bundled prowl> agents signal --event … --origin hook:…` on its native events (per-runtime syntax: research matrix) | exact |
+| `prowl agents signal` | CLI handler, caller-pane attribution, optional bounded `--origin` (claimed metadata only), `--session`, and `--detail` | exact caller/channel attribution |
+| Launch-scoped hooks | adapter capability `signalHooks` renders a Prowl-configured launch-scoped channel that reports native events through the bundled CLI; only validated capability upgrades provenance to `hook` (per-runtime syntax: research matrix) | exact channel attribution |
 | Transcript turn-end | 059's reader on the exact/high-attributed transcript, file-watch instead of polling | high/exact |
 | Process exit | existing `agentEntryRemoved` | exact |
 | OSC | existing progress/notification OSC handling in the Ghostty bridge, surfaced as signals | high |
@@ -91,6 +96,9 @@ struct AgentSignal: Sendable, Equatable {
 Every producer writes to the same per-surface state; the reducer-side consumer (063
 runner via `AppFeature`) and the CLI-side consumer (`agents wait` via the multicast
 observer) see identical events. Registration and snapshot capture stay one main-actor step.
+Each subscriber is independently bounded. If it falls behind, state churn is recovered from
+a new snapshot; signal or lifecycle overflow is explicit and S2's waiter re-subscribes before
+surfacing an error. Critical events are never silently discarded.
 
 ### `prowl agents wait`
 
@@ -110,6 +118,10 @@ prowl agents wait <pane> --until idle|blocked|changed|exit [--timeout 1…600]
   `--include-screen N`, a stable `detection`-source screen tail and, when available, the
   059 result state — everything an orchestrating agent needs to judge a heuristic result in
   one call.
+- Prowl-dispatched work uses an opaque `dispatch_id`, not timestamps, to exclude stale
+  completion. S2 ships `create` issuance, `dispatch-complete --detail`, bounded receipt
+  retention, and `agents wait --dispatch` atomically. Receipts survive pane closure but not
+  app restart; surface generation is only the unpaired fallback.
 - `removed` / `surfaceClosed` → `AGENT_GONE` (unless `--until exit`); timeout →
   `WAIT_TIMEOUT` with the last known status/source. The 600 s cap matches typical agent
   tool timeouts; the skill documents "re-arm on timeout".
@@ -153,12 +165,12 @@ interleaves with 063's slices, is owned by the shared living
 
 | Slice | Depends | Contents / expectation |
 | --- | --- | --- |
-| **S1** | — | Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; first specified in 063, delivered here so it ships first) + `prowl agents signal` (CLI four layers). Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer. |
-| **S2** | S1 | `prowl agents wait` + `agents` `signals` field + `--include-screen` + skill rubric. Route B usable; heuristic fallback honest. |
-| **S3 wave 1** | 063-A2, S1, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (turn-complete only; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
+| **S1** | — | Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; first specified in 063, delivered here so it ships first) + `prowl agents signal` for `turn-ended`, `needs-input`, session, and progress events (CLI four layers, bounded detail). Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer. |
+| **S2** | S1 | One atomic paired-dispatch path: `create --profile --prompt` returns `dispatch_id`; cooperative `dispatch-complete --detail`; bounded non-destructive in-memory receipts; `prowl agents wait --dispatch` with automatic overflow resnapshot; `agents` `signals` field; `--include-screen`; skill rubric. Route B usable; heuristic fallback honest. |
+| **S3 wave 1** | 063-A2, S1, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
 | **S3 wave 2** | S3 wave 1, 053 dedicated homes | Tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only; tier C (Cursor, Amp: project files) is not attached. |
 | **S4** | S1 | Transcript file-watch and OSC producers — layer 2 without hooks. |
-| **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-complete` without `done`, immediate attention on `needs-input`) — ships with 063-D2; later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
+| **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-ended` without `done`, immediate attention on `needs-input`) — ships with 063-D2; later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
 
 ### Verification
 
@@ -195,8 +207,8 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
   (tier A above); five more only through a Prowl-owned home (tier B, i.e. dedicated-home
   profiles); Cursor Agent and Amp only via project files (not attached).
 - Codex's hook system is trust-gated per command hash; per-launch `-c hooks.*` needs
-  `--dangerously-bypass-hook-trust`, which Prowl will **not** pass. Codex gets
-  `turn-complete` through the ungated `notify` config; its permission prompts stay
+  `--dangerously-bypass-hook-trust`, which Prowl will **not** pass. Codex gets the native
+  `agent-turn-complete` event (mapped to `turn-ended`) through ungated `notify`; its permission prompts stay
   heuristic/transcript-based.
 - Claude Code holds all hooks in interactive sessions until the workspace-trust dialog is
   accepted — the self-check grace must tolerate that, and a trust prompt is itself a
@@ -220,6 +232,16 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-23 before merge: owner raised bounded signal `--detail` from 4 KiB to
+  32 KiB (32768 UTF-8 bytes). The larger bound remains well below the 32 MiB socket frame and
+  macOS argument budget, accommodates useful completion summaries, and preserves the rule
+  that transcript/workflow-sized output uses its dedicated channels.
+- Updated 2026-08-22 before S1 implementation: owner review separated runtime `turn-ended`
+  from S2's cooperative `dispatch-complete`; retained bounded `--detail`; made public origin
+  claimed metadata only; required explicit overflow/resnapshot; and moved the complete
+  dispatch-ID issuance/receipt/wait protocol into S2 so it cannot ship half-paired. The
+  implementation record is [001-action.md](001-action.md), with the authorized execution
+  checklist in [002-s1-work-note.md](002-s1-work-note.md).
 - Updated 2026-08-22: prerequisite 063-A2 is implemented in PR #714. Its typed synchronous
   launch boundary preserves the adapter-rendered invocation and launch-scoped surface
   environment that S3 will extend; A2 intentionally injects no hooks. With that dependency

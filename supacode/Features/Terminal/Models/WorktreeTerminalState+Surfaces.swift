@@ -137,10 +137,7 @@ extension WorktreeTerminalState {
       return .success(newSurface.id)
     } catch {
       newSurface.closeSurface()
-      surfaces.removeValue(forKey: newSurface.id)
-      surfaceRunningStartedAtById.removeValue(forKey: newSurface.id)
-      cleanupCommandDetectorState(forSurfaceId: newSurface.id)
-      cleanupAgentDetectionState(forSurfaceId: newSurface.id)
+      forgetSurface(newSurface.id)
       return .failure(.insertionFailed)
     }
   }
@@ -328,9 +325,11 @@ extension WorktreeTerminalState {
     for tab in tabManager.tabs {
       unregisterTargetHandle(for: tab.id)
     }
-    for surface in surfaces.values {
-      unregisterTargetHandle(for: surface.id)
+    // `closeSurface()` may synchronously re-enter `forgetSurface`; snapshot the
+    // values and let the guarded cleanup seam make each lifecycle exactly once.
+    for surface in Array(surfaces.values) {
       surface.closeSurface()
+      forgetSurface(surface.id)
     }
     surfaces.removeAll()
     launchProfilesBySurface.removeAll()
@@ -631,6 +630,7 @@ extension WorktreeTerminalState {
   /// without dropping them here the worktree's unseen indicator (bell + Dock
   /// badge) would stay lit until the user manually dismisses everything.
   func forgetSurface(_ surfaceID: UUID) {
+    guard surfaces[surfaceID] != nil else { return }
     unregisterTargetHandle(for: surfaceID)
     surfaces.removeValue(forKey: surfaceID)
     launchProfilesBySurface.removeValue(forKey: surfaceID)
@@ -645,6 +645,7 @@ extension WorktreeTerminalState {
     let previousHasUnseen = hasUnseenNotification
     notifications = Self.prunedNotifications(from: notifications, removingSurfaceID: surfaceID)
     emitNotificationIndicatorIfNeeded(previousHasUnseen: previousHasUnseen)
+    onSurfaceClosed?(surfaceID)
   }
 
   func removeTree(for tabId: TerminalTabID) {

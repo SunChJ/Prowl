@@ -30,6 +30,88 @@ public struct AgentsInput: Codable, Sendable {
   public init() {}
 }
 
+public enum AgentSignalEvent: String, Codable, CaseIterable, Sendable {
+  case turnEnded = "turn-ended"
+  case needsInput = "needs-input"
+  case sessionStart = "session-start"
+  case sessionEnd = "session-end"
+  case progress
+}
+
+public struct AgentSignalInput: Codable, Sendable {
+  public static let maximumSessionIDBytes = 256
+  public static let maximumOriginBytes = 256
+  public static let maximumDetailBytes = 32 * 1_024
+
+  public let event: AgentSignalEvent
+  public let progress: Int?
+  public let origin: String?
+  public let sessionID: String?
+  public let detail: String?
+
+  enum CodingKeys: String, CodingKey {
+    case event
+    case progress
+    case origin
+    case sessionID = "session_id"
+    case detail
+  }
+
+  public init(
+    event: AgentSignalEvent,
+    progress: Int? = nil,
+    origin: String? = nil,
+    sessionID: String? = nil,
+    detail: String? = nil
+  ) {
+    self.event = event
+    self.progress = progress
+    self.origin = origin
+    self.sessionID = sessionID
+    self.detail = detail
+  }
+
+  public var validationErrorMessage: String? {
+    if event != .progress, progress != nil {
+      return "--progress is only valid with the 'progress' event."
+    }
+    if let progress, !(0...100).contains(progress) {
+      return "--progress must be between 0 and 100."
+    }
+    if let message = Self.validateText(
+      sessionID,
+      name: "--session",
+      maximumBytes: Self.maximumSessionIDBytes
+    ) {
+      return message
+    }
+    if let message = Self.validateText(
+      origin,
+      name: "--origin",
+      maximumBytes: Self.maximumOriginBytes
+    ) {
+      return message
+    }
+    return Self.validateText(
+      detail,
+      name: "--detail",
+      maximumBytes: Self.maximumDetailBytes
+    )
+  }
+
+  private static func validateText(_ value: String?, name: String, maximumBytes: Int) -> String? {
+    guard let value else { return nil }
+    guard !value.isEmpty else { return "\(name) must not be empty." }
+    guard value.utf8.count <= maximumBytes else {
+      return "\(name) must be at most \(maximumBytes) UTF-8 bytes."
+    }
+    guard !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+      return "\(name) must not contain control characters."
+    }
+    return nil
+  }
+}
+
 public struct ProfilesInput: Codable, Sendable {
   public init() {}
 }

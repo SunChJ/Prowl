@@ -266,6 +266,8 @@ final class WorktreeTerminalState {
   var onTaskStatusChanged: ((WorktreeTaskStatus) -> Void)?
   var onAgentEntryChanged: ((ActiveAgentEntry) -> Void)?
   var onAgentEntryRemoved: ((ActiveAgentEntry.ID) -> Void)?
+  /// Emitted exactly once after agent cleanup for each torn-down surface.
+  var onSurfaceClosed: ((UUID) -> Void)?
   var onRunScriptStatusChanged: ((Bool) -> Void)?
   var onCommandPaletteToggle: (() -> Void)?
   var onSetupScriptConsumed: (() -> Void)?

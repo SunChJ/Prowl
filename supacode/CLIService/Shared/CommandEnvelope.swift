@@ -18,6 +18,7 @@ public enum Command: Codable, Sendable {
   case list(ListInput)
   case agents(AgentsInput)
   case agentsRead(AgentReadInput)
+  case agentsSignal(AgentSignalInput)
   case profiles(ProfilesInput)
   case focus(FocusInput)
   case send(SendInput)
@@ -35,6 +36,7 @@ public enum Command: Codable, Sendable {
     case .list: "list"
     case .agents: "agents"
     case .agentsRead: "agents.read"
+    case .agentsSignal: "agents.signal"
     case .profiles: "profiles"
     case .focus: "focus"
     case .send: "send"

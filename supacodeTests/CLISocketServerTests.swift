@@ -88,6 +88,64 @@ struct CLISocketServerTests {
     #expect(!CLISocketServer.isAllowedPeerUID(502, currentUID: 501))
   }
 
+  @Test func socketRoundTripThreadsKernelPeerPIDIntoAgentSignalHandler() async throws {
+    let socketPath = temporarySocketPath(suffix: "signal-context")
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    var recordedSignal: AgentSignal?
+    let handler = AgentSignalCommandHandler(
+      resolveCaller: { processID in
+        #expect(processID == getpid())
+        return pane
+      },
+      recordSignal: { caller, signal in
+        #expect(caller == pane)
+        recordedSignal = signal
+        return true
+      },
+      now: { Date(timeIntervalSince1970: 1_000) }
+    )
+    let server = CLISocketServer(
+      router: CLICommandRouter(agentsSignalHandler: handler),
+      socketPath: socketPath
+    )
+    try server.start()
+    defer { server.stop() }
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .agentsSignal(AgentSignalInput(event: .turnEnded, detail: "socket result"))
+    )
+
+    let requestData = try JSONEncoder().encode(envelope)
+    let responseData = try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        continuation.resume(
+          with: Result {
+            try Self.send(requestData: requestData, socketPath: socketPath)
+          }
+        )
+      }
+    }
+    let response = try JSONDecoder().decode(CommandResponse.self, from: responseData)
+
+    #expect(response.ok)
+    #expect(response.command == "agents.signal")
+    #expect(recordedSignal?.kind == .turnEnded)
+    #expect(recordedSignal?.detail == "socket result")
+  }
+
+  #if canImport(Darwin)
+    @Test func kernelReportsPeerPIDForLocalSocket() throws {
+      var descriptors: [Int32] = [-1, -1]
+      #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+      defer {
+        close(descriptors[0])
+        close(descriptors[1])
+      }
+
+      #expect(CLISocketServer.peerProcessID(descriptors[0]) == getpid())
+    }
+  #endif
+
   private func temporarySocketPath(suffix: String) -> String {
     URL(fileURLWithPath: "/tmp", isDirectory: true)
       .appending(path: "prowl-cli-tests-\(UUID().uuidString.prefix(8))", directoryHint: .isDirectory)
@@ -95,6 +153,73 @@ struct CLISocketServerTests {
         path: "prowl-\(suffix)-\(UUID().uuidString.prefix(8)).sock", directoryHint: .notDirectory
       )
       .path(percentEncoded: false)
+  }
+
+  nonisolated private static func send(requestData: Data, socketPath: String) throws -> Data {
+    let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard socketFD >= 0 else { throw CLIServiceError.socketCreationFailed }
+    defer { close(socketFD) }
+
+    let connected = withSocketAddress(socketPath) { address in
+      withUnsafePointer(to: address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketPointer in
+          connect(socketFD, socketPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+      }
+    }
+    guard connected == 0 else { throw TestSocketClientError.connectFailed }
+
+    var requestLength = UInt32(requestData.count).bigEndian
+    try withUnsafeBytes(of: &requestLength) { try writeAll(socketFD, buffer: $0) }
+    try requestData.withUnsafeBytes { try writeAll(socketFD, buffer: $0) }
+
+    let lengthData = try readExact(socketFD, count: 4)
+    let responseLength = lengthData.withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
+    return try readExact(socketFD, count: Int(responseLength))
+  }
+
+  nonisolated private static func writeAll(_ fileDescriptor: Int32, buffer: UnsafeRawBufferPointer) throws {
+    var offset = 0
+    while offset < buffer.count {
+      let written = Darwin.write(
+        fileDescriptor,
+        buffer.baseAddress!.advanced(by: offset),
+        buffer.count - offset
+      )
+      guard written > 0 else { throw CLIServiceError.writeFailed }
+      offset += written
+    }
+  }
+
+  nonisolated private static func readExact(_ fileDescriptor: Int32, count: Int) throws -> Data {
+    var data = Data(count: count)
+    var offset = 0
+    while offset < count {
+      let readCount = data.withUnsafeMutableBytes { buffer in
+        Darwin.read(fileDescriptor, buffer.baseAddress!.advanced(by: offset), count - offset)
+      }
+      guard readCount > 0 else { throw CLIServiceError.readFailed }
+      offset += readCount
+    }
+    return data
+  }
+
+  nonisolated private static func withSocketAddress<Result>(
+    _ socketPath: String,
+    _ body: (sockaddr_un) throws -> Result
+  ) rethrows -> Result {
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let pathBytes = Array(socketPath.utf8)
+    let maxLength = MemoryLayout.size(ofValue: address.sun_path) - 1
+    precondition(pathBytes.count <= maxLength)
+    withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+      for index in pathBytes.indices {
+        buffer[index] = pathBytes[index]
+      }
+      buffer[pathBytes.count] = 0
+    }
+    return try body(address)
   }
 
   private func fileMode(at path: String) -> mode_t? {
@@ -167,4 +292,8 @@ struct CLISocketServerTests {
     }
     return try body(address)
   }
+}
+
+private enum TestSocketClientError: Error {
+  case connectFailed
 }

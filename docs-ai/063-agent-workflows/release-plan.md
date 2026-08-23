@@ -31,9 +31,9 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | C0 | Merged | #709 |
 | A1 | Merged | #710 |
 | A1b | Merged | #713 |
-| A2 | Implemented | #714 |
-| S1 | Planned | **Next critical-path PR**: signal bus, multicast observer, `agents signal` |
-| S2 | Planned | Follows S1: `agents wait` and honest heuristic fallback |
+| A2 | Merged | #714 |
+| S1 | In progress | `feat/agent-completion-signal-bus`: bus, multicast observer, `agents signal` |
+| S2 | Planned | Follows S1: atomic dispatch ID → completion receipt → `agents wait` path and honest heuristic fallback |
 | S3 wave 1 | Planned | Follows A2 + S1: tier-A launch hooks |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
@@ -50,9 +50,9 @@ A2 completes 063's R1 implementation work. The orchestration critical path now m
 | 1 | **A1b** `PROWL_PANE_ID` per-pane environment variable (joins `PROWL_WORKTREE_PATH` / `PROWL_ROOT_PATH`) + `prowl-cli` skill self-identification rewrite | 063 | A1 | agents address their own pane deterministically (`--pane "$PROWL_PANE_ID"`) instead of guessing from `focused` |
 | 1 | **065-S0/K1** skill-target spike; `embed-skills` + `ProwlSkills` registry | 065 | — | skills ship in the bundle; D1 prerequisite |
 | 2 | **A2** profile launch boundary + `create tab\|pane --profile <p> --prompt -` + `profiles list` | 063 | A1 | CLI launches a profile with a kickoff prompt and gets the pane back |
-| 2 | **S1** signal bus + `ObservedAgentState` multicast observer + `prowl agents signal` | 064 | — | layer-0 signals for every runtime |
+| 2 | **S1** signal bus + `ObservedAgentState` multicast observer + `prowl agents signal` (`turn-ended`, needs-input/session/progress, bounded detail) | 064 | — | layer-0 signals for every runtime |
 | 2 | **065-K2** shared `SymlinkInstaller` + `prowl skills list\|install\|uninstall\|path` | 065 | 065-K1 | one command installs Prowl's skills into agent skill folders |
-| 3 | **S2** `prowl agents wait` (`source`/`confidence`, `--include-screen`) + `agents` `signals` field + skill rubric | 064 | S1 | no hand-written polling; heuristic results are labelled |
+| 3 | **S2** atomic dispatch pairing (`create` dispatch ID, cooperative `dispatch-complete --detail`, bounded receipt retention, `agents wait --dispatch` with overflow resnapshot) + `source`/`confidence`, `--include-screen`, `agents` `signals`, and skill rubric | 064 | S1 | no hand-written polling or stale completion; heuristic results are labelled |
 | 3 | **065-K3** Agent Skills section on Settings › Command Line Tool | 065 | 065-K2 | GUI users install skills without a terminal |
 | 4 | **S3 wave 1** launch-scoped hooks for tier-A runtimes (Claude Code, Codex `notify`, Copilot, Droid, Qoder, Pi, OMP, OpenCode) + self-check | 064 | A2, S1 | `agents wait` is deterministic for Prowl-launched agents |
 
@@ -107,7 +107,10 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
-- 2026-08-22 — A2 implemented in #714 after C0 #709, A1 #710, and A1b #713. The next R1
+- 2026-08-22 — S1 started on `feat/agent-completion-signal-bus`; owner review moved the
+  complete dispatch-ID issuance/receipt/wait protocol into S2, renamed the runtime edge to
+  `turn-ended`, retained bounded detail, and required explicit overflow resnapshot.
+- 2026-08-22 — A2 merged in #714 after C0 #709, A1 #710, and A1b #713. The next R1
   critical path is 064-S1 → S2 → S3 wave 1; 065-S0/K1 remains independent parallel work.
 - 2026-08-22 — A1 review: added **A1b** (`PROWL_PANE_ID`) to R1; `create pane` keeps an explicit
   anchor (no caller-pane default) and a background placement stays with A2.

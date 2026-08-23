@@ -76,6 +76,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "agents.signal",
+         let data = response.data,
+         let payload = try? data.decode(as: AgentSignalCommandPayload.self)
+      {
+        print(agentSignalText(payload))
+        return
+      }
+
       if response.command == "profiles",
          let data = response.data,
          let payload = try? data.decode(as: ProfilesCommandPayload.self)
@@ -273,6 +281,16 @@ enum OutputRenderer {
       let sessionLabel = agent.session.map { "  session=\($0.id) [\($0.confidence)]" } ?? ""
       return "\(statusLabel)  \(agent.name)  \(projectLabel)  \(agent.tab.title)  \(paneHandle)\(sessionLabel)"
     }.joined(separator: "\n")
+  }
+
+  static func agentSignalText(_ payload: AgentSignalCommandPayload) -> String {
+    let event: String
+    if payload.signal.event == .progress, let progress = payload.signal.progress {
+      event = "progress=\(progress)"
+    } else {
+      event = payload.signal.event.rawValue
+    }
+    return "Signaled \(event) for pane \(payload.pane.id)."
   }
 
   private static func renderProfiles(_ payload: ProfilesCommandPayload) -> String {

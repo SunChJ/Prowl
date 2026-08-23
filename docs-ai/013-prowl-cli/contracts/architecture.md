@@ -85,7 +85,7 @@ Phase-1 commands are **remote-control actions on running app state**.
   - `ReadCommandHandler`
   - `LifecycleCommandHandler` (`create`, `close`)
   - legacy `TabCommandHandler` / `PaneCommandHandler` during deprecation
-  - `AgentsCommandHandler`, `AgentReadCommandHandler`, and `HandoffCommandHandler`
+  - `AgentsCommandHandler`, `AgentReadCommandHandler`, `AgentSignalCommandHandler`, and `HandoffCommandHandler`
 - Shared services
   - `TargetResolver`
   - `TerminalCommandBridge`
@@ -145,7 +145,7 @@ Resolution belongs to app runtime (state-aware), with CLI only enforcing selecto
 
 - Input normalization rules: `input.md` and `targeting.md`
 - Output contracts: one document per wire command, including `create.md`, `close.md`,
-  deprecated `tab.md` / `pane.md`, `agents.md`, and `handoff.md`.
+  deprecated `tab.md` / `pane.md`, `agents.md`, `agents-signal.md`, and `handoff.md`.
 - JSON schema validation source: the machine-readable bundle linked by `schema.md`.
 
 Every payload-bearing mock socket response is validated against that Draft 2020-12
