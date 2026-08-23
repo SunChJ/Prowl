@@ -91,6 +91,24 @@ struct AgentEvidenceEpochTests {
     #expect(store.currentSignalEvidence(surfaceID: surfaceID).activeTerminal == terminal)
   }
 
+  @Test func workingRedetectionAfterRemovalInvalidatesTerminalEvidence() {
+    let store = AgentObservationStore(bufferCapacity: 8)
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 42, startedAt: Date(timeIntervalSince1970: 1))
+    store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+    store.publishAgentChanged(agentEntry(surfaceID: surfaceID, title: "Idle", displayState: .idle))
+    let terminal = signal(.turnEnded, source: .cooperativeCLI)
+    store.publishSignal(terminal, binding: .current, surfaceID: surfaceID)
+    store.publishAgentRemoved(surfaceID: surfaceID)
+
+    let beganWorking = store.publishAgentChanged(
+      agentEntry(surfaceID: surfaceID, title: "Working", displayState: .working)
+    )
+
+    #expect(beganWorking)
+    #expect(store.currentSignalEvidence(surfaceID: surfaceID).activeTerminal == nil)
+  }
+
   @Test func unboundSignalIsDiagnosticAndNeverCreatesObservedCoverage() {
     let store = AgentObservationStore(bufferCapacity: 8)
     let surfaceID = UUID()
@@ -121,7 +139,11 @@ struct AgentEvidenceEpochTests {
         ])
   }
 
-  private func agentEntry(surfaceID: UUID, title: String) -> ActiveAgentEntry {
+  private func agentEntry(
+    surfaceID: UUID,
+    title: String,
+    displayState: AgentDisplayState = .working
+  ) -> ActiveAgentEntry {
     ActiveAgentEntry(
       id: surfaceID,
       worktreeID: "wt",
@@ -133,8 +155,8 @@ struct AgentEvidenceEpochTests {
       paneIndex: 0,
       iconLookupToken: "pi",
       agent: .pi,
-      rawState: .working,
-      displayState: .working,
+      rawState: displayState == .working ? .working : .idle,
+      displayState: displayState,
       lastChangedAt: Date(timeIntervalSince1970: 10)
     )
   }

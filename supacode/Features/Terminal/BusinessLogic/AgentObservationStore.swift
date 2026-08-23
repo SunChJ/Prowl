@@ -100,8 +100,8 @@ final class AgentObservationStore {
     var record = records[entry.surfaceID] ?? SurfaceRecord()
     guard record.agent != entry else { return false }
     let beganWorking =
-      record.agent.map { $0.displayState != .working && entry.displayState == .working }
-      ?? false
+      record.agent?.displayState != .working
+      && entry.displayState == .working
     record.agent = entry
     if beganWorking {
       record.activeTerminalSignal = nil

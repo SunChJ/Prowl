@@ -117,6 +117,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Review follow-up distinguished a real transition into working from metadata churn
   while already working. Animated title emissions no longer erase fresh exact terminal evidence
   or clear dispatch attention/incomplete replay.
+- 2026-08-23 — Adversarial review round 2 covered the detector's presence-release edge: a
+  same-process `nil` → working re-detection now counts as activity and clears stale terminal
+  evidence, while working → working metadata churn remains inert.
 
 ## Fresh Debug E2E
 
