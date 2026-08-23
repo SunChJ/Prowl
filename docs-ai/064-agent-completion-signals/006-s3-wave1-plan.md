@@ -81,13 +81,14 @@ or launch path.
 ### Blocking implementation constraints
 
 1. **One Profile launch epoch.** `bindAgentDispatch` currently calls
-   `beginDispatchEpoch` after the Profile surface has launched. S3 registration must begin at
-   the actual Profile launch boundary, so dispatch binding must adopt that epoch rather than
-   minting another one and clearing early hook evidence.
-2. **Early native events.** Claude `SessionStart` can reach Prowl before periodic detection has
-   resolved the agent PID. A valid registered token and exact caller pane must be accepted as
-   pending evidence, then bound when the first launch generation appears within the existing
-   acquisition window. It must not be silently downgraded or lost.
+   `beginDispatchEpoch` after the Profile surface has launched. S3 registration must begin
+   after the exact surface identity exists but before its initial input can execute, so dispatch
+   binding adopts that epoch rather than minting another one and clearing early hook evidence.
+2. **Early native events.** Claude `SessionStart` can reach Prowl before surface creation
+   returns and before periodic detection has resolved the agent PID. The launch token must
+   already be registered to the exact caller pane before initial input delivery. Its event is
+   accepted as pending process evidence, then bound when the first launch generation appears
+   within the existing acquisition window; it must not be downgraded or lost.
 3. **Prompt/config carriers.** `AgentProfileLaunchPlan.terminalInput` currently replaces only
    the final prompt argv value. Claude settings JSON is a non-final argument and can exceed the
    canonical PTY limit. Shell rendering must support typed argv-index -> environment-carrier
@@ -108,8 +109,17 @@ or launch path.
    notifier it cannot reproduce.
 8. **Asynchronous launch preparation.** Codex's own `app-server config/read` is the source of
    truth for merged config parsing and must run with a bounded timeout off the main actor.
-   Every A2 launcher therefore needs one shared asynchronous preparation boundary before
-   exact surface creation, while preview remains pure and deterministic.
+   Every A2 launcher therefore needs one shared asynchronous preparation boundary before any
+   dispatch issuance or launch mutation, while preview remains pure and deterministic. After
+   a dispatch slot is issued, no new suspension point may occur before synchronous
+   launch/bind/rollback; peer disconnect during preflight has no dispatch state to leak.
+9. **Forwarding-record retirement.** Revoking hook trust and deleting the only forward argv
+   cannot be one operation: a Codex notifier helper may already be spawned but not yet have
+   opened its record. The bridge must open/validate/read before transport, while close,
+   replacement, and rollback retire the record through a lock-aware grace rather than unlinking
+   it immediately.
+10. **No notifier is success.** A valid effective Codex configuration with no `notify` is the
+   common direct-injection path, not an empty/malformed-forward-target degradation.
 
 ## Proposed S3a design
 
@@ -139,7 +149,13 @@ Runtime-specific rendering:
 ### 2. Codex effective-notifier resolver and transparent dispatcher
 
 Before a Codex surface is created, a bounded `CodexEffectiveNotifyResolver` resolves the
-notifier that the user's unmodified launch would execute:
+notifier that the user's unmodified launch would execute. Its typed result is exactly one of:
+
+- `.absent`: effective config has no `notify`; inject Prowl directly with no forwarding record;
+- `.present(nonEmptyArgv)`: prepare the private record, then inject Prowl's dispatcher;
+- `.degraded(reason)`: preserve the unmodified launch, inject nothing, and surface one warning.
+
+Resolution precedence:
 
 1. query Codex 0.149's official `app-server config/read` protocol with the effective
    `CODEX_HOME`, launch cwd, and relevant `-c/--config` overrides;
@@ -148,34 +164,44 @@ notifier that the user's unmodified launch would execute:
    isolated temporary parser home and use only a profile-owned `notify` value, otherwise fall
    back to the merged base result;
 3. let the final top-level CLI `-c notify=...` override win, preserving the exact decoded argv;
-4. reject empty, malformed, oversized, or recursively Prowl-managed forwarding targets.
+4. treat an explicitly configured empty, malformed, oversized, or recursively Prowl-managed
+   forward target as `.degraded`, without conflating it with `.absent`.
 
 The resolver never edits user, dedicated-home, or project config. Temporary parser state is
 owner-only, contains no generated agent account, and is removed immediately. It does not log
 or persist returned config or notifier argv. A timeout, unsupported Codex protocol, malformed
-response, or unreadable selected profile preserves the original launch, omits the Prowl
-`notify` override, and exposes no `verified_live` Codex channel. The launch still succeeds but
-returns one non-blocking degradation warning.
+response, or unreadable selected profile produces `.degraded`: preserve the original launch,
+omit the Prowl `notify` override, and expose no `verified_live` Codex channel. The launch still
+succeeds but returns one non-blocking degradation warning.
 
-After resolving the argv, Prowl atomically creates one session-scoped forwarding record under
+GUI and CLI launchers await this preflight before issuing an optional dispatch slot. Cancellation
+at this suspension point removes scratch/parser/forwarding artifacts but has no launch, epoch,
+or dispatch state to roll back. Once a dispatch is issued, plan rendering, surface creation,
+pre-input registration, dispatch binding, and rollback remain one synchronous transaction.
+
+For `.present`, Prowl atomically creates one session-scoped forwarding record under
 a random directory in its private runtime area. The directory is `0700`, the record is `0600`,
 and only an opaque locator—not its contents—crosses the child-only launch carrier. The record
 contains no hook token or provider config and is never placed in user config, a dedicated
 agent home, the worktree, terminal input, preview, logs, or durable Prowl state.
 
-The hidden bridge reads and validates that record, makes the bounded Prowl signal attempt, and
-then `exec`s the original notifier directly—no shell—with the inherited cwd/environment and
-the original Codex JSON payload appended unchanged. Before `exec`, it removes Prowl's internal
-hook token and forwarding locator from the environment. Prowl transport success or failure
-cannot suppress forwarding, and the original notifier retains the process/exit semantics Codex
-would have observed. Prowl evidence and user forwarding are independent and each occurs at
-most once per native notification.
+The hidden bridge first opens the record with no-follow semantics, validates owner/type/mode,
+acquires a shared lease, and reads the bounded argv before attempting socket transport. It then
+makes the bounded Prowl signal attempt and `exec`s the original notifier directly—no shell—with
+the inherited cwd/environment and original Codex JSON payload appended unchanged. Before
+`exec`, it removes Prowl's internal hook token and forwarding locator from the environment.
+Prowl transport success or failure cannot suppress forwarding, and the original notifier
+retains the process/exit semantics Codex would have observed. Prowl evidence and user
+forwarding are independent and each occurs at most once per native notification.
 
-Surface creation failure removes the prepared record. Surface close, process replacement, and
-rollback revoke and delete it; app startup and an age-bounded orphan sweep clean records left
-by crashes without touching registered live records. Record creation, permission enforcement,
-validation, or cleanup setup failure is a pre-launch degradation: preserve the original Codex
-launch and do not inject Prowl's `notify` override.
+Surface creation failure removes a record that was never exposed to a child. Surface close,
+process replacement, and rollback revoke hook trust immediately but move an exposed record to
+a retired set for a bounded spawn grace. Cleanup takes an exclusive lease after that grace and
+defers a locked record, so an already-started bridge cannot lose its sole argv copy between
+spawn and read. App startup and an age-bounded orphan sweep clean crash leftovers without
+touching registered live or leased records. Record creation, permission enforcement,
+validation, retirement, or cleanup setup failure is a pre-launch degradation: preserve the
+original Codex launch and do not inject Prowl's `notify` override.
 
 ### 3. Execution-scoped token and child-only transport
 
@@ -188,10 +214,14 @@ channel token and patches only the execution copy of the launch plan:
 - the pane shell never receives the public hook token variable, so a later manually launched
   runtime does not inherit the channel.
 
-After exact tab/surface creation succeeds, the manager begins one Profile launch epoch and
-registers `{token, surface, runtime, launch cwd, covered events, epoch, optional forward record}`.
-Surface creation failure creates no registration. Target-resolution rollback, process
-replacement, and surface close revoke it and remove any forwarding record.
+Surface creation becomes two-phase at the manager/state boundary: create and install the exact
+surface identity without arming initial input; begin one Profile launch epoch and register
+`{token, surface, runtime, launch cwd, covered events, epoch, optional forward record}`; then arm
+initial input. A lower-level pre-input callback is also acceptable if it proves the same order.
+Creation or pre-input registration failure rolls back the surface and registration before any
+agent command executes. Dispatch binding adopts this epoch. Target-resolution rollback,
+process replacement, and surface close revoke trust immediately and retire any exposed
+forwarding record through the lease protocol above.
 
 The token is a correctness capability, not a hostile-process secret. It never appears in CLI
 arguments, prompt text, output payloads, logs, or persisted Profile/run state. A displaced user
@@ -251,9 +281,13 @@ verification where unit tests cannot prove third-party behavior.
 ### Phase 0 — freeze fixtures and transport policy
 
 - Capture current Claude/Codex versions and help in the work note.
+- Capture the exact Codex 0.149 app-server initialize/`config/read` JSONL transcript and a
+  scratch-home precedence matrix for absent/base/profile/final-CLI-override `notify`; retain
+  sanitized fixtures, not returned user/provider config.
 - Use scratch homes/directories only; never edit live user/global config.
 - Add representative official native payload fixtures, including optional/unknown fields,
   malformed data, oversized strings, Codex memories cwd, and paths with spaces/non-ASCII.
+- Reconfirm Claude 2.1.241 payload/trust behavior in an isolated scratch workspace.
 - Record the resolved Codex notifier-preservation decision before production rendering.
 
 ### Phase 1 — pure models, renderers, and decoders
@@ -282,6 +316,8 @@ Primary files/tests:
 RED/GREEN coverage:
 
 - bounded app-server JSONL initialization and `config/read` request/response handling;
+- clean scratch home resolves `.absent`, injects Prowl directly, creates no forward record, and
+  emits no degradation warning;
 - effective base/system notifier resolution under the launch `CODEX_HOME` and cwd;
 - selected profile notifier wins base, absent profile notifier falls back to base;
 - final top-level CLI `-c notify` wins profile, while unrelated config overrides do not;
@@ -289,6 +325,8 @@ RED/GREEN coverage:
 - unsupported protocol, timeout, malformed config/response, unreadable profile, empty argv, and
   recursive Prowl target all produce a no-injection degradation rather than user-notifier loss;
 - temporary parser homes are owner-only and removed on success, failure, and cancellation;
+- cancellation/peer disconnect during preflight leaves no dispatch slot, surface, registration,
+  epoch, or forwarding artifact;
 - no effective config or notifier argv reaches logs, durable settings/state, previews, or
   terminal carriers; only the private ephemeral forwarding record may hold resolved argv.
 
@@ -320,6 +358,8 @@ Primary files/tests:
 
 RED/GREEN coverage:
 
+- two-phase surface creation installs exact identity and registration before initial input;
+- a synchronously delivered `SessionStart` during launch cannot beat token registration;
 - one launch epoch shared by hook registration and dispatch binding;
 - valid early `SessionStart` queues before detector generation and binds afterward;
 - first timely process generation attaches; late/replacement generation revokes;
@@ -329,12 +369,21 @@ RED/GREEN coverage:
 - typed CLI and menu/palette compatibility launches both register exact resulting surfaces;
 - unprompted Profile launch gets hooks; manual shell launch does not;
 - Codex forwarding records use random paths, `0700`/`0600` permissions, atomic creation, and
-  exact cleanup on failure, rollback, process replacement, surface close, and orphan sweep;
+  lease-aware retirement/cleanup on failure, rollback, process replacement, surface close, and
+  orphan sweep;
+- deterministic close/replacement-versus-bridge-open tests prove an already-spawned bridge can
+  read before exclusive cleanup, while trust revocation remains immediate;
 - record contents never enter the child environment; only an opaque locator does;
-- GUI and CLI Profile launchers both await the same bounded preparation before creating a
-  surface, without blocking the main actor;
-- a degraded GUI launch emits exactly one non-blocking warning toast, while a degraded CLI
-  launch succeeds with one additive structured warning and human-readable warning output;
+- GUI and CLI Profile launchers await the same bounded preparation before dispatch issuance or
+  surface creation, without blocking the main actor;
+- cancellation at every suspension boundary cleans preparation, while the post-dispatch
+  launch/bind/rollback transaction contains no suspension point;
+- a degraded GUI launch emits exactly one non-blocking warning toast;
+- a degraded CLI launch succeeds with `warnings: [LifecycleCommandWarning]`, omitted when
+  empty; the first stable warning is `{code: "managed_hook_degraded", runtime, message}`;
+- `prowl.cli.create.v1` closed-schema fixtures accept the additive warning array, existing
+  decoders tolerate it, JSON mode keeps it in stdout, and text mode renders it exactly once to
+  stderr;
 - degradation never becomes a persistent public channel state and never changes dispatch
   receipt behavior.
 
@@ -342,6 +391,9 @@ Primary files/tests:
 
 - `supacode/Features/Terminal/BusinessLogic/AgentObservationStore.swift`;
 - `supacode/Features/Terminal/BusinessLogic/WorktreeTerminalManager.swift`;
+- `supacode/CLIService/Shared/LifecycleCommandPayload.swift`;
+- `ProwlCLI/Output/OutputRenderer.swift`;
+- `ProwlCLIContracts/Resources/cli-output-schema.json`;
 - `supacode/App/supacodeApp.swift`;
 - `supacodeTests/AgentEvidenceEpochTests.swift`;
 - `supacodeTests/AgentObservationTests.swift`;
@@ -403,7 +455,8 @@ Claude:
 
 Codex:
 
-1. `agent-turn-complete` resolves with `source=hook_codex` and no trust-bypass flag.
+1. A clean scratch home with no notifier injects Prowl directly, creates no forwarding record,
+   and `agent-turn-complete` resolves with `source=hook_codex` and no trust-bypass flag.
 2. Internal memories cwd is ignored.
 3. Existing base, selected-profile, and explicit CLI-override notifiers each receive the exact
    original payload once while Prowl also records the hook once.
@@ -471,8 +524,9 @@ The owner accepted transparent dispatcher semantics:
 The owner accepted a successful launch plus one explicit warning:
 
 - GUI launch shows one non-blocking warning toast;
-- CLI launch remains successful and adds an optional structured warning to
-  `prowl.cli.create.v1`, rendered once in human-readable output;
+- CLI launch remains successful and adds optional
+  `warnings: [{code: "managed_hook_degraded", runtime, message}]` to
+  `prowl.cli.create.v1`; JSON retains it in stdout and text renders it once to stderr;
 - no persistent degraded state or repeated toast is added before S3c's exact-channel badge;
 - S2 dispatch receipts and runtime behavior remain unchanged.
 
@@ -491,7 +545,10 @@ depend on a live Prowl socket response:
   logs, or durable settings/state;
 - bridge attempts Prowl delivery, scrubs internal variables, then `exec`s the original notifier
   regardless of Prowl transport outcome;
-- exact lifecycle cleanup plus startup/age-bounded orphan cleanup;
+- immediate trust revocation plus shared-read/exclusive-cleanup leasing, a bounded retirement
+  grace, and startup/age-bounded orphan cleanup;
+- the bridge opens, leases, and reads before transport, so transport rejection and concurrent
+  lifecycle cleanup cannot suppress forwarding;
 - any inability to prepare this boundary degrades before override injection.
 
 ## Residual risks
