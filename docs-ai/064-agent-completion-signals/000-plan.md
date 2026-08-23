@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 implementation on `feat/agent-completion-signal-bus` |
+| **Status** | In progress — S1 merged in #715; S2 design locked for implementation |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | S1 TBD |
+| **Primary PRs** | #715 (S1); S2 TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -104,14 +104,18 @@ surfacing an error. Critical events are never silently discarded.
 
 ```
 prowl agents wait <pane> --until idle|blocked|changed|exit [--timeout 1…600]
-                 [--min-confidence exact|high|heuristic] [--include-screen <lines>] [--json]
+                 [--min-confidence auto|exact|high|heuristic]
+                 [--include-screen <1…200>] [--json]
+prowl agents wait --dispatch <id> [--timeout 1…600]
+                 [--include-screen <1…200>] [--json]
 ```
 
 - Snapshot first: return immediately when the current state already satisfies `--until`
   at the required confidence.
-- Default `--min-confidence auto`: if the pane has a deterministic channel (a live Prowl
-  hook, or an exact/high transcript attribution), only layer 0–2 events resolve the wait;
-  heuristic events merely update "last known". Without such a channel the wait resolves
+- Default `--min-confidence auto`: a fresh exact/high event always matches; if the pane has
+  verified-live coverage for the requested condition (a self-checked Prowl hook or live
+  exact/high transcript watcher), only layer 0–2 events resolve the wait and heuristics
+  merely update "last known". Without such coverage the wait resolves
   heuristically once the state has been stable for `stable-for` (3 s hold + 2 s) and says
   so.
 - Response: `{status, raw_state, source, confidence, waited_ms, signals: […]}`; with
@@ -119,19 +123,25 @@ prowl agents wait <pane> --until idle|blocked|changed|exit [--timeout 1…600]
   059 result state — everything an orchestrating agent needs to judge a heuristic result in
   one call.
 - Prowl-dispatched work uses an opaque `dispatch_id`, not timestamps, to exclude stale
-  completion. S2 ships `create` issuance, `dispatch-complete --detail`, bounded receipt
-  retention, and `agents wait --dispatch` atomically. Receipts survive pane closure but not
-  app restart; surface generation is only the unpaired fallback.
-- `removed` / `surfaceClosed` → `AGENT_GONE` (unless `--until exit`); timeout →
-  `WAIT_TIMEOUT` with the last known status/source. The 600 s cap matches typical agent
-  tool timeouts; the skill documents "re-arm on timeout".
+  completion. S2 ships `create` issuance, required `dispatch-complete --outcome
+  succeeded|failed --summary`, bounded receipt retention, and ID-only `agents wait
+  --dispatch` atomically. Receipts survive pane closure but not app restart; surface
+  generation is only the unpaired fallback. The finalized contract is
+  [003-s2-dispatch-wait-design.md](003-s2-dispatch-wait-design.md).
+- Exact matching `session-end` / `surfaceClosed` → `AGENT_GONE` (unless generic
+  `--until exit`); detector `.removed` is heuristic and cannot terminalize a dispatch.
+  Timeout defaults to and is capped at 600 s, returning `WAIT_TIMEOUT` with the last known
+  status/source; the skill documents "re-arm on timeout". The normative transition table,
+  evidence epochs, channel registry, capture defaults, cancellation transport, and payload
+  shapes are frozen in [003-s2-dispatch-wait-design.md](003-s2-dispatch-wait-design.md).
 
 ### Self-check and visibility
 
 When a Prowl-launched runtime declares a `sessionStart` hook, the launch boundary expects
 the corresponding signal within a grace window; if it never arrives the pane is marked
 `signals: none` (hooks did not load) instead of silently pretending. `prowl agents`
-JSON gains `signals: {channels: [hook, transcript, osc], last: {...}}` per pane, and the
+JSON gains `signals: {channels: [...], last: {...}}` per pane, where channels describe only
+current-epoch observed or verified-live evidence rather than theoretical runtime support. The
 Active Agents panel shows a small "exact" badge for panes with a live deterministic channel.
 
 ### Judging heuristic results (skill, not code)
@@ -166,7 +176,7 @@ interleaves with 063's slices, is owned by the shared living
 | Slice | Depends | Contents / expectation |
 | --- | --- | --- |
 | **S1** | — | Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; first specified in 063, delivered here so it ships first) + `prowl agents signal` for `turn-ended`, `needs-input`, session, and progress events (CLI four layers, bounded detail). Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer. |
-| **S2** | S1 | One atomic paired-dispatch path: `create --profile --prompt` returns `dispatch_id`; cooperative `dispatch-complete --detail`; bounded non-destructive in-memory receipts; `prowl agents wait --dispatch` with automatic overflow resnapshot; `agents` `signals` field; `--include-screen`; skill rubric. Route B usable; heuristic fallback honest. |
+| **S2** | S1 | One atomic paired-dispatch path: every CLI `create tab|pane --profile --prompt` appends the completion protocol and returns `dispatch_id`; cooperative `dispatch-complete --outcome succeeded|failed --summary`; 256-entry non-destructive in-memory receipts; ID-only strict `prowl agents wait --dispatch`; generic `wait --until` with automatic overflow resnapshot and honest heuristic fallback; `agents` current evidence field; `--include-screen`; skill rubric. Route B becomes usable without polling or stale completion. |
 | **S3 wave 1** | 063-A2, S1, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
 | **S3 wave 2** | S3 wave 1, 053 dedicated homes | Tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only; tier C (Cursor, Amp: project files) is not attached. |
 | **S4** | S1 | Transcript file-watch and OSC producers — layer 2 without hooks. |
@@ -225,13 +235,22 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 - Whether hook subprocesses can always reach Prowl's socket from sandboxed runtimes
   (Codex sandbox, OpenCode/Pi/OMP plugin runtimes); `PROWL_CLI_SOCKET` and the bundled
   binary path must be passed through and verified per runtime in S3.
-- Exact `stable-for` and self-check grace defaults (Claude's trust-dialog hold suggests a
-  generous, state-aware grace rather than a fixed few seconds).
+- S3 hook self-check grace defaults (Claude's trust-dialog hold suggests a generous,
+  state-aware grace rather than a fixed few seconds).
 - Re-verification cadence: the matrix is versioned per row; S3 adapters need fixture tests
   that fail loudly when a CLI's hook syntax changes.
 
 ## Amendments
 
+- Updated 2026-08-23 after PR #716 initial review: froze peer-EOF cancellation, generic wait
+  transition/freshness rules, per-source channel state, old-app fail-closed behavior,
+  receipt eviction linearization, exact include-screen behavior, and JSON/schema boundaries;
+  detector removal no longer terminalizes strict dispatch — see
+  [003-s2-dispatch-wait-design.md](003-s2-dispatch-wait-design.md).
+- Updated 2026-08-23 after S1 merged in #715: owner review locked S2's paired dispatch,
+  receipt lifecycle, exact-versus-heuristic wait policy, CLI outcomes, trust boundary, and
+  verification scope — see
+  [003-s2-dispatch-wait-design.md](003-s2-dispatch-wait-design.md).
 - Updated 2026-08-23 before merge: owner raised bounded signal `--detail` from 4 KiB to
   32 KiB (32768 UTF-8 bytes). The larger bound remains well below the 32 MiB socket frame and
   macOS argument budget, accommodates useful completion summaries, and preserves the rule
