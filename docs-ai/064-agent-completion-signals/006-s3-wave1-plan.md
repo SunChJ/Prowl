@@ -120,6 +120,11 @@ or launch path.
    it immediately.
 10. **No notifier is success.** A valid effective Codex configuration with no `notify` is the
    common direct-injection path, not an empty/malformed-forward-target degradation.
+11. **Stable launch context across preflight.** Codex preserves user `-C/--cd` arguments, and
+   menu split/tab inheritance currently depends on live focus/cwd at creation time. Async
+   preflight cannot resolve config or register launch-cwd trust against one context and then
+   let the synchronous launch silently choose another. Capture a typed target/base/effective
+   cwd before preflight and revalidate it before dispatch issuance.
 
 ## Proposed S3a design
 
@@ -138,9 +143,13 @@ rendering.
 Runtime-specific rendering:
 
 - Claude: exactly one effective `--settings <json>` source with command hooks. Existing normal
-  user/project/local settings continue to merge additively. If a Profile already supplies an
-  explicit `--settings`, merge it only when it is safely readable/parseable; otherwise retain
-  the user's launch and omit managed hooks with honest degradation.
+  user/project/local settings continue to merge additively. If a Profile already supplies one
+  or more explicit `--settings value` / `--settings=value` arguments, resolve the final effective
+  source using the pinned CLI precedence, bounded-read a file source or decode an inline object,
+  preserve every unknown/unrelated field and existing hook handler, append only Prowl's missing
+  event handlers, and render the merged object through a carrier. Duplicate Prowl handlers are
+  not appended. If the effective source is unreadable, malformed, non-object, oversized, or
+  changes during preparation, retain the user's argv unchanged, omit managed hooks, and warn.
 - Codex: when notifier preparation succeeds, one structured TOML `-c notify=[...]` override
   containing the bundled CLI absolute path and hidden native-hook arguments. Never pass
   `--dangerously-bypass-hook-trust`; never inject the override until any displaced notifier
@@ -148,8 +157,16 @@ Runtime-specific rendering:
 
 ### 2. Codex effective-notifier resolver and transparent dispatcher
 
-Before a Codex surface is created, a bounded `CodexEffectiveNotifyResolver` resolves the
-notifier that the user's unmodified launch would execute. Its typed result is exactly one of:
+Before a Codex surface is created, capture a typed `CodexLaunchContext`: exact target/anchor,
+inherited base cwd, effective cwd after the final supported `-C/--cd` form, effective
+`CODEX_HOME`, and ordered config/profile overrides. Menu/palette launches must not re-resolve a
+different focused pane after the await. Revalidate target existence and cwd immediately before
+dispatch issuance; a mismatch retries preparation against the new explicit context or preserves
+the unmodified launch with one degradation warning. Registration binds the exact surface and
+its effective post-`--cd` launch cwd.
+
+A bounded `CodexEffectiveNotifyResolver` resolves the notifier that this frozen unmodified
+launch would execute. Its typed result is exactly one of:
 
 - `.absent`: effective config has no `notify`; inject Prowl directly with no forwarding record;
 - `.present(nonEmptyArgv)`: prepare the private record, then inject Prowl's dispatcher;
@@ -157,8 +174,8 @@ notifier that the user's unmodified launch would execute. Its typed result is ex
 
 Resolution precedence:
 
-1. query Codex 0.149's official `app-server config/read` protocol with the effective
-   `CODEX_HOME`, launch cwd, and relevant `-c/--config` overrides;
+1. query Codex 0.149's official `app-server config/read` protocol with the frozen effective
+   `CODEX_HOME`, effective post-`--cd` cwd, and relevant `-c/--config` overrides;
 2. structurally recognize `-p/--profile`, whose profile file has higher precedence than the
    base config; because `codex app-server` rejects `--profile`, let Codex parse that file in an
    isolated temporary parser home and use only a profile-owned `notify` value, otherwise fall
@@ -282,8 +299,11 @@ verification where unit tests cannot prove third-party behavior.
 
 - Capture current Claude/Codex versions and help in the work note.
 - Capture the exact Codex 0.149 app-server initialize/`config/read` JSONL transcript and a
-  scratch-home precedence matrix for absent/base/profile/final-CLI-override `notify`; retain
-  sanitized fixtures, not returned user/provider config.
+  scratch-home precedence matrix for absent/base/profile/final-CLI-override `notify`, including
+  proof that project-layer `notify` is ignored; retain sanitized fixtures, not returned
+  user/provider config.
+- Freeze supported Codex `-C/--cd` token forms, last-wins behavior, relative-path base, and
+  config-read cwd against 0.149 help/live probes.
 - Use scratch homes/directories only; never edit live user/global config.
 - Add representative official native payload fixtures, including optional/unknown fields,
   malformed data, oversized strings, Codex memories cwd, and paths with spaces/non-ASCII.
@@ -295,7 +315,12 @@ verification where unit tests cannot prove third-party behavior.
 RED/GREEN coverage:
 
 - Claude settings JSON generation and native event mapping;
-- existing settings collision parsing (`--settings value` / `--settings=value`);
+- final-effective Claude settings collision parsing across repeated `--settings value` /
+  `--settings=value`, inline objects, and file sources;
+- merge preserves unknown/unrelated fields and every existing hook handler, appends Prowl
+  handlers exactly once, and keeps existing normal user/project/local settings additive;
+- bounded read, malformed/unreadable/non-object/changed settings preserve original argv exactly,
+  inject no hook, and produce one degradation warning;
 - Codex TOML argv rendering and structural `-p/--profile` plus top-level
   `-c/--config notify` recognition;
 - no hook trust bypass or recursive Prowl forwarding target;
@@ -325,6 +350,10 @@ RED/GREEN coverage:
 - unsupported protocol, timeout, malformed config/response, unreadable profile, empty argv, and
   recursive Prowl target all produce a no-injection degradation rather than user-notifier loss;
 - temporary parser homes are owner-only and removed on success, failure, and cancellation;
+- typed launch context freezes target/anchor, inherited base cwd, effective post-`--cd` cwd,
+  `CODEX_HOME`, and ordered overrides before preflight;
+- target/focus/PWD mutation while preflight is suspended cannot launch with a stale resolver
+  result: revalidate before issuance, then retry or degrade without injection;
 - cancellation/peer disconnect during preflight leaves no dispatch slot, surface, registration,
   epoch, or forwarding artifact;
 - no effective config or notifier argv reaches logs, durable settings/state, previews, or
@@ -334,7 +363,8 @@ Primary files/tests:
 
 - new focused `CodexEffectiveNotifyResolver` and app-server protocol models;
 - `supacodeTests/CodexEffectiveNotifyResolverTests.swift`;
-- scratch-home live contract test against the pinned Codex CLI.
+- scratch-home live contract tests against the pinned Codex CLI, including project-level
+  `notify` exclusion and supported `-C/--cd` forms.
 
 ### Phase 3 — deterministic plan and generalized carriers
 
@@ -359,6 +389,8 @@ Primary files/tests:
 RED/GREEN coverage:
 
 - two-phase surface creation installs exact identity and registration before initial input;
+- explicit typed CLI targets and menu/palette compatibility targets keep their frozen anchor/cwd
+  through preflight; anchor removal and cwd drift follow tested retry/degradation semantics;
 - a synchronously delivered `SessionStart` during launch cannot beat token registration;
 - one launch epoch shared by hook registration and dispatch binding;
 - valid early `SessionStart` queues before detector generation and binds afterward;
@@ -433,6 +465,8 @@ Primary files/tests:
 
 Update:
 
+- `docs-ai/013-prowl-cli/contracts/create.md` for warning shape, omission, and output-channel
+  behavior;
 - `docs-ai/013-prowl-cli/contracts/agents-signal.md`;
 - `docs/components/agent-detection.md`;
 - `docs/components/cli.md`;
@@ -446,11 +480,14 @@ Claude:
 
 1. Scratch existing user/project hook plus Prowl CLI settings both fire exactly once; live
    settings files remain unchanged.
-2. `SessionStart` produces `verified_live` coverage.
-3. `Stop` resolves generic idle wait with `source=hook_claude`.
-4. A harmless permission request produces `needs-input` before user response.
-5. Dispatch completion receipt still wins over the adjacent Stop hook.
-6. Fresh workspace trust never creates false coverage before acceptance; a later valid event
+2. Inline and file-backed explicit Profile `--settings` each preserve unknown fields and
+   existing hook arrays while the existing hook and Prowl handler fire exactly once; a malformed
+   explicit source launches unchanged with one warning and no exact coverage.
+3. `SessionStart` produces `verified_live` coverage.
+4. `Stop` resolves generic idle wait with `source=hook_claude`.
+5. A harmless permission request produces `needs-input` before user response.
+6. Dispatch completion receipt still wins over the adjacent Stop hook.
+7. Fresh workspace trust never creates false coverage before acceptance; a later valid event
    recovers.
 
 Codex:
