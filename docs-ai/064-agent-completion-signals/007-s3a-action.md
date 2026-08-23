@@ -96,8 +96,8 @@ exact notifier forwarding with empty/Unicode argv, unchanged payload, scrubbed i
 and original notifier exit status.
 
 Repository gates passed on the implementation branch: `make build-cli`, `make test-cli-smoke`,
-`make test-cli-integration` (95 integration tests), `make check` (including 34 script tests),
-`make test` (xcresult verified 2506 tests, zero failures), and `make build-app`. The enabled live
+`make test-cli-integration` (96 integration tests), `make check` (including 34 script tests),
+`make test` (xcresult verified 2521 tests, zero failures), and `make build-app`. The enabled live
 Codex 0.149 scratch contract also passed.
 
 The full Debug GUI matrix was attempted with a freshly embedded bundle CLI, custom socket,
@@ -174,7 +174,7 @@ The final review reproduced two remaining boundedness failures with temporary-on
   behavior.
 
 Both were valid P1 findings and are fixed with focused tests. The final repository gate rerun after
-round 2 verified 2520 app tests, 95 CLI integration tests, 34 script tests, strict format/lint, and
+round 3 verified 2521 app tests, 96 CLI integration tests, 34 script tests, strict format/lint, and
 the Debug build; round-3 focused regressions also pass. No P0/P1/P2 code finding remains. The only
 residual is the separately documented visible-GUI acceptance limitation.
 
