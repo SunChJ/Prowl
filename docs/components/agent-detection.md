@@ -122,9 +122,12 @@ workflow, and only a matching `agents dispatch-complete` can complete an exact d
 
 Signal eligibility is generation-aware. Prowl binds evidence to the detected process's PID
 **and process start time**, plus its current session only when that attribution is exact or
-high confidence. A medium-confidence session guess remains diagnostic and never rotates an
-evidence epoch. Evidence from a reused PID, a replaced session, a delayed child, or an
-unverifiable sessionless sender stays diagnostic and cannot advance a wait.
+high confidence. A dispatch launch accepts its first process generation only when the process
+started within ten seconds of launch binding; a later-started process is a replacement even if
+the original runtime exited before detection. A medium-confidence session guess remains
+diagnostic and never rotates an evidence epoch. Evidence from a reused PID, a replaced session,
+a delayed child, or an unverifiable sessionless sender stays diagnostic and cannot advance a
+wait.
 `prowl agents --json` exposes current-epoch channels
 under each existing detected-agent row's `signals`; evidence-only shell panes are not added
 to the roster.

@@ -19,6 +19,29 @@ struct AgentEvidenceEpochTests {
     #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) != dispatchEpoch)
   }
 
+  @Test func dispatchEpochRejectsFirstGenerationThatStartedAfterAcquisitionWindow() {
+    let launchTime = Date(timeIntervalSince1970: 1_000)
+    let store = AgentObservationStore(
+      bufferCapacity: 8,
+      now: { launchTime },
+      dispatchGenerationWindow: 10
+    )
+    let surfaceID = UUID()
+    let dispatchEpoch = store.beginDispatchEpoch(surfaceID: surfaceID)
+    let unrelatedLaterProcess = AgentProcessGeneration(
+      pid: 42,
+      startedAt: launchTime.addingTimeInterval(11)
+    )
+
+    store.updateEvidenceEpoch(
+      surfaceID: surfaceID,
+      processGeneration: unrelatedLaterProcess,
+      sessionID: nil
+    )
+
+    #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) != dispatchEpoch)
+  }
+
   @Test func pidStartTimeAndSessionReplacementInvalidateCurrentChannels() {
     let store = AgentObservationStore(bufferCapacity: 8)
     let surfaceID = UUID()

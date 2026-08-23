@@ -102,6 +102,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Review follow-up made requested stable-screen evidence symmetric across success
   and structured dispatch/condition errors. Handler and executable-schema regressions cover a
   failed receipt and a condition timeout without changing their primary exit codes.
+- 2026-08-23 — Review follow-up bounded first-generation attachment by process start time. A
+  launch generation started within ten seconds still attaches even if observed late; a process
+  started after that window rotates the epoch and cannot drive the missed dispatch.
 
 ## Fresh Debug E2E
 

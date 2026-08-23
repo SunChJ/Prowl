@@ -324,7 +324,10 @@ Each surface has an evidence epoch minted for the CLI dispatch launch (or the fi
 agent detection on an unpaired surface). Detection records an `AgentProcessGeneration` as
 the agent PID plus its process start time; a stable replacement mints a new epoch even when
 the detected agent kind is unchanged. The first generation observed after dispatch launch
-attaches to the launch epoch rather than minting another one.
+attaches to the launch epoch only when its process start time falls within ten seconds of
+launch binding. Observation itself may arrive later. A process started outside that acquisition
+window mints a replacement epoch, so an initially missed short-lived runtime cannot lend its
+old dispatch to an unrelated agent launched later in the same pane.
 
 S2 extends caller resolution to retain the process ancestry walked before the pane shell.
 Surface attribution is enough to accept and retain a cooperative signal, but not enough to

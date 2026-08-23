@@ -28,6 +28,7 @@ final class AgentObservationStore {
     var sessionlessSignalsAllowed = true
     var evidenceEpoch = UUID()
     var awaitingFirstProcessGeneration = false
+    var firstProcessGenerationStartedBefore: Date?
     var channels: [String: AgentSignalChannelRecord] = [:]
     var revision: UInt64 = 0
     var subscribers: [UUID: AgentObservationStream.Continuation] = [:]
@@ -43,9 +44,19 @@ final class AgentObservationStore {
 
   private var records: [UUID: SurfaceRecord] = [:]
   private let bufferCapacity: Int
+  private let now: @MainActor () -> Date
+  /// The launched process starts immediately; this spans more than three idle detection polls
+  /// while refusing a manually started replacement long after a missed short-lived runtime.
+  private let dispatchGenerationWindow: TimeInterval
 
-  init(bufferCapacity: Int) {
+  init(
+    bufferCapacity: Int,
+    now: @escaping @MainActor () -> Date = Date.init,
+    dispatchGenerationWindow: TimeInterval = 10
+  ) {
     self.bufferCapacity = max(1, bufferCapacity)
+    self.now = now
+    self.dispatchGenerationWindow = max(0, dispatchGenerationWindow)
   }
 
   func observe(surfaceID: UUID, isLive: Bool) -> AgentObservationStream {
@@ -190,6 +201,9 @@ final class AgentObservationStore {
     record.sessionID = nil
     record.sessionlessSignalsAllowed = true
     record.awaitingFirstProcessGeneration = true
+    record.firstProcessGenerationStartedBefore = now().addingTimeInterval(
+      dispatchGenerationWindow
+    )
     record.channels.removeAll()
     record.latestCurrentSignal = nil
     record.activeTerminalSignal = nil
@@ -208,11 +222,22 @@ final class AgentObservationStore {
     sessionID: String?
   ) {
     var record = records[surfaceID] ?? SurfaceRecord()
+    let firstGenerationIsTimely =
+      processGeneration.map {
+        $0.startedAt <= (record.firstProcessGenerationStartedBefore ?? .distantPast)
+      } ?? false
     let attachesFirstLaunchGeneration =
       record.awaitingFirstProcessGeneration
       && record.processGeneration == nil
+      && firstGenerationIsTimely
+    let rejectsLateFirstGeneration =
+      record.awaitingFirstProcessGeneration
+      && record.processGeneration == nil
       && processGeneration != nil
-    let processChanged = !attachesFirstLaunchGeneration && record.processGeneration != processGeneration
+      && !firstGenerationIsTimely
+    let processChanged =
+      rejectsLateFirstGeneration
+      || (!attachesFirstLaunchGeneration && record.processGeneration != processGeneration)
     let sessionChanged =
       !processChanged
       && record.sessionID != nil
@@ -226,8 +251,9 @@ final class AgentObservationStore {
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       record.sessionlessSignalsAllowed = processChanged
     }
-    if attachesFirstLaunchGeneration {
+    if attachesFirstLaunchGeneration || rejectsLateFirstGeneration {
       record.awaitingFirstProcessGeneration = false
+      record.firstProcessGenerationStartedBefore = nil
     }
     record.processGeneration = processGeneration
     record.sessionID = sessionID

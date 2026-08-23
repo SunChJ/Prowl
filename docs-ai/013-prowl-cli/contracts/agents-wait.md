@@ -71,9 +71,12 @@ revision remain unchanged for two seconds. Higher minimum-confidence settings re
 evidence rather than relabelling it.
 
 Evidence is bound to PID plus process start time and, when known at exact/high confidence,
-the current session id. Medium-confidence session guesses remain diagnostic and never bind or
-rotate an evidence epoch. PID reuse, delayed children, replaced sessions, mismatched sessions,
-and unverifiable sessionless signals remain diagnostic only. Generic success and timeout
+the current session id. A dispatch launch accepts its first detected process generation only
+when that process started within ten seconds of binding; a later-started process is a
+replacement epoch even if the original runtime escaped detection. Medium-confidence session
+guesses remain diagnostic and never bind or rotate an evidence epoch. PID reuse, delayed
+children, replaced sessions, mismatched sessions, and unverifiable sessionless signals remain
+diagnostic only. Generic success and timeout
 details report the actual source, confidence, timestamp, revision, and current signal channels.
 
 When requested, screen evidence reads the detection buffer every 200 ms until unchanged for
