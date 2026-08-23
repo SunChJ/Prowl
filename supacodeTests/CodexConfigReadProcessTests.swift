@@ -97,7 +97,6 @@ struct CodexConfigReadProcessTests {
           "config_mode": stat.S_IMODE(config.stat().st_mode) if config.exists() else None
       }))
       print(json.dumps({"jsonrpc":"2.0","id":2,"result":{"config":{"notify":notify}}}), flush=True)
-      time.sleep(30)
       """
     try script.write(to: executable, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
