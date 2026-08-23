@@ -23,7 +23,8 @@ struct CodexShellProbeProcessTests {
     let process = CodexShellProbeProcess(
       timeout: 0.5,
       maximumOutputBytes: 1_024,
-      shellOverride: shell
+      shellOverride: URL(filePath: "/bin/sh"),
+      shellOverrideArguments: [shell.path(percentEncoded: false)]
     )
 
     await #expect(throws: CodexShellProbeProcessError.timeout) {
@@ -51,7 +52,8 @@ struct CodexShellProbeProcessTests {
     let process = CodexShellProbeProcess(
       timeout: 2,
       maximumOutputBytes: 128,
-      shellOverride: shell
+      shellOverride: URL(filePath: "/bin/sh"),
+      shellOverrideArguments: [shell.path(percentEncoded: false)]
     )
 
     await #expect(throws: CodexShellProbeProcessError.outputTooLarge) {

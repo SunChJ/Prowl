@@ -160,6 +160,24 @@ A follow-up hardening discovered while verifying the first finding also carries 
 `PATH` override into login-shell executable resolution; the prepared runtime invocation then uses
 the attested absolute executable. Focused round-2 validation passed 77 tests plus `make check`.
 
+### Round 3 — final full-diff blocker review
+
+The final review reproduced two remaining boundedness failures with temporary-only probes:
+
+- Opening a user-selected FIFO with read-only/no-follow flags blocked before type validation. The
+  shared stable owner-file reader now adds `O_NONBLOCK | O_CLOEXEC`; a FIFO regression returns
+  `.unreadable` within 200 ms without a writer.
+- `SO_RCVTIMEO`/`SO_SNDTIMEO` were per-syscall rather than a total hook deadline. CLI transport now
+  carries one monotonic deadline across write and both response reads, using `poll` with the
+  remaining interval. A five-byte response dripped every 200 ms now exits silently within the
+  bounded threshold, while existing listener-loss and Codex forwarding tests retain fail-open
+  behavior.
+
+Both were valid P1 findings and are fixed with focused tests. The final repository gate rerun after
+round 2 verified 2520 app tests, 95 CLI integration tests, 34 script tests, strict format/lint, and
+the Debug build; round-3 focused regressions also pass. No P0/P1/P2 code finding remains. The only
+residual is the separately documented visible-GUI acceptance limitation.
+
 ## Deferred scope
 
 S3b owns Copilot/Droid/Qoder adapters. S3c owns Pi/OMP/OpenCode adapters and the Active Agents exact

@@ -20,7 +20,7 @@ nonisolated enum StableOwnerFileReader {
     afterRead: () -> Void = {}
   ) -> StableOwnerFileReadResult {
     let path = url.path(percentEncoded: false)
-    let descriptor = Darwin.open(path, O_RDONLY | O_NOFOLLOW)
+    let descriptor = Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
     guard descriptor >= 0 else { return .unreadable }
     defer { Darwin.close(descriptor) }
     var before = stat()

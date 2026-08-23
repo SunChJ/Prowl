@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -94,6 +95,24 @@ struct AgentHookRenderingTests {
     let hooks = try #require(merged["hooks"] as? [String: Any])
     let stop = try #require(hooks["Stop"] as? [[String: Any]])
     #expect(stop.count == 1)
+  }
+
+  @Test func stableReaderRejectsFIFOWithoutBlockingAtOpen() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-settings-fifo-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fifo = directory.appending(path: "settings.json", directoryHint: .notDirectory)
+    #expect(mkfifo(fifo.path(percentEncoded: false), 0o600) == 0)
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    let result = ClaudeSettingsStableReader.read(fifo, maximumBytes: 1_024)
+
+    #expect(result == .unreadable)
+    #expect(start.duration(to: clock.now) < .milliseconds(200))
   }
 
   @Test func stableReaderRejectsAtomicPathReplacement() throws {

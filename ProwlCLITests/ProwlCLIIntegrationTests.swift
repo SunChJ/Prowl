@@ -65,6 +65,36 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(result.stderr, "")
   }
 
+  func testNativeHookBridgeEnforcesATotalDeadlineAgainstDripResponse() throws {
+    let socketPath = temporarySocketPath(suffix: "hook-drip-deadline")
+    let server = try MockSocketServer(
+      socketPath: socketPath,
+      responseData: Data("abcde".utf8),
+      responseByteDelayMicroseconds: 200_000
+    )
+    try server.start()
+    defer { server.stop() }
+    let payload = Data(
+      #"{"hook_event_name":"Stop","session_id":"session-1","cwd":"/tmp/project"}"#.utf8
+    )
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    let result = try runProwl(
+      args: ["agents", "_hook", "claude", "Stop"],
+      environment: [
+        AgentNativeHookInput.tokenEnvironmentKey: "token-1",
+        ProwlSocket.environmentKey: socketPath,
+      ],
+      stdinData: payload
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertEqual(result.stderr, "")
+    XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(700))
+  }
+
   func testCodexHookForwardsExactPayloadOnTransportLossAndScrubsInternalEnvironment() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "prowl-hook-forward-\(UUID().uuidString)",
@@ -3444,15 +3474,21 @@ private struct CommandResult {
 private final class MockSocketServer: @unchecked Sendable {
   private let socketPath: String
   private let responseData: Data
+  private let responseByteDelayMicroseconds: useconds_t
 
   private var serverFD: Int32 = -1
   private var receivedRequestData: Data?
   private let lock = NSLock()
   private let requestSemaphore = DispatchSemaphore(value: 0)
 
-  init(socketPath: String, responseData: Data) throws {
+  init(
+    socketPath: String,
+    responseData: Data,
+    responseByteDelayMicroseconds: useconds_t = 0
+  ) throws {
     self.socketPath = socketPath
     self.responseData = responseData
+    self.responseByteDelayMicroseconds = responseByteDelayMicroseconds
   }
 
   deinit { stop() }
@@ -3510,6 +3546,10 @@ private final class MockSocketServer: @unchecked Sendable {
       let clientFD = accept(self.serverFD, nil, nil)
       guard clientFD >= 0 else { return }
       defer { close(clientFD) }
+      var noSigPipe: Int32 = 1
+      _ = withUnsafePointer(to: &noSigPipe) {
+        setsockopt(clientFD, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
+      }
 
       do {
         let lengthData = try self.readExact(fd: clientFD, count: 4)
@@ -3527,8 +3567,16 @@ private final class MockSocketServer: @unchecked Sendable {
         try withUnsafeBytes(of: &responseLength) { lengthBytes in
           try self.writeAll(fd: clientFD, bytes: lengthBytes)
         }
-        try self.responseData.withUnsafeBytes { bytes in
-          try self.writeAll(fd: clientFD, bytes: bytes)
+        if self.responseByteDelayMicroseconds == 0 {
+          try self.responseData.withUnsafeBytes { bytes in
+            try self.writeAll(fd: clientFD, bytes: bytes)
+          }
+        } else {
+          for byte in self.responseData {
+            var value = byte
+            try withUnsafeBytes(of: &value) { try self.writeAll(fd: clientFD, bytes: $0) }
+            usleep(self.responseByteDelayMicroseconds)
+          }
         }
       } catch {
         self.requestSemaphore.signal()

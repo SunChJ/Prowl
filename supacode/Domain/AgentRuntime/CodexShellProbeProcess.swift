@@ -18,6 +18,7 @@ nonisolated struct CodexShellProbeProcess: Sendable {
     let timeout: TimeInterval
     let maximumOutputBytes: Int
     let shellOverride: URL?
+    let shellOverrideArguments: [String]
   }
 
   private final class ProcessBox: @unchecked Sendable {
@@ -38,15 +39,18 @@ nonisolated struct CodexShellProbeProcess: Sendable {
   let timeout: TimeInterval
   let maximumOutputBytes: Int
   let shellOverride: URL?
+  let shellOverrideArguments: [String]
 
   init(
     timeout: TimeInterval = 1,
     maximumOutputBytes: Int = 16 * 1_024,
-    shellOverride: URL? = nil
+    shellOverride: URL? = nil,
+    shellOverrideArguments: [String] = []
   ) {
     self.timeout = max(0.05, timeout)
     self.maximumOutputBytes = max(1, maximumOutputBytes)
     self.shellOverride = shellOverride
+    self.shellOverrideArguments = shellOverrideArguments
   }
 
   func run(cwd: URL, script: String) async throws -> ShellOutput {
@@ -58,7 +62,8 @@ nonisolated struct CodexShellProbeProcess: Sendable {
         options: RunOptions(
           timeout: timeout,
           maximumOutputBytes: maximumOutputBytes,
-          shellOverride: shellOverride
+          shellOverride: shellOverride,
+          shellOverrideArguments: shellOverrideArguments
         ),
         processBox: processBox
       )
@@ -80,7 +85,7 @@ nonisolated struct CodexShellProbeProcess: Sendable {
     let process = Process()
     if let shellOverride = options.shellOverride {
       process.executableURL = shellOverride
-      process.arguments = []
+      process.arguments = options.shellOverrideArguments
     } else {
       let invocation = ShellClient.loginShellInvocation(userShell: defaultShellURL())
       process.executableURL = invocation.shell
