@@ -185,6 +185,59 @@ struct AgentObservationTests {
     #expect(try await iterator.next() == nil)
   }
 
+  @Test func normalizedWorkingActivityInvalidatesPriorTerminalEvidence() throws {
+    let fixture = makeFixture()
+    let processID = getpid()
+    let startedAt = try #require(ProcessDetection.processStartDate(pid: processID))
+    let session = AgentSession(
+      id: "session-1",
+      transcriptPath: nil,
+      source: .commandLine,
+      confidence: .exact
+    )
+    let idleState = PaneAgentState(
+      detectedAgent: .pi,
+      agentProcessID: processID,
+      session: session,
+      state: .idle
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = idleState
+    fixture.state.emitAgentEntry(
+      surfaceID: fixture.surfaceID,
+      tabId: fixture.tabID,
+      state: idleState
+    )
+    let signal = makeSignal()
+    let caller = CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: [
+        AgentProcessGeneration(pid: processID, startedAt: startedAt)
+      ]
+    )
+
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
+
+    let workingState = PaneAgentState(
+      detectedAgent: .pi,
+      agentProcessID: processID,
+      session: session,
+      state: .working
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = workingState
+    fixture.state.emitAgentEntry(
+      surfaceID: fixture.surfaceID,
+      tabId: fixture.tabID,
+      state: workingState
+    )
+
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == nil)
+    let diagnostics = fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID)
+    #expect(diagnostics.last?.event == .turnEnded)
+    #expect(diagnostics.lastBinding == .current)
+  }
+
   @Test func boundedOverflowIsExplicitAndRecoverableByResubscription() async throws {
     let fixture = makeFixture(bufferCapacity: 1)
     let stream = fixture.manager.observeAgentState(surfaceID: fixture.surfaceID)

@@ -329,10 +329,13 @@ final class WorktreeTerminalManager {
     )
   }
 
+  func currentAgentSignalEvidence(surfaceID: UUID) -> AgentCurrentSignalEvidence {
+    _ = agentSignalsPayload(surfaceID: surfaceID)
+    return agentObservationStore.currentSignalEvidence(surfaceID: surfaceID)
+  }
+
   func currentEligibleAgentSignal(surfaceID: UUID) -> AgentSignal? {
-    let payload = agentSignalsPayload(surfaceID: surfaceID)
-    guard payload.lastBinding == .current else { return nil }
-    return agentObservationStore.snapshot(surfaceID: surfaceID)?.latestSignal
+    currentAgentSignalEvidence(surfaceID: surfaceID).activeTerminal
   }
 
   private func currentAgentEvidence(
@@ -506,6 +509,20 @@ final class WorktreeTerminalManager {
     state.onAgentEntryChanged = { [weak self] entry in
       guard let self else { return }
       agentObservationStore.publishAgentChanged(entry)
+      if entry.displayState == .working {
+        let evidence = currentAgentEvidence(surfaceID: entry.surfaceID)
+        agentObservationStore.updateEvidenceEpoch(
+          surfaceID: entry.surfaceID,
+          processGeneration: evidence.generation,
+          sessionID: evidence.sessionID
+        )
+        if let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: entry.surfaceID) {
+          agentDispatchStore.noteActivity(
+            surfaceID: entry.surfaceID,
+            evidenceEpoch: evidenceEpoch
+          )
+        }
+      }
       emit(.agentEntryChanged(entry))
     }
     state.onAgentEntryRemoved = { [weak self] id in

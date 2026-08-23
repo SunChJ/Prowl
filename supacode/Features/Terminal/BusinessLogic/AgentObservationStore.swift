@@ -7,6 +7,11 @@ private struct AgentSignalChannelRecord {
   var sessionID: String?
 }
 
+struct AgentCurrentSignalEvidence: Sendable {
+  let activeTerminal: AgentSignal?
+  let latest: AgentSignal?
+}
+
 /// Terminal-owned publication state for one multicast observer per surface.
 /// The detector remains the producer of agent entries; this store is the
 /// canonical replay/stream boundary shared by reducers and CLI observers.
@@ -16,6 +21,8 @@ final class AgentObservationStore {
     var agent: ActiveAgentEntry?
     var latestSignal: AgentSignal?
     var latestSignalBinding: AgentSignalBinding?
+    var latestCurrentSignal: AgentSignal?
+    var activeTerminalSignal: AgentSignal?
     var processGeneration: AgentProcessGeneration?
     var sessionID: String?
     var sessionlessSignalsAllowed = true
@@ -81,6 +88,9 @@ final class AgentObservationStore {
     var record = records[entry.surfaceID] ?? SurfaceRecord()
     guard record.agent != entry else { return }
     record.agent = entry
+    if entry.displayState == .working {
+      record.activeTerminalSignal = nil
+    }
     record.revision &+= 1
     records[entry.surfaceID] = record
     publish(.changed(entry), surfaceID: entry.surfaceID)
@@ -108,6 +118,13 @@ final class AgentObservationStore {
     record.latestSignal = signal
     record.latestSignalBinding = binding
     if binding == .current {
+      record.latestCurrentSignal = signal
+      switch signal.event {
+      case .turnEnded, .needsInput, .sessionEnd:
+        record.activeTerminalSignal = signal
+      case .sessionStart, .progress:
+        record.activeTerminalSignal = nil
+      }
       let source = signal.source.payloadName
       var channel =
         record.channels[source]
@@ -156,6 +173,16 @@ final class AgentObservationStore {
     records[surfaceID]?.snapshot
   }
 
+  func currentSignalEvidence(surfaceID: UUID) -> AgentCurrentSignalEvidence {
+    guard let record = records[surfaceID] else {
+      return AgentCurrentSignalEvidence(activeTerminal: nil, latest: nil)
+    }
+    return AgentCurrentSignalEvidence(
+      activeTerminal: record.activeTerminalSignal,
+      latest: record.latestCurrentSignal
+    )
+  }
+
   func beginDispatchEpoch(surfaceID: UUID) -> UUID {
     var record = records[surfaceID] ?? SurfaceRecord()
     record.evidenceEpoch = UUID()
@@ -164,6 +191,8 @@ final class AgentObservationStore {
     record.sessionlessSignalsAllowed = true
     record.awaitingFirstProcessGeneration = true
     record.channels.removeAll()
+    record.latestCurrentSignal = nil
+    record.activeTerminalSignal = nil
     if record.latestSignal != nil { record.latestSignalBinding = .stale }
     records[surfaceID] = record
     return record.evidenceEpoch
@@ -192,6 +221,8 @@ final class AgentObservationStore {
     if processChanged || sessionChanged {
       record.evidenceEpoch = UUID()
       record.channels.removeAll()
+      record.latestCurrentSignal = nil
+      record.activeTerminalSignal = nil
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       record.sessionlessSignalsAllowed = processChanged
     }

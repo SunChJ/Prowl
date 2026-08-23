@@ -917,9 +917,11 @@ struct SupacodeApp: App {
         let agent = appStore.state.repositories.activeAgents.entries.first {
           $0.surfaceID == surfaceID
         }
+        let signalEvidence = terminalManager.currentAgentSignalEvidence(surfaceID: surfaceID)
         return .init(
           agent: agent,
-          signal: terminalManager.currentEligibleAgentSignal(surfaceID: surfaceID),
+          signal: signalEvidence.activeTerminal,
+          changedSignal: signalEvidence.latest,
           revision: observed?.revision ?? 0,
           isLive: terminalManager.isSurfaceLive(surfaceID),
           signals: terminalManager.agentSignalsPayload(surfaceID: surfaceID)

@@ -91,6 +91,63 @@ struct AgentWaitCommandHandlerTests {
     #expect(condition.observation.source == "cooperative_cli")
   }
 
+  @Test func changedExactRejectsHeuristicRevisionWithoutANewSignal() async {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let surfaceID = UUID(uuidString: target.paneID)!
+    let idle = agentEntry(surfaceID: surfaceID, status: .idle)
+    let working = agentEntry(surfaceID: surfaceID, status: .working)
+    let staleSignal = AgentSignal(
+      kind: .turnEnded,
+      source: .cooperativeCLI,
+      confidence: .exact,
+      timestamp: Self.start,
+      sessionID: nil,
+      detail: nil,
+      claimedOrigin: nil
+    )
+    var snapshotReads = 0
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        snapshotReads += 1
+        let didChangeHeuristically = snapshotReads > 2
+        return .init(
+          agent: didChangeHeuristically ? working : idle,
+          signal: staleSignal,
+          revision: didChangeHeuristically ? 2 : 1,
+          isLive: true,
+          signals: .empty
+        )
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(
+        envelope: CommandEnvelope(
+          output: .json,
+          command: .agentsWait(
+            .init(
+              mode: .condition,
+              pane: target.paneID,
+              condition: .changed,
+              timeoutSeconds: 1,
+              minimumConfidence: .exact
+            )
+          )
+        ))
+    }
+
+    for _ in 0..<5 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
+  }
+
   @Test func heuristicIdleRequiresTwoSecondsOfUnchangedState() async throws {
     let clock = TestClock()
     let target = resolvedTarget()

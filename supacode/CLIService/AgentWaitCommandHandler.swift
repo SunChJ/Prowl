@@ -9,10 +9,29 @@ final class AgentWaitCommandHandler: CommandHandler {
   typealias ObserveCondition = @MainActor (UUID) -> AgentObservationStream
   struct ConditionSnapshot: Sendable {
     let agent: ActiveAgentEntry?
+    /// Active terminal evidence for idle, blocked, and exit conditions.
     let signal: AgentSignal?
+    /// Latest current-epoch signal used only to detect a post-baseline change.
+    let changedSignal: AgentSignal?
     let revision: UInt64
     let isLive: Bool
     let signals: AgentSignalsPayload
+
+    init(
+      agent: ActiveAgentEntry?,
+      signal: AgentSignal?,
+      changedSignal: AgentSignal? = nil,
+      revision: UInt64,
+      isLive: Bool,
+      signals: AgentSignalsPayload
+    ) {
+      self.agent = agent
+      self.signal = signal
+      self.changedSignal = changedSignal ?? signal
+      self.revision = revision
+      self.isLive = isLive
+      self.signals = signals
+    }
   }
 
   nonisolated private enum DispatchOutcome: Sendable {
@@ -313,6 +332,7 @@ final class AgentWaitCommandHandler: CommandHandler {
       return failure(code: CLIErrorCode.agentNotFound, message: "No detected agent is active in the selected pane.")
     }
     let baselineRevision = initial.revision
+    let baselineSignal = initial.changedSignal
     let baselineState = normalizedState(initial)
     var stableState: String?
     var stableSinceMilliseconds = 0
@@ -332,6 +352,7 @@ final class AgentWaitCommandHandler: CommandHandler {
           condition: condition,
           snapshot: snapshot,
           baselineRevision: baselineRevision,
+          baselineSignal: baselineSignal,
           minimumConfidence: input.minimumConfidence ?? .auto
         ) {
           return await conditionSuccess(
@@ -410,9 +431,11 @@ final class AgentWaitCommandHandler: CommandHandler {
     condition: AgentWaitCondition,
     snapshot: ConditionSnapshot,
     baselineRevision: UInt64,
+    baselineSignal: AgentSignal?,
     minimumConfidence: AgentWaitMinimumConfidence
   ) -> AgentWaitObservation? {
-    guard let signal = snapshot.signal,
+    let signal = condition == .changed ? snapshot.changedSignal : snapshot.signal
+    guard let signal,
       accepts(signal.confidence, minimum: minimumConfidence)
     else {
       if condition == .exit, !snapshot.isLive {
@@ -431,7 +454,7 @@ final class AgentWaitCommandHandler: CommandHandler {
       switch condition {
       case .idle: signal.event == .turnEnded
       case .blocked: signal.event == .needsInput
-      case .changed: snapshot.revision > baselineRevision
+      case .changed: snapshot.revision > baselineRevision && signal != baselineSignal
       case .exit: signal.event == .sessionEnd
       }
     guard matches else { return nil }
