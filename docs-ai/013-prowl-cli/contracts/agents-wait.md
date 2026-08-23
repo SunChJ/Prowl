@@ -48,8 +48,8 @@ Dispatch mode is id-only and rejects pane, condition, and confidence options. A 
 receipt returns success with `mode=dispatch`, `waited_ms`, immutable `target`, `receipt`,
 current `signals`, and optional stable `screen`. Failed, abandoned, gone, needs-input,
 incomplete-turn, and timeout outcomes are nonzero structured errors. Known-dispatch error
-details retain `mode`, `waited_ms`, `target`, the current tagged-union `record`, and available
-observation/signal evidence.
+details retain `mode`, `waited_ms`, `target`, the current tagged-union `record`, available
+observation/signal evidence, and stable `screen` evidence when requested.
 
 `turn-ended`, matching `session-end`, and surface close open a 300 ms completion-priority
 window. A completion arriving inside the window wins; otherwise waits report
@@ -77,8 +77,8 @@ and unverifiable sessionless signals remain diagnostic only. Generic success and
 details report the actual source, confidence, timestamp, revision, and current signal channels.
 
 When requested, screen evidence reads the detection buffer every 200 ms until unchanged for
-800 ms, capped at two seconds, and returns only the requested trailing lines. It is evidence,
-not completion proof.
+800 ms, capped at two seconds, and returns only the requested trailing lines. Success payloads
+and structured wait errors both retain it. It is evidence, not completion proof.
 
 ## Cancellation and schemas
 

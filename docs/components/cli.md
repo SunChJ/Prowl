@@ -276,7 +276,9 @@ prowl agents wait --dispatch "$dispatch_id" --include-screen 40 --json
 
 Only a successful receipt makes this command succeed. Failed, abandoned, gone,
 needs-input, incomplete-turn, and timeout states return structured nonzero errors with the
-immutable launch target and current receipt evidence. Pending receipts are memory-only,
+immutable launch target and current receipt evidence. When `--include-screen` is requested,
+that stable screen evidence remains available under `.error.details.screen` on these nonzero
+outcomes. Pending receipts are memory-only,
 survive pane closure as retained `gone` records, never expire automatically, and are bounded
 to 256 records. A coordinator can explicitly stop tracking one without stopping its worker:
 
@@ -294,7 +296,8 @@ prowl agents wait "$pane" --until idle --include-screen 40 --json
 Conditions are `idle`, `blocked`, `changed`, and `exit`. Results include their evidence
 `source` and `confidence`; `auto` may fall back to a heuristic result only after the pane has
 remained unchanged for two seconds. `--include-screen` samples the detection buffer until it
-is stable for 800 ms (or the two-second cap), then returns the requested trailing lines.
+is stable for 800 ms (or the two-second cap), then returns the requested trailing lines on
+both success and structured timeout/error details.
 Strict dispatch waits never accept a visual or idle-state substitute. Closing or killing the
 waiting CLI cancels its server-side subscription promptly. `workflow done` remains the only
 workflow-step completion command.

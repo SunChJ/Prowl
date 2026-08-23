@@ -159,7 +159,10 @@ final class DispatchWireModelTests: XCTestCase {
         waitedMilliseconds: 600_000,
         target: Self.target,
         observation: observation,
-        signals: nil
+        signals: nil,
+        screen: .unavailable(
+          AgentWaitUnavailableScreen(requestedLines: 20, waitedMilliseconds: 0)
+        )
       )
     )
     XCTAssertEqual(

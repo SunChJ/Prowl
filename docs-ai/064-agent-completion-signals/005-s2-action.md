@@ -17,8 +17,8 @@ Implemented and fully validated on `feat/agent-dispatch-wait-s2`; draft PR [#718
   waiters, immutable launch targets, and 300 ms completion-priority lifecycle coalescing.
 - `agents wait --dispatch` accepts only an opaque id and returns strict receipt outcomes.
   Generic pane waits implement idle/blocked/changed/exit, confidence thresholds, labelled
-  two-second heuristic fallback, optional stable detection-screen evidence, overflow
-  resubscription, and request cancellation cleanup.
+  two-second heuristic fallback, optional stable detection-screen evidence on success and
+  structured errors, overflow resubscription, and request cancellation cleanup.
 - Cooperative evidence is bound to PID plus process start time and an exact/high current
   session where available; medium session guesses remain diagnostic. Stale, mismatched, and
   unverifiable signals remain diagnostic. Existing

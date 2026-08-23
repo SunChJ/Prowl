@@ -233,6 +233,97 @@ struct AgentWaitCommandHandlerTests {
     #expect(screen.stabilized)
   }
 
+  @Test func requestedScreenIsIncludedWithFailedDispatch() async throws {
+    let clock = TestClock()
+    let failed = snapshot(
+      .completed(
+        id: "d1",
+        outcome: .failed,
+        summary: "Tests failed",
+        createdAt: Self.start,
+        completedAt: Self.start
+      ))
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in
+        .success(
+          AgentDispatchObservationStream { continuation in
+            continuation.yield(.snapshot(failed))
+            continuation.finish()
+          })
+      },
+      screenProvider: { _ in "failed evidence" },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(
+        envelope: CommandEnvelope(
+          output: .json,
+          command: .agentsWait(
+            .init(mode: .dispatch, dispatchID: "d1", timeoutSeconds: 1, includeScreenLines: 2)
+          )
+        ))
+    }
+
+    for _ in 0..<4 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    let details = try #require(response.error?.details)
+    let object = try #require(
+      JSONSerialization.jsonObject(with: details.bytes) as? [String: Any]
+    )
+    let screen = try #require(object["screen"] as? [String: Any])
+    #expect(screen["status"] as? String == "captured")
+    #expect(screen["text"] as? String == "failed evidence")
+  }
+
+  @Test func requestedScreenIsIncludedWithConditionTimeout() async throws {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let entry = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .working)
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: entry, signal: nil, revision: 1, isLive: true, signals: .empty)
+      },
+      screenProvider: { _ in "timeout evidence" },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(
+        envelope: CommandEnvelope(
+          output: .json,
+          command: .agentsWait(
+            .init(
+              mode: .condition,
+              pane: target.paneID,
+              condition: .blocked,
+              timeoutSeconds: 1,
+              minimumConfidence: .exact,
+              includeScreenLines: 2
+            )
+          )
+        ))
+    }
+
+    for _ in 0..<9 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    let details = try #require(response.error?.details)
+    let object = try #require(
+      JSONSerialization.jsonObject(with: details.bytes) as? [String: Any]
+    )
+    let screen = try #require(object["screen"] as? [String: Any])
+    #expect(screen["status"] as? String == "captured")
+    #expect(screen["text"] as? String == "timeout evidence")
+  }
+
   @Test func cancellingGenericWaitRemovesObservationSubscriber() async {
     let clock = TestClock()
     let target = resolvedTarget()

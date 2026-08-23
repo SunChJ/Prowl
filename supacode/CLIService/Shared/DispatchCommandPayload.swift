@@ -598,6 +598,7 @@ public struct AgentDispatchWaitErrorDetails: Codable, Equatable, Sendable {
   public let record: DispatchRecordPayload
   public let observation: AgentWaitObservation?
   public let signals: AgentSignalsPayload?
+  public let screen: AgentWaitScreenPayload?
 
   enum CodingKeys: String, CodingKey {
     case mode
@@ -606,6 +607,7 @@ public struct AgentDispatchWaitErrorDetails: Codable, Equatable, Sendable {
     case record
     case observation
     case signals
+    case screen
   }
 
   public init(
@@ -613,13 +615,15 @@ public struct AgentDispatchWaitErrorDetails: Codable, Equatable, Sendable {
     target: TabTarget,
     record: DispatchRecordPayload,
     observation: AgentWaitObservation? = nil,
-    signals: AgentSignalsPayload? = nil
+    signals: AgentSignalsPayload? = nil,
+    screen: AgentWaitScreenPayload? = nil
   ) {
     self.waitedMilliseconds = waitedMilliseconds
     self.target = target
     self.record = record
     self.observation = observation
     self.signals = signals
+    self.screen = screen
   }
 }
 
@@ -630,6 +634,7 @@ public struct AgentConditionWaitErrorDetails: Codable, Equatable, Sendable {
   public let target: TabTarget?
   public let observation: AgentWaitObservation?
   public let signals: AgentSignalsPayload?
+  public let screen: AgentWaitScreenPayload?
 
   enum CodingKeys: String, CodingKey {
     case mode
@@ -638,6 +643,7 @@ public struct AgentConditionWaitErrorDetails: Codable, Equatable, Sendable {
     case target
     case observation
     case signals
+    case screen
   }
 
   public init(
@@ -645,13 +651,15 @@ public struct AgentConditionWaitErrorDetails: Codable, Equatable, Sendable {
     waitedMilliseconds: Int,
     target: TabTarget? = nil,
     observation: AgentWaitObservation? = nil,
-    signals: AgentSignalsPayload? = nil
+    signals: AgentSignalsPayload? = nil,
+    screen: AgentWaitScreenPayload? = nil
   ) {
     self.condition = condition
     self.waitedMilliseconds = waitedMilliseconds
     self.target = target
     self.observation = observation
     self.signals = signals
+    self.screen = screen
   }
 }
 
@@ -667,11 +675,13 @@ public enum AgentWaitErrorDetails: Codable, Equatable, Sendable {
       var keys: Set<String> = ["mode", "waited_ms", "target", "record"]
       if container.contains(DynamicCodingKey("observation")) { keys.insert("observation") }
       if container.contains(DynamicCodingKey("signals")) { keys.insert("signals") }
+      if container.contains(DynamicCodingKey("screen")) { keys.insert("screen") }
       try requireExactKeys(container, keys, decoder: decoder)
       self = .dispatch(try AgentDispatchWaitErrorDetails(from: decoder))
     case .condition:
       var keys: Set<String> = ["mode", "condition", "waited_ms"]
-      for key in ["target", "observation", "signals"] where container.contains(DynamicCodingKey(key)) {
+      for key in ["target", "observation", "signals", "screen"]
+      where container.contains(DynamicCodingKey(key)) {
         keys.insert(key)
       }
       try requireExactKeys(container, keys, decoder: decoder)

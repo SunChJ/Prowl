@@ -466,9 +466,10 @@ members are omitted rather than encoded as null.
 Error details are strict mode-specific objects. Once `create` has returned a dispatch id,
 the private binding always exists, so every known-dispatch error carries `mode: dispatch`,
 `waited_ms`, the required immutable launch `target`, the current dispatch record, and
-optional last observation/signals. Only lookup failures such as `DISPATCH_NOT_FOUND` lack a
-binding and target. Generic errors carry `mode: condition`, `condition`, `waited_ms`,
-optional target, and optional last observation/signals. A failed receipt is
+optional last observation/signals and optional `screen` when requested. Only lookup failures
+such as `DISPATCH_NOT_FOUND` lack a binding and target. Generic errors carry `mode: condition`,
+`condition`, `waited_ms`, optional target, optional last observation/signals, and optional
+`screen` when requested. A failed receipt is
 `DISPATCH_FAILED`, and an abandoned record is `DISPATCH_ABANDONED`; neither is a success
 payload. These shapes and their `additionalProperties: false` schemas ship in the S2
 normative command contracts before handlers turn GREEN.

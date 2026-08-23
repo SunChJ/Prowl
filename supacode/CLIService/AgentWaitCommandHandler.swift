@@ -140,18 +140,20 @@ final class AgentWaitCommandHandler: CommandHandler {
         )
       }
     case .needsInput(let snapshot):
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchNeedsInput,
         message: "The dispatched agent needs input.",
         snapshot: snapshot,
-        waitedMilliseconds: max(0, Int(now().timeIntervalSince(startedAt) * 1_000))
+        waitedMilliseconds: max(0, Int(now().timeIntervalSince(startedAt) * 1_000)),
+        includeScreenLines: includeScreenLines
       )
     case .incomplete(let snapshot):
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchIncomplete,
         message: "The agent turn ended without completing its dispatch receipt.",
         snapshot: snapshot,
-        waitedMilliseconds: max(0, Int(now().timeIntervalSince(startedAt) * 1_000))
+        waitedMilliseconds: max(0, Int(now().timeIntervalSince(startedAt) * 1_000)),
+        includeScreenLines: includeScreenLines
       )
     }
     let outcome = await withTaskGroup(of: DispatchOutcome.self) { group in
@@ -188,27 +190,30 @@ final class AgentWaitCommandHandler: CommandHandler {
       return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
     case .timeout:
       if let snapshot = latestSnapshot.value {
-        return dispatchFailure(
+        return await dispatchFailure(
           code: CLIErrorCode.waitTimeout,
           message: "Timed out waiting for dispatch completion.",
           snapshot: snapshot,
-          waitedMilliseconds: waited
+          waitedMilliseconds: waited,
+          includeScreenLines: includeScreenLines
         )
       }
       return failure(code: CLIErrorCode.waitTimeout, message: "Timed out waiting for dispatch completion.")
     case .needsInput(let snapshot):
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchNeedsInput,
         message: "The dispatched agent needs input.",
         snapshot: snapshot,
-        waitedMilliseconds: waited
+        waitedMilliseconds: waited,
+        includeScreenLines: includeScreenLines
       )
     case .incomplete(let snapshot):
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchIncomplete,
         message: "The agent turn ended without completing its dispatch receipt.",
         snapshot: snapshot,
-        waitedMilliseconds: waited
+        waitedMilliseconds: waited,
+        includeScreenLines: includeScreenLines
       )
     case .terminal(let snapshot):
       return await response(
@@ -248,32 +253,36 @@ final class AgentWaitCommandHandler: CommandHandler {
         return failure(code: CLIErrorCode.dispatchFailed, message: "Failed to encode the dispatch result.")
       }
     case .completed:
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchFailed,
         message: "The dispatched task failed.",
         snapshot: snapshot,
-        waitedMilliseconds: waitedMilliseconds
+        waitedMilliseconds: waitedMilliseconds,
+        includeScreenLines: includeScreenLines
       )
     case .abandoned:
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchAbandoned,
         message: "The dispatch was abandoned.",
         snapshot: snapshot,
-        waitedMilliseconds: waitedMilliseconds
+        waitedMilliseconds: waitedMilliseconds,
+        includeScreenLines: includeScreenLines
       )
     case .gone:
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.agentGone,
         message: "The dispatched agent is gone.",
         snapshot: snapshot,
-        waitedMilliseconds: waitedMilliseconds
+        waitedMilliseconds: waitedMilliseconds,
+        includeScreenLines: includeScreenLines
       )
     case .pending:
-      return dispatchFailure(
+      return await dispatchFailure(
         code: CLIErrorCode.dispatchIncomplete,
         message: "The dispatch is still pending.",
         snapshot: snapshot,
-        waitedMilliseconds: waitedMilliseconds
+        waitedMilliseconds: waitedMilliseconds,
+        includeScreenLines: includeScreenLines
       )
     }
   }
@@ -282,8 +291,9 @@ final class AgentWaitCommandHandler: CommandHandler {
     code: String,
     message: String,
     snapshot: AgentDispatchSnapshot,
-    waitedMilliseconds: Int
-  ) -> CommandResponse {
+    waitedMilliseconds: Int,
+    includeScreenLines: Int?
+  ) async -> CommandResponse {
     guard let binding = snapshot.binding else { return failure(code: code, message: message) }
     do {
       return CommandResponse(
@@ -299,7 +309,11 @@ final class AgentWaitCommandHandler: CommandHandler {
                 waitedMilliseconds: waitedMilliseconds,
                 target: binding.target,
                 record: snapshot.payload(using: formatter),
-                signals: signalsProvider(binding.target)
+                signals: signalsProvider(binding.target),
+                screen: await stableScreen(
+                  requestedLines: includeScreenLines,
+                  target: binding.target
+                )
               )))
         )
       )
@@ -415,7 +429,11 @@ final class AgentWaitCommandHandler: CommandHandler {
           waitedMilliseconds: min(elapsedMilliseconds, timeoutMilliseconds),
           target: TabTarget(from: target),
           observation: heuristicObservation(last, state: normalizedState(last)),
-          signals: last.signals
+          signals: last.signals,
+          screen: await stableScreen(
+            requestedLines: input.includeScreenLines,
+            target: TabTarget(from: target)
+          )
         ))
       return failure(
         code: CLIErrorCode.waitTimeout,

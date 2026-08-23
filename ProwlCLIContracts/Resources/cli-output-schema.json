@@ -1347,6 +1347,9 @@
         },
         "signals": {
           "$ref": "#/$defs/agentSignals"
+        },
+        "screen": {
+          "$ref": "#/$defs/agentWaitScreen"
         }
       }
     },
@@ -1382,6 +1385,9 @@
         },
         "signals": {
           "$ref": "#/$defs/agentSignals"
+        },
+        "screen": {
+          "$ref": "#/$defs/agentWaitScreen"
         }
       }
     },

@@ -99,6 +99,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Review follow-up synchronized the approved S2 flow and heuristic rubric into the
   tracked bundled skill. Repository tests now require strict dispatch waiting, structured error
   details, timeout re-arming, and explicit rejection of heuristic task completion.
+- 2026-08-23 — Review follow-up made requested stable-screen evidence symmetric across success
+  and structured dispatch/condition errors. Handler and executable-schema regressions cover a
+  failed receipt and a condition timeout without changing their primary exit codes.
 
 ## Fresh Debug E2E
 
