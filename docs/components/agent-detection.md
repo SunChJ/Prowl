@@ -118,7 +118,24 @@ Prowl attributes the socket caller through process ancestry, not focus or
 `PROWL_PANE_ID`. A signal can exist for an ordinary shell pane with no detected agent and
 does not create or overwrite a detected-agent entry. `turn-ended` means one interaction
 ended, not that a workflow step completed; only `prowl workflow done` will advance a
-workflow. Future `agents wait` and launch-scoped hooks consume the same per-pane stream.
+workflow, and only a matching `agents dispatch-complete` can complete an exact dispatch.
+
+Signal eligibility is generation-aware. Prowl binds evidence to the detected process's PID
+**and process start time**, plus its current session only when that attribution is exact or
+high confidence. A dispatch launch accepts its first process generation only when the process
+started within ten seconds of launch binding; a later-started process is a replacement even if
+the original runtime exited before detection. A medium-confidence session guess remains
+diagnostic and never rotates an evidence epoch. Evidence from a reused PID, a replaced session,
+a delayed child, or an unverifiable sessionless sender stays diagnostic and cannot advance a
+wait.
+`prowl agents --json` exposes current-epoch channels
+under each existing detected-agent row's `signals`; evidence-only shell panes are not added
+to the roster.
+
+`prowl agents wait <pane> --until idle|blocked|changed|exit` consumes the eligible stream and
+reports its source and confidence. Exact/high evidence wins; the default `auto` policy may
+use a heuristic match only after two seconds of unchanged state. `wait --dispatch` is a
+separate exact receipt path and never treats screen state or `turn-ended` as task success.
 
 Each observer receives an atomic current snapshot before live changes. Multiple observers
 do not compete with the app's existing single-consumer terminal event stream. Agent removal
@@ -173,7 +190,7 @@ Notifications settings (e.g. `autoShowActiveAgentsPanel`,
   can be missed; an unusual prompt might read as the wrong state.
 - **"Blocked"** is the one that means *a human is needed* — it's typically a
   permission/confirmation prompt the agent is waiting on.
-- For deterministic automation, don't rely on the visual status; use
-  [`prowl list`](cli.md) (`task.status`) and confirm a screen is finished with
-  `prowl read --wait-stable` — `task.status` can flip to idle before a TUI has
-  painted its last frame.
+- For deterministic assigned work, use the prompted Profile dispatch receipt and
+  `prowl agents wait --dispatch`; generic state waits deliberately retain labelled heuristic
+  fallback. `prowl read --wait-stable` remains useful screen evidence, but a stable screen is
+  not task completion.

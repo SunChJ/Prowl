@@ -13,6 +13,9 @@ struct CLIProfileLaunchRequest: Sendable, Equatable {
   let path: String?
   let direction: CreatePaneDirection?
   let background: Bool
+  /// Present only for a CLI prompted launch. Internal launchers opt in
+  /// explicitly rather than inheriting the dispatch protocol by accident.
+  let dispatchID: String?
 }
 
 private enum CLIProfileLookupError: Error {
@@ -43,6 +46,8 @@ enum CLIProfileLaunchFailure: Error, Equatable, Sendable {
         return .invalidArgument("The kickoff prompt must not contain NUL bytes.")
       case .promptArgumentUnavailable:
         return .createFailed("Agent Profile “\(profile.name)” produced an invalid prompted invocation.")
+      case .dispatchRequiresPrompt:
+        return .createFailed("Agent Profile “\(profile.name)” produced an invalid dispatch launch.")
       case .homeEscapesBase:
         return .createFailed("Agent Profile “\(profile.name)” resolved outside the managed home directory.")
       case .homeIsSymbolicLink:
@@ -80,6 +85,12 @@ final class LifecycleCommandHandler: CommandHandler {
   typealias ProfilesProvider = @MainActor () -> [AgentProfile]
   typealias ProfileLaunchProvider =
     @MainActor (CLIProfileLaunchRequest) -> Result<TabResolvedTarget, CLIProfileLaunchFailure>
+  typealias IssueDispatchProvider =
+    @MainActor () -> Result<DispatchPendingRecord, AgentDispatchStoreError>
+  typealias BindDispatchProvider =
+    @MainActor (String, TabResolvedTarget) -> Result<Void, AgentDispatchStoreError>
+  typealias CancelDispatchProvider = @MainActor (String) -> Void
+  typealias RollbackProfileLaunchProvider = @MainActor (LifecycleResource, TabResolvedTarget) -> Void
   typealias CloseTabProvider = @MainActor (TabResolvedTarget, Bool) -> Bool
   typealias ClosePaneProvider = @MainActor (TabResolvedTarget, Bool) -> Bool
 
@@ -89,6 +100,10 @@ final class LifecycleCommandHandler: CommandHandler {
   private let createPane: CreatePaneProvider
   private let profiles: ProfilesProvider
   private let launchAgentProfile: ProfileLaunchProvider
+  private let issueDispatch: IssueDispatchProvider
+  private let bindDispatch: BindDispatchProvider
+  private let cancelDispatch: CancelDispatchProvider
+  private let rollbackProfileLaunch: RollbackProfileLaunchProvider
   private let closeTab: CloseTabProvider
   private let closePane: ClosePaneProvider
 
@@ -101,6 +116,10 @@ final class LifecycleCommandHandler: CommandHandler {
     launchAgentProfile: @escaping ProfileLaunchProvider = {
       _ in .failure(.createFailed("Failed to launch the Agent Profile."))
     },
+    issueDispatch: @escaping IssueDispatchProvider = { .failure(.capacityExceeded) },
+    bindDispatch: @escaping BindDispatchProvider = { _, _ in .failure(.notFound) },
+    cancelDispatch: @escaping CancelDispatchProvider = { _ in },
+    rollbackProfileLaunch: @escaping RollbackProfileLaunchProvider = { _, _ in },
     closeTab: @escaping CloseTabProvider,
     closePane: @escaping ClosePaneProvider
   ) {
@@ -110,6 +129,10 @@ final class LifecycleCommandHandler: CommandHandler {
     self.createPane = createPane
     self.profiles = profiles
     self.launchAgentProfile = launchAgentProfile
+    self.issueDispatch = issueDispatch
+    self.bindDispatch = bindDispatch
+    self.cancelDispatch = cancelDispatch
+    self.rollbackProfileLaunch = rollbackProfileLaunch
     self.closeTab = closeTab
     self.closePane = closePane
   }
@@ -264,16 +287,59 @@ final class LifecycleCommandHandler: CommandHandler {
       prompt: launch.prompt,
       path: path,
       direction: input.direction,
-      background: input.background
+      background: input.background,
+      dispatchID: nil
+    )
+    let dispatch: DispatchPendingRecord?
+    if launch.prompt != nil {
+      switch issueDispatch() {
+      case .success(let record):
+        dispatch = record
+      case .failure:
+        return errorResponse(
+          command: "create",
+          code: CLIErrorCode.dispatchCapacityExceeded,
+          message: "All dispatch receipt slots are occupied by pending work; "
+            + "complete or abandon a dispatch before launching another prompted task."
+        )
+      }
+    } else {
+      dispatch = nil
+    }
+    let pairedRequest = CLIProfileLaunchRequest(
+      resource: request.resource,
+      target: request.target,
+      profile: request.profile,
+      prompt: request.prompt,
+      path: request.path,
+      direction: request.direction,
+      background: request.background,
+      dispatchID: dispatch?.id
     )
     let createdTarget: TabResolvedTarget
-    switch launchAgentProfile(request) {
+    switch launchAgentProfile(pairedRequest) {
     case .success(let target):
       createdTarget = target
     case .failure(.invalidArgument(let message)):
+      if let dispatch { cancelDispatch(dispatch.id) }
       return errorResponse(command: "create", code: CLIErrorCode.invalidArgument, message: message)
     case .failure(.createFailed(let message)):
+      if let dispatch { cancelDispatch(dispatch.id) }
       return errorResponse(command: "create", code: CLIErrorCode.createFailed, message: message)
+    }
+    if let dispatch {
+      switch bindDispatch(dispatch.id, createdTarget) {
+      case .success:
+        break
+      case .failure:
+        rollbackProfileLaunch(input.resource, createdTarget)
+        cancelDispatch(dispatch.id)
+        return errorResponse(
+          command: "create",
+          code: CLIErrorCode.createFailed,
+          message: "The prompted Agent Profile launch could not be bound to its dispatch receipt."
+        )
+      }
     }
     return success(
       command: "create",
@@ -285,7 +351,8 @@ final class LifecycleCommandHandler: CommandHandler {
         profileID: profile.id.uuidString,
         profileName: profile.name,
         agent: profile.runtime.agent.rawValue
-      )
+      ),
+      dispatch: dispatch
     )
   }
 
@@ -376,7 +443,8 @@ final class LifecycleCommandHandler: CommandHandler {
     target: TabResolvedTarget,
     anchor: TabResolvedTarget? = nil,
     direction: CreatePaneDirection? = nil,
-    launch: LifecycleCommandLaunch? = nil
+    launch: LifecycleCommandLaunch? = nil,
+    dispatch: DispatchPendingRecord? = nil
   ) -> CommandResponse {
     do {
       return try CommandResponse(
@@ -389,6 +457,7 @@ final class LifecycleCommandHandler: CommandHandler {
             anchor: anchor.map { makePayloadTarget(from: $0) },
             direction: direction,
             launch: launch,
+            dispatch: dispatch,
             target: makePayloadTarget(from: target)
           )
         )
@@ -399,26 +468,7 @@ final class LifecycleCommandHandler: CommandHandler {
   }
 
   private func makePayloadTarget(from target: TabResolvedTarget) -> TabTarget {
-    TabTarget(
-      worktree: TabTargetWorktree(
-        id: target.worktreeID,
-        name: target.worktreeName,
-        path: target.worktreePath,
-        rootPath: target.worktreeRootPath,
-        kind: target.worktreeKind
-      ),
-      tab: TabTargetTab(
-        id: target.tabID,
-        title: target.tabTitle,
-        selected: target.tabSelected
-      ),
-      pane: TabTargetPane(
-        id: target.paneID,
-        title: target.paneTitle,
-        cwd: target.paneCWD,
-        focused: target.paneFocused
-      )
-    )
+    TabTarget(from: target)
   }
 
   private func mapResolverError(command: String, error: TargetResolverError) -> CommandResponse {

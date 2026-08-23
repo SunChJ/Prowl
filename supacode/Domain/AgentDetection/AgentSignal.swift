@@ -1,5 +1,10 @@
 import Foundation
 
+nonisolated struct AgentProcessGeneration: Equatable, Hashable, Sendable {
+  let pid: pid_t
+  let startedAt: Date
+}
+
 struct AgentSignal: Equatable, Sendable {
   enum Kind: Equatable, Sendable {
     case turnEnded
@@ -57,3 +62,46 @@ enum AgentObservationError: Error, Equatable, Sendable {
 }
 
 typealias AgentObservationStream = AsyncThrowingStream<ObservedAgentState, Error>
+
+extension AgentSignal {
+  var event: AgentSignalEvent {
+    switch kind {
+    case .turnEnded: .turnEnded
+    case .needsInput: .needsInput
+    case .sessionStart: .sessionStart
+    case .sessionEnd: .sessionEnd
+    case .progress: .progress
+    }
+  }
+
+  var progress: Int? {
+    guard case .progress(let value) = kind else { return nil }
+    return value
+  }
+
+  func payload(timestamp: String) -> AgentSignalPayload {
+    AgentSignalPayload(
+      event: event,
+      progress: progress,
+      source: source.payloadName,
+      confidence: confidence.rawValue,
+      timestamp: timestamp,
+      sessionID: sessionID,
+      detail: detail,
+      claimedOrigin: claimedOrigin
+    )
+  }
+}
+
+extension AgentSignal.Source {
+  var payloadName: String {
+    switch self {
+    case .cooperativeCLI: "cooperative_cli"
+    case .hook(let runtime, _): "hook_\(runtime.rawValue)"
+    case .transcript: "transcript"
+    case .process: "process"
+    case .osc: "osc"
+    case .screen: "screen"
+    }
+  }
+}

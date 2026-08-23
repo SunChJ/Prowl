@@ -133,6 +133,37 @@ struct CLISocketServerTests {
     #expect(recordedSignal?.detail == "socket result")
   }
 
+  @Test func closingPeerCancelsInFlightWaitRequest() async throws {
+    let socketPath = temporarySocketPath(suffix: "wait-peer-eof")
+    let probe = CancellationProbe()
+    let server = CLISocketServer(
+      router: CLICommandRouter(agentsWaitHandler: CancellationProbeHandler(probe: probe)),
+      socketPath: socketPath
+    )
+    try server.start()
+    defer { server.stop() }
+    let envelope = CommandEnvelope(
+      output: .json,
+      command: .agentsWait(
+        AgentWaitInput(mode: .dispatch, dispatchID: "dispatch-peer-eof", timeoutSeconds: 600)
+      )
+    )
+    let requestData = try JSONEncoder().encode(envelope)
+
+    try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        continuation.resume(
+          with: Result {
+            try Self.sendAndClose(requestData: requestData, socketPath: socketPath)
+          }
+        )
+      }
+    }
+
+    await probe.waitUntilCancellationWasObserved()
+    #expect(probe.wasCancelled)
+  }
+
   #if canImport(Darwin)
     @Test func kernelReportsPeerPIDForLocalSocket() throws {
       var descriptors: [Int32] = [-1, -1]
@@ -176,6 +207,25 @@ struct CLISocketServerTests {
     let lengthData = try readExact(socketFD, count: 4)
     let responseLength = lengthData.withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
     return try readExact(socketFD, count: Int(responseLength))
+  }
+
+  nonisolated private static func sendAndClose(requestData: Data, socketPath: String) throws {
+    let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard socketFD >= 0 else { throw CLIServiceError.socketCreationFailed }
+    defer { close(socketFD) }
+
+    let connected = withSocketAddress(socketPath) { address in
+      withUnsafePointer(to: address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketPointer in
+          connect(socketFD, socketPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+      }
+    }
+    guard connected == 0 else { throw TestSocketClientError.connectFailed }
+
+    var requestLength = UInt32(requestData.count).bigEndian
+    try withUnsafeBytes(of: &requestLength) { try writeAll(socketFD, buffer: $0) }
+    try requestData.withUnsafeBytes { try writeAll(socketFD, buffer: $0) }
   }
 
   nonisolated private static func writeAll(_ fileDescriptor: Int32, buffer: UnsafeRawBufferPointer) throws {
@@ -296,4 +346,68 @@ struct CLISocketServerTests {
 
 private enum TestSocketClientError: Error {
   case connectFailed
+}
+
+private struct CancellationProbeHandler: CommandHandler {
+  let probe: CancellationProbe
+
+  func handle(envelope: CommandEnvelope) async -> CommandResponse {
+    await probe.suspendUntilCancelled()
+    return CommandResponse(
+      ok: false,
+      command: "agents.wait",
+      schemaVersion: "prowl.cli.agents.wait.v1",
+      error: CommandError(code: CLIErrorCode.timeout, message: "Cancelled.")
+    )
+  }
+}
+
+private nonisolated final class CancellationProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancellationContinuation: CheckedContinuation<Void, Never>?
+  private var observerContinuation: CheckedContinuation<Void, Never>?
+  private var cancelled = false
+
+  var wasCancelled: Bool {
+    lock.withLock { cancelled }
+  }
+
+  func suspendUntilCancelled() async {
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        let resumeImmediately = lock.withLock { () -> Bool in
+          guard !cancelled else { return true }
+          cancellationContinuation = continuation
+          return false
+        }
+        if resumeImmediately { continuation.resume() }
+      }
+    } onCancel: {
+      markCancelled()
+    }
+  }
+
+  func waitUntilCancellationWasObserved() async {
+    await withCheckedContinuation { continuation in
+      let resumeImmediately = lock.withLock { () -> Bool in
+        guard !cancelled else { return true }
+        observerContinuation = continuation
+        return false
+      }
+      if resumeImmediately { continuation.resume() }
+    }
+  }
+
+  private func markCancelled() {
+    let continuations = lock.withLock {
+      cancelled = true
+      defer {
+        cancellationContinuation = nil
+        observerContinuation = nil
+      }
+      return (cancellationContinuation, observerContinuation)
+    }
+    continuations.0?.resume()
+    continuations.1?.resume()
+  }
 }

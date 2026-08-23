@@ -211,7 +211,16 @@ final class CLISocketServer {
 
       // Route to handler with connection-scoped caller identity
       let context = CLICommandContext(callerProcessID: Self.peerProcessID(clientFD))
-      let response = await router.route(envelope, context: context)
+      let routeTask = Task { @MainActor [router] in
+        await router.route(envelope, context: context)
+      }
+      let monitor = CLIPeerDisconnectMonitor(fileDescriptor: clientFD) {
+        routeTask.cancel()
+      }
+      monitor.start()
+      let response = await routeTask.value
+      monitor.cancel()
+      guard !monitor.didDisconnect else { return }
 
       // Encode and send response
       let encoder = JSONEncoder()
@@ -348,6 +357,58 @@ final class CLISocketServer {
       (serverFD, lockFD)
     }
   #endif
+}
+
+/// Watches a fully-consumed request socket without consuming bytes. EOF or
+/// unexpected post-frame input cancels the request task so long waits cannot
+/// outlive their CLI process.
+private nonisolated final class CLIPeerDisconnectMonitor: @unchecked Sendable {
+  private let fileDescriptor: Int32
+  private let onDisconnect: @Sendable () -> Void
+  private let lock = NSLock()
+  private var source: DispatchSourceRead?
+  private var disconnected = false
+
+  init(fileDescriptor: Int32, onDisconnect: @escaping @Sendable () -> Void) {
+    self.fileDescriptor = fileDescriptor
+    self.onDisconnect = onDisconnect
+  }
+
+  var didDisconnect: Bool {
+    lock.withLock { disconnected }
+  }
+
+  func start() {
+    let source = DispatchSource.makeReadSource(
+      fileDescriptor: fileDescriptor,
+      queue: DispatchQueue.global(qos: .userInitiated)
+    )
+    source.setEventHandler { [weak self] in self?.inspect() }
+    lock.withLock { self.source = source }
+    source.resume()
+  }
+
+  func cancel() {
+    let source = lock.withLock { () -> DispatchSourceRead? in
+      defer { self.source = nil }
+      return self.source
+    }
+    source?.cancel()
+  }
+
+  private func inspect() {
+    var byte: UInt8 = 0
+    let result = recv(fileDescriptor, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+    guard result == 0 || result > 0 else { return }
+    let shouldNotify = lock.withLock { () -> Bool in
+      guard !disconnected else { return false }
+      disconnected = true
+      return true
+    }
+    guard shouldNotify else { return }
+    onDisconnect()
+    cancel()
+  }
 }
 
 // MARK: - Errors

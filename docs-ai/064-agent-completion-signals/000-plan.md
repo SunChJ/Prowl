@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 merged in #715; S2 design locked for implementation |
+| **Status** | In progress — S1 merged in #715; S2 implemented in draft PR #718 |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); S2 TBD |
+| **Primary PRs** | #715 (S1); #718 (S2, draft) |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -176,8 +176,8 @@ interleaves with 063's slices, is owned by the shared living
 | Slice | Depends | Contents / expectation |
 | --- | --- | --- |
 | **S1** | — | Signal bus state + the `ObservedAgentState` multicast observer (snapshot / changed / removed / surfaceClosed / `.signal`; first specified in 063, delivered here so it ships first) + `prowl agents signal` for `turn-ended`, `needs-input`, session, and progress events (CLI four layers, bounded detail). Layer 0 works for every runtime immediately; 063-B3 later consumes the same observer. |
-| **S2** | S1 | One atomic paired-dispatch path: every CLI `create tab|pane --profile --prompt` appends the completion protocol and returns `dispatch_id`; cooperative `dispatch-complete --outcome succeeded|failed --summary`; 256-entry non-destructive in-memory receipts; ID-only strict `prowl agents wait --dispatch`; generic `wait --until` with automatic overflow resnapshot and honest heuristic fallback; `agents` current evidence field; `--include-screen`; skill rubric. Route B becomes usable without polling or stale completion. |
-| **S3 wave 1** | 063-A2, S1, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
+| **S2** | 063-A2, S1 | One atomic paired-dispatch path: every CLI `create tab|pane --profile --prompt` appends the completion protocol and returns `dispatch_id`; cooperative `dispatch-complete --outcome succeeded|failed --summary`; 256-entry non-destructive in-memory receipts; ID-only strict `prowl agents wait --dispatch`; generic `wait --until` with automatic overflow resnapshot and honest heuristic fallback; `agents` current evidence field; `--include-screen`; skill rubric. Route B becomes usable without polling or stale completion. |
+| **S3 wave 1** | S2, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. |
 | **S3 wave 2** | S3 wave 1, 053 dedicated homes | Tier B (`configDirOnly`: Gemini, Qwen, Grok, Cline, Kimi) for dedicated-home profiles only; tier C (Cursor, Amp: project files) is not attached. |
 | **S4** | S1 | Transcript file-watch and OSC producers — layer 2 without hooks. |
 | **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-ended` without `done`, immediate attention on `needs-input`) — ships with 063-D2; later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
@@ -242,6 +242,15 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-23 during S2 review: corrected explicit slice dependencies to
+  063-A2 + S1 → S2 → S3 wave 1. S3 consumes S2's wait/channel/self-check infrastructure;
+  A2 and S1 are transitive rather than parallel alternatives.
+- Updated 2026-08-23 during S2 implementation: delivered the frozen paired dispatch,
+  completion/abandonment store, strict and generic waits, generation-aware evidence,
+  peer-disconnect cancellation, signal visibility, schemas, and documentation. Execution
+  evidence and the validation/E2E record live in
+  [004-s2-work-note.md](004-s2-work-note.md); the shipped behavior summary is
+  [005-s2-action.md](005-s2-action.md).
 - Updated 2026-08-23 after PR #716 initial review: froze peer-EOF cancellation, generic wait
   transition/freshness rules, per-source channel state, old-app fail-closed behavior,
   receipt eviction linearization, exact include-screen behavior, and JSON/schema boundaries;

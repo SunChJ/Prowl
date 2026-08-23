@@ -10,6 +10,9 @@ final class CLICommandRouter {
   private let agentsHandler: any CommandHandler
   private let agentsReadHandler: any CommandHandler
   private let agentsSignalHandler: any CommandHandler
+  private let agentsDispatchCompleteHandler: any CommandHandler
+  private let agentsDispatchAbandonHandler: any CommandHandler
+  private let agentsWaitHandler: any CommandHandler
   private let profilesHandler: any CommandHandler
   private let focusHandler: any CommandHandler
   private let sendHandler: any CommandHandler
@@ -27,6 +30,9 @@ final class CLICommandRouter {
     agentsHandler: any CommandHandler = StubCommandHandler(command: "agents"),
     agentsReadHandler: any CommandHandler = StubCommandHandler(command: "agents.read"),
     agentsSignalHandler: any CommandHandler = StubCommandHandler(command: "agents.signal"),
+    agentsDispatchCompleteHandler: any CommandHandler = StubCommandHandler(command: "agents.dispatch-complete"),
+    agentsDispatchAbandonHandler: any CommandHandler = StubCommandHandler(command: "agents.dispatch-abandon"),
+    agentsWaitHandler: any CommandHandler = StubCommandHandler(command: "agents.wait"),
     profilesHandler: any CommandHandler = StubCommandHandler(command: "profiles"),
     focusHandler: any CommandHandler = StubCommandHandler(command: "focus"),
     sendHandler: any CommandHandler = StubCommandHandler(command: "send"),
@@ -43,6 +49,9 @@ final class CLICommandRouter {
     self.agentsHandler = agentsHandler
     self.agentsReadHandler = agentsReadHandler
     self.agentsSignalHandler = agentsSignalHandler
+    self.agentsDispatchCompleteHandler = agentsDispatchCompleteHandler
+    self.agentsDispatchAbandonHandler = agentsDispatchAbandonHandler
+    self.agentsWaitHandler = agentsWaitHandler
     self.profilesHandler = profilesHandler
     self.focusHandler = focusHandler
     self.sendHandler = sendHandler
@@ -55,6 +64,8 @@ final class CLICommandRouter {
     self.handoffHandler = handoffHandler
   }
 
+  // Intentional exhaustive routing table for the public CLI command union.
+  // swiftlint:disable:next cyclomatic_complexity
   func route(
     _ envelope: CommandEnvelope,
     context: CLICommandContext = CLICommandContext()
@@ -66,6 +77,9 @@ final class CLICommandRouter {
     case .agents: handler = agentsHandler
     case .agentsRead: handler = agentsReadHandler
     case .agentsSignal: handler = agentsSignalHandler
+    case .agentsDispatchComplete: handler = agentsDispatchCompleteHandler
+    case .agentsDispatchAbandon: handler = agentsDispatchAbandonHandler
+    case .agentsWait: handler = agentsWaitHandler
     case .profiles: handler = profilesHandler
     case .focus: handler = focusHandler
     case .send: handler = sendHandler

@@ -7,7 +7,13 @@ struct AgentsCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "agents",
     abstract: "List or report agent state.",
-    subcommands: [AgentsReadCommand.self, AgentsSignalCommand.self]
+    subcommands: [
+      AgentsReadCommand.self,
+      AgentsSignalCommand.self,
+      AgentsDispatchCompleteCommand.self,
+      AgentsDispatchAbandonCommand.self,
+      AgentsWaitCommand.self,
+    ]
   )
 
   @OptionGroup var options: GlobalOptions

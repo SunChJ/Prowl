@@ -134,9 +134,10 @@ prowl agents dispatch-complete \
   --summary "The required SDK is unavailable on this deployment target."
 ```
 
-`--outcome succeeded|failed` and a non-empty `--summary` are required. Summary is capped at
-32 KiB of UTF-8 and is the concise result retained with the receipt, not a transcript or
-artifact transport. S1 keeps optional `agents signal --detail`: signal detail is event
+`--outcome succeeded|failed` and a non-empty, single-line, control-free `--summary` are
+required. Summary is capped at 32 KiB of UTF-8 and is the concise result retained with the
+receipt, not a transcript or artifact transport. S1 keeps optional `agents signal --detail`:
+signal detail is event
 context or a reason, whereas dispatch summary is the required terminal delivery synopsis.
 An accepted completion command returns success for either outcome because it recorded the
 receipt correctly; `outcome: failed` becomes nonzero only when a coordinator later consumes
@@ -324,15 +325,19 @@ Each surface has an evidence epoch minted for the CLI dispatch launch (or the fi
 agent detection on an unpaired surface). Detection records an `AgentProcessGeneration` as
 the agent PID plus its process start time; a stable replacement mints a new epoch even when
 the detected agent kind is unchanged. The first generation observed after dispatch launch
-attaches to the launch epoch rather than minting another one.
+attaches to the launch epoch only when its process start time falls within ten seconds of
+launch binding. Observation itself may arrive later. A process started outside that acquisition
+window mints a replacement epoch, so an initially missed short-lived runtime cannot lend its
+old dispatch to an unrelated agent launched later in the same pane.
 
 S2 extends caller resolution to retain the process ancestry walked before the pane shell.
 Surface attribution is enough to accept and retain a cooperative signal, but not enough to
 let that signal satisfy an epoch-sensitive wait. Such a signal is match-eligible only when
 its caller ancestry contains the current `AgentProcessGeneration`. A supplied session id
 must additionally match the independently resolved current `AgentSession.id` when one is
-available. If no active generation can be proved, the signal remains diagnostic and cannot
-resolve generic or dispatch wait.
+available at exact/high confidence. Medium-confidence session guesses remain diagnostic and
+cannot bind or rotate an evidence epoch. If no active generation can be proved, the signal
+remains diagnostic and cannot resolve generic or dispatch wait.
 
 The first eligible non-empty session id may bind the current epoch. After an epoch is bound,
 only an eligible `session-start` carrying a different non-empty id that also matches the
@@ -346,8 +351,9 @@ prefer losing an optimization over accepting stale evidence.
 
 An eligible `turn-ended` activates idle evidence and invalidates blocked evidence; an
 eligible `needs-input` does the inverse. Later `progress`, `session-start`, or normalized
-working activity invalidates both terminal facts without letting heuristic activity itself
-satisfy a deterministic wait.
+transition into normalized working activity invalidates both terminal facts without letting
+heuristic activity itself satisfy a deterministic wait. Metadata-only emissions while already
+working, such as an animated title, do not constitute new activity.
 An eligible `session-end` invalidates both and activates exit. Therefore an old terminal
 snapshot may return immediately only when it is from the current epoch and no later activity
 revision has invalidated it. Diagnostic/unbound signals may appear in error evidence but
@@ -465,9 +471,10 @@ members are omitted rather than encoded as null.
 Error details are strict mode-specific objects. Once `create` has returned a dispatch id,
 the private binding always exists, so every known-dispatch error carries `mode: dispatch`,
 `waited_ms`, the required immutable launch `target`, the current dispatch record, and
-optional last observation/signals. Only lookup failures such as `DISPATCH_NOT_FOUND` lack a
-binding and target. Generic errors carry `mode: condition`, `condition`, `waited_ms`,
-optional target, and optional last observation/signals. A failed receipt is
+optional last observation/signals and optional `screen` when requested. Only lookup failures
+such as `DISPATCH_NOT_FOUND` lack a binding and target. Generic errors carry `mode: condition`,
+`condition`, `waited_ms`, optional target, optional last observation/signals, and optional
+`screen` when requested. A failed receipt is
 `DISPATCH_FAILED`, and an abandoned record is `DISPATCH_ABANDONED`; neither is a success
 payload. These shapes and their `additionalProperties: false` schemas ship in the S2
 normative command contracts before handlers turn GREEN.

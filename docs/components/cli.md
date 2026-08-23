@@ -250,8 +250,58 @@ tmux/detached ancestry, and already-closed panes fail with `SOURCE_REQUIRED` or
 means explicit channel and caller-pane attribution, not verified business completion.
 Claimed origin never upgrades trust. JSON uses `prowl.cli.agents.signal.v1`.
 
-`dispatch-complete` and `agents wait` arrive together in the next slice with an opaque
-`dispatch_id`; `workflow done` remains the only workflow-step completion command.
+### Dispatch completion and waiting
+
+Every prompted Profile launch made by `prowl create tab|pane --profile … --prompt -`
+returns a pending `data.dispatch` record. Prowl passes its opaque id only to the launched
+child as `PROWL_DISPATCH_ID` and appends the completion protocol to the effective prompt.
+The worker must report exactly one terminal receipt before ending its assigned turn:
+
+```bash
+prowl agents dispatch-complete --outcome succeeded --summary "Implemented and verified"
+prowl agents dispatch-complete --outcome failed --summary "Blocked by an invalid fixture"
+```
+
+The required summary must be one non-empty line with no control characters and at most 32 KiB
+of UTF-8. The command accepts no public dispatch id. Prowl reads the launch-scoped environment
+value and independently verifies the socket caller's process ancestry against the immutable launch
+pane. Repeating identical completion is safe; a conflicting retry is rejected. Unprompted
+Profile launches remain interactive and do not create a dispatch.
+
+The coordinator waits by exact id:
+
+```bash
+prowl agents wait --dispatch "$dispatch_id" --timeout 600 --json
+prowl agents wait --dispatch "$dispatch_id" --include-screen 40 --json
+```
+
+Only a successful receipt makes this command succeed. Failed, abandoned, gone,
+needs-input, incomplete-turn, and timeout states return structured nonzero errors with the
+immutable launch target and current receipt evidence. When `--include-screen` is requested,
+that stable screen evidence remains available under `.error.details.screen` on these nonzero
+outcomes. Pending receipts are memory-only,
+survive pane closure as retained `gone` records, never expire automatically, and are bounded
+to 256 records. A coordinator can explicitly stop tracking one without stopping its worker:
+
+```bash
+prowl agents dispatch-abandon --dispatch "$dispatch_id" --reason "Superseded assignment"
+```
+
+For state observation rather than task proof, wait on a pane condition:
+
+```bash
+prowl agents wait p7 --until blocked --min-confidence high --timeout 120 --json
+prowl agents wait "$pane" --until idle --include-screen 40 --json
+```
+
+Conditions are `idle`, `blocked`, `changed`, and `exit`. Results include their evidence
+`source` and `confidence`; `auto` may fall back to a heuristic result only after the pane has
+remained unchanged for two seconds. `--include-screen` samples the detection buffer until it
+is stable for 800 ms (or the two-second cap), then returns the requested trailing lines on
+both success and structured timeout/error details.
+Strict dispatch waits never accept a visual or idle-state substitute. Closing or killing the
+waiting CLI cancels its server-side subscription promptly. `workflow done` remains the only
+workflow-step completion command.
 
 ### `prowl profiles list`
 
@@ -544,7 +594,7 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `PROFILE_NOT_UNIQUE` | Several enabled Profiles have the exact name — use the Profile UUID from `profiles list`. |
 | `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code. Re-run `agents`. |
 | `SOURCE_REQUIRED` | A caller-owned command such as `agents signal` or selector-free `handoff` could not map the socket peer ancestry to a Prowl pane. Run it inside the source pane without tmux/detached wrappers, or use an explicit selector where that command permits one. |
-| `AGENT_GONE` | The caller pane closed before `agents signal` could record its event. |
+| `AGENT_GONE` | The meaning is mode-specific: a signal caller disappeared, a dispatch worker became terminal, or a generic condition target closed. Inspect `.error.details.mode`; dispatch details retain a record, while condition details retain the requested condition and exact surface observation. |
 | `BLOCKER_UNREADABLE` | A blocked screen was detected but Prowl could not safely extract its current interaction text. Re-run `agents read` or inspect with `read`. |
 | `SESSION_UNRESOLVED` / `RESULT_NOT_FOUND` / `RESULT_INCOMPLETE` / `RESULT_TOO_LARGE` | `agents read --result-only` could not provide one trustworthy complete result. Drop `--result-only` to retain the live snapshot and inspect `.data.result`. |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |

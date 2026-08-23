@@ -23,6 +23,7 @@ public struct LifecycleCommandPayload: Codable, Sendable, Equatable {
   public let anchor: TabTarget?
   public let direction: CreatePaneDirection?
   public let launch: LifecycleCommandLaunch?
+  public let dispatch: DispatchPendingRecord?
   public let target: TabTarget
 
   public init(
@@ -30,12 +31,14 @@ public struct LifecycleCommandPayload: Codable, Sendable, Equatable {
     anchor: TabTarget? = nil,
     direction: CreatePaneDirection? = nil,
     launch: LifecycleCommandLaunch? = nil,
+    dispatch: DispatchPendingRecord? = nil,
     target: TabTarget
   ) {
     self.resource = resource
     self.anchor = anchor
     self.direction = direction
     self.launch = launch
+    self.dispatch = dispatch
     self.target = target
   }
 }

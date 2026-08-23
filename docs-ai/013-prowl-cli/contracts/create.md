@@ -43,6 +43,12 @@ line is one `env -u` command with no assignment statement or shell builtin, so t
 runs in zsh, bash, and fish. `env -u` keeps the carrier out of the Profile process; the pane
 shell retains the reserved carrier for its lifetime. NUL bytes are rejected.
 
+Every prompted Profile launch is paired atomically with a pending dispatch; there is no
+opt-out. Prowl injects `PROWL_DISPATCH_ID` into the launched child only and appends the
+versioned completion instruction to the effective prompt. An unprompted Profile launch
+retains its interactive behavior and creates no dispatch. If launch, target snapshot, or
+dispatch binding fails, Prowl removes the new resource and cancels the unreturned receipt.
+
 Foreground profile launches select the destination worktree/tab and focus the returned pane.
 A background tab is created without changing the selected worktree, tab, or pane. A
 background split is inserted beside the resolved anchor without focusing it and without
@@ -111,6 +117,24 @@ an older app:
   }
 }
 ```
+
+When the Profile launch was prompted, success additionally requires a pending dispatch
+record. A newer CLI fails closed if an older app omits it, because the created worker would
+otherwise have no completion contract:
+
+```json
+{
+  "dispatch": {
+    "id": "opaque-dispatch-id",
+    "state": "pending",
+    "created_at": "2026-08-23T04:00:00.000Z"
+  }
+}
+```
+
+`dispatch` is absent for unprompted Profile launches and ordinary shell creation. The target
+returned alongside it is the immutable target retained by the dispatch store for later wait
+success and error payloads.
 
 ## Errors
 

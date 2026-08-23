@@ -91,4 +91,92 @@ final class AgentsCommandParsingTests: XCTestCase {
       try AgentsSignalCommand.parse(["needs-input", "--detail", String(repeating: "界", count: 10_923)])
     )
   }
+
+  func testDispatchCompleteParsesRequiredOutcomeAndSummaryFromImplicitContext() throws {
+    let command = try AgentsDispatchCompleteCommand.parse([
+      "--outcome", "succeeded",
+      "--summary", "Implemented and verified.",
+      "--json",
+    ])
+    let input = try command.makeInput(environment: [DispatchCompleteInput.environmentKey: "dispatch-1"])
+
+    XCTAssertEqual(input.dispatchID, "dispatch-1")
+    XCTAssertEqual(input.outcome, .succeeded)
+    XCTAssertEqual(input.summary, "Implemented and verified.")
+    XCTAssertTrue(command.options.json)
+  }
+
+  func testDispatchCompleteRejectsMissingContextInvalidOutcomeAndBoundedSummary() throws {
+    let missingContext = try AgentsDispatchCompleteCommand.parse([
+      "--outcome", "failed", "--summary", "SDK unavailable",
+    ])
+    XCTAssertThrowsError(try missingContext.makeInput(environment: [:])) {
+      XCTAssertEqual(($0 as? ExitError)?.code, CLIErrorCode.dispatchContextRequired)
+    }
+    XCTAssertThrowsError(
+      try AgentsDispatchCompleteCommand.parse(["--outcome", "cancelled", "--summary", "Nope"])
+    )
+    XCTAssertNoThrow(
+      try AgentsDispatchCompleteCommand.parse([
+        "--outcome", "failed", "--summary", String(repeating: "x", count: 32_768),
+      ])
+    )
+    XCTAssertThrowsError(
+      try AgentsDispatchCompleteCommand.parse([
+        "--outcome", "failed", "--summary", String(repeating: "界", count: 10_923),
+      ])
+    )
+  }
+
+  func testDispatchAbandonParsesIDAndReasonAndRejectsBoundViolations() throws {
+    let command = try AgentsDispatchAbandonCommand.parse([
+      "--dispatch", "dispatch-1", "--reason", "Worker returned to a shell.", "--json",
+    ])
+
+    XCTAssertEqual(command.dispatchID, "dispatch-1")
+    XCTAssertEqual(command.reason, "Worker returned to a shell.")
+    XCTAssertThrowsError(
+      try AgentsDispatchAbandonCommand.parse([
+        "--dispatch", "dispatch-1", "--reason", String(repeating: "\n", count: 1),
+      ])
+    )
+  }
+
+  func testWaitParsesDispatchModeWithExactScreenLineCount() throws {
+    let command = try AgentsWaitCommand.parse([
+      "--dispatch", "dispatch-1", "--timeout", "45", "--include-screen", "80", "--json",
+    ])
+    let input = try command.makeInput()
+
+    XCTAssertEqual(input.mode, .dispatch)
+    XCTAssertEqual(input.dispatchID, "dispatch-1")
+    XCTAssertNil(input.pane)
+    XCTAssertNil(input.condition)
+    XCTAssertEqual(input.timeoutSeconds, 45)
+    XCTAssertEqual(input.includeScreenLines, 80)
+  }
+
+  func testWaitParsesConditionModeAndExplicitAutoConfidence() throws {
+    let command = try AgentsWaitCommand.parse([
+      "p7", "--until", "changed", "--min-confidence", "auto",
+    ])
+    let input = try command.makeInput()
+
+    XCTAssertEqual(input.mode, .condition)
+    XCTAssertEqual(input.pane, "p7")
+    XCTAssertEqual(input.condition, .changed)
+    XCTAssertEqual(input.minimumConfidence, .auto)
+    XCTAssertEqual(input.timeoutSeconds, 600)
+  }
+
+  func testWaitRejectsModeConflictsMissingConditionAndBounds() throws {
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["p7", "--until", "idle", "--dispatch", "dispatch-1"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["--dispatch", "dispatch-1", "--until", "idle"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["p7"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["p7", "--until", "idle", "--timeout", "0"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["p7", "--until", "idle", "--timeout", "601"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["p7", "--until", "idle", "--include-screen", "0"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["p7", "--until", "idle", "--include-screen", "201"]))
+    XCTAssertThrowsError(try AgentsWaitCommand.parse(["--dispatch", "dispatch-1", "--min-confidence", "exact"]))
+  }
 }

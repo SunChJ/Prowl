@@ -12,14 +12,16 @@ struct CallerPaneResolverTests {
       CallerPaneResolver.pane(
         forCallerProcess: 100,
         paneByShellPID: [100: pane],
-        parentProcessID: { parents[$0] }
+        parentProcessID: { parents[$0] },
+        processStartDate: { _ in nil }
       ) == pane
     )
     #expect(
       CallerPaneResolver.pane(
         forCallerProcess: 400,
         paneByShellPID: [100: pane],
-        parentProcessID: { parents[$0] }
+        parentProcessID: { parents[$0] },
+        processStartDate: { _ in nil }
       ) == pane
     )
   }
@@ -31,14 +33,16 @@ struct CallerPaneResolverTests {
       CallerPaneResolver.pane(
         forCallerProcess: 400,
         paneByShellPID: [100: focusedButUnrelated],
-        parentProcessID: { _ in nil }
+        parentProcessID: { _ in nil },
+        processStartDate: { _ in nil }
       ) == nil
     )
     #expect(
       CallerPaneResolver.pane(
         forCallerProcess: 400,
         paneByShellPID: [100: focusedButUnrelated],
-        parentProcessID: { $0 }
+        parentProcessID: { $0 },
+        processStartDate: { _ in nil }
       ) == nil
     )
   }
@@ -50,14 +54,16 @@ struct CallerPaneResolverTests {
       CallerPaneResolver.pane(
         forCallerProcess: 100,
         paneByShellPID: [67: pane],
-        parentProcessID: { $0 - 1 }
+        parentProcessID: { $0 - 1 },
+        processStartDate: { _ in nil }
       ) == nil
     )
     #expect(
       CallerPaneResolver.pane(
         forCallerProcess: 100,
         paneByShellPID: [69: pane],
-        parentProcessID: { $0 - 1 }
+        parentProcessID: { $0 - 1 },
+        processStartDate: { _ in nil }
       ) == pane
     )
   }

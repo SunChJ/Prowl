@@ -20,6 +20,15 @@
       "$ref": "#/$defs/agentsSignalResponse"
     },
     {
+      "$ref": "#/$defs/agentsDispatchCompleteResponse"
+    },
+    {
+      "$ref": "#/$defs/agentsDispatchAbandonResponse"
+    },
+    {
+      "$ref": "#/$defs/agentsWaitResponse"
+    },
+    {
       "$ref": "#/$defs/profilesResponse"
     },
     {
@@ -66,6 +75,9 @@
         "message": {
           "type": "string",
           "minLength": 1
+        },
+        "details": {
+          "type": "object"
         }
       }
     },
@@ -179,6 +191,425 @@
         }
       }
     },
+    "dispatchPendingRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "const": "pending"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "dispatchCompletedRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "outcome",
+        "summary",
+        "created_at",
+        "completed_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "const": "completed"
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "dispatchGoneRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "created_at",
+        "gone_at",
+        "gone_reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "const": "gone"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gone_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gone_reason": {
+          "enum": [
+            "session_end",
+            "surface_closed"
+          ]
+        }
+      }
+    },
+    "dispatchAbandonedRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "created_at",
+        "abandoned_at",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "const": "abandoned"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "abandoned_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      }
+    },
+    "dispatchRecord": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dispatchPendingRecord"
+        },
+        {
+          "$ref": "#/$defs/dispatchCompletedRecord"
+        },
+        {
+          "$ref": "#/$defs/dispatchGoneRecord"
+        },
+        {
+          "$ref": "#/$defs/dispatchAbandonedRecord"
+        }
+      ]
+    },
+    "agentSignalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "source",
+        "confidence",
+        "at"
+      ],
+      "properties": {
+        "event": {
+          "enum": [
+            "turn-ended",
+            "needs-input",
+            "session-start",
+            "session-end",
+            "progress"
+          ]
+        },
+        "progress": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high",
+            "heuristic"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "claimed_origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "agentSignalChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "state",
+        "confidence",
+        "events",
+        "last_seen_at"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "enum": [
+            "observed",
+            "verified_live"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high",
+            "heuristic"
+          ]
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "turn-ended",
+              "needs-input",
+              "session-start",
+              "session-end",
+              "progress"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "last_seen_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "agentSignals": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "channels"
+          ],
+          "properties": {
+            "channels": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/agentSignalChannel"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "channels",
+            "last",
+            "last_binding"
+          ],
+          "properties": {
+            "channels": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/agentSignalChannel"
+              }
+            },
+            "last": {
+              "$ref": "#/$defs/agentSignalEvidence"
+            },
+            "last_binding": {
+              "enum": [
+                "current",
+                "unbound",
+                "stale"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "agentWaitObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "raw_state",
+        "source",
+        "confidence",
+        "at",
+        "revision"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "blocked",
+            "working",
+            "done",
+            "idle"
+          ]
+        },
+        "raw_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high",
+            "heuristic"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "agentWaitScreen": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "requested_lines",
+            "source",
+            "waited_ms",
+            "text",
+            "line_count",
+            "stabilized"
+          ],
+          "properties": {
+            "status": {
+              "const": "captured"
+            },
+            "requested_lines": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "source": {
+              "const": "detection"
+            },
+            "waited_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "text": {
+              "type": "string"
+            },
+            "line_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "stabilized": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "requested_lines",
+            "source",
+            "waited_ms"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "requested_lines": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "source": {
+              "const": "detection"
+            },
+            "waited_ms": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
     "lifecycleLaunch": {
       "type": "object",
       "additionalProperties": false,
@@ -218,6 +649,9 @@
             "launch": {
               "$ref": "#/$defs/lifecycleLaunch"
             },
+            "dispatch": {
+              "$ref": "#/$defs/dispatchPendingRecord"
+            },
             "target": {
               "$ref": "#/$defs/target"
             }
@@ -249,6 +683,9 @@
             },
             "launch": {
               "$ref": "#/$defs/lifecycleLaunch"
+            },
+            "dispatch": {
+              "$ref": "#/$defs/dispatchPendingRecord"
             },
             "target": {
               "$ref": "#/$defs/target"
@@ -603,6 +1040,9 @@
         },
         "session": {
           "$ref": "#/$defs/agentsSession"
+        },
+        "signals": {
+          "$ref": "#/$defs/agentSignals"
         }
       }
     },
@@ -753,6 +1193,232 @@
               "maxLength": 256
             }
           }
+        }
+      }
+    },
+    "agentsDispatchCompleteData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "receipt",
+        "replayed"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "receipt": {
+          "$ref": "#/$defs/dispatchCompletedRecord"
+        },
+        "replayed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "agentsDispatchAbandonData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "record",
+        "replayed"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "record": {
+          "$ref": "#/$defs/dispatchAbandonedRecord"
+        },
+        "replayed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "agentDispatchWaitData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "waited_ms",
+        "target",
+        "receipt",
+        "signals"
+      ],
+      "properties": {
+        "mode": {
+          "const": "dispatch"
+        },
+        "waited_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "receipt": {
+          "$ref": "#/$defs/dispatchCompletedRecord"
+        },
+        "signals": {
+          "$ref": "#/$defs/agentSignals"
+        },
+        "screen": {
+          "$ref": "#/$defs/agentWaitScreen"
+        }
+      }
+    },
+    "agentConditionWaitData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "condition",
+        "waited_ms",
+        "target",
+        "observation",
+        "signals"
+      ],
+      "properties": {
+        "mode": {
+          "const": "condition"
+        },
+        "condition": {
+          "enum": [
+            "idle",
+            "blocked",
+            "changed",
+            "exit"
+          ]
+        },
+        "waited_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "observation": {
+          "$ref": "#/$defs/agentWaitObservation"
+        },
+        "signals": {
+          "$ref": "#/$defs/agentSignals"
+        },
+        "screen": {
+          "$ref": "#/$defs/agentWaitScreen"
+        }
+      }
+    },
+    "agentsWaitData": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentDispatchWaitData"
+        },
+        {
+          "$ref": "#/$defs/agentConditionWaitData"
+        }
+      ]
+    },
+    "agentDispatchWaitErrorDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "waited_ms",
+        "target",
+        "record"
+      ],
+      "properties": {
+        "mode": {
+          "const": "dispatch"
+        },
+        "waited_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "record": {
+          "$ref": "#/$defs/dispatchRecord"
+        },
+        "observation": {
+          "$ref": "#/$defs/agentWaitObservation"
+        },
+        "signals": {
+          "$ref": "#/$defs/agentSignals"
+        },
+        "screen": {
+          "$ref": "#/$defs/agentWaitScreen"
+        }
+      }
+    },
+    "agentConditionWaitErrorDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "condition",
+        "waited_ms"
+      ],
+      "properties": {
+        "mode": {
+          "const": "condition"
+        },
+        "condition": {
+          "enum": [
+            "idle",
+            "blocked",
+            "changed",
+            "exit"
+          ]
+        },
+        "waited_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "observation": {
+          "$ref": "#/$defs/agentWaitObservation"
+        },
+        "signals": {
+          "$ref": "#/$defs/agentSignals"
+        },
+        "screen": {
+          "$ref": "#/$defs/agentWaitScreen"
+        }
+      }
+    },
+    "agentsWaitErrorDetails": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentDispatchWaitErrorDetails"
+        },
+        {
+          "$ref": "#/$defs/agentConditionWaitErrorDetails"
+        }
+      ]
+    },
+    "agentsWaitError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "$ref": "#/$defs/agentsWaitErrorDetails"
         }
       }
     },
@@ -1789,6 +2455,162 @@
             },
             "error": {
               "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsDispatchCompleteResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents.dispatch-complete"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.dispatch-complete.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentsDispatchCompleteData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents.dispatch-complete"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.dispatch-complete.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsDispatchAbandonResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents.dispatch-abandon"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.dispatch-abandon.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentsDispatchAbandonData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents.dispatch-abandon"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.dispatch-abandon.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsWaitResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents.wait"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.wait.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentsWaitData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents.wait"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.wait.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/agentsWaitError"
             }
           }
         }
