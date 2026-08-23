@@ -19,8 +19,9 @@ Implemented and fully validated on `feat/agent-dispatch-wait-s2`; draft PR [#718
   Generic pane waits implement idle/blocked/changed/exit, confidence thresholds, labelled
   two-second heuristic fallback, optional stable detection-screen evidence, overflow
   resubscription, and request cancellation cleanup.
-- Cooperative evidence is bound to PID plus process start time and current session where
-  available. Stale, mismatched, and unverifiable signals remain diagnostic. Existing
+- Cooperative evidence is bound to PID plus process start time and an exact/high current
+  session where available; medium session guesses remain diagnostic. Stale, mismatched, and
+  unverifiable signals remain diagnostic. Existing
   detected-agent JSON rows expose current-epoch signal channels without adding shell rows.
 - The socket server monitors peer EOF/extra input after the request frame and cancels the
   route instead of retaining a long-lived subscriber.

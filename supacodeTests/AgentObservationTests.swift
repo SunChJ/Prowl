@@ -238,6 +238,105 @@ struct AgentObservationTests {
     #expect(diagnostics.lastBinding == .current)
   }
 
+  @Test func mediumSessionGuessDoesNotRejectCurrentGenerationSignal() throws {
+    let fixture = makeFixture()
+    let processID = getpid()
+    let startedAt = try #require(ProcessDetection.processStartDate(pid: processID))
+    let state = PaneAgentState(
+      detectedAgent: .pi,
+      agentProcessID: processID,
+      session: AgentSession(
+        id: "guessed-session",
+        transcriptPath: nil,
+        source: .recentFile,
+        confidence: .medium
+      ),
+      state: .idle
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = state
+    fixture.state.emitAgentEntry(
+      surfaceID: fixture.surfaceID,
+      tabId: fixture.tabID,
+      state: state
+    )
+    let signal = AgentSignal(
+      kind: .turnEnded,
+      source: .hook(runtime: .pi, event: "agent_end"),
+      confidence: .exact,
+      timestamp: Date(timeIntervalSince1970: 1_000),
+      sessionID: "actual-session",
+      detail: nil,
+      claimedOrigin: nil
+    )
+    let caller = CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: [
+        AgentProcessGeneration(pid: processID, startedAt: startedAt)
+      ]
+    )
+
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
+    #expect(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).lastBinding == .current)
+  }
+
+  @Test func mediumToHighSessionCorrectionKeepsSessionlessSignalCurrent() throws {
+    let fixture = makeFixture()
+    let processID = getpid()
+    let startedAt = try #require(ProcessDetection.processStartDate(pid: processID))
+    let mediumState = PaneAgentState(
+      detectedAgent: .pi,
+      agentProcessID: processID,
+      session: AgentSession(
+        id: "guessed-session",
+        transcriptPath: nil,
+        source: .recentFile,
+        confidence: .medium
+      ),
+      state: .idle
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = mediumState
+    fixture.state.emitAgentEntry(
+      surfaceID: fixture.surfaceID,
+      tabId: fixture.tabID,
+      state: mediumState
+    )
+    let signal = AgentSignal(
+      kind: .turnEnded,
+      source: .cooperativeCLI,
+      confidence: .exact,
+      timestamp: Date(timeIntervalSince1970: 1_000),
+      sessionID: nil,
+      detail: nil,
+      claimedOrigin: nil
+    )
+    let caller = CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: [
+        AgentProcessGeneration(pid: processID, startedAt: startedAt)
+      ]
+    )
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
+
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = PaneAgentState(
+      detectedAgent: .pi,
+      agentProcessID: processID,
+      session: AgentSession(
+        id: "actual-session",
+        transcriptPath: nil,
+        source: .transcriptMatch,
+        confidence: .high
+      ),
+      state: .idle
+    )
+
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
+    #expect(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).lastBinding == .current)
+  }
+
   @Test func boundedOverflowIsExplicitAndRecoverableByResubscription() async throws {
     let fixture = makeFixture(bufferCapacity: 1)
     let stream = fixture.manager.observeAgentState(surfaceID: fixture.surfaceID)

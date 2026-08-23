@@ -121,9 +121,11 @@ ended, not that a workflow step completed; only `prowl workflow done` will advan
 workflow, and only a matching `agents dispatch-complete` can complete an exact dispatch.
 
 Signal eligibility is generation-aware. Prowl binds evidence to the detected process's PID
-**and process start time**, plus its current session when available. Evidence from a reused
-PID, a replaced session, a delayed child, or an unverifiable sessionless sender stays
-diagnostic and cannot advance a wait. `prowl agents --json` exposes current-epoch channels
+**and process start time**, plus its current session only when that attribution is exact or
+high confidence. A medium-confidence session guess remains diagnostic and never rotates an
+evidence epoch. Evidence from a reused PID, a replaced session, a delayed child, or an
+unverifiable sessionless sender stays diagnostic and cannot advance a wait.
+`prowl agents --json` exposes current-epoch channels
 under each existing detected-agent row's `signals`; evidence-only shell panes are not added
 to the roster.
 

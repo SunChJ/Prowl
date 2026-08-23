@@ -348,7 +348,10 @@ final class WorktreeTerminalManager {
           AgentProcessGeneration(pid: pid, startedAt: $0)
         }
       }
-      return (generation, paneState.session?.id)
+      let trustedSessionID = paneState.session.flatMap {
+        $0.confidence == .medium ? nil : $0.id
+      }
+      return (generation, trustedSessionID)
     }
     return (nil, nil)
   }

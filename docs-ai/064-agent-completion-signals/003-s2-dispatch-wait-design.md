@@ -331,8 +331,9 @@ Surface attribution is enough to accept and retain a cooperative signal, but not
 let that signal satisfy an epoch-sensitive wait. Such a signal is match-eligible only when
 its caller ancestry contains the current `AgentProcessGeneration`. A supplied session id
 must additionally match the independently resolved current `AgentSession.id` when one is
-available. If no active generation can be proved, the signal remains diagnostic and cannot
-resolve generic or dispatch wait.
+available at exact/high confidence. Medium-confidence session guesses remain diagnostic and
+cannot bind or rotate an evidence epoch. If no active generation can be proved, the signal
+remains diagnostic and cannot resolve generic or dispatch wait.
 
 The first eligible non-empty session id may bind the current epoch. After an epoch is bound,
 only an eligible `session-start` carrying a different non-empty id that also matches the
