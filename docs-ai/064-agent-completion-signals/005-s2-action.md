@@ -20,8 +20,9 @@ Implemented and fully validated on `feat/agent-dispatch-wait-s2`; draft PR [#718
   two-second heuristic fallback, optional stable detection-screen evidence on success and
   structured errors, overflow resubscription, and request cancellation cleanup.
 - Cooperative evidence is bound to PID plus process start time and an exact/high current
-  session where available; medium session guesses remain diagnostic. The first dispatch process
-  generation must have started within ten seconds of launch binding, preventing a missed
+  session where available; medium session guesses remain diagnostic. Only a transition into
+  normalized working invalidates terminal evidence; title churn while already working does not.
+  The first dispatch process generation must have started within ten seconds of launch binding, preventing a missed
   short-lived runtime from lending its epoch to a later agent. Stale, mismatched, and
   unverifiable signals remain diagnostic. Existing
   detected-agent JSON rows expose current-epoch signal channels without adding shell rows.

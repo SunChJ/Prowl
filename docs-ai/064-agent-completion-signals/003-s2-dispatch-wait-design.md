@@ -351,8 +351,9 @@ prefer losing an optimization over accepting stale evidence.
 
 An eligible `turn-ended` activates idle evidence and invalidates blocked evidence; an
 eligible `needs-input` does the inverse. Later `progress`, `session-start`, or normalized
-working activity invalidates both terminal facts without letting heuristic activity itself
-satisfy a deterministic wait.
+transition into normalized working activity invalidates both terminal facts without letting
+heuristic activity itself satisfy a deterministic wait. Metadata-only emissions while already
+working, such as an animated title, do not constitute new activity.
 An eligible `session-end` invalidates both and activates exit. Therefore an old terminal
 snapshot may return immediately only when it is from the current epoch and no later activity
 revision has invalidated it. Diagnostic/unbound signals may appear in error evidence but

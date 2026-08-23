@@ -77,6 +77,20 @@ struct AgentEvidenceEpochTests {
     #expect(afterSession.lastBinding == .stale)
   }
 
+  @Test func workingMetadataChurnDoesNotInvalidateTerminalEvidence() {
+    let store = AgentObservationStore(bufferCapacity: 8)
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 42, startedAt: Date(timeIntervalSince1970: 1))
+    store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+    store.publishAgentChanged(agentEntry(surfaceID: surfaceID, title: "Working A"))
+    let terminal = signal(.turnEnded, source: .cooperativeCLI)
+    store.publishSignal(terminal, binding: .current, surfaceID: surfaceID)
+
+    store.publishAgentChanged(agentEntry(surfaceID: surfaceID, title: "Working B"))
+
+    #expect(store.currentSignalEvidence(surfaceID: surfaceID).activeTerminal == terminal)
+  }
+
   @Test func unboundSignalIsDiagnosticAndNeverCreatesObservedCoverage() {
     let store = AgentObservationStore(bufferCapacity: 8)
     let surfaceID = UUID()
@@ -105,6 +119,24 @@ struct AgentEvidenceEpochTests {
           AgentProcessGeneration(pid: 300, startedAt: dates[300]!),
           AgentProcessGeneration(pid: 200, startedAt: dates[200]!),
         ])
+  }
+
+  private func agentEntry(surfaceID: UUID, title: String) -> ActiveAgentEntry {
+    ActiveAgentEntry(
+      id: surfaceID,
+      worktreeID: "wt",
+      worktreeName: "main",
+      workingDirectory: URL(fileURLWithPath: "/Projects/Prowl"),
+      tabID: TerminalTabID(rawValue: UUID()),
+      paneTitle: title,
+      surfaceID: surfaceID,
+      paneIndex: 0,
+      iconLookupToken: "pi",
+      agent: .pi,
+      rawState: .working,
+      displayState: .working,
+      lastChangedAt: Date(timeIntervalSince1970: 10)
+    )
   }
 
   private func signal(_ kind: AgentSignal.Kind, source: AgentSignal.Source) -> AgentSignal {

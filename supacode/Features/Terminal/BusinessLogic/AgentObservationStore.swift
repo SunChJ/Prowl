@@ -95,16 +95,21 @@ final class AgentObservationStore {
   /// Callers must establish that the surface is live before publishing. The
   /// manager owns that invariant: detector callbacks come only from live state,
   /// and cooperative signals pass its `containsSurface` guard.
-  func publishAgentChanged(_ entry: ActiveAgentEntry) {
+  @discardableResult
+  func publishAgentChanged(_ entry: ActiveAgentEntry) -> Bool {
     var record = records[entry.surfaceID] ?? SurfaceRecord()
-    guard record.agent != entry else { return }
+    guard record.agent != entry else { return false }
+    let beganWorking =
+      record.agent.map { $0.displayState != .working && entry.displayState == .working }
+      ?? false
     record.agent = entry
-    if entry.displayState == .working {
+    if beganWorking {
       record.activeTerminalSignal = nil
     }
     record.revision &+= 1
     records[entry.surfaceID] = record
     publish(.changed(entry), surfaceID: entry.surfaceID)
+    return beganWorking
   }
 
   func publishAgentRemoved(surfaceID: UUID) {

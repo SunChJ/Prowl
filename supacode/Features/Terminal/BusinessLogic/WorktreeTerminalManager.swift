@@ -511,8 +511,8 @@ final class WorktreeTerminalManager {
     }
     state.onAgentEntryChanged = { [weak self] entry in
       guard let self else { return }
-      agentObservationStore.publishAgentChanged(entry)
-      if entry.displayState == .working {
+      let beganWorking = agentObservationStore.publishAgentChanged(entry)
+      if beganWorking {
         let evidence = currentAgentEvidence(surfaceID: entry.surfaceID)
         agentObservationStore.updateEvidenceEpoch(
           surfaceID: entry.surfaceID,

@@ -114,6 +114,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — The injected completion protocol now states that summaries are single-line and
   control-free, matching validation instead of letting real agents discover the constraint only
   after a rejected final tool action.
+- 2026-08-23 — Review follow-up distinguished a real transition into working from metadata churn
+  while already working. Animated title emissions no longer erase fresh exact terminal evidence
+  or clear dispatch attention/incomplete replay.
 
 ## Fresh Debug E2E
 
