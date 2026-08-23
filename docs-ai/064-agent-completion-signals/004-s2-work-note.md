@@ -57,9 +57,11 @@ recorded in the existing 064 plan/action documents.
 - Focused tests for the final audit passed 22/22; the final full gate passed 2453 reported /
   2455 verified tests with zero failures.
 - Durable skill governance forbids editing skill files directly in this environment. Skill
-  Workshop proposal `prowl-cli-20260823-a59b46f453` contains the S2 command/rubric update but
-  remains pending after the Discord approval lifecycle expired twice. No unmanaged skill file
-  was changed; this is the only delivery item awaiting owner-side workshop approval.
+  Workshop proposal `prowl-cli-20260823-a59b46f453` was applied after explicit owner
+  authorization and installed the S2 command/rubric update as the managed workspace
+  `prowl-cli` skill with a clean scan. Workshop has no repository-target selector, so the
+  tracked `skills/prowl-cli/SKILL.md` copy remains unchanged; repository bundling is the one
+  remaining delivery gap rather than an approval wait.
 
 ## Progress log
 
@@ -88,6 +90,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Final semantic audit added late-evidence replay, launch-bound evidence-epoch
   enforcement, resolver-failure rollback, and buffered-evidence timeout priority. Re-ran every
   gate successfully after those changes; the final app build had zero errors and warnings.
+- 2026-08-23 — Applied Skill Workshop proposal `prowl-cli-20260823-a59b46f453` after owner
+  authorization. The managed workspace skill is live and scan-clean; direct synchronization
+  into the repository copy remains prohibited by the current Workshop target model.
 
 ## Fresh Debug E2E
 
