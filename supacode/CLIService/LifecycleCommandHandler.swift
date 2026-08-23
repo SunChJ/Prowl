@@ -16,6 +16,30 @@ struct CLIProfileLaunchRequest: Sendable, Equatable {
   /// Present only for a CLI prompted launch. Internal launchers opt in
   /// explicitly rather than inheriting the dispatch protocol by accident.
   let dispatchID: String?
+  /// Frozen async preflight result. Nil before preparation and in legacy unit seams.
+  let preparedLaunch: PreparedAgentProfileLaunch?
+
+  init(
+    resource: LifecycleResource,
+    target: TabResolvedTarget,
+    profile: AgentProfile,
+    prompt: String?,
+    path: String?,
+    direction: CreatePaneDirection?,
+    background: Bool,
+    dispatchID: String?,
+    preparedLaunch: PreparedAgentProfileLaunch? = nil
+  ) {
+    self.resource = resource
+    self.target = target
+    self.profile = profile
+    self.prompt = prompt
+    self.path = path
+    self.direction = direction
+    self.background = background
+    self.dispatchID = dispatchID
+    self.preparedLaunch = preparedLaunch
+  }
 }
 
 private enum CLIProfileLookupError: Error {
@@ -70,6 +94,8 @@ enum CLIProfileLaunchFailure: Error, Equatable, Sendable {
         "Failed to create a tab for Agent Profile “\(profile.name)”."
       case .launchedSurfaceMissing:
         "The tab for Agent Profile “\(profile.name)” was created without a terminal surface."
+      case .hookRegistrationFailed:
+        "The managed signal channel for Agent Profile “\(profile.name)” could not be registered."
       }
     return .createFailed(message)
   }
@@ -83,6 +109,8 @@ final class LifecycleCommandHandler: CommandHandler {
   typealias CreateTabProvider = @MainActor (TabResolvedTarget, String?) -> TabResolvedTarget?
   typealias CreatePaneProvider = @MainActor (TabResolvedTarget, CreatePaneDirection) -> TabResolvedTarget?
   typealias ProfilesProvider = @MainActor () -> [AgentProfile]
+  typealias PrepareProfileLaunchProvider =
+    @MainActor (CLIProfileLaunchRequest) async -> Result<CLIProfileLaunchRequest, CLIProfileLaunchFailure>
   typealias ProfileLaunchProvider =
     @MainActor (CLIProfileLaunchRequest) -> Result<TabResolvedTarget, CLIProfileLaunchFailure>
   typealias IssueDispatchProvider =
@@ -99,6 +127,7 @@ final class LifecycleCommandHandler: CommandHandler {
   private let createTab: CreateTabProvider
   private let createPane: CreatePaneProvider
   private let profiles: ProfilesProvider
+  private let prepareAgentProfile: PrepareProfileLaunchProvider
   private let launchAgentProfile: ProfileLaunchProvider
   private let issueDispatch: IssueDispatchProvider
   private let bindDispatch: BindDispatchProvider
@@ -113,6 +142,7 @@ final class LifecycleCommandHandler: CommandHandler {
     createTab: @escaping CreateTabProvider,
     createPane: @escaping CreatePaneProvider,
     profiles: @escaping ProfilesProvider = { [] },
+    prepareAgentProfile: @escaping PrepareProfileLaunchProvider = { .success($0) },
     launchAgentProfile: @escaping ProfileLaunchProvider = {
       _ in .failure(.createFailed("Failed to launch the Agent Profile."))
     },
@@ -128,6 +158,7 @@ final class LifecycleCommandHandler: CommandHandler {
     self.createTab = createTab
     self.createPane = createPane
     self.profiles = profiles
+    self.prepareAgentProfile = prepareAgentProfile
     self.launchAgentProfile = launchAgentProfile
     self.issueDispatch = issueDispatch
     self.bindDispatch = bindDispatch
@@ -137,11 +168,10 @@ final class LifecycleCommandHandler: CommandHandler {
     self.closePane = closePane
   }
 
-  // swiftlint:disable:next async_without_await
   func handle(envelope: CommandEnvelope) async -> CommandResponse {
     switch envelope.command {
     case .create(let input):
-      return handleCreate(input)
+      return await handleCreate(input)
     case .close(let input):
       return handleClose(input)
     default:
@@ -150,7 +180,7 @@ final class LifecycleCommandHandler: CommandHandler {
     }
   }
 
-  private func handleCreate(_ input: CreateInput) -> CommandResponse {
+  private func handleCreate(_ input: CreateInput) async -> CommandResponse {
     if let prompt = input.launch?.prompt {
       if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return errorResponse(
@@ -176,13 +206,13 @@ final class LifecycleCommandHandler: CommandHandler {
     }
     switch input.resource {
     case .tab:
-      return handleCreateTab(input)
+      return await handleCreateTab(input)
     case .pane:
-      return handleCreatePane(input)
+      return await handleCreatePane(input)
     }
   }
 
-  private func handleCreateTab(_ input: CreateInput) -> CommandResponse {
+  private func handleCreateTab(_ input: CreateInput) async -> CommandResponse {
     guard case .worktree = input.selector, input.direction == nil else {
       return errorResponse(
         command: "create",
@@ -211,7 +241,7 @@ final class LifecycleCommandHandler: CommandHandler {
       )
     }
     if let launch = input.launch {
-      return handleProfileLaunch(
+      return await handleProfileLaunch(
         input: input,
         launch: launch,
         target: target,
@@ -224,7 +254,7 @@ final class LifecycleCommandHandler: CommandHandler {
     return success(command: "create", resource: .tab, target: createdTarget)
   }
 
-  private func handleCreatePane(_ input: CreateInput) -> CommandResponse {
+  private func handleCreatePane(_ input: CreateInput) async -> CommandResponse {
     guard case .pane = input.selector, input.path == nil, let direction = input.direction else {
       return errorResponse(
         command: "create",
@@ -245,7 +275,7 @@ final class LifecycleCommandHandler: CommandHandler {
     }
 
     if let launch = input.launch {
-      return handleProfileLaunch(
+      return await handleProfileLaunch(
         input: input,
         launch: launch,
         target: anchor,
@@ -269,7 +299,7 @@ final class LifecycleCommandHandler: CommandHandler {
     launch: CreateLaunchInput,
     target: TabResolvedTarget,
     path: String?
-  ) -> CommandResponse {
+  ) async -> CommandResponse {
     let profile: AgentProfile
     switch resolveProfile(launch.profile) {
     case .success(let resolved):
@@ -290,31 +320,29 @@ final class LifecycleCommandHandler: CommandHandler {
       background: input.background,
       dispatchID: nil
     )
-    let dispatch: DispatchPendingRecord?
-    if launch.prompt != nil {
-      switch issueDispatch() {
-      case .success(let record):
-        dispatch = record
-      case .failure:
-        return errorResponse(
-          command: "create",
-          code: CLIErrorCode.dispatchCapacityExceeded,
-          message: "All dispatch receipt slots are occupied by pending work; "
-            + "complete or abandon a dispatch before launching another prompted task."
-        )
-      }
-    } else {
-      dispatch = nil
+    let preparation = await preparedProfileRequest(request)
+    if let response = preparation.response { return response }
+    guard let preparedRequest = preparation.request else {
+      return errorResponse(
+        command: "create",
+        code: CLIErrorCode.createFailed,
+        message: "Failed to prepare the Agent Profile launch."
+      )
     }
+
+    let dispatchResult = issuedDispatch(prompt: launch.prompt)
+    if let response = dispatchResult.response { return response }
+    let dispatch = dispatchResult.record
     let pairedRequest = CLIProfileLaunchRequest(
-      resource: request.resource,
-      target: request.target,
-      profile: request.profile,
-      prompt: request.prompt,
-      path: request.path,
-      direction: request.direction,
-      background: request.background,
-      dispatchID: dispatch?.id
+      resource: preparedRequest.resource,
+      target: preparedRequest.target,
+      profile: preparedRequest.profile,
+      prompt: preparedRequest.prompt,
+      path: preparedRequest.path,
+      direction: preparedRequest.direction,
+      background: preparedRequest.background,
+      dispatchID: dispatch?.id,
+      preparedLaunch: preparedRequest.preparedLaunch
     )
     let createdTarget: TabResolvedTarget
     switch launchAgentProfile(pairedRequest) {
@@ -352,8 +380,42 @@ final class LifecycleCommandHandler: CommandHandler {
         profileName: profile.name,
         agent: profile.runtime.agent.rawValue
       ),
-      dispatch: dispatch
+      dispatch: dispatch,
+      warnings: preparedRequest.preparedLaunch?.warnings
     )
+  }
+
+  private func preparedProfileRequest(
+    _ request: CLIProfileLaunchRequest
+  ) async -> (request: CLIProfileLaunchRequest?, response: CommandResponse?) {
+    switch await prepareAgentProfile(request) {
+    case .success(let prepared):
+      return (prepared, nil)
+    case .failure(.invalidArgument(let message)):
+      return (nil, errorResponse(command: "create", code: CLIErrorCode.invalidArgument, message: message))
+    case .failure(.createFailed(let message)):
+      return (nil, errorResponse(command: "create", code: CLIErrorCode.createFailed, message: message))
+    }
+  }
+
+  private func issuedDispatch(
+    prompt: String?
+  ) -> (record: DispatchPendingRecord?, response: CommandResponse?) {
+    guard prompt != nil else { return (nil, nil) }
+    switch issueDispatch() {
+    case .success(let record):
+      return (record, nil)
+    case .failure:
+      return (
+        nil,
+        errorResponse(
+          command: "create",
+          code: CLIErrorCode.dispatchCapacityExceeded,
+          message: "All dispatch receipt slots are occupied by pending work; "
+            + "complete or abandon a dispatch before launching another prompted task."
+        )
+      )
+    }
   }
 
   private func resolveProfile(_ reference: String) -> Result<AgentProfile, CLIProfileLookupError> {
@@ -444,7 +506,8 @@ final class LifecycleCommandHandler: CommandHandler {
     anchor: TabResolvedTarget? = nil,
     direction: CreatePaneDirection? = nil,
     launch: LifecycleCommandLaunch? = nil,
-    dispatch: DispatchPendingRecord? = nil
+    dispatch: DispatchPendingRecord? = nil,
+    warnings: [LifecycleCommandWarning]? = nil
   ) -> CommandResponse {
     do {
       return try CommandResponse(
@@ -458,6 +521,7 @@ final class LifecycleCommandHandler: CommandHandler {
             direction: direction,
             launch: launch,
             dispatch: dispatch,
+            warnings: warnings,
             target: makePayloadTarget(from: target)
           )
         )

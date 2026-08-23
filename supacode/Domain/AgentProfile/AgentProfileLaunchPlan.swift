@@ -1,5 +1,19 @@
 import Foundation
 
+nonisolated struct AgentHookResources: Equatable, Sendable {
+  let bundledCLIPath: String
+  let socketPath: String
+}
+
+nonisolated struct AgentHookLaunchRegistration: Equatable, Sendable {
+  let token: String
+  let runtime: AgentNativeHookRuntime
+  let launchCWD: URL
+  let nativeEvents: [String: AgentSignalEvent]
+  let coveredEvents: [AgentSignalEvent]
+  let forwardingRecord: CodexForwardingRecord?
+}
+
 /// The compiled result of resolving a profile for one launch (docs-ai 053):
 /// every decision is already made, downstream layers only execute. The same
 /// plan feeds the settings editor's launch preview and the actual launch.
@@ -8,6 +22,11 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   let profileName: String
   let runtime: AgentProfileRuntime
   let invocation: AgentInvocation
+  /// Argv index -> owner-controlled surface carrier. This generalizes the
+  /// prompted-start carrier to large native hook settings/config arguments.
+  let argumentCarriers: [Int: String]
+  /// Present only on the execution copy immediately before surface creation.
+  let hookRegistration: AgentHookLaunchRegistration?
   /// `env(1)` assignment tokens typed ahead of the invocation. The whole
   /// environment patch is launch-scoped (docs-ai 053/006): it exists for the
   /// launched agent process only — the pane's shell keeps the user's normal
@@ -35,6 +54,8 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     profileName: String,
     runtime: AgentProfileRuntime,
     invocation: AgentInvocation,
+    argumentCarriers: [Int: String] = [:],
+    hookRegistration: AgentHookLaunchRegistration? = nil,
     commandEnvironmentTokens: [String],
     placement: AgentProfilePlacement,
     splitDirection: UserCustomSplitDirection,
@@ -46,6 +67,8 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     self.profileName = profileName
     self.runtime = runtime
     self.invocation = invocation
+    self.argumentCarriers = argumentCarriers
+    self.hookRegistration = hookRegistration
     self.commandEnvironmentTokens = commandEnvironmentTokens
     self.placement = placement
     self.splitDirection = splitDirection
@@ -61,15 +84,26 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     let promptCarrier =
       surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == nil
       ? nil : AgentProfileLaunchPlanner.promptCarrierName
+    var replacements = argumentCarriers
+    if let promptCarrier, !invocation.arguments.isEmpty {
+      replacements[invocation.arguments.index(before: invocation.arguments.endIndex)] = promptCarrier
+    }
     let invocationInput = invocation.terminalInput(
-      replacingFinalArgumentWithEnvironmentVariable: promptCarrier
+      replacingArgumentsWithEnvironmentVariables: replacements
     )
     var environmentTokens = commandEnvironmentTokens
-    let carrierNames = [
+    let knownCarriers = [
       promptCarrier,
       surfaceEnvironment[AgentProfileLaunchPlanner.dispatchCarrierName] == nil
         ? nil : AgentProfileLaunchPlanner.dispatchCarrierName,
+      surfaceEnvironment[AgentProfileLaunchPlanner.hookTokenCarrierName] == nil
+        ? nil : AgentProfileLaunchPlanner.hookTokenCarrierName,
+      surfaceEnvironment[AgentProfileLaunchPlanner.hookSocketCarrierName] == nil
+        ? nil : AgentProfileLaunchPlanner.hookSocketCarrierName,
+      surfaceEnvironment[AgentProfileLaunchPlanner.hookForwardCarrierName] == nil
+        ? nil : AgentProfileLaunchPlanner.hookForwardCarrierName,
     ].compactMap { $0 }
+    let carrierNames = Set(knownCarriers + Array(argumentCarriers.values)).sorted()
     for carrier in carrierNames.reversed() {
       environmentTokens.insert(contentsOf: ["-u", carrier], at: 0)
     }
@@ -78,6 +112,94 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   }
 
   var previewText: String { terminalInput }
+
+  func applyingManagedHook(
+    _ prepared: AgentHookPreparedInvocation,
+    resources: AgentHookResources,
+    launchCWD: URL,
+    token: String,
+    nativeEvents: [String: AgentSignalEvent] = [:],
+    coveredEvents: [AgentSignalEvent],
+    forwardingRecord: CodexForwardingRecord? = nil
+  ) -> AgentProfileLaunchPlan {
+    guard let runtime = AgentNativeHookRuntime(rawValue: runtime.rawValue) else { return self }
+    var environment = surfaceEnvironment
+    var carriers: [Int: String] = [:]
+    for (offset, entry) in prepared.argumentValues.sorted(by: { $0.key < $1.key }).enumerated() {
+      let carrier = "PROWL_LAUNCH_HOOK_ARG_\(offset)"
+      carriers[entry.key] = carrier
+      environment[carrier] = entry.value
+    }
+    environment[AgentProfileLaunchPlanner.hookTokenCarrierName] = token
+    environment[AgentProfileLaunchPlanner.hookSocketCarrierName] = resources.socketPath
+    var commandTokens =
+      commandEnvironmentTokens + [
+        "\(AgentNativeHookInput.tokenEnvironmentKey)=\"$\(AgentProfileLaunchPlanner.hookTokenCarrierName)\"",
+        "\(ProwlSocket.environmentKey)=\"$\(AgentProfileLaunchPlanner.hookSocketCarrierName)\"",
+      ]
+    if let forwardingRecord {
+      environment[AgentProfileLaunchPlanner.hookForwardCarrierName] = forwardingRecord.locator.path(
+        percentEncoded: false
+      )
+      commandTokens.append(
+        "\(AgentNativeHookInput.forwardRecordEnvironmentKey)=\"$\(AgentProfileLaunchPlanner.hookForwardCarrierName)\""
+      )
+    }
+    return AgentProfileLaunchPlan(
+      profileID: profileID,
+      profileName: profileName,
+      runtime: self.runtime,
+      invocation: prepared.invocation,
+      argumentCarriers: carriers,
+      hookRegistration: AgentHookLaunchRegistration(
+        token: token,
+        runtime: runtime,
+        launchCWD: launchCWD.standardizedFileURL,
+        nativeEvents: nativeEvents,
+        coveredEvents: coveredEvents,
+        forwardingRecord: forwardingRecord
+      ),
+      commandEnvironmentTokens: commandTokens,
+      placement: placement,
+      splitDirection: splitDirection,
+      surfaceEnvironment: environment,
+      dedicatedHome: dedicatedHome,
+      sessionConfigRoot: sessionConfigRoot
+    )
+  }
+
+  func attachingDispatch(id: String, userPrompt: String) throws -> AgentProfileLaunchPlan {
+    guard !id.isEmpty, !id.contains("\0"), !userPrompt.contains("\0"),
+      !invocation.arguments.isEmpty,
+      surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] != nil
+    else {
+      throw AgentProfileLaunchPlanError.dispatchRequiresPrompt
+    }
+    let renderedPrompt = AgentDispatchPrompt.render(userPrompt: userPrompt)
+    var arguments = invocation.arguments
+    arguments[arguments.index(before: arguments.endIndex)] = renderedPrompt
+    var environment = surfaceEnvironment
+    environment[AgentProfileLaunchPlanner.promptCarrierName] = renderedPrompt
+    environment[AgentProfileLaunchPlanner.dispatchCarrierName] = id
+    var commandTokens = commandEnvironmentTokens
+    commandTokens.append(
+      "\(DispatchCompleteInput.environmentKey)=\"$\(AgentProfileLaunchPlanner.dispatchCarrierName)\""
+    )
+    return AgentProfileLaunchPlan(
+      profileID: profileID,
+      profileName: profileName,
+      runtime: runtime,
+      invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),
+      argumentCarriers: argumentCarriers,
+      hookRegistration: hookRegistration,
+      commandEnvironmentTokens: commandTokens,
+      placement: placement,
+      splitDirection: splitDirection,
+      surfaceEnvironment: environment,
+      dedicatedHome: dedicatedHome,
+      sessionConfigRoot: sessionConfigRoot
+    )
+  }
 }
 
 /// One deterministic profile launch request shared by the CLI, workflow runner,
@@ -96,19 +218,33 @@ nonisolated struct AgentProfileLaunchRequest: Equatable, Sendable {
   let plan: AgentProfileLaunchPlan
   let placement: Placement
   let workingDirectoryOverride: URL?
+  let inheritanceAnchor: UUID?
   let title: String?
 
   init(
     plan: AgentProfileLaunchPlan,
     placement: Placement,
     workingDirectoryOverride: URL? = nil,
+    inheritanceAnchor: UUID? = nil,
     title: String? = nil
   ) {
     self.plan = plan
     self.placement = placement
     self.workingDirectoryOverride = workingDirectoryOverride
+    self.inheritanceAnchor = inheritanceAnchor
     self.title = title
   }
+}
+
+nonisolated struct FrozenAgentProfileLaunchContext: Equatable, Sendable {
+  let request: AgentProfileLaunchRequest
+  let inheritedCWD: URL
+  let anchorSurfaceID: UUID?
+}
+
+nonisolated struct PreparedAgentProfileLaunch: Equatable, Sendable {
+  let context: FrozenAgentProfileLaunchContext
+  let warnings: [LifecycleCommandWarning]
 }
 
 nonisolated struct LaunchedSurface: Equatable, Sendable {
@@ -122,6 +258,7 @@ nonisolated enum AgentProfileLaunchError: Error, Equatable, Sendable {
   case splitCreationFailed(SplitCreationError)
   case tabCreationFailed
   case launchedSurfaceMissing(TerminalTabID)
+  case hookRegistrationFailed
 }
 
 /// Which env variable names a profile override may set, shared by the planner
@@ -268,6 +405,9 @@ nonisolated enum AgentProfileLaunchPlanner {
   /// that child, so neither the pane shell nor a later manual runtime receives
   /// a stale public dispatch context.
   static let dispatchCarrierName = "PROWL_LAUNCH_DISPATCH"
+  static let hookTokenCarrierName = "PROWL_LAUNCH_HOOK_TOKEN"
+  static let hookSocketCarrierName = "PROWL_LAUNCH_HOOK_SOCKET"
+  static let hookForwardCarrierName = "PROWL_LAUNCH_HOOK_FORWARD"
 
   /// Resolves a profile into one launch plan. Pure: no filesystem access —
   /// home provisioning happens at the launch boundary, not here.

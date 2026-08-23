@@ -1,3 +1,4 @@
+import Clocks
 import Foundation
 import Testing
 
@@ -169,6 +170,11 @@ struct CLILifecycleCommandHandlerTests {
       createTab: { _, _ in nil },
       createPane: { _, _ in nil },
       profiles: { [profile] },
+      prepareAgentProfile: { request in
+        lifecycle.append("preflight")
+        #expect(request.dispatchID == nil)
+        return .success(request)
+      },
       launchAgentProfile: { request in
         lifecycle.append("launch")
         launchRequest = request
@@ -208,7 +214,7 @@ struct CLILifecycleCommandHandlerTests {
     #expect(launchRequest?.prompt == "Review the diff.")
     #expect(launchRequest?.dispatchID == "d1")
     #expect(launchRequest?.background == true)
-    #expect(lifecycle == ["issue", "launch", "bind:d1:created-pane"])
+    #expect(lifecycle == ["preflight", "issue", "launch", "bind:d1:created-pane"])
     let data = try #require(response.data)
     let payload = try data.decode(as: LifecycleCommandPayload.self)
     #expect(
@@ -220,6 +226,60 @@ struct CLILifecycleCommandHandlerTests {
         )
     )
     #expect(payload.dispatch?.id == "d1")
+  }
+
+  @Test func cancellationDuringPreflightNeverIssuesDispatchOrLaunchesSurface() async {
+    let base = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .codex)
+    let clock = TestClock()
+    var issued = false
+    var launched = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(base) },
+      resolveCloseTarget: { _ in .success(.init(resource: .pane, target: base)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      prepareAgentProfile: { request in
+        do {
+          try await clock.sleep(for: .seconds(10))
+          return .success(request)
+        } catch {
+          return .failure(.createFailed("Cancelled."))
+        }
+      },
+      launchAgentProfile: { _ in
+        launched = true
+        return .success(base)
+      },
+      issueDispatch: {
+        issued = true
+        return .failure(.capacityExceeded)
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+    let task = Task {
+      await handler.handle(
+        envelope: CommandEnvelope(
+          output: .json,
+          command: .create(
+            .init(
+              resource: .tab,
+              selector: .worktree("App"),
+              launch: .init(profile: "Reviewer", prompt: "Review")
+            )
+          )
+        )
+      )
+    }
+    await Task.yield()
+
+    task.cancel()
+    _ = await task.value
+
+    #expect(!issued)
+    #expect(!launched)
   }
 
   @Test func promptedLaunchFailureCancelsIssuedDispatch() async {

@@ -27,10 +27,28 @@ Events:
 - `session-start` / `session-end` — producer-reported session lifecycle.
 - `progress` — indeterminate when `--progress` is absent, otherwise 0 through 100.
 
-S1 records every public invocation as `source: cooperative_cli`, `confidence: exact`.
+Every public invocation is recorded as `source: cooperative_cli`, `confidence: exact`.
 Here `exact` means explicit channel plus exact caller-pane attribution; it does not make the
 producer's business judgment authoritative. `--origin` is caller-authored metadata only and
-cannot upgrade source/confidence or satisfy a future native-hook capability check.
+cannot upgrade source/confidence or satisfy a native-hook capability check.
+
+## Bundled native-hook ingress
+
+The bundled CLI also contains a hidden `agents _hook` bridge for Prowl-managed Claude Code
+and Codex Profile launches. It is intentionally absent from help and shell completion and is
+not a targetable public API. Claude payloads arrive on bounded stdin; Codex appends one bounded
+JSON argv. The bridge ignores unknown fields, never forwards `last_assistant_message`, stays
+silent, uses a bounded socket attempt, and exits successfully when Prowl rejects or cannot
+receive evidence.
+
+The app accepts a hook only when an in-memory launch token, runtime/native event, normalized
+launch cwd, exact caller pane, and current or pending process generation all match. A valid
+receipt uses `source: hook_claude` or `hook_codex`; neither the token nor forwarding metadata
+appears in the response. Public `agents signal` cannot supply hook context and always remains
+`cooperative_cli`.
+
+Hook `turn-ended` is runtime evidence only. It never completes an assigned dispatch or
+workflow. A matching `dispatch-complete` receipt retains priority over an adjacent hook edge.
 
 `--session` and `--origin` are non-empty, control-free UTF-8 up to 256 bytes. `--detail`
 is non-empty, control-free UTF-8 up to 32768 bytes. Detail is a short result or reason returned

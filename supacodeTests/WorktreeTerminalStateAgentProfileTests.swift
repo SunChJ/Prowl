@@ -150,6 +150,50 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.tabID(containing: surfaceID) == state.tabManager.tabs.first?.id)
   }
 
+  @Test func surfaceIsInstalledAndRegisteredBeforeProfileInputIsArmed() throws {
+    let state = makeState()
+    var callbackSurfaceID: UUID?
+    var callbackObservedInstalledSurface = false
+    var callbackObservedUnarmedSurface = false
+    state.onAgentProfileSurfacePrepared = { surfaceID, _ in
+      callbackSurfaceID = surfaceID
+      callbackObservedInstalledSurface =
+        state.surfaceView(for: surfaceID) != nil
+        && state.launchProfilesBySurface[surfaceID] != nil
+      callbackObservedUnarmedSurface = state.surfaceView(for: surfaceID)?.surfaceCreationArmed == false
+      return true
+    }
+
+    let launched = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+
+    #expect(callbackSurfaceID == launched.surfaceID)
+    #expect(callbackObservedInstalledSurface)
+    #expect(callbackObservedUnarmedSurface)
+    #expect(state.surfaceView(for: launched.surfaceID)?.surfaceCreationArmed == true)
+  }
+
+  @Test func registrationFailureRollsBackBeforeLeavingALiveSurface() {
+    let state = makeState()
+    state.onAgentProfileSurfacePrepared = { _, _ in false }
+
+    let result = state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    )
+
+    #expect(result == .failure(.hookRegistrationFailed))
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.surfaces.isEmpty)
+    #expect(state.launchProfilesBySurface.isEmpty)
+  }
+
   @Test func launchProfileNameOnlyAppliesToTheLaunchedRuntime() {
     let state = makeState()
     let surfaceID = UUID()

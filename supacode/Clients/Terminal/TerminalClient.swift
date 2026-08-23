@@ -9,7 +9,7 @@ struct TerminalClient {
   /// and pane identities. This is the CLI/workflow boundary; the legacy command
   /// remains event-driven for menu and palette launches.
   var launchAgentProfile:
-    @MainActor @Sendable (Worktree, AgentProfileLaunchRequest) -> Result<LaunchedSurface, AgentProfileLaunchError>
+    @MainActor @Sendable (Worktree, AgentProfileLaunchRequest) async -> Result<LaunchedSurface, AgentProfileLaunchError>
   var events: @MainActor @Sendable () -> AsyncStream<Event>
   /// Per-surface multicast stream. Independent from the single-consumer event stream.
   var observeAgentState: @MainActor @Sendable (UUID) -> AgentObservationStream
@@ -94,6 +94,7 @@ struct TerminalClient {
     /// launch memory on this event — not at dispatch — so a failed launch
     /// never shifts the Recommended resolution (docs-ai 053/005).
     case agentProfileLaunched(worktreeID: Worktree.ID, profileID: AgentProfile.ID)
+    case agentProfileLaunchWarning(worktreeID: Worktree.ID, profileName: String, message: String)
     case agentProfileLaunchFailed(worktreeID: Worktree.ID, profileName: String)
     case runScriptStatusChanged(worktreeID: Worktree.ID, isRunning: Bool)
     case commandPaletteToggleRequested(worktreeID: Worktree.ID)

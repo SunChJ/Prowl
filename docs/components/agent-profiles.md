@@ -62,6 +62,21 @@ name (frozen at launch — later renames don't relabel live panes). The identity
 lives exactly as long as the launched agent: once it exits, any agent started
 manually in that pane shows its own name and runs with your default
 environment and account.
+Claude Code and Codex Profile launches automatically prepare launch-scoped native signal
+bridges. Prowl writes no hook configuration to runtime homes or repositories. Claude merges
+an explicit final `--settings` JSON/file source in memory while preserving unknown fields and
+existing hook arrays; Codex preserves an effective user notifier through a private transparent
+dispatcher. Hook JSON, channel tokens, socket paths, and notifier argv ride in child-only
+carriers rather than terminal input, shell history, preview values, logs, or durable Profile
+state. A manual runtime started later in the same pane inherits none of this coverage.
+
+Preparation is bounded and occurs before a prompted dispatch is issued. If Prowl cannot
+safely merge Claude settings, resolve Codex configuration, or preserve a notifier, the
+Profile still launches with its original argv and no exact managed channel. Toolbar and
+Command Palette show one non-blocking warning toast. CLI JSON adds one optional
+`warnings: [{code: "managed_hook_degraded", runtime, message}]`; text output writes the
+warning once to stderr. Receipt behavior is unchanged.
+
 A Toolbar or Command Palette launch that fails before its surface exists (e.g.
 home provisioning) shows a warning toast, and only a successful launch from
 those UI surfaces updates the per-repo "last launched" memory behind the
@@ -159,8 +174,9 @@ later Extra Arguments may override the generated flags: Advanced arguments
 are authoritative, and Prowl does not attempt to interpret every runtime's
 full, evolving option and configuration surface.
 The editor opens with a **Profile** section (name, agent, icon), followed by
-**Launch Preview** — the exact rendered invocation, including the env prefix
-for bound profiles, using the same rendering as the real launch — then a
+**Launch Preview** — the deterministic base invocation, including the env prefix
+for bound profiles. Execution-only managed-signal settings, tokens, socket paths, and
+forwarding locators are prepared later and remain redacted from the preview — then a
 **Details** section with the remaining launch options (model, reasoning
 effort, execution mode, placement).
 

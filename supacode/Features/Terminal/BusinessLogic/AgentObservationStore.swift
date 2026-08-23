@@ -1,10 +1,35 @@
 import Foundation
 
 private struct AgentSignalChannelRecord {
+  var state: AgentSignalChannelState
   var confidence: AgentSignal.Confidence
   var events: [AgentSignalEvent]
   var lastSeenAt: Date
   var sessionID: String?
+}
+
+private struct PendingManagedHookSignal {
+  let input: AgentNativeHookInput
+  let callerAncestry: [AgentProcessGeneration]
+}
+
+private struct ManagedHookRegistrationRecord {
+  let launch: AgentHookLaunchRegistration
+  var evidenceEpoch: UUID
+  var processGeneration: AgentProcessGeneration?
+  var verified = false
+  var pendingSignals: [PendingManagedHookSignal] = []
+}
+
+enum ManagedHookRecordResult: Equatable, Sendable {
+  case rejected
+  case pending
+  case accepted(signal: AgentSignal, evidenceEpoch: UUID)
+}
+
+struct AgentEvidenceEpochUpdate: Equatable, Sendable {
+  var activatedSignals: [AgentSignal] = []
+  var revokedForwardingRecords: [CodexForwardingRecord] = []
 }
 
 struct AgentCurrentSignalEvidence: Sendable {
@@ -30,6 +55,7 @@ final class AgentObservationStore {
     var awaitingFirstProcessGeneration = false
     var firstProcessGenerationStartedBefore: Date?
     var channels: [String: AgentSignalChannelRecord] = [:]
+    var managedHook: ManagedHookRegistrationRecord?
     var revision: UInt64 = 0
     var subscribers: [UUID: AgentObservationStream.Continuation] = [:]
 
@@ -145,6 +171,7 @@ final class AgentObservationStore {
       var channel =
         record.channels[source]
         ?? AgentSignalChannelRecord(
+          state: .observed,
           confidence: signal.confidence,
           events: [],
           lastSeenAt: signal.timestamp,
@@ -199,6 +226,112 @@ final class AgentObservationStore {
     )
   }
 
+  func registerManagedHook(
+    _ registration: AgentHookLaunchRegistration,
+    surfaceID: UUID
+  ) -> UUID {
+    let epoch = beginDispatchEpoch(surfaceID: surfaceID)
+    var record = records[surfaceID] ?? SurfaceRecord()
+    record.managedHook = ManagedHookRegistrationRecord(
+      launch: registration,
+      evidenceEpoch: epoch
+    )
+    records[surfaceID] = record
+    return epoch
+  }
+
+  func hasManagedHook(surfaceID: UUID) -> Bool {
+    records[surfaceID]?.managedHook != nil
+  }
+
+  func revokeManagedHook(surfaceID: UUID) -> CodexForwardingRecord? {
+    guard var record = records[surfaceID], let managed = record.managedHook else { return nil }
+    record.managedHook = nil
+    record.evidenceEpoch = UUID()
+    record.processGeneration = nil
+    record.sessionID = nil
+    record.awaitingFirstProcessGeneration = false
+    record.firstProcessGenerationStartedBefore = nil
+    record.channels.removeAll()
+    record.latestCurrentSignal = nil
+    record.activeTerminalSignal = nil
+    if record.latestSignal != nil { record.latestSignalBinding = .stale }
+    records[surfaceID] = record
+    return managed.launch.forwardingRecord
+  }
+
+  func recordManagedHook(
+    _ input: AgentNativeHookInput,
+    callerAncestry: [AgentProcessGeneration],
+    surfaceID: UUID
+  ) -> ManagedHookRecordResult {
+    guard input.validationErrorMessage == nil,
+      var record = records[surfaceID],
+      var managed = record.managedHook,
+      managed.launch.token == input.token,
+      managed.launch.runtime == input.runtime,
+      managed.launch.nativeEvents[input.signal.nativeEvent] == input.signal.event,
+      normalizedPath(managed.launch.launchCWD) == normalizedPath(input.signal.cwd)
+    else {
+      return .rejected
+    }
+    guard let generation = managed.processGeneration ?? record.processGeneration else {
+      guard record.awaitingFirstProcessGeneration else { return .rejected }
+      if managed.pendingSignals.count < 8 {
+        managed.pendingSignals.append(
+          PendingManagedHookSignal(input: input, callerAncestry: callerAncestry)
+        )
+        record.managedHook = managed
+        records[surfaceID] = record
+      }
+      return .pending
+    }
+    guard callerAncestry.contains(generation), managed.processGeneration == generation else {
+      return .rejected
+    }
+
+    if input.runtime == .claude, input.signal.event == .sessionStart,
+      let currentSession = record.sessionID,
+      currentSession != input.signal.sessionID
+    {
+      record.evidenceEpoch = UUID()
+      record.channels.removeAll()
+      record.latestCurrentSignal = nil
+      record.activeTerminalSignal = nil
+      if record.latestSignal != nil { record.latestSignalBinding = .stale }
+      managed.evidenceEpoch = record.evidenceEpoch
+      managed.verified = false
+    } else if let currentSession = record.sessionID,
+      currentSession != input.signal.sessionID
+    {
+      return .rejected
+    }
+    record.sessionID = input.signal.sessionID
+    managed.verified = true
+    let runtime = AgentProfileRuntime(rawValue: input.runtime.rawValue) ?? .claude
+    let signal = AgentSignal(
+      kind: signalKind(input.signal.event),
+      source: .hook(runtime: runtime, event: input.signal.nativeEvent),
+      confidence: .exact,
+      timestamp: now(),
+      sessionID: input.signal.sessionID,
+      detail: input.signal.detail,
+      claimedOrigin: nil
+    )
+    let source = signal.source.payloadName
+    record.channels[source] = AgentSignalChannelRecord(
+      state: .verifiedLive,
+      confidence: .exact,
+      events: managed.launch.coveredEvents,
+      lastSeenAt: signal.timestamp,
+      sessionID: signal.sessionID
+    )
+    record.managedHook = managed
+    records[surfaceID] = record
+    publishSignal(signal, binding: .current, surfaceID: surfaceID)
+    return .accepted(signal: signal, evidenceEpoch: managed.evidenceEpoch)
+  }
+
   func beginDispatchEpoch(surfaceID: UUID) -> UUID {
     var record = records[surfaceID] ?? SurfaceRecord()
     record.evidenceEpoch = UUID()
@@ -221,11 +354,12 @@ final class AgentObservationStore {
     records[surfaceID]?.evidenceEpoch
   }
 
+  @discardableResult
   func updateEvidenceEpoch(
     surfaceID: UUID,
     processGeneration: AgentProcessGeneration?,
     sessionID: String?
-  ) {
+  ) -> AgentEvidenceEpochUpdate {
     var record = records[surfaceID] ?? SurfaceRecord()
     let firstGenerationIsTimely =
       processGeneration.map {
@@ -248,6 +382,7 @@ final class AgentObservationStore {
       && record.sessionID != nil
       && sessionID != nil
       && record.sessionID != sessionID
+    var update = AgentEvidenceEpochUpdate()
     if processChanged || sessionChanged {
       record.evidenceEpoch = UUID()
       record.channels.removeAll()
@@ -255,14 +390,45 @@ final class AgentObservationStore {
       record.activeTerminalSignal = nil
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       record.sessionlessSignalsAllowed = processChanged
+      if processChanged, let managed = record.managedHook {
+        if let forwardingRecord = managed.launch.forwardingRecord {
+          update.revokedForwardingRecords.append(forwardingRecord)
+        }
+        record.managedHook = nil
+      } else if sessionChanged, var managed = record.managedHook {
+        managed.evidenceEpoch = record.evidenceEpoch
+        managed.verified = false
+        managed.pendingSignals.removeAll()
+        record.managedHook = managed
+      }
     }
     if attachesFirstLaunchGeneration || rejectsLateFirstGeneration {
       record.awaitingFirstProcessGeneration = false
       record.firstProcessGenerationStartedBefore = nil
     }
+    if attachesFirstLaunchGeneration, var managed = record.managedHook {
+      managed.processGeneration = processGeneration
+      let pending = managed.pendingSignals
+      managed.pendingSignals.removeAll()
+      record.managedHook = managed
+      record.processGeneration = processGeneration
+      record.sessionID = sessionID
+      records[surfaceID] = record
+      for pendingSignal in pending {
+        if case .accepted(let signal, _) = recordManagedHook(
+          pendingSignal.input,
+          callerAncestry: pendingSignal.callerAncestry,
+          surfaceID: surfaceID
+        ) {
+          update.activatedSignals.append(signal)
+        }
+      }
+      return update
+    }
     record.processGeneration = processGeneration
     record.sessionID = sessionID
     records[surfaceID] = record
+    return update
   }
 
   func bindingForSignal(
@@ -292,7 +458,7 @@ final class AgentObservationStore {
       .map { source, channel in
         AgentSignalChannelPayload(
           source: source,
-          state: .observed,
+          state: channel.state,
           confidence: channel.confidence.rawValue,
           events: channel.events.sorted { $0.rawValue < $1.rawValue },
           lastSeenAt: formatter.string(from: channel.lastSeenAt),
@@ -311,6 +477,27 @@ final class AgentObservationStore {
       last: last,
       lastBinding: last == nil ? nil : (record.latestSignalBinding ?? .unbound)
     )
+  }
+
+  private func signalKind(_ event: AgentSignalEvent) -> AgentSignal.Kind {
+    switch event {
+    case .turnEnded: .turnEnded
+    case .needsInput: .needsInput
+    case .sessionStart: .sessionStart
+    case .sessionEnd: .sessionEnd
+    case .progress: .progress(nil)
+    }
+  }
+
+  private func normalizedPath(_ url: URL) -> String {
+    normalizedPath(url.path(percentEncoded: false))
+  }
+
+  private func normalizedPath(_ path: String) -> String {
+    let value = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL.path(
+      percentEncoded: false
+    )
+    return value.count > 1 && value.hasSuffix("/") ? String(value.dropLast()) : value
   }
 
   private func publish(_ event: ObservedAgentState, surfaceID: UUID) {

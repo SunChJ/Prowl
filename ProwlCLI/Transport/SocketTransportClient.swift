@@ -14,7 +14,10 @@ enum SocketTransportClient {
   private static let maximumResponseLength = 32 * 1_024 * 1_024
 
   /// Send a command envelope to the Prowl app and receive a response.
-  static func send(_ envelope: CommandEnvelope) throws -> Data {
+  static func send(
+    _ envelope: CommandEnvelope,
+    timeoutMilliseconds: Int? = nil
+  ) throws -> Data {
     let socketPath = ProwlSocket.defaultPath
 
     // Encode request
@@ -31,6 +34,9 @@ enum SocketTransportClient {
       )
     }
     defer { close(clientFD) }
+    if let timeoutMilliseconds {
+      try configureTimeout(clientFD, milliseconds: timeoutMilliseconds)
+    }
 
     let connection = SocketConnectionProbe.connect(socketFD: clientFD, socketPath: socketPath)
     if let error = connection.exitError() {
@@ -59,6 +65,24 @@ enum SocketTransportClient {
   }
 
   // MARK: - Low-level I/O using Darwin/Glibc read/write
+
+  private static func configureTimeout(_ descriptor: Int32, milliseconds: Int) throws {
+    let bounded = max(1, milliseconds)
+    var timeout = timeval(
+      tv_sec: bounded / 1_000,
+      tv_usec: Int32((bounded % 1_000) * 1_000)
+    )
+    let size = socklen_t(MemoryLayout<timeval>.size)
+    let receive = withUnsafePointer(to: &timeout) {
+      setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, $0, size)
+    }
+    let send = withUnsafePointer(to: &timeout) {
+      setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, $0, size)
+    }
+    guard receive == 0, send == 0 else {
+      throw ExitError(code: CLIErrorCode.transportFailed, message: "Failed to configure socket deadline.")
+    }
+  }
 
   private static func fdWrite(fildes: Int32, buffer: UnsafeRawBufferPointer) throws {
     var offset = 0

@@ -19,6 +19,7 @@ public enum Command: Codable, Sendable {
   case agents(AgentsInput)
   case agentsRead(AgentReadInput)
   case agentsSignal(AgentSignalInput)
+  case agentsHook(AgentNativeHookInput)
   case agentsDispatchComplete(DispatchCompleteInput)
   case agentsDispatchAbandon(DispatchAbandonInput)
   case agentsWait(AgentWaitInput)
@@ -40,6 +41,7 @@ public enum Command: Codable, Sendable {
     case .agents: "agents"
     case .agentsRead: "agents.read"
     case .agentsSignal: "agents.signal"
+    case .agentsHook: "agents._hook"
     case .agentsDispatchComplete: "agents.dispatch-complete"
     case .agentsDispatchAbandon: "agents.dispatch-abandon"
     case .agentsWait: "agents.wait"

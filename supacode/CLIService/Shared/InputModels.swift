@@ -169,7 +169,7 @@ private enum CLIInputTextValidator {
   }
 }
 
-public enum AgentSignalEvent: String, Codable, CaseIterable, Sendable {
+nonisolated public enum AgentSignalEvent: String, Codable, CaseIterable, Hashable, Sendable {
   case turnEnded = "turn-ended"
   case needsInput = "needs-input"
   case sessionStart = "session-start"
@@ -177,7 +177,7 @@ public enum AgentSignalEvent: String, Codable, CaseIterable, Sendable {
   case progress
 }
 
-public struct AgentSignalInput: Codable, Sendable {
+nonisolated public struct AgentSignalInput: Codable, Sendable {
   public static let maximumSessionIDBytes = 256
   public static let maximumOriginBytes = 256
   public static let maximumDetailBytes = 32 * 1_024

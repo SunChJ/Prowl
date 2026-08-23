@@ -145,6 +145,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     context
   }
   private let skipsSurfaceCreationForTesting: Bool
+  private(set) var surfaceCreationArmed = false
   private var trackingArea: NSTrackingArea?
   private var lastBackingSize: CGSize = .zero
   var lastPerformKeyEvent: TimeInterval?
@@ -267,7 +268,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
     fontSize: Float32? = nil,
     context: ghostty_surface_context_e,
     environment: [String: String] = [:],
-    skipsSurfaceCreationForTesting: Bool = false
+    skipsSurfaceCreationForTesting: Bool = false,
+    defersSurfaceCreation: Bool = false
   ) {
     let id = UUID()
     self.id = id
@@ -323,11 +325,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
     super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
     wantsLayer = true
     bridge.surfaceView = self
-    if !skipsSurfaceCreationForTesting {
-      createSurface()
-      if let surface {
-        surfaceRef = runtime.registerSurface(surface)
-      }
+    if !skipsSurfaceCreationForTesting, !defersSurfaceCreation {
+      _ = armSurfaceCreation()
     }
     registerForDraggedTypes(Array(Self.dropTypes))
 
@@ -363,6 +362,20 @@ final class GhosttySurfaceView: NSView, Identifiable {
     for pointer in envVarCStrings {
       free(pointer)
     }
+  }
+
+  @discardableResult
+  func armSurfaceCreation() -> Bool {
+    guard !surfaceCreationArmed else { return true }
+    surfaceCreationArmed = true
+    guard !skipsSurfaceCreationForTesting else { return true }
+    createSurface()
+    if let surface {
+      surfaceRef = runtime.registerSurface(surface)
+    }
+    // Surface construction has historically been best-effort at this layer;
+    // lifecycle failure is reported by the surrounding state boundary.
+    return true
   }
 
   func closeSurface() {

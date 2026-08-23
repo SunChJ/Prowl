@@ -1,5 +1,17 @@
 import Foundation
 
+nonisolated struct AgentSignalHookCapability: Equatable, Sendable {
+  let runtime: AgentNativeHookRuntime
+  let nativeEvents: [String: AgentSignalEvent]
+  let coveredEvents: [AgentSignalEvent]
+
+  init(runtime: AgentNativeHookRuntime, nativeEvents: [String: AgentSignalEvent]) {
+    self.runtime = runtime
+    self.nativeEvents = nativeEvents
+    self.coveredEvents = Array(Set(nativeEvents.values)).sorted { $0.rawValue < $1.rawValue }
+  }
+}
+
 /// Interactive and headless launch behavior for one supported runtime.
 /// Handoff briefing is authored by the live source agent and does not resume
 /// native sessions through this adapter boundary (docs-ai 055).
@@ -13,6 +25,7 @@ nonisolated protocol AgentRuntimeAdapter: Sendable {
   /// inverse guarded flags for CLIs whose default is auto-approved.
   var executionModeOptions: [AgentExecutionMode] { get }
   var accountIsolation: AgentProfileHomeRelocation? { get }
+  var signalHooks: AgentSignalHookCapability? { get }
   var reasoningEffortSuggestions: [String] { get }
   var modelSuggestions: [String] { get }
 
@@ -27,6 +40,7 @@ nonisolated extension AgentRuntimeAdapter {
   var supportsReasoningEffort: Bool { false }
   var executionModeOptions: [AgentExecutionMode] { [] }
   var accountIsolation: AgentProfileHomeRelocation? { nil }
+  var signalHooks: AgentSignalHookCapability? { nil }
   var reasoningEffortSuggestions: [String] { [] }
   var modelSuggestions: [String] { [] }
 
@@ -205,19 +219,28 @@ nonisolated struct AgentInvocation: Equatable, Sendable {
   }
 
   var terminalInput: String {
-    terminalInput(replacingFinalArgumentWithEnvironmentVariable: nil)
+    terminalInput(replacingArgumentsWithEnvironmentVariables: [:])
   }
 
-  /// Profile plans can carry a prompted start's final argv value through the
-  /// surface environment instead of typing it into a canonical PTY. Adapters
-  /// append prompt text as the final argument; the logical invocation retains
-  /// the real value while only the shell rendering substitutes the reference.
-  func terminalInput(replacingFinalArgumentWithEnvironmentVariable variable: String?) -> String {
+  /// Profile plans can carry arbitrary argv values through the surface
+  /// environment instead of typing them into a canonical PTY. The logical
+  /// invocation retains the real values while shell rendering substitutes
+  /// quoted variable references at the declared indexes.
+  func terminalInput(
+    replacingArgumentsWithEnvironmentVariables replacements: [Int: String]
+  ) -> String {
     var tokens = arguments.map(Self.shellQuote)
-    if let variable, !tokens.isEmpty {
-      tokens[tokens.index(before: tokens.endIndex)] = "\"$\(variable)\""
+    for (index, variable) in replacements where tokens.indices.contains(index) {
+      tokens[index] = "\"$\(variable)\""
     }
     return ([Self.shellQuote(executable)] + tokens).joined(separator: " ")
+  }
+
+  func terminalInput(replacingFinalArgumentWithEnvironmentVariable variable: String?) -> String {
+    guard let variable, !arguments.isEmpty else { return terminalInput }
+    return terminalInput(
+      replacingArgumentsWithEnvironmentVariables: [arguments.index(before: arguments.endIndex): variable]
+    )
   }
 
   static func shellQuote(_ argument: String) -> String {
@@ -309,6 +332,10 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   let supportsReasoningEffort = true
   let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(environmentVariable: "CODEX_HOME")
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .codex,
+    nativeEvents: ["agent-turn-complete": .turnEnded]
+  )
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
 
@@ -346,6 +373,18 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "CLAUDE_CONFIG_DIR"
+  )
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .claude,
+    nativeEvents: [
+      "Elicitation": .needsInput,
+      "Notification": .needsInput,
+      "PermissionRequest": .needsInput,
+      "SessionEnd": .sessionEnd,
+      "SessionStart": .sessionStart,
+      "Stop": .turnEnded,
+      "StopFailure": .turnEnded,
+    ]
   )
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = [

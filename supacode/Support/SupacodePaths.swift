@@ -39,6 +39,17 @@ nonisolated enum SupacodePaths {
     Bundle.main.resourceURL?.appending(path: "docs", directoryHint: .isDirectory)
   }
 
+  static var bundledCLIURL: URL? {
+    Bundle.main.resourceURL?.appending(
+      path: "prowl-cli/prowl",
+      directoryHint: .notDirectory
+    )
+  }
+
+  static var agentHookForwardingDirectory: URL {
+    cacheDirectory.appending(path: "agent-hook-forwarding", directoryHint: .isDirectory)
+  }
+
   /// On-disk path to the bundled docs index (`docs/README.md`), e.g.
   /// `/Applications/Prowl.app/Contents/Resources/docs/README.md`. `nil` only
   /// if the bundle has no resource directory (should not happen at runtime).

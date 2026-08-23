@@ -161,7 +161,7 @@ Key fields by command:
 - `agents wait <pane> --until …` → `.data.observation.{status,raw_state,source,confidence,at,revision}`, `.data.signals`, and optional `.data.screen`.
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode`, `.data.source`; `.data.stabilized` / `.data.waited_ms` with `--wait-stable`.
 - `send` → `.data.input`, `.data.wait.{exit_code,duration_ms}` when waiting, `.data.capture.{text,line_count,truncated}` with `--capture`.
-- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`, and prompted launches require `.data.dispatch.{id,state,created_at}`.
+- `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`, prompted launches require `.data.dispatch.{id,state,created_at}`, and a safe managed-signal fallback may add `.data.warnings[]` with `code=managed_hook_degraded`.
 - `profiles list` → `.data.profiles[]` with `.id`, `.name`, `.enabled`, `.runtime`, `.availability.{status,reason}`.
 
 Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `.content`, `.output`, or `.stdout`.
@@ -169,6 +169,11 @@ Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `
 ## Reading Agent Output
 
 - For Codex/Claude Code, `prowl agents read` beats scraping: check `.data.agent.status`, inspect `.data.blocker.text` before answering a prompt with `send`/`key` (read and write are not atomic), and only trust `.data.result.text` when `state == "complete"`. `--result-only` prints the raw trusted result and fails otherwise; it cannot combine with `--json`.
+- Prowl-launched Claude Code and Codex Profiles may expose `verified_live` channels with
+  `source=hook_claude|hook_codex`; manually typing those runtimes does not. A managed hook
+  `turn-ended` proves only a runtime turn edge, never assigned-task completion. If Profile
+  creation returns `managed_hook_degraded`, keep the successful pane but expect honest
+  heuristic/cooperative fallback for that session.
 - For an unpaired or manually launched agent, use one condition wait instead of a polling loop:
 
 ```bash
