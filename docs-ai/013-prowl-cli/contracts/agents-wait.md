@@ -65,9 +65,11 @@ prowl agents wait <pane> --until idle|blocked|changed|exit \
 ```
 
 The pane is resolved once to a stable target. `changed` requires a post-baseline revision;
-`exit` requires the surface to stop being live. Exact/high current-epoch cooperative evidence
-wins. `auto` may fall back to a heuristic idle/blocked match only after the observed state and
-revision remain unchanged for two seconds. Higher minimum-confidence settings reject weaker
+`exit` requires the surface to stop being live. Exact surface closure satisfies `exit`; for
+`idle`, `blocked`, or `changed` it returns structured condition-mode `AGENT_GONE` immediately.
+Exact/high current-epoch cooperative evidence wins. `auto` may fall back to a heuristic
+idle/blocked match only after the observed state and revision remain unchanged for two seconds.
+Higher minimum-confidence settings reject weaker
 evidence rather than relabelling it.
 
 Evidence is bound to PID plus process start time and, when known at exact/high confidence,

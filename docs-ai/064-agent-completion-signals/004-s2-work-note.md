@@ -120,6 +120,9 @@ recorded in the existing 064 plan/action documents.
 - 2026-08-23 — Adversarial review round 2 covered the detector's presence-release edge: a
   same-process `nil` → working re-detection now counts as activity and clears stale terminal
   evidence, while working → working metadata churn remains inert.
+- 2026-08-23 — The bundled skill now requires newer activity or stable screen evidence after
+  intervening on `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE` before re-arming the strict wait.
+  Error references also distinguish signal, dispatch, and condition meanings of `AGENT_GONE`.
 
 ## Fresh Debug E2E
 

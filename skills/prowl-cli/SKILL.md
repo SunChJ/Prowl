@@ -183,7 +183,10 @@ printf '%s\n' "$result" | jq '.data.observation, .data.screen'
   explicit question means blocked. Always use task context, and never treat heuristic evidence as task completion or perform destructive follow-up from it alone. A timeout leaves the task unresolved: inspect the pane, then re-arm the wait rather than assuming completion.
 - `DISPATCH_NEEDS_INPUT` means the exact worker needs intervention. `DISPATCH_INCOMPLETE` means
   its turn ended without the required receipt. Both retain a pending receipt, so inspect
-  `.error.details`, respond or nudge as appropriate, and wait again.
+  `.error.details` and do not immediately re-arm the dispatch wait. When possible, arm
+  `prowl agents wait "$pane" --until changed --timeout 120 --json` before the `send` / `key`
+  intervention; otherwise use `read --wait-stable` afterward. Re-arm the strict dispatch wait
+  only after newer activity or screen evidence shows the intervention took effect.
 - Rendered screens can truncate or fold content. When you need an agent's complete output, have the command write a file (`… > /tmp/out.txt`) and read that; shell redirection avoids the agent's own sandbox prompts.
 - `read` returning fewer lines than `--last` with `truncated: false` means the pane simply has less history — do not retry. `--source detection` returns the exact detector input instead of the viewport; it exists for diagnosing agent-state detection (see `components/agent-detection.md` in the docs folder), not for everyday reading.
 
@@ -211,12 +214,13 @@ printf '%s\n' "$result" | jq '.data.observation, .data.screen'
 - `TRANSPORT_FAILED`: the connection broke or the socket path is invalid (`ENOTSOCK`, too-long `PROWL_CLI_SOCKET`).
 - `TARGET_NOT_FOUND` / `TARGET_NOT_UNIQUE`: re-run `prowl list --json` and pass an explicit UUID or a current `pN`.
 - `PROFILE_NOT_FOUND` / `PROFILE_NOT_UNIQUE`: re-run `prowl profiles list --json`; choose an enabled Profile UUID.
-- `NO_ACTIVE_PANE`: focused-pane targeting found nothing — pass `--pane`. `SOURCE_REQUIRED`: a caller-owned command (`agents signal`, selector-free `handoff`) could not map process ancestry to a Prowl pane. `AGENT_GONE`: the signal's caller pane closed before recording.
+- `NO_ACTIVE_PANE`: focused-pane targeting found nothing — pass `--pane`. `SOURCE_REQUIRED`: a caller-owned command (`agents signal`, selector-free `handoff`) could not map process ancestry to a Prowl pane.
 - `EMPTY_INPUT`, `INVALID_ARGUMENT`, `UNSUPPORTED_KEY`, `INVALID_REPEAT`: fix the arguments (`prowl <cmd> --help`).
 - `CAPTURE_UNSUPPORTED`: drop `--capture` and use `read --wait-stable` or file redirection.
 - `WAIT_TIMEOUT`: inspect `.error.details`, then re-arm the wait if the task remains active.
-- `DISPATCH_FAILED` / `DISPATCH_ABANDONED` / `AGENT_GONE`: the exact dispatch is terminal; inspect its retained record and immutable target in `.error.details`.
-- `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE`: the dispatch remains pending; inspect, intervene if appropriate, and wait again.
+- `DISPATCH_FAILED` / `DISPATCH_ABANDONED`: the exact dispatch is terminal; inspect its retained record and immutable target in `.error.details`.
+- `AGENT_GONE`: inspect `.error.details.mode`. `dispatch` means the exact worker is terminal and retains a record; `condition` means the target pane closed. Without details on `agents signal`, the caller pane disappeared before recording.
+- `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE`: the dispatch remains pending; use the intervention sequencing in **Reading Agent Output** before waiting again.
 - `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED`: fix the path given to `open` or `create tab --path`.
 
 ## Handing Off Your Task

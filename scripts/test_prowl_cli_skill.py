@@ -22,6 +22,8 @@ class ProwlCLISkillTests(unittest.TestCase):
     def test_documents_structured_wait_errors(self):
         self.assertIn(".error.details", self.skill)
         self.assertIn("DISPATCH_NEEDS_INPUT", self.skill)
+        self.assertIn('agents wait "$pane" --until changed', self.skill)
+        self.assertIn(".error.details.mode", self.skill)
         self.assertIn("WAIT_TIMEOUT", self.skill)
 
 
