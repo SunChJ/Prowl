@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 merged in #715; S2 design locked for implementation |
+| **Status** | In progress — S1 merged in #715; S2 implemented on `feat/agent-dispatch-wait-s2`, draft PR pending |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); S2 TBD |
+| **Primary PRs** | #715 (S1); S2 draft PR pending |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -242,6 +242,12 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-23 during S2 implementation: delivered the frozen paired dispatch,
+  completion/abandonment store, strict and generic waits, generation-aware evidence,
+  peer-disconnect cancellation, signal visibility, schemas, and documentation. Execution
+  evidence and the validation/E2E record live in
+  [004-s2-work-note.md](004-s2-work-note.md); the shipped behavior summary is
+  [005-s2-action.md](005-s2-action.md).
 - Updated 2026-08-23 after PR #716 initial review: froze peer-EOF cancellation, generic wait
   transition/freshness rules, per-source channel state, old-app fail-closed behavior,
   receipt eviction linearization, exact include-screen behavior, and JSON/schema boundaries;

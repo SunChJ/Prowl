@@ -242,6 +242,170 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(rendered["schema_version"] as? String, "prowl.cli.agents.signal.v1")
   }
 
+  func testDispatchCompleteRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "dispatch-complete")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.dispatch-complete",
+      schemaVersion: "prowl.cli.agents.dispatch-complete.v1",
+      data: RawJSON(
+        encoding: DispatchCompleteCommandPayload(
+          target: makeTabTarget(),
+          receipt: DispatchCompletedRecord(
+            id: "dispatch-complete-1",
+            outcome: .succeeded,
+            summary: "Review complete",
+            createdAt: "2026-08-23T04:00:00.000Z",
+            completedAt: "2026-08-23T04:01:00.000Z"
+          ),
+          replayed: false
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: [
+        "agents", "dispatch-complete", "--outcome", "succeeded", "--summary",
+        "Review complete", "--json",
+      ],
+      environment: [DispatchCompleteInput.environmentKey: "dispatch-complete-1"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsDispatchComplete(let input) = envelope.command else {
+      return XCTFail("Expected agents.dispatch-complete command envelope")
+    }
+    XCTAssertEqual(input.dispatchID, "dispatch-complete-1")
+    XCTAssertEqual(input.outcome, .succeeded)
+    XCTAssertEqual(input.summary, "Review complete")
+  }
+
+  func testDispatchAbandonRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "dispatch-abandon")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.dispatch-abandon",
+      schemaVersion: "prowl.cli.agents.dispatch-abandon.v1",
+      data: RawJSON(
+        encoding: DispatchAbandonCommandPayload(
+          target: makeTabTarget(),
+          record: DispatchAbandonedRecord(
+            id: "dispatch-abandon-1",
+            createdAt: "2026-08-23T04:00:00.000Z",
+            abandonedAt: "2026-08-23T04:01:00.000Z",
+            reason: "Superseded"
+          ),
+          replayed: false
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: [
+        "agents", "dispatch-abandon", "--dispatch", "dispatch-abandon-1", "--reason",
+        "Superseded", "--json",
+      ]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsDispatchAbandon(let input) = envelope.command else {
+      return XCTFail("Expected agents.dispatch-abandon command envelope")
+    }
+    XCTAssertEqual(input.dispatchID, "dispatch-abandon-1")
+    XCTAssertEqual(input.reason, "Superseded")
+  }
+
+  func testDispatchWaitRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "dispatch-wait")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.wait",
+      schemaVersion: "prowl.cli.agents.wait.v1",
+      data: RawJSON(
+        encoding: AgentWaitCommandPayload.dispatch(
+          AgentDispatchWaitPayload(
+            waitedMilliseconds: 125,
+            target: makeTabTarget(),
+            receipt: DispatchCompletedRecord(
+              id: "dispatch-wait-1",
+              outcome: .succeeded,
+              summary: "Done",
+              createdAt: "2026-08-23T04:00:00.000Z",
+              completedAt: "2026-08-23T04:01:00.000Z"
+            ),
+            signals: AgentSignalsPayload(channels: [], last: nil, lastBinding: nil)
+          )
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["agents", "wait", "--dispatch", "dispatch-wait-1", "--timeout", "10", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsWait(let input) = envelope.command else {
+      return XCTFail("Expected agents.wait command envelope")
+    }
+    XCTAssertEqual(input.mode, .dispatch)
+    XCTAssertEqual(input.dispatchID, "dispatch-wait-1")
+  }
+
+  func testConditionWaitRoundTripsOverSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "condition-wait")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.wait",
+      schemaVersion: "prowl.cli.agents.wait.v1",
+      data: RawJSON(
+        encoding: AgentWaitCommandPayload.condition(
+          AgentConditionWaitPayload(
+            condition: .blocked,
+            waitedMilliseconds: 200,
+            target: makeTabTarget(),
+            observation: AgentWaitObservation(
+              status: .blocked,
+              rawState: "blocked",
+              source: "cooperative_cli",
+              confidence: "exact",
+              timestamp: "2026-08-23T04:01:00.000Z",
+              revision: 2
+            ),
+            signals: AgentSignalsPayload(channels: [], last: nil, lastBinding: nil)
+          )
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: [
+        "agents", "wait", "pane-123", "--until", "blocked", "--min-confidence", "exact",
+        "--timeout", "10", "--json",
+      ]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsWait(let input) = envelope.command else {
+      return XCTFail("Expected agents.wait command envelope")
+    }
+    XCTAssertEqual(input.mode, .condition)
+    XCTAssertEqual(input.pane, "pane-123")
+    XCTAssertEqual(input.condition, .blocked)
+    XCTAssertEqual(input.minimumConfidence, .exact)
+  }
+
   func testAgentsPayloadDetectionReasonRemainsBackwardCompatible() throws {
     let modernData = try JSONEncoder().encode(
       AgentsResponseData(
@@ -568,6 +732,38 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue((error["message"] as? String)?.contains("prowl list") == true)
   }
 
+  func testPromptedCreateFailsClosedWhenTheAppOmitsDispatchMetadata() throws {
+    let socketPath = temporarySocketPath(suffix: "create-prompt-dispatch-version-skew")
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(
+        encoding: makeLifecyclePayload(
+          resource: .tab,
+          launch: LifecycleCommandLaunch(
+            profileID: UUID().uuidString,
+            profileName: "Reviewer",
+            agent: "claude"
+          )
+        )
+      )
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["create", "tab", "App", "--profile", "Reviewer", "--prompt", "-", "--json"],
+      stdinData: Data("Review this change.\n".utf8)
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    let output = try jsonObject(from: result.stdout)
+    let error = try XCTUnwrap(output["error"] as? [String: Any])
+    XCTAssertEqual(error["code"] as? String, CLIErrorCode.createFailed)
+    XCTAssertTrue((error["message"] as? String)?.contains("dispatch receipt") == true)
+  }
+
   func testCreatePaneProfilePromptRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "create-pane-profile")
     let launch = LifecycleCommandLaunch(
@@ -584,7 +780,11 @@ final class ProwlCLIIntegrationTests: XCTestCase {
           resource: .pane,
           anchor: makeTabTarget(paneID: "anchor-pane"),
           direction: .right,
-          launch: launch
+          launch: launch,
+          dispatch: DispatchPendingRecord(
+            id: "dispatch-create-pane",
+            createdAt: "2026-08-23T04:00:00.000Z"
+          )
         )
       )
     )
@@ -613,6 +813,9 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let outputLaunch = try XCTUnwrap(data["launch"] as? [String: Any])
     XCTAssertEqual(outputLaunch["profile_name"] as? String, "Reviewer")
     XCTAssertEqual(outputLaunch["agent"] as? String, "claude")
+    let dispatch = try XCTUnwrap(data["dispatch"] as? [String: Any])
+    XCTAssertEqual(dispatch["id"] as? String, "dispatch-create-pane")
+    XCTAssertEqual(dispatch["state"] as? String, "pending")
   }
 
   func testProfilesListRoundTripsOverSocket() throws {
@@ -2473,7 +2676,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     socketPath: String,
     response: CommandResponse,
     args: [String],
-    stdinData: Data? = nil
+    stdinData: Data? = nil,
+    environment: [String: String] = [:]
   ) throws -> (Data, CommandResult) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -2482,7 +2686,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       socketPath: socketPath,
       responseData: responseData,
       args: args,
-      stdinData: stdinData
+      stdinData: stdinData,
+      environment: environment
     )
   }
 
@@ -2490,18 +2695,17 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     socketPath: String,
     responseData: Data,
     args: [String],
-    stdinData: Data? = nil
+    stdinData: Data? = nil,
+    environment: [String: String] = [:]
   ) throws -> (Data, CommandResult) {
     try assertResponseMatchesSchema(responseData)
     let server = try MockSocketServer(socketPath: socketPath, responseData: responseData)
     defer { server.stop() }
     try server.start()
 
-    let result = try runProwl(
-      args: args,
-      environment: [ProwlSocket.environmentKey: socketPath],
-      stdinData: stdinData
-    )
+    var requestEnvironment = environment
+    requestEnvironment[ProwlSocket.environmentKey] = socketPath
+    let result = try runProwl(args: args, environment: requestEnvironment, stdinData: stdinData)
 
     let requestData = try XCTUnwrap(server.waitForRequest(timeout: 2.0), "No request received by mock server")
     return (requestData, result)
@@ -2525,13 +2729,15 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     resource: LifecycleResource,
     anchor: TabTarget? = nil,
     direction: CreatePaneDirection? = nil,
-    launch: LifecycleCommandLaunch? = nil
+    launch: LifecycleCommandLaunch? = nil,
+    dispatch: DispatchPendingRecord? = nil
   ) -> LifecycleCommandPayload {
     LifecycleCommandPayload(
       resource: resource,
       anchor: anchor,
       direction: direction,
       launch: launch,
+      dispatch: dispatch,
       target: makeTabTarget()
     )
   }

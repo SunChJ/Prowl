@@ -108,4 +108,60 @@ final class CreateCommandParsingTests: XCTestCase {
     XCTAssertThrowsError(try prompt.makeInput())
     XCTAssertThrowsError(try background.makeInput())
   }
+
+  func testPromptedLaunchFailsClosedWhenOldAppOmitsDispatch() throws {
+    let response = try makeCreateResponse(dispatch: nil)
+
+    XCTAssertThrowsError(
+      try CreateCommand.validateProfileLaunchResponse(
+        response,
+        requestedLaunch: CreateLaunchInput(profile: "Reviewer", prompt: "Review this")
+      )
+    ) { error in
+      XCTAssertEqual((error as? ExitError)?.code, CLIErrorCode.createFailed)
+    }
+  }
+
+  func testUnpromptedLaunchRemainsCompatibleAndPromptedLaunchAcceptsDispatch() throws {
+    let legacyResponse = try makeCreateResponse(dispatch: nil)
+    XCTAssertNoThrow(
+      try CreateCommand.validateProfileLaunchResponse(
+        legacyResponse,
+        requestedLaunch: CreateLaunchInput(profile: "Reviewer")
+      )
+    )
+
+    let modernResponse = try makeCreateResponse(
+      dispatch: DispatchPendingRecord(id: "d1", createdAt: "2026-08-23T02:00:00.000Z")
+    )
+    XCTAssertNoThrow(
+      try CreateCommand.validateProfileLaunchResponse(
+        modernResponse,
+        requestedLaunch: CreateLaunchInput(profile: "Reviewer", prompt: "Review this")
+      )
+    )
+  }
+
+  private func makeCreateResponse(dispatch: DispatchPendingRecord?) throws -> CommandResponse {
+    let target = TabTarget(
+      worktree: TabTargetWorktree(
+        id: "wt", name: "main", path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
+      ),
+      tab: TabTargetTab(id: "tab", title: "Tab", selected: true),
+      pane: TabTargetPane(id: "pane", title: "Pane", cwd: "/Projects/Prowl", focused: true)
+    )
+    let launch = LifecycleCommandLaunch(
+      profileID: UUID().uuidString,
+      profileName: "Reviewer",
+      agent: "codex"
+    )
+    return CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: try RawJSON(
+        encoding: LifecycleCommandPayload(resource: .tab, launch: launch, dispatch: dispatch, target: target)
+      )
+    )
+  }
 }

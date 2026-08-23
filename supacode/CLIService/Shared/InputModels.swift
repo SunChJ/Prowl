@@ -30,6 +30,145 @@ public struct AgentsInput: Codable, Sendable {
   public init() {}
 }
 
+public enum DispatchCompletionOutcome: String, Codable, CaseIterable, Sendable {
+  case succeeded
+  case failed
+}
+
+public struct DispatchCompleteInput: Codable, Sendable {
+  nonisolated public static let environmentKey = "PROWL_DISPATCH_ID"
+  public static let maximumSummaryBytes = 32 * 1_024
+
+  public let dispatchID: String
+  public let outcome: DispatchCompletionOutcome
+  public let summary: String
+
+  enum CodingKeys: String, CodingKey {
+    case dispatchID = "dispatch_id"
+    case outcome
+    case summary
+  }
+
+  public init(dispatchID: String, outcome: DispatchCompletionOutcome, summary: String) {
+    self.dispatchID = dispatchID
+    self.outcome = outcome
+    self.summary = summary
+  }
+
+  public var validationErrorMessage: String? {
+    CLIInputTextValidator.validateDispatchID(dispatchID, name: DispatchCompleteInput.environmentKey)
+      ?? CLIInputTextValidator.validate(
+        summary,
+        name: "--summary",
+        maximumBytes: Self.maximumSummaryBytes
+      )
+  }
+}
+
+public struct DispatchAbandonInput: Codable, Sendable {
+  public static let maximumReasonBytes = 32 * 1_024
+
+  public let dispatchID: String
+  public let reason: String
+
+  enum CodingKeys: String, CodingKey {
+    case dispatchID = "dispatch_id"
+    case reason
+  }
+
+  public init(dispatchID: String, reason: String) {
+    self.dispatchID = dispatchID
+    self.reason = reason
+  }
+
+  public var validationErrorMessage: String? {
+    CLIInputTextValidator.validateDispatchID(dispatchID, name: "--dispatch")
+      ?? CLIInputTextValidator.validate(
+        reason,
+        name: "--reason",
+        maximumBytes: Self.maximumReasonBytes
+      )
+  }
+}
+
+public enum AgentWaitMode: String, Codable, Sendable {
+  case dispatch
+  case condition
+}
+
+public enum AgentWaitCondition: String, Codable, CaseIterable, Sendable {
+  case idle
+  case blocked
+  case changed
+  case exit
+}
+
+public enum AgentWaitMinimumConfidence: String, Codable, CaseIterable, Sendable {
+  case auto
+  case exact
+  case high
+  case heuristic
+}
+
+public struct AgentWaitInput: Codable, Sendable {
+  public static let defaultTimeoutSeconds = 600
+  public static let maximumTimeoutSeconds = 600
+  public static let maximumScreenLines = 200
+
+  public let mode: AgentWaitMode
+  public let dispatchID: String?
+  public let pane: String?
+  public let condition: AgentWaitCondition?
+  public let timeoutSeconds: Int
+  public let minimumConfidence: AgentWaitMinimumConfidence?
+  public let includeScreenLines: Int?
+
+  enum CodingKeys: String, CodingKey {
+    case mode
+    case dispatchID = "dispatch_id"
+    case pane
+    case condition
+    case timeoutSeconds = "timeout_seconds"
+    case minimumConfidence = "minimum_confidence"
+    case includeScreenLines = "include_screen_lines"
+  }
+
+  public init(
+    mode: AgentWaitMode,
+    dispatchID: String? = nil,
+    pane: String? = nil,
+    condition: AgentWaitCondition? = nil,
+    timeoutSeconds: Int = Self.defaultTimeoutSeconds,
+    minimumConfidence: AgentWaitMinimumConfidence? = nil,
+    includeScreenLines: Int? = nil
+  ) {
+    self.mode = mode
+    self.dispatchID = dispatchID
+    self.pane = pane
+    self.condition = condition
+    self.timeoutSeconds = timeoutSeconds
+    self.minimumConfidence = minimumConfidence
+    self.includeScreenLines = includeScreenLines
+  }
+}
+
+private enum CLIInputTextValidator {
+  static func validateDispatchID(_ value: String, name: String) -> String? {
+    validate(value, name: name, maximumBytes: 256)
+  }
+
+  static func validate(_ value: String, name: String, maximumBytes: Int) -> String? {
+    guard !value.isEmpty else { return "\(name) must not be empty." }
+    guard value.utf8.count <= maximumBytes else {
+      return "\(name) must be at most \(maximumBytes) UTF-8 bytes."
+    }
+    guard !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+      return "\(name) must not contain control characters."
+    }
+    return nil
+  }
+}
+
 public enum AgentSignalEvent: String, Codable, CaseIterable, Sendable {
   case turnEnded = "turn-ended"
   case needsInput = "needs-input"

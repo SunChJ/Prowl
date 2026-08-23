@@ -308,6 +308,46 @@ struct AgentProfileTests {
     #expect(plan.terminalInput.utf8.count < 1_024)
   }
 
+  @Test func dispatchPromptAddsVersionedProtocolAndChildOnlyContext() throws {
+    let dispatchID = "dispatch-secret-id"
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: profile(name: "Codex · Reviewer"),
+      intent: .prompt("Review the current diff."),
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true),
+      dispatchID: dispatchID
+    )
+
+    let effectivePrompt = try #require(
+      plan.surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName]
+    )
+    #expect(effectivePrompt.hasPrefix("Review the current diff."))
+    #expect(effectivePrompt.contains("Prowl dispatch completion protocol v1"))
+    #expect(effectivePrompt.contains("prowl agents dispatch-complete"))
+    #expect(effectivePrompt.contains("--outcome succeeded|failed"))
+    #expect(!effectivePrompt.contains(dispatchID))
+    #expect(
+      plan.surfaceEnvironment[AgentProfileLaunchPlanner.dispatchCarrierName] == dispatchID
+    )
+    #expect(plan.surfaceEnvironment[DispatchCompleteInput.environmentKey] == nil)
+    #expect(
+      plan.commandEnvironmentTokens.contains(
+        "\(DispatchCompleteInput.environmentKey)=\"$\(AgentProfileLaunchPlanner.dispatchCarrierName)\""
+      )
+    )
+    #expect(plan.terminalInput.contains("-u \(AgentProfileLaunchPlanner.dispatchCarrierName)"))
+    #expect(!plan.terminalInput.contains(dispatchID))
+  }
+
+  @Test func interactiveLaunchNeverInheritsDispatchContext() throws {
+    let plan = try AgentProfileLaunchPlanner.plan(
+      for: profile(name: "Codex"),
+      homeBaseDirectory: URL(fileURLWithPath: "/base", isDirectory: true)
+    )
+
+    #expect(plan.surfaceEnvironment[AgentProfileLaunchPlanner.dispatchCarrierName] == nil)
+    #expect(!plan.terminalInput.contains(DispatchCompleteInput.environmentKey))
+  }
+
   @Test func promptedTerminalInputRunsThroughSupportedInteractiveShellSyntax() throws {
     let prompt = "Review the current diff."
     let carrier = AgentProfileLaunchPlanner.promptCarrierName

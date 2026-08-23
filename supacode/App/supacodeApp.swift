@@ -666,7 +666,14 @@ struct SupacodeApp: App {
     )
   }
 
-  // swiftlint:disable:next function_body_length
+  private static func dispatchDateFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    return formatter
+  }
+
+  // swiftlint:disable:next function_body_length cyclomatic_complexity
   static func makeCLICommandRouter(
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager,
@@ -690,9 +697,16 @@ struct SupacodeApp: App {
     }
     let agentsHandler = AgentsCommandHandler {
       var screenDetectionsBySurfaceID: [UUID: AgentScreenDetection] = [:]
+      var signalsBySurfaceID: [UUID: AgentSignalsPayload] = [:]
       for terminalState in terminalManager.activeWorktreeStates {
         for (surfaceID, scan) in terminalState.lastAgentScreenScanBySurface {
           screenDetectionsBySurfaceID[surfaceID] = scan.detection
+        }
+        for surfaceID in terminalState.surfaceAgentStates.keys {
+          signalsBySurfaceID[surfaceID] = terminalManager.agentSignalsPayload(
+            surfaceID: surfaceID,
+            includeDiagnosticLast: false
+          )
         }
       }
       return AgentsRuntimeSnapshot(
@@ -701,7 +715,8 @@ struct SupacodeApp: App {
           repositoriesState: appStore.state.repositories,
           terminalManager: terminalManager
         ),
-        screenDetectionsBySurfaceID: screenDetectionsBySurfaceID
+        screenDetectionsBySurfaceID: screenDetectionsBySurfaceID,
+        signalsBySurfaceID: signalsBySurfaceID
       )
     }
     let resolveAgentSignalCaller: AgentSignalCommandHandler.ResolveCaller =
@@ -714,7 +729,37 @@ struct SupacodeApp: App {
     let agentSignalHandler = AgentSignalCommandHandler(
       resolveCaller: resolveAgentSignalCaller,
       recordSignal: { caller, signal in
-        terminalManager.recordAgentSignal(signal, surfaceID: caller.surfaceID)
+        terminalManager.recordAgentSignal(signal, caller: caller)
+      }
+    )
+    let dispatchCompleteHandler = AgentDispatchCompleteCommandHandler(
+      resolveCaller: resolveAgentSignalCaller,
+      complete: { dispatchID, outcome, summary, surfaceID in
+        do {
+          return .success(
+            try terminalManager.completeAgentDispatch(
+              dispatchID: dispatchID,
+              outcome: outcome,
+              summary: summary,
+              callerSurfaceID: surfaceID
+            ))
+        } catch let error as AgentDispatchStoreError {
+          return .failure(error)
+        } catch {
+          return .failure(.notFound)
+        }
+      }
+    )
+    let dispatchAbandonHandler = AgentDispatchAbandonCommandHandler(
+      abandon: { dispatchID, reason in
+        do {
+          return .success(
+            try terminalManager.abandonAgentDispatch(dispatchID: dispatchID, reason: reason))
+        } catch let error as AgentDispatchStoreError {
+          return .failure(error)
+        } catch {
+          return .failure(.notFound)
+        }
       }
     )
     let agentReadHandler = AgentReadCommandHandler(
@@ -848,6 +893,52 @@ struct SupacodeApp: App {
       }
       return resolver.resolveLifecycleTarget(selector)
     }
+    let agentWaitHandler = AgentWaitCommandHandler(
+      observeDispatch: { dispatchID in
+        do {
+          return .success(try terminalManager.observeAgentDispatch(dispatchID: dispatchID))
+        } catch let error as AgentDispatchStoreError {
+          return .failure(error)
+        } catch {
+          return .failure(.notFound)
+        }
+      },
+      observeCondition: { surfaceID in
+        terminalManager.observeAgentState(surfaceID: surfaceID)
+      },
+      resolveConditionTarget: { pane in
+        resolveTabTarget(.pane(pane))
+      },
+      conditionSnapshot: { target in
+        guard let surfaceID = UUID(uuidString: target.paneID) else {
+          return .init(agent: nil, signal: nil, revision: 0, isLive: false, signals: .empty)
+        }
+        let observed = terminalManager.agentObservationSnapshot(surfaceID: surfaceID)
+        let agent = appStore.state.repositories.activeAgents.entries.first {
+          $0.surfaceID == surfaceID
+        }
+        return .init(
+          agent: agent,
+          signal: terminalManager.currentEligibleAgentSignal(surfaceID: surfaceID),
+          revision: observed?.revision ?? 0,
+          isLive: terminalManager.isSurfaceLive(surfaceID),
+          signals: terminalManager.agentSignalsPayload(surfaceID: surfaceID)
+        )
+      },
+      signalsProvider: { target in
+        guard let surfaceID = UUID(uuidString: target.pane.id) else { return .empty }
+        return terminalManager.agentSignalsPayload(surfaceID: surfaceID)
+      },
+      screenProvider: { target in
+        guard let surfaceID = UUID(uuidString: target.pane.id),
+          let state = terminalManager.stateIfExists(for: target.worktree.id),
+          let surface = state.surfaceView(for: surfaceID)
+        else {
+          return nil
+        }
+        return surface.readScreenContentsForCLI()
+      }
+    )
     let createTab: TabCommandHandler.CreateTabProvider = { target, path in
       let repositories = Array(appStore.state.repositories.repositories)
       guard let worktree = resolveCLITerminalWorktree(id: target.worktreeID, repositories: repositories) else {
@@ -916,6 +1007,38 @@ struct SupacodeApp: App {
           appStore: appStore,
           terminalManager: terminalManager
         )
+      },
+      issueDispatch: {
+        do {
+          let snapshot = try terminalManager.issueAgentDispatch()
+          guard case .pending(let record) = snapshot.payload(using: Self.dispatchDateFormatter()) else {
+            return .failure(.capacityExceeded)
+          }
+          return .success(record)
+        } catch let error as AgentDispatchStoreError {
+          return .failure(error)
+        } catch {
+          return .failure(.capacityExceeded)
+        }
+      },
+      bindDispatch: { dispatchID, target in
+        do {
+          try terminalManager.bindAgentDispatch(dispatchID: dispatchID, target: target)
+          return .success(())
+        } catch let error as AgentDispatchStoreError {
+          return .failure(error)
+        } catch {
+          return .failure(.notFound)
+        }
+      },
+      cancelDispatch: { dispatchID in
+        terminalManager.cancelAgentDispatchIssuance(dispatchID: dispatchID)
+      },
+      rollbackProfileLaunch: { resource, target in
+        switch resource {
+        case .tab: _ = closeTab(target, true)
+        case .pane: _ = closePane(target, true)
+        }
       },
       closeTab: closeTab,
       closePane: closePane
@@ -1005,6 +1128,9 @@ struct SupacodeApp: App {
       agentsHandler: agentsHandler,
       agentsReadHandler: agentReadHandler,
       agentsSignalHandler: agentSignalHandler,
+      agentsDispatchCompleteHandler: dispatchCompleteHandler,
+      agentsDispatchAbandonHandler: dispatchAbandonHandler,
+      agentsWaitHandler: agentWaitHandler,
       profilesHandler: profilesHandler,
       focusHandler: focusHandler,
       sendHandler: sendHandler,
@@ -1287,7 +1413,8 @@ struct SupacodeApp: App {
       plan = try AgentProfileLaunchPlanner.plan(
         for: request.profile,
         intent: intent,
-        homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory
+        homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory,
+        dispatchID: request.dispatchID
       )
     } catch {
       return .failure(.planning(error, profile: request.profile))
@@ -1338,6 +1465,13 @@ struct SupacodeApp: App {
     case .success(let resolved):
       return .success(TabResolvedTarget(from: resolved))
     case .failure:
+      let state = terminalManager.state(for: worktree)
+      switch request.resource {
+      case .tab:
+        _ = state.closeTab(launched.tabID, confirmation: .skip)
+      case .pane:
+        _ = state.closeSurface(id: launched.surfaceID, confirmation: .skip)
+      }
       return .failure(.createFailed("The launched Profile pane could not be resolved."))
     }
   }

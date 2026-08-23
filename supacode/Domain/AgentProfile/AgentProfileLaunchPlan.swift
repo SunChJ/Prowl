@@ -65,8 +65,13 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
       replacingFinalArgumentWithEnvironmentVariable: promptCarrier
     )
     var environmentTokens = commandEnvironmentTokens
-    if let promptCarrier {
-      environmentTokens.insert(contentsOf: ["-u", promptCarrier], at: 0)
+    let carrierNames = [
+      promptCarrier,
+      surfaceEnvironment[AgentProfileLaunchPlanner.dispatchCarrierName] == nil
+        ? nil : AgentProfileLaunchPlanner.dispatchCarrierName,
+    ].compactMap { $0 }
+    for carrier in carrierNames.reversed() {
+      environmentTokens.insert(contentsOf: ["-u", carrier], at: 0)
     }
     guard !environmentTokens.isEmpty else { return invocationInput }
     return (["env"] + environmentTokens + [invocationInput]).joined(separator: " ")
@@ -249,6 +254,7 @@ nonisolated enum AgentProfileLaunchPlanError: Error, Equatable, Sendable {
   case accountIsolationUnsupported(AgentProfileRuntime)
   case promptContainsNUL
   case promptArgumentUnavailable(AgentProfileRuntime)
+  case dispatchRequiresPrompt
   case homeEscapesBase(URL)
   case homeIsSymbolicLink(URL)
 }
@@ -257,13 +263,19 @@ nonisolated enum AgentProfileLaunchPlanner {
   /// Reserved surface-environment carrier for prompted starts. The prompt is
   /// expanded as one quoted argv token and never enters Ghostty initial_input.
   static let promptCarrierName = "PROWL_LAUNCH_PROMPT"
+  /// The surface keeps only this opaque carrier. `env(1)` copies its value to
+  /// PROWL_DISPATCH_ID for the launched runtime and removes the carrier from
+  /// that child, so neither the pane shell nor a later manual runtime receives
+  /// a stale public dispatch context.
+  static let dispatchCarrierName = "PROWL_LAUNCH_DISPATCH"
 
   /// Resolves a profile into one launch plan. Pure: no filesystem access —
   /// home provisioning happens at the launch boundary, not here.
   static func plan(
     for profile: AgentProfile,
     intent: AgentStartIntent = .interactive,
-    homeBaseDirectory: URL
+    homeBaseDirectory: URL,
+    dispatchID: String? = nil
   ) throws -> AgentProfileLaunchPlan {
     guard let adapter = AgentRuntimeAdapterRegistry.profileAdapter(for: profile.runtime) else {
       throw AgentProfileLaunchPlanError.runtimeUnavailable(profile.runtime)
@@ -298,15 +310,27 @@ nonisolated enum AgentProfileLaunchPlanner {
       dedicatedHome = home
       sessionConfigRoot = relocation.sessionConfigRoot(for: home)
     }
+    let effectiveIntent: AgentStartIntent
+    if let dispatchID {
+      guard case .prompt(let prompt) = intent else {
+        throw AgentProfileLaunchPlanError.dispatchRequiresPrompt
+      }
+      guard !dispatchID.isEmpty, !dispatchID.contains("\0") else {
+        throw AgentProfileLaunchPlanError.dispatchRequiresPrompt
+      }
+      effectiveIntent = .prompt(AgentDispatchPrompt.render(userPrompt: prompt))
+    } else {
+      effectiveIntent = intent
+    }
     let invocation = try AgentRuntimeAdapterRegistry.makeStartInvocation(
       AgentStartRequest(
         runtime: profile.runtime,
-        intent: intent,
+        intent: effectiveIntent,
         configuration: configuration,
         dedicatedHome: dedicatedHome
       )
     )
-    if let prompt = intent.promptText {
+    if let prompt = effectiveIntent.promptText {
       guard !prompt.contains("\0") else {
         throw AgentProfileLaunchPlanError.promptContainsNUL
       }
@@ -314,6 +338,10 @@ nonisolated enum AgentProfileLaunchPlanner {
         throw AgentProfileLaunchPlanError.promptArgumentUnavailable(profile.runtime)
       }
       surfaceEnvironment[promptCarrierName] = prompt
+    }
+    if let dispatchID {
+      surfaceEnvironment[dispatchCarrierName] = dispatchID
+      tokens.append("\(DispatchCompleteInput.environmentKey)=\"$\(dispatchCarrierName)\"")
     }
     let overrides = AgentProfileEnvironmentPolicy.effectiveOverrides(profile.environmentOverrides)
     for name in overrides.keys.sorted() {
@@ -356,6 +384,24 @@ nonisolated enum AgentProfileLaunchPlanner {
     let urlComponents = url.standardizedFileURL.pathComponents
     guard urlComponents.count > baseComponents.count else { return false }
     return Array(urlComponents.prefix(baseComponents.count)) == baseComponents
+  }
+}
+
+nonisolated enum AgentDispatchPrompt {
+  static let protocolVersion = 1
+
+  static func render(userPrompt: String) -> String {
+    """
+    \(userPrompt)
+
+    ---
+    Prowl dispatch completion protocol v\(protocolVersion):
+    Before ending this task, choose exactly one terminal outcome and make this command your final tool action:
+    prowl agents dispatch-complete --outcome succeeded|failed --summary "<concise result>"
+    Use succeeded only when the assigned work is complete and verified. Use failed when it cannot be completed,
+    and explain why in the required summary. Do not omit the command; Prowl supplies its dispatch context
+    automatically.
+    """
   }
 }
 

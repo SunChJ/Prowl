@@ -47,7 +47,15 @@ respawn.
 Every launch creates a **new** tab or split; Prowl never types the invocation into an
 existing shell. Toolbar and Command Palette launches use the Profile's saved placement in
 the current worktree and start interactively with no initial prompt. CLI launches override
-placement from the `create tab|pane` command and may supply the kickoff prompt. The new pane records its profile identity at
+placement from the `create tab|pane` command and may supply the kickoff prompt. A prompted
+CLI launch is also an atomic dispatch: its create response includes a pending opaque receipt,
+the launched child alone receives `PROWL_DISPATCH_ID`, and the effective prompt tells the
+agent to finish with `prowl agents dispatch-complete --outcome … --summary …`. Unprompted
+launches do not create a receipt. Failure to launch or bind rolls back the new surface and
+cancels the unpublished dispatch; a new CLI also rejects an old app response that omits the
+required dispatch metadata.
+
+The new pane records its profile identity at
 creation: the Active Agents rows and the capsule show the profile's display
 name (frozen at launch — later renames don't relabel live panes). The identity
 lives exactly as long as the launched agent: once it exits, any agent started

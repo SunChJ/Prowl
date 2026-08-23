@@ -84,6 +84,30 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "agents.dispatch-complete",
+         let data = response.data,
+         let payload = try? data.decode(as: DispatchCompleteCommandPayload.self)
+      {
+        print(dispatchCompleteText(payload))
+        return
+      }
+
+      if response.command == "agents.dispatch-abandon",
+         let data = response.data,
+         let payload = try? data.decode(as: DispatchAbandonCommandPayload.self)
+      {
+        print(dispatchAbandonText(payload))
+        return
+      }
+
+      if response.command == "agents.wait",
+         let data = response.data,
+         let payload = try? data.decode(as: AgentWaitCommandPayload.self)
+      {
+        print(agentWaitText(payload))
+        return
+      }
+
       if response.command == "profiles",
          let data = response.data,
          let payload = try? data.decode(as: ProfilesCommandPayload.self)
@@ -158,7 +182,7 @@ enum OutputRenderer {
 
     if let error = response.error {
       FileHandle.standardError.write(
-        Data("error [\(error.code)]: \(error.message)\n".utf8)
+        Data("\(errorText(error, command: response.command))\n".utf8)
       )
     }
   }
@@ -293,6 +317,69 @@ enum OutputRenderer {
     return "Signaled \(event) for pane \(payload.pane.id)."
   }
 
+  static func dispatchCompleteText(_ payload: DispatchCompleteCommandPayload) -> String {
+    let replayed = payload.replayed ? " (replayed)" : ""
+    return [
+      "Completed dispatch \(payload.receipt.id): \(payload.receipt.outcome.rawValue)\(replayed)",
+      "  pane: \(payload.target.pane.id)",
+      "  summary: \(payload.receipt.summary)",
+    ].joined(separator: "\n")
+  }
+
+  static func dispatchAbandonText(_ payload: DispatchAbandonCommandPayload) -> String {
+    let replayed = payload.replayed ? " (replayed)" : ""
+    return [
+      "Abandoned dispatch \(payload.record.id)\(replayed)",
+      "  pane: \(payload.target.pane.id)",
+      "  reason: \(payload.record.reason)",
+    ].joined(separator: "\n")
+  }
+
+  static func agentWaitText(_ payload: AgentWaitCommandPayload) -> String {
+    switch payload {
+    case .dispatch(let wait):
+      return [
+        "Dispatch \(wait.receipt.id) \(wait.receipt.outcome.rawValue) after \(wait.waitedMilliseconds) ms",
+        "  pane: \(wait.target.pane.id)",
+        "  summary: \(wait.receipt.summary)",
+      ].joined(separator: "\n")
+    case .condition(let wait):
+      return [
+        "Agent reached \(wait.condition.rawValue) after \(wait.waitedMilliseconds) ms",
+        "  pane: \(wait.target.pane.id)",
+        "  observation: \(wait.observation.status.rawValue) [\(wait.observation.confidence)] via \(wait.observation.source)",
+      ].joined(separator: "\n")
+    }
+  }
+
+  static func errorText(_ error: CommandError, command: String) -> String {
+    var lines = ["error [\(error.code)]: \(error.message)"]
+    guard command == "agents.wait",
+      let details = try? error.details?.decode(as: AgentWaitErrorDetails.self)
+    else {
+      return lines[0]
+    }
+
+    switch details {
+    case .dispatch(let wait):
+      lines.append("  dispatch: \(wait.record.id) (\(wait.record.state.rawValue))")
+      lines.append("  pane: \(wait.target.pane.id)")
+      lines.append("  waited: \(wait.waitedMilliseconds) ms")
+    case .condition(let wait):
+      lines.append("  condition: \(wait.condition.rawValue)")
+      if let target = wait.target {
+        lines.append("  pane: \(target.pane.id)")
+      }
+      if let observation = wait.observation {
+        lines.append(
+          "  observation: \(observation.status.rawValue) [\(observation.confidence)] via \(observation.source)"
+        )
+      }
+      lines.append("  waited: \(wait.waitedMilliseconds) ms")
+    }
+    return lines.joined(separator: "\n")
+  }
+
   private static func renderProfiles(_ payload: ProfilesCommandPayload) -> String {
     guard !payload.profiles.isEmpty else { return "No Agent Profiles found." }
     return payload.profiles.map { profile in
@@ -407,6 +494,9 @@ enum OutputRenderer {
       if let launch = payload.launch {
         lines.append("  \("profile:".dim) \(launch.profileName)  \("agent:".dim) \(launch.agent)")
       }
+      if let dispatch = payload.dispatch {
+        lines.append("  \("dispatch:".dim) \(dispatch.id)")
+      }
       return lines.joined(separator: "\n")
     case .pane:
       var lines = [
@@ -418,6 +508,9 @@ enum OutputRenderer {
       }
       if let launch = payload.launch {
         lines.append("  \("profile:".dim) \(launch.profileName)  \("agent:".dim) \(launch.agent)")
+      }
+      if let dispatch = payload.dispatch {
+        lines.append("  \("dispatch:".dim) \(dispatch.id)")
       }
       return lines.joined(separator: "\n")
     }

@@ -13,6 +13,7 @@ final class WorktreeTerminalManager {
   private let layoutPersistence: TerminalLayoutPersistenceClient
   private let targetHandleRegistry = TerminalTargetHandleRegistry()
   @ObservationIgnored private let agentObservationStore: AgentObservationStore
+  @ObservationIgnored private let agentDispatchStore: AgentDispatchStore
   private var states: [Worktree.ID: WorktreeTerminalState] = [:]
   private var notificationsEnabled = true
   private var commandFinishedNotificationEnabled = true
@@ -36,12 +37,14 @@ final class WorktreeTerminalManager {
     runtime: GhosttyRuntime,
     preferredFontSize: Float32? = nil,
     layoutPersistence: TerminalLayoutPersistenceClient = .liveValue,
-    agentObservationBufferCapacity: Int = 64
+    agentObservationBufferCapacity: Int = 64,
+    agentDispatchStore: AgentDispatchStore = AgentDispatchStore()
   ) {
     self.runtime = runtime
     self.layoutPersistence = layoutPersistence
     self.preferredFontSize = preferredFontSize
     self.agentObservationStore = AgentObservationStore(bufferCapacity: agentObservationBufferCapacity)
+    self.agentDispatchStore = agentDispatchStore
     baselineFontSize = runtime.defaultFontSize()
   }
 
@@ -239,9 +242,185 @@ final class WorktreeTerminalManager {
     return true
   }
 
+  @discardableResult
+  func recordAgentSignal(_ signal: AgentSignal, caller: CallerPane) -> Bool {
+    guard containsSurface(caller.surfaceID) else { return false }
+    let evidence = currentAgentEvidence(surfaceID: caller.surfaceID)
+    agentObservationStore.updateEvidenceEpoch(
+      surfaceID: caller.surfaceID,
+      processGeneration: evidence.generation,
+      sessionID: evidence.sessionID
+    )
+    let generationMatches = evidence.generation.map(caller.processAncestry.contains) ?? false
+    let binding = agentObservationStore.bindingForSignal(
+      surfaceID: caller.surfaceID,
+      generationMatches: generationMatches,
+      signalSessionID: signal.sessionID
+    )
+    agentObservationStore.publishSignal(signal, binding: binding, surfaceID: caller.surfaceID)
+    guard
+      binding == .current,
+      let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: caller.surfaceID)
+    else { return true }
+    noteDispatchEvidence(
+      signal,
+      surfaceID: caller.surfaceID,
+      evidenceEpoch: evidenceEpoch
+    )
+    return true
+  }
+
+  private func noteDispatchEvidence(
+    _ signal: AgentSignal,
+    surfaceID: UUID,
+    evidenceEpoch: UUID
+  ) {
+    switch signal.kind {
+    case .turnEnded:
+      agentDispatchStore.noteTerminalEvidence(
+        surfaceID: surfaceID,
+        evidenceEpoch: evidenceEpoch,
+        evidence: .turnEnded
+      )
+    case .needsInput:
+      agentDispatchStore.noteTerminalEvidence(
+        surfaceID: surfaceID,
+        evidenceEpoch: evidenceEpoch,
+        evidence: .needsInput
+      )
+    case .sessionEnd:
+      agentDispatchStore.noteTerminalEvidence(
+        surfaceID: surfaceID,
+        evidenceEpoch: evidenceEpoch,
+        evidence: .sessionEnd
+      )
+    case .sessionStart, .progress:
+      agentDispatchStore.noteActivity(surfaceID: surfaceID, evidenceEpoch: evidenceEpoch)
+    }
+  }
+
   /// Internal observer-health diagnostic; not a user-facing API.
   func agentObservationSubscriberCount(surfaceID: UUID) -> Int {
     agentObservationStore.subscriberCount(surfaceID: surfaceID)
+  }
+
+  func agentObservationSnapshot(surfaceID: UUID) -> AgentObservationSnapshot? {
+    agentObservationStore.snapshot(surfaceID: surfaceID)
+  }
+
+  func isSurfaceLive(_ surfaceID: UUID) -> Bool {
+    containsSurface(surfaceID)
+  }
+
+  func agentSignalsPayload(
+    surfaceID: UUID,
+    includeDiagnosticLast: Bool = true
+  ) -> AgentSignalsPayload {
+    let evidence = currentAgentEvidence(surfaceID: surfaceID)
+    agentObservationStore.updateEvidenceEpoch(
+      surfaceID: surfaceID,
+      processGeneration: evidence.generation,
+      sessionID: evidence.sessionID
+    )
+    return agentObservationStore.signalsPayload(
+      surfaceID: surfaceID,
+      formatter: Self.agentSignalDateFormatter,
+      includeDiagnosticLast: includeDiagnosticLast
+    )
+  }
+
+  func currentEligibleAgentSignal(surfaceID: UUID) -> AgentSignal? {
+    let payload = agentSignalsPayload(surfaceID: surfaceID)
+    guard payload.lastBinding == .current else { return nil }
+    return agentObservationStore.snapshot(surfaceID: surfaceID)?.latestSignal
+  }
+
+  private func currentAgentEvidence(
+    surfaceID: UUID
+  ) -> (generation: AgentProcessGeneration?, sessionID: String?) {
+    for state in states.values {
+      guard let paneState = state.surfaceAgentStates[surfaceID] else { continue }
+      let generation = paneState.agentProcessID.flatMap { pid in
+        ProcessDetection.processStartDate(pid: pid).map {
+          AgentProcessGeneration(pid: pid, startedAt: $0)
+        }
+      }
+      return (generation, paneState.session?.id)
+    }
+    return (nil, nil)
+  }
+
+  private static let agentSignalDateFormatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    return formatter
+  }()
+
+  func issueAgentDispatch() throws -> AgentDispatchSnapshot {
+    try agentDispatchStore.issue()
+  }
+
+  func bindAgentDispatch(dispatchID: String, target: TabResolvedTarget) throws {
+    guard let surfaceID = UUID(uuidString: target.paneID) else {
+      throw AgentDispatchStoreError.bindingMissing
+    }
+    guard let snapshot = agentDispatchStore.snapshot(dispatchID: dispatchID) else {
+      throw AgentDispatchStoreError.notFound
+    }
+    let target = TabTarget(from: target)
+    if let existing = snapshot.binding {
+      guard existing.surfaceID == surfaceID, existing.target == target else {
+        throw AgentDispatchStoreError.alreadyBound
+      }
+      try agentDispatchStore.bind(dispatchID: dispatchID, binding: existing)
+      return
+    }
+    guard snapshot.record.state == .pending else {
+      throw AgentDispatchStoreError.alreadyTerminal
+    }
+    try agentDispatchStore.bind(
+      dispatchID: dispatchID,
+      binding: AgentDispatchBinding(
+        surfaceID: surfaceID,
+        target: target,
+        evidenceEpoch: agentObservationStore.beginDispatchEpoch(surfaceID: surfaceID)
+      )
+    )
+  }
+
+  func cancelAgentDispatchIssuance(dispatchID: String) {
+    agentDispatchStore.cancelIssuance(dispatchID: dispatchID)
+  }
+
+  func agentDispatchSnapshot(dispatchID: String) -> AgentDispatchSnapshot? {
+    agentDispatchStore.snapshot(dispatchID: dispatchID)
+  }
+
+  func completeAgentDispatch(
+    dispatchID: String,
+    outcome: DispatchCompletionOutcome,
+    summary: String,
+    callerSurfaceID: UUID
+  ) throws -> AgentDispatchMutationResult {
+    try agentDispatchStore.complete(
+      dispatchID: dispatchID,
+      outcome: outcome,
+      summary: summary,
+      callerSurfaceID: callerSurfaceID
+    )
+  }
+
+  func abandonAgentDispatch(dispatchID: String, reason: String) throws -> AgentDispatchMutationResult {
+    try agentDispatchStore.abandon(dispatchID: dispatchID, reason: reason)
+  }
+
+  func observeAgentDispatch(dispatchID: String) throws -> AgentDispatchObservationStream {
+    try agentDispatchStore.observe(dispatchID: dispatchID)
+  }
+
+  func agentDispatchSubscriberCount(dispatchID: String) -> Int {
+    agentDispatchStore.subscriberCount(dispatchID: dispatchID)
   }
 
   func eventStream() -> AsyncStream<TerminalClient.Event> {
@@ -336,6 +515,7 @@ final class WorktreeTerminalManager {
     }
     state.onSurfaceClosed = { [weak self] surfaceID in
       self?.agentObservationStore.publishSurfaceClosed(surfaceID: surfaceID)
+      self?.agentDispatchStore.surfaceClosed(surfaceID: surfaceID)
     }
     state.onRunScriptStatusChanged = { [weak self] isRunning in
       self?.emit(.runScriptStatusChanged(worktreeID: worktree.id, isRunning: isRunning))
@@ -778,6 +958,7 @@ final class WorktreeTerminalManager {
       self.layoutPersistence = .liveValue
       self.preferredFontSize = nil
       self.agentObservationStore = AgentObservationStore(bufferCapacity: 64)
+      self.agentDispatchStore = AgentDispatchStore()
       self.baselineFontSize = 13
     }
   #endif

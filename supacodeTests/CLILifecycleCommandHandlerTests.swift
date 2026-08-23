@@ -162,6 +162,7 @@ struct CLILifecycleCommandHandlerTests {
     let created = makeTarget(tabID: "created-tab", paneID: "created-pane")
     let profile = AgentProfile(name: "Reviewer", runtime: .claude)
     var launchRequest: CLIProfileLaunchRequest?
+    var lifecycle: [String] = []
     let handler = LifecycleCommandHandler(
       resolveCreateTarget: { _ in .success(base) },
       resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: base)) },
@@ -169,8 +170,19 @@ struct CLILifecycleCommandHandlerTests {
       createPane: { _, _ in nil },
       profiles: { [profile] },
       launchAgentProfile: { request in
+        lifecycle.append("launch")
         launchRequest = request
         return .success(created)
+      },
+      issueDispatch: {
+        lifecycle.append("issue")
+        return .success(
+          DispatchPendingRecord(id: "d1", createdAt: "2026-08-23T02:00:00.000Z")
+        )
+      },
+      bindDispatch: { dispatchID, target in
+        lifecycle.append("bind:\(dispatchID):\(target.paneID)")
+        return .success(())
       },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }
@@ -194,7 +206,9 @@ struct CLILifecycleCommandHandlerTests {
     #expect(launchRequest?.profile == profile)
     #expect(launchRequest?.target == base)
     #expect(launchRequest?.prompt == "Review the diff.")
+    #expect(launchRequest?.dispatchID == "d1")
     #expect(launchRequest?.background == true)
+    #expect(lifecycle == ["issue", "launch", "bind:d1:created-pane"])
     let data = try #require(response.data)
     let payload = try data.decode(as: LifecycleCommandPayload.self)
     #expect(
@@ -205,6 +219,166 @@ struct CLILifecycleCommandHandlerTests {
           agent: "claude"
         )
     )
+    #expect(payload.dispatch?.id == "d1")
+  }
+
+  @Test func promptedLaunchFailureCancelsIssuedDispatch() async {
+    let base = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .claude)
+    var cancelled: [String] = []
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(base) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: base)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { request in
+        #expect(request.dispatchID == "d1")
+        return .failure(.createFailed("Launch failed."))
+      },
+      issueDispatch: {
+        .success(DispatchPendingRecord(id: "d1", createdAt: "2026-08-23T02:00:00.000Z"))
+      },
+      cancelDispatch: { cancelled.append($0) },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review.")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(cancelled == ["d1"])
+  }
+
+  @Test func dispatchCapacityFailurePreventsLaunch() async {
+    let base = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .claude)
+    var didLaunch = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(base) },
+      resolveCloseTarget: { _ in .success(LifecycleResolvedTarget(resource: .pane, target: base)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { _ in
+        didLaunch = true
+        return .success(base)
+      },
+      issueDispatch: { .failure(.capacityExceeded) },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          CreateInput(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: CreateLaunchInput(profile: "Reviewer", prompt: "Review.")
+          )
+        )
+      )
+    )
+
+    #expect(!response.ok)
+    #expect(response.error?.code == CLIErrorCode.dispatchCapacityExceeded)
+    #expect(!didLaunch)
+  }
+
+  @Test func unpromptedProfileLaunchDoesNotIssueOrBindDispatch() async throws {
+    let target = makeTarget()
+    let profile = AgentProfile(name: "Reviewer", runtime: .codex)
+    var issued = false
+    var bound = false
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(target) },
+      resolveCloseTarget: { _ in .success(.init(resource: .pane, target: target)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { request in
+        #expect(request.dispatchID == nil)
+        return .success(target)
+      },
+      issueDispatch: {
+        issued = true
+        return .failure(.capacityExceeded)
+      },
+      bindDispatch: { _, _ in
+        bound = true
+        return .success(())
+      },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          .init(
+            resource: .tab,
+            selector: .worktree("App"),
+            launch: .init(profile: "Reviewer")
+          ))
+      ))
+    #expect(response.ok)
+    #expect(!issued)
+    #expect(!bound)
+    #expect(try #require(response.data).decode(as: LifecycleCommandPayload.self).dispatch == nil)
+  }
+
+  @Test func bindFailureRollsBackCreatedSurfaceAndCancelsDispatch() async {
+    let anchor = makeTarget(paneID: "anchor")
+    let created = makeTarget(paneID: "created")
+    let profile = AgentProfile(name: "Reviewer", runtime: .codex)
+    var rolledBack: (LifecycleResource, TabResolvedTarget)?
+    var cancelled: String?
+    let handler = LifecycleCommandHandler(
+      resolveCreateTarget: { _ in .success(anchor) },
+      resolveCloseTarget: { _ in .success(.init(resource: .pane, target: anchor)) },
+      createTab: { _, _ in nil },
+      createPane: { _, _ in nil },
+      profiles: { [profile] },
+      launchAgentProfile: { _ in .success(created) },
+      issueDispatch: {
+        .success(.init(id: "d1", createdAt: "2026-08-23T02:00:00.000Z"))
+      },
+      bindDispatch: { _, _ in .failure(.notFound) },
+      cancelDispatch: { cancelled = $0 },
+      rollbackProfileLaunch: { rolledBack = ($0, $1) },
+      closeTab: { _, _ in true },
+      closePane: { _, _ in true }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .json,
+        command: .create(
+          .init(
+            resource: .pane,
+            selector: .pane("anchor"),
+            direction: .right,
+            launch: .init(profile: "Reviewer", prompt: "Review")
+          ))
+      ))
+    #expect(response.error?.code == CLIErrorCode.createFailed)
+    #expect(rolledBack?.0 == .pane)
+    #expect(rolledBack?.1 == created)
+    #expect(cancelled == "d1")
   }
 
   @Test func disabledNamesDoNotMakeAnEnabledProfileNonUnique() async {
@@ -388,6 +562,9 @@ struct CLILifecycleCommandHandlerTests {
       profiles: { [profile] },
       launchAgentProfile: { _ in
         .failure(.invalidArgument("Agent Profile “Reviewer” does not support kickoff prompts."))
+      },
+      issueDispatch: {
+        .success(DispatchPendingRecord(id: "d1", createdAt: "2026-08-23T02:00:00.000Z"))
       },
       closeTab: { _, _ in true },
       closePane: { _, _ in true }

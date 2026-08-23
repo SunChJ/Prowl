@@ -250,8 +250,54 @@ tmux/detached ancestry, and already-closed panes fail with `SOURCE_REQUIRED` or
 means explicit channel and caller-pane attribution, not verified business completion.
 Claimed origin never upgrades trust. JSON uses `prowl.cli.agents.signal.v1`.
 
-`dispatch-complete` and `agents wait` arrive together in the next slice with an opaque
-`dispatch_id`; `workflow done` remains the only workflow-step completion command.
+### Dispatch completion and waiting
+
+Every prompted Profile launch made by `prowl create tab|pane --profile … --prompt -`
+returns a pending `data.dispatch` record. Prowl passes its opaque id only to the launched
+child as `PROWL_DISPATCH_ID` and appends the completion protocol to the effective prompt.
+The worker must report exactly one terminal receipt before ending its assigned turn:
+
+```bash
+prowl agents dispatch-complete --outcome succeeded --summary "Implemented and verified"
+prowl agents dispatch-complete --outcome failed --summary "Blocked by an invalid fixture"
+```
+
+The command accepts no public dispatch id. Prowl reads the launch-scoped environment value
+and independently verifies the socket caller's process ancestry against the immutable launch
+pane. Repeating identical completion is safe; a conflicting retry is rejected. Unprompted
+Profile launches remain interactive and do not create a dispatch.
+
+The coordinator waits by exact id:
+
+```bash
+prowl agents wait --dispatch "$dispatch_id" --timeout 600 --json
+prowl agents wait --dispatch "$dispatch_id" --include-screen 40 --json
+```
+
+Only a successful receipt makes this command succeed. Failed, abandoned, gone,
+needs-input, incomplete-turn, and timeout states return structured nonzero errors with the
+immutable launch target and current receipt evidence. Pending receipts are memory-only,
+survive pane closure as retained `gone` records, never expire automatically, and are bounded
+to 256 records. A coordinator can explicitly stop tracking one without stopping its worker:
+
+```bash
+prowl agents dispatch-abandon --dispatch "$dispatch_id" --reason "Superseded assignment"
+```
+
+For state observation rather than task proof, wait on a pane condition:
+
+```bash
+prowl agents wait p7 --until blocked --min-confidence high --timeout 120 --json
+prowl agents wait "$pane" --until idle --include-screen 40 --json
+```
+
+Conditions are `idle`, `blocked`, `changed`, and `exit`. Results include their evidence
+`source` and `confidence`; `auto` may fall back to a heuristic result only after the pane has
+remained unchanged for two seconds. `--include-screen` samples the detection buffer until it
+is stable for 800 ms (or the two-second cap), then returns the requested trailing lines.
+Strict dispatch waits never accept a visual or idle-state substitute. Closing or killing the
+waiting CLI cancels its server-side subscription promptly. `workflow done` remains the only
+workflow-step completion command.
 
 ### `prowl profiles list`
 

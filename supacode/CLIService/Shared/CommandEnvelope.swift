@@ -19,6 +19,9 @@ public enum Command: Codable, Sendable {
   case agents(AgentsInput)
   case agentsRead(AgentReadInput)
   case agentsSignal(AgentSignalInput)
+  case agentsDispatchComplete(DispatchCompleteInput)
+  case agentsDispatchAbandon(DispatchAbandonInput)
+  case agentsWait(AgentWaitInput)
   case profiles(ProfilesInput)
   case focus(FocusInput)
   case send(SendInput)
@@ -37,6 +40,9 @@ public enum Command: Codable, Sendable {
     case .agents: "agents"
     case .agentsRead: "agents.read"
     case .agentsSignal: "agents.signal"
+    case .agentsDispatchComplete: "agents.dispatch-complete"
+    case .agentsDispatchAbandon: "agents.dispatch-abandon"
+    case .agentsWait: "agents.wait"
     case .profiles: "profiles"
     case .focus: "focus"
     case .send: "send"
