@@ -88,6 +88,62 @@ struct CLISocketServerTests {
     #expect(!CLISocketServer.isAllowedPeerUID(502, currentUID: 501))
   }
 
+  @Test func descriptorDuplicationFailureRejectsConnectionBeforeRouting() async throws {
+    let socketPath = temporarySocketPath(suffix: "monitor-dup-failure")
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    var recordedSignal: AgentSignal?
+    let handler = AgentSignalCommandHandler(
+      resolveCaller: { _ in pane },
+      recordSignal: { _, signal in
+        recordedSignal = signal
+        return true
+      }
+    )
+    let accepted = DispatchSemaphore(value: 0)
+    let closed = DispatchSemaphore(value: 0)
+    let peerClosed = DisconnectObservation()
+    let rejected = DisconnectObservation()
+    let server = CLISocketServer(
+      router: CLICommandRouter(agentsSignalHandler: handler),
+      socketPath: socketPath,
+      onClientAccepted: {
+        accepted.signal()
+        if closed.wait(timeout: .now() + 10) == .success {
+          peerClosed.signal()
+        }
+      },
+      onPeerMonitorUnavailable: { rejected.signal() },
+      duplicatePeerDescriptor: { _ in -1 }
+    )
+    try server.start()
+    defer { server.stop() }
+    let requestData = try JSONEncoder().encode(
+      CommandEnvelope(
+        output: .json,
+        command: .agentsSignal(AgentSignalInput(event: .turnEnded, detail: "must not route"))
+      )
+    )
+
+    try await Task.detached {
+      try Self.sendAndCloseAfterAcceptance(
+        requestData: requestData,
+        socketPath: socketPath,
+        accepted: accepted,
+        closed: closed
+      )
+    }.value
+    let closedBeforeRouting = await Task.detached {
+      peerClosed.wait(timeout: .now() + 10)
+    }.value
+    #expect(closedBeforeRouting)
+    let connectionRejected = await Task.detached {
+      rejected.wait(timeout: .now() + 10)
+    }.value
+
+    #expect(connectionRejected)
+    #expect(recordedSignal == nil)
+  }
+
   @Test func socketRoundTripThreadsKernelPeerPIDIntoAgentSignalHandler() async throws {
     let socketPath = temporarySocketPath(suffix: "signal-context")
     let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
@@ -148,8 +204,9 @@ struct CLISocketServerTests {
     )
     var recordedInput: AgentNativeHookInput?
     let handler = AgentNativeHookCommandHandler(
-      resolveCaller: { processID in
-        #expect(processID == getpid())
+      resolveCaller: { context in
+        #expect(context.callerProcessID == getpid())
+        #expect(context.callerProcessAncestry.first?.processID == getpid())
         return pane
       },
       recordHook: { caller, received in
@@ -183,12 +240,87 @@ struct CLISocketServerTests {
     #expect(!responseText.contains(input.token))
   }
 
+  @Test func nativeHookRoutesAfterPeerClosesBeforeMainActorHandling() async throws {
+    let socketPath = temporarySocketPath(suffix: "hook-short-lived-peer")
+    let routeRecorded = DisconnectObservation()
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    let input = AgentNativeHookInput(
+      runtime: .codex,
+      token: "private-token",
+      signal: AgentNativeHookSignal(
+        event: .turnEnded,
+        nativeEvent: "agent-turn-complete",
+        cwd: "/tmp/project",
+        sessionID: "thread-1"
+      )
+    )
+    var recordedInput: AgentNativeHookInput?
+    let handler = AgentNativeHookCommandHandler(
+      resolveCaller: { context in
+        #expect(context.callerProcessID == getpid())
+        #expect(context.callerProcessAncestry.first?.processID == getpid())
+        return pane
+      },
+      recordHook: { _, received in
+        recordedInput = received
+        routeRecorded.signal()
+        return true
+      }
+    )
+    let accepted = DispatchSemaphore(value: 0)
+    let closed = DispatchSemaphore(value: 0)
+    let peerClosed = DisconnectObservation()
+    let server = CLISocketServer(
+      router: CLICommandRouter(agentsHookHandler: handler),
+      socketPath: socketPath,
+      onClientAccepted: {
+        accepted.signal()
+        if closed.wait(timeout: .now() + 10) == .success {
+          peerClosed.signal()
+        }
+      }
+    )
+    try server.start()
+    defer { server.stop() }
+    let requestData = try JSONEncoder().encode(
+      CommandEnvelope(output: .json, command: .agentsHook(input))
+    )
+    let sendTask = Task.detached {
+      try Self.sendAndCloseAfterAcceptance(
+        requestData: requestData,
+        socketPath: socketPath,
+        accepted: accepted,
+        closed: closed
+      )
+    }
+
+    try await sendTask.value
+    let closedBeforeRouting = await Task.detached {
+      peerClosed.wait(timeout: .now() + 10)
+    }.value
+    #expect(closedBeforeRouting)
+    let didRoute = await Task.detached {
+      routeRecorded.wait(timeout: .now() + 10)
+    }.value
+    #expect(didRoute)
+    #expect(recordedInput == input)
+  }
+
   @Test func closingPeerCancelsInFlightWaitRequest() async throws {
     let socketPath = temporarySocketPath(suffix: "wait-peer-eof")
     let probe = CancellationProbe()
+    let accepted = DispatchSemaphore(value: 0)
+    let closed = DispatchSemaphore(value: 0)
+    let peerClosed = DisconnectObservation()
     let server = CLISocketServer(
       router: CLICommandRouter(agentsWaitHandler: CancellationProbeHandler(probe: probe)),
-      socketPath: socketPath
+      socketPath: socketPath,
+      onClientAccepted: {
+        accepted.signal()
+        if closed.wait(timeout: .now() + 10) == .success {
+          peerClosed.signal()
+        }
+      }
     )
     try server.start()
     defer { server.stop() }
@@ -200,21 +332,83 @@ struct CLISocketServerTests {
     )
     let requestData = try JSONEncoder().encode(envelope)
 
-    try await withCheckedThrowingContinuation { continuation in
-      DispatchQueue.global(qos: .userInitiated).async {
-        continuation.resume(
-          with: Result {
-            try Self.sendAndClose(requestData: requestData, socketPath: socketPath)
-          }
-        )
-      }
-    }
+    try await Task.detached {
+      try Self.sendAndCloseAfterAcceptance(
+        requestData: requestData,
+        socketPath: socketPath,
+        accepted: accepted,
+        closed: closed
+      )
+    }.value
 
-    await probe.waitUntilCancellationWasObserved()
+    let closedBeforeRouting = await Task.detached {
+      peerClosed.wait(timeout: .now() + 10)
+    }.value
+    #expect(closedBeforeRouting)
+    let cancellationObserved = await Task.detached {
+      probe.waitForCancellation(timeout: .now() + 10)
+    }.value
+    #expect(cancellationObserved)
     #expect(probe.wasCancelled)
   }
 
   #if canImport(Darwin)
+    @Test func disconnectMonitorActivatesDuringCreation() async throws {
+      var descriptors: [Int32] = [-1, -1]
+      #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+      defer { close(descriptors[0]) }
+      let observation = DisconnectObservation()
+      let monitor = try #require(
+        CLIPeerDisconnectMonitor(fileDescriptor: descriptors[0]) {
+          observation.signal()
+        }
+      )
+
+      close(descriptors[1])
+      let activatedDuringCreation = await Task.detached {
+        observation.wait(timeout: .now() + 1)
+      }.value
+
+      #expect(activatedDuringCreation)
+      monitor.cancel()
+    }
+
+    @Test func disconnectMonitorOutlivesOriginalDescriptor() async throws {
+      var descriptors: [Int32] = [-1, -1]
+      #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+      let observation = DisconnectObservation()
+      let monitor = try #require(
+        CLIPeerDisconnectMonitor(fileDescriptor: descriptors[0]) {
+          observation.signal()
+        }
+      )
+
+      close(descriptors[0])
+      close(descriptors[1])
+      let disconnected = await Task.detached {
+        observation.wait(timeout: .now() + 10)
+      }.value
+
+      #expect(disconnected)
+      monitor.cancel()
+    }
+
+    @Test func acceptedSocketSuppressesSIGPIPEAndClosesOnExec() throws {
+      var descriptors: [Int32] = [-1, -1]
+      #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+      defer {
+        close(descriptors[0])
+        close(descriptors[1])
+      }
+
+      #expect(CLISocketServer.configureAcceptedClient(descriptors[0]))
+      var enabled: Int32 = 0
+      var length = socklen_t(MemoryLayout<Int32>.size)
+      #expect(getsockopt(descriptors[0], SOL_SOCKET, SO_NOSIGPIPE, &enabled, &length) == 0)
+      #expect(enabled == 1)
+      #expect(fcntl(descriptors[0], F_GETFD) & FD_CLOEXEC != 0)
+    }
+
     @Test func kernelReportsPeerPIDForLocalSocket() throws {
       var descriptors: [Int32] = [-1, -1]
       #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
@@ -259,11 +453,18 @@ struct CLISocketServerTests {
     return try readExact(socketFD, count: Int(responseLength))
   }
 
-  nonisolated private static func sendAndClose(requestData: Data, socketPath: String) throws {
+  nonisolated private static func sendAndCloseAfterAcceptance(
+    requestData: Data,
+    socketPath: String,
+    accepted: DispatchSemaphore,
+    closed: DispatchSemaphore
+  ) throws {
     let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
     guard socketFD >= 0 else { throw CLIServiceError.socketCreationFailed }
-    defer { close(socketFD) }
-
+    defer {
+      close(socketFD)
+      closed.signal()
+    }
     let connected = withSocketAddress(socketPath) { address in
       withUnsafePointer(to: address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketPointer in
@@ -276,6 +477,9 @@ struct CLISocketServerTests {
     var requestLength = UInt32(requestData.count).bigEndian
     try withUnsafeBytes(of: &requestLength) { try writeAll(socketFD, buffer: $0) }
     try requestData.withUnsafeBytes { try writeAll(socketFD, buffer: $0) }
+    guard accepted.wait(timeout: .now() + 10) == .success else {
+      throw CLIServiceError.readFailed
+    }
   }
 
   nonisolated private static func writeAll(_ fileDescriptor: Int32, buffer: UnsafeRawBufferPointer) throws {
@@ -394,6 +598,18 @@ struct CLISocketServerTests {
   }
 }
 
+private nonisolated final class DisconnectObservation: @unchecked Sendable {
+  private let semaphore = DispatchSemaphore(value: 0)
+
+  func signal() {
+    semaphore.signal()
+  }
+
+  func wait(timeout: DispatchTime) -> Bool {
+    semaphore.wait(timeout: timeout) == .success
+  }
+}
+
 private enum TestSocketClientError: Error {
   case connectFailed
 }
@@ -414,8 +630,8 @@ private struct CancellationProbeHandler: CommandHandler {
 
 private nonisolated final class CancellationProbe: @unchecked Sendable {
   private let lock = NSLock()
+  private let cancellationObserved = DispatchSemaphore(value: 0)
   private var cancellationContinuation: CheckedContinuation<Void, Never>?
-  private var observerContinuation: CheckedContinuation<Void, Never>?
   private var cancelled = false
 
   var wasCancelled: Bool {
@@ -437,27 +653,17 @@ private nonisolated final class CancellationProbe: @unchecked Sendable {
     }
   }
 
-  func waitUntilCancellationWasObserved() async {
-    await withCheckedContinuation { continuation in
-      let resumeImmediately = lock.withLock { () -> Bool in
-        guard !cancelled else { return true }
-        observerContinuation = continuation
-        return false
-      }
-      if resumeImmediately { continuation.resume() }
-    }
+  nonisolated func waitForCancellation(timeout: DispatchTime) -> Bool {
+    cancellationObserved.wait(timeout: timeout) == .success
   }
 
   private func markCancelled() {
-    let continuations = lock.withLock {
+    let continuation = lock.withLock {
       cancelled = true
-      defer {
-        cancellationContinuation = nil
-        observerContinuation = nil
-      }
-      return (cancellationContinuation, observerContinuation)
+      defer { cancellationContinuation = nil }
+      return cancellationContinuation
     }
-    continuations.0?.resume()
-    continuations.1?.resume()
+    cancellationObserved.signal()
+    continuation?.resume()
   }
 }

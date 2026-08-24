@@ -95,6 +95,38 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(700))
   }
 
+  func testNativeHookBridgeSurvivesClosedPeerWithDefaultSIGPIPEDisposition() throws {
+    let socketPath = temporarySocketPath(suffix: "hook-sigpipe")
+    let server = try MockSocketServer(
+      socketPath: socketPath,
+      responseData: Data(),
+      closesAfterRequestLength: true
+    )
+    try server.start()
+    defer { server.stop() }
+    let payload = try JSONSerialization.data(
+      withJSONObject: [
+        "hook_event_name": "Stop",
+        "session_id": "session-1",
+        "cwd": "/tmp/project",
+        "reason": String(repeating: "x", count: AgentSignalInput.maximumDetailBytes),
+      ]
+    )
+
+    let result = try runProwlWithDefaultSIGPIPE(
+      args: ["agents", "_hook", "claude", "Stop"],
+      environment: [
+        AgentNativeHookInput.tokenEnvironmentKey: "token-1",
+        ProwlSocket.environmentKey: socketPath,
+      ],
+      stdinData: payload
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertEqual(result.stderr, "")
+  }
+
   func testCodexHookForwardsExactPayloadOnTransportLossAndScrubsInternalEnvironment() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "prowl-hook-forward-\(UUID().uuidString)",
@@ -2975,6 +3007,25 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     )
   }
 
+  private func runProwlWithDefaultSIGPIPE(
+    args: [String],
+    environment: [String: String],
+    stdinData: Data
+  ) throws -> CommandResult {
+    let binaryPath = try ensureProwlBinary()
+    var mergedEnvironment = ProcessInfo.processInfo.environment
+    for (key, value) in environment {
+      mergedEnvironment[key] = value
+    }
+    return try runProcess(
+      executable: "/bin/sh",
+      arguments: ["-c", "trap - PIPE; exec \"$@\"", "sh", binaryPath] + args,
+      currentDirectory: repoRoot.path,
+      environment: mergedEnvironment,
+      stdinData: stdinData
+    )
+  }
+
   private func ensureProwlBinary() throws -> String {
     let candidates = [
       repoRoot.appendingPathComponent(".build/debug/prowl").path,
@@ -3475,6 +3526,7 @@ private final class MockSocketServer: @unchecked Sendable {
   private let socketPath: String
   private let responseData: Data
   private let responseByteDelayMicroseconds: useconds_t
+  private let closesAfterRequestLength: Bool
 
   private var serverFD: Int32 = -1
   private var receivedRequestData: Data?
@@ -3484,11 +3536,13 @@ private final class MockSocketServer: @unchecked Sendable {
   init(
     socketPath: String,
     responseData: Data,
-    responseByteDelayMicroseconds: useconds_t = 0
+    responseByteDelayMicroseconds: useconds_t = 0,
+    closesAfterRequestLength: Bool = false
   ) throws {
     self.socketPath = socketPath
     self.responseData = responseData
     self.responseByteDelayMicroseconds = responseByteDelayMicroseconds
+    self.closesAfterRequestLength = closesAfterRequestLength
   }
 
   deinit { stop() }
@@ -3553,6 +3607,10 @@ private final class MockSocketServer: @unchecked Sendable {
 
       do {
         let lengthData = try self.readExact(fd: clientFD, count: 4)
+        if self.closesAfterRequestLength {
+          self.requestSemaphore.signal()
+          return
+        }
         let bodyLength = lengthData.withUnsafeBytes {
           UInt32(bigEndian: $0.load(as: UInt32.self))
         }

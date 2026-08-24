@@ -739,7 +739,16 @@ struct SupacodeApp: App {
       }
     )
     let agentHookHandler = AgentNativeHookCommandHandler(
-      resolveCaller: resolveAgentSignalCaller,
+      resolveCaller: { context in
+        if !context.callerProcessAncestry.isEmpty {
+          return CallerPaneResolver.pane(
+            forCallerProcessAncestry: context.callerProcessAncestry,
+            paneByShellPID: terminalManager.paneByShellPID()
+          )
+        }
+        guard let processID = context.callerProcessID else { return nil }
+        return resolveAgentSignalCaller(processID)
+      },
       recordHook: { caller, input in
         terminalManager.recordAgentNativeHook(input, caller: caller)
       }

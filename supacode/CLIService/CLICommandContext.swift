@@ -3,16 +3,29 @@
 
 import Foundation
 
-/// Connection-scoped facts about the calling `prowl` process. Handlers that
-/// need caller identity (handoff's caller-pane resolution) read it; every
-/// other handler ignores it via the protocol's default forwarding.
+nonisolated struct CallerProcessIdentity: Sendable, Equatable {
+  let processID: pid_t
+  let startedAt: Date?
+}
+
+/// Connection-scoped facts about the calling `prowl` process. The ancestry is
+/// frozen at accept time because a short-lived hook may exit before MainActor
+/// routing begins.
 nonisolated struct CLICommandContext: Sendable, Equatable {
-  /// PID of the peer process on the socket (`LOCAL_PEERPID`), when the kernel
-  /// reported one.
   let callerProcessID: pid_t?
+  let callerProcessAncestry: [CallerProcessIdentity]
 
   init(callerProcessID: pid_t? = nil) {
     self.callerProcessID = callerProcessID
+    callerProcessAncestry = []
+  }
+
+  init(
+    callerProcessID: pid_t?,
+    callerProcessAncestry: [CallerProcessIdentity]
+  ) {
+    self.callerProcessID = callerProcessID
+    self.callerProcessAncestry = callerProcessAncestry
   }
 }
 
@@ -38,6 +51,27 @@ nonisolated struct CallerPane: Sendable, Equatable {
 /// caller outside any Prowl pane (another terminal app, a script, tmux's
 /// server-owned processes) resolves to nil — never to a guess.
 nonisolated enum CallerPaneResolver {
+  static func processAncestry(
+    forCallerProcess callerPID: pid_t,
+    parentProcessID: (pid_t) -> pid_t? = { pid in
+      ProcessDetection.processBSDInfo(pid: pid).map { pid_t($0.pbi_ppid) }
+    },
+    processStartDate: (pid_t) -> Date? = ProcessDetection.processStartDate
+  ) -> [CallerProcessIdentity] {
+    var pid = callerPID
+    var hops = 0
+    var ancestry: [CallerProcessIdentity] = []
+    while pid > 1, hops < 32 {
+      ancestry.append(
+        CallerProcessIdentity(processID: pid, startedAt: processStartDate(pid))
+      )
+      guard let parent = parentProcessID(pid), parent != pid else { break }
+      pid = parent
+      hops += 1
+    }
+    return ancestry
+  }
+
   static func pane(
     forCallerProcess callerPID: pid_t,
     paneByShellPID: [pid_t: CallerPane],
@@ -46,23 +80,34 @@ nonisolated enum CallerPaneResolver {
     },
     processStartDate: (pid_t) -> Date? = ProcessDetection.processStartDate
   ) -> CallerPane? {
-    var pid = callerPID
-    var hops = 0
-    var ancestry: [AgentProcessGeneration] = []
-    while pid > 1, hops < 32 {
-      if let startedAt = processStartDate(pid) {
-        ancestry.append(AgentProcessGeneration(pid: pid, startedAt: startedAt))
+    pane(
+      forCallerProcessAncestry: processAncestry(
+        forCallerProcess: callerPID,
+        parentProcessID: parentProcessID,
+        processStartDate: processStartDate
+      ),
+      paneByShellPID: paneByShellPID
+    )
+  }
+
+  static func pane(
+    forCallerProcessAncestry identities: [CallerProcessIdentity],
+    paneByShellPID: [pid_t: CallerPane]
+  ) -> CallerPane? {
+    var generations: [AgentProcessGeneration] = []
+    for identity in identities {
+      if let startedAt = identity.startedAt {
+        generations.append(
+          AgentProcessGeneration(pid: identity.processID, startedAt: startedAt)
+        )
       }
-      if let pane = paneByShellPID[pid] {
+      if let pane = paneByShellPID[identity.processID] {
         return CallerPane(
           worktreeID: pane.worktreeID,
           surfaceID: pane.surfaceID,
-          processAncestry: ancestry
+          processAncestry: generations
         )
       }
-      guard let parent = parentProcessID(pid), parent != pid else { return nil }
-      pid = parent
-      hops += 1
     }
     return nil
   }

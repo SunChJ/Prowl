@@ -9,11 +9,13 @@ nonisolated enum CodexShellLaunchEnvironmentProbe {
   private static let executableMarker = "__PROWL_CODEX_EXECUTABLE__"
   private static let homeMarker = "__PROWL_CODEX_HOME_BASE__"
   private static let codexHomeMarker = "__PROWL_CODEX_HOME__"
+  private static let endMarker = "__PROWL_CODEX_END__"
   private static let script = """
     executable="$(command -v -- codex)" || exit 1
     printf '%s%s\n' '\(executableMarker)' "$executable"
     printf '%s%s\n' '\(homeMarker)' "${HOME-}"
     printf '%s%s\n' '\(codexHomeMarker)' "${CODEX_HOME-}"
+    printf '%s\n' '\(endMarker)'
     """
 
   static func resolve(
@@ -54,17 +56,21 @@ nonisolated enum CodexShellLaunchEnvironmentProbe {
   }
 
   private static func parse(_ output: String) -> [String: String]? {
-    let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
-    guard lines.count == 4, lines.last?.isEmpty == true else { return nil }
-    var values: [String: String] = [:]
-    for line in lines.dropLast() {
-      let value = String(line)
-      guard
-        let marker = [executableMarker, homeMarker, codexHomeMarker].first(where: value.hasPrefix),
-        values[marker] == nil
-      else { return nil }
-      values[marker] = String(value.dropFirst(marker.count))
-    }
-    return values.count == 3 ? values : nil
+    let lines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let markers = [executableMarker, homeMarker, codexHomeMarker]
+    guard
+      markers.allSatisfy({ marker in lines.count(where: { $0.hasPrefix(marker) }) == 1 }),
+      lines.count(where: { $0 == endMarker }) == 1,
+      let startIndex = lines.firstIndex(where: { $0.hasPrefix(executableMarker) }),
+      lines.indices.contains(startIndex + 3),
+      lines[startIndex + 1].hasPrefix(homeMarker),
+      lines[startIndex + 2].hasPrefix(codexHomeMarker),
+      lines[startIndex + 3] == endMarker
+    else { return nil }
+    return [
+      executableMarker: String(lines[startIndex].dropFirst(executableMarker.count)),
+      homeMarker: String(lines[startIndex + 1].dropFirst(homeMarker.count)),
+      codexHomeMarker: String(lines[startIndex + 2].dropFirst(codexHomeMarker.count)),
+    ]
   }
 }

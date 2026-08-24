@@ -178,6 +178,74 @@ round 3 verified 2521 app tests, 96 CLI integration tests, 34 script tests, stri
 the Debug build; round-3 focused regressions also pass. No P0/P1/P2 code finding remains. The only
 residual is the separately documented visible-GUI acceptance limitation.
 
+## Post-merge review hardening
+
+A 15-finding review arrived after PR #721 merged. Each finding was traced against the merged code and the
+verified correctness paths were reproduced before correction. Ten logic/runtime regressions failed together in
+the first focused RED run; two native failure paths were also reproduced independently with default signal and
+kernel peer-credential probes.
+
+The 12 verified correctness findings are fixed:
+
+- the shell probe now drains stdout/stderr through EOF instead of spinning on `POLLHUP`, so successful Codex
+  preflight completes normally;
+- managed registrations survive transient generation lookup failure and a genuinely slow first process, Codex
+  thread rotation rebinds the exact channel, and confirmed process replacement clears the prior session;
+- outbound CLI sockets, accepted app-server sockets, and Codex app-server stdin suppress `SIGPIPE` at the
+  descriptor level, preserving fail-open behavior without relying on Ghostty's process-wide signal policy;
+- menu/palette split launches again fall back to a tab, while explicit CLI/workflow split requests remain strict;
+- generated Claude/Codex options stay before an existing `--`, and Claude option scanning stops at that boundary;
+- login-shell marker parsing tolerates unrelated profile output while still rejecting duplicate/incomplete facts;
+- every live forwarding-store instance holds an owner lock for its session directory, so a second Debug/Release
+  instance cannot sweep records that are merely old; crashed stores remain reclaimable;
+- the socket accept loop freezes same-user PID ancestry before MainActor routing, and native hooks continue routing
+  after their bounded client exits; ordinary long-running CLI requests retain disconnect cancellation;
+- deferred Ghostty surfaces apply the `font_size_adjusted` no-op only after native creation, preserving inherited
+  and preferred font sizes across config reloads.
+
+The three cleanup findings were deliberately not expanded into this correctness patch: the two subprocess runners
+still share only behavioral tests rather than a new abstraction, repeated evidence lookup remains bounded by entry
+deduplication/title coalescing, and startup orphan maintenance remains synchronous and normally tiny. No measured
+user impact justified broad lifecycle or concurrency refactors. The one-second shell deadline also remains: the
+verified defect was strict whole-stdout parsing, while the local real login shell completed in under 10 ms and the
+review supplied no slow-shell measurement. The deadline continues to fail soft with an explicit warning.
+
+Focused RED → GREEN coverage now includes successful child EOF, shell banners, `--`, generation flaps and delayed
+startup, Codex `/new`, process/session replacement, active cross-instance orphan ownership, split fallback, native
+font initialization, default-`SIGPIPE` CLI execution, early app-server exit, and short-lived socket peers.
+
+A follow-up disconnect-seam review found two additional lifetime gaps and one nondeterministic test. Accepted sockets
+now receive `SO_NOSIGPIPE` and `FD_CLOEXEC` immediately after `accept`. The disconnect monitor atomically duplicates
+its descriptor with `F_DUPFD_CLOEXEC`, monitors only that owned descriptor, and closes it from the DispatchSource
+cancellation handler; `handleClient` remains the sole owner of the accepted descriptor and performs no synchronous
+source wait. The regression tests coordinate accept, peer close, and MainActor routing with explicit semaphores, so
+they prove the peer closed after identity capture but before routing. The owned-descriptor test failed against the
+previous monitor and passes after duplication; the three disconnect-seam tests also passed ten repeated runs.
+
+A second post-merge review exposed four additional asymmetric boundaries. The login-shell runner now stops waiting
+for inherited pipe writers after the tracked shell exits, while still draining all immediately buffered output. The
+launch option scanner stops at `--`, matching managed-option insertion. Codex thread rotation retains a per-process
+set of retired session IDs, so detector-confirmed and hook-driven rotation accept a new thread without allowing a
+late event to rebind an old one. Login-shell facts now end with an explicit marker and must form one ordered,
+contiguous record, preserving unrelated profile output while rejecting multiline value truncation.
+
+The same review hardened descriptor exhaustion and lifecycle handling: peer descriptor duplication happens before
+routing and fails the connection closed with a warning, and the monitor activates its owned DispatchSource during
+construction so no suspended source can reach deinitialization. Seven focused regressions failed against the prior
+implementation and passed ten repeated runs after correction. The review's proposed narrowing of menu split fallback
+was rejected because menu/palette compatibility intentionally retries any failed saved split as a tab; the user guide
+now documents that behavior. A finite managed first-generation lifetime remains a separate design decision: restoring
+the old ten-second cutoff would reintroduce the verified slow-start failure, while indefinite registration remains
+constrained by token, runtime, CWD, event, and ancestry validation.
+
+The descriptor-duplication regression initially used an unbounded client response read, which could stall the full
+parallel test host under load. It now coordinates accept, peer close, and explicit rejection with semantic evidence.
+The final serialized app suite passed 2549 tests in 40.8 seconds, and the default parallel suite completed without a
+stall. Its only failures were the two pre-existing `ShellClientStreamingTests` cancellation timing flakes; both passed
+immediately in an isolated two-test run. Static format/lint checks, the CLI build and 97-test integration suite, and
+the Debug app build also passed. A final read-only adversarial review found no P0/P1 defects; its sole P2 corrected
+user documentation that still described the first managed generation as subject to the old acquisition deadline.
+
 ## Deferred scope
 
 S3b owns Copilot/Droid/Qoder adapters. S3c owns Pi/OMP/OpenCode adapters and the Active Agents exact

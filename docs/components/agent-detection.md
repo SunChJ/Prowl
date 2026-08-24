@@ -163,8 +163,9 @@ native event bridges without writing user, dedicated-home, or project configurat
 Only an app-issued token plus exact caller-process ancestry and matching pane/runtime/cwd can
 produce `hook_claude` / `hook_codex` evidence. The channel is not advertised as
 `verified_live` until a valid native event completes that end-to-end check. Early Claude
-`SessionStart` payloads wait for the first timely process generation instead of being lost;
-a late or replacement process, pane close, or launched-agent exit revokes coverage.
+`SessionStart` payloads wait for the first matching process generation instead of being lost.
+That first generation may attach after the detector's acquisition window; once attached, a
+replacement process, pane close, or launched-agent exit revokes coverage.
 
 Codex exposes only one effective notifier. Before launch, Prowl asks Codex's own bounded
 `app-server config/read` protocol for the effective notifier, applies selected-profile and

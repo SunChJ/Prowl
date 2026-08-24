@@ -23,11 +23,12 @@ nonisolated private struct CodexLaunchOptionScanner {
 
   mutating func scan() throws {
     while index < arguments.count {
+      let argument = arguments[index]
+      if argument == "--" { break }
       if index == promptArgumentIndex {
         index += 1
         continue
       }
-      let argument = arguments[index]
       if argument == "--ignore-user-config" {
         throw CodexLaunchContextError.ignoredUserConfig
       }

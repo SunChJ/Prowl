@@ -5,6 +5,49 @@ import Testing
 @testable import supacode
 
 struct CodexShellProbeProcessTests {
+  @Test func successfulChildReturnsOutputBeforeTheDeadline() async throws {
+    let root = temporaryDirectory("shell-success")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let process = CodexShellProbeProcess(
+      timeout: 0.5,
+      maximumOutputBytes: 1_024,
+      shellOverride: URL(filePath: "/bin/sh"),
+      shellOverrideArguments: ["-c", "printf stdout; printf stderr >&2"]
+    )
+    let output = try await process.run(cwd: root, script: "ignored")
+
+    #expect(output.stdout == "stdout")
+    #expect(output.stderr == "stderr")
+    #expect(output.exitCode == 0)
+  }
+
+  @Test func successfulChildDoesNotWaitForBackgroundDescendantEOF() async throws {
+    let root = temporaryDirectory("shell-background-child")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let shell = try executableScript(
+      in: root,
+      name: "background-child.sh",
+      contents: """
+        #!/bin/sh
+        printf stdout
+        sleep 2 &
+        """
+    )
+    let process = CodexShellProbeProcess(
+      timeout: 0.5,
+      maximumOutputBytes: 1_024,
+      shellOverride: URL(filePath: "/bin/sh"),
+      shellOverrideArguments: [shell.path(percentEncoded: false)]
+    )
+
+    let output = try await process.run(cwd: root, script: "ignored")
+
+    #expect(output.stdout == "stdout")
+    #expect(output.exitCode == 0)
+  }
+
   @Test func hardTimeoutKillsLoginShellThatIgnoresTermination() async throws {
     let root = temporaryDirectory("shell-timeout")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -189,6 +189,49 @@ struct AgentHookRenderingTests {
     #expect(codex.argumentValues.values.first?.contains("dangerously-bypass-hook-trust") == false)
   }
 
+  @Test func managedArgumentsStayBeforeAnEndOfOptionsSentinel() throws {
+    let claude = ClaudeHookSettingsPreparer.prepare(
+      invocation: AgentInvocation(executable: "claude", arguments: ["--", "literal prompt"]),
+      launchDirectory: URL(filePath: "/tmp", directoryHint: .isDirectory),
+      promptArgumentIndex: 1,
+      hookCommands: hookCommands,
+      readFile: { _, _ in .unreadable }
+    )
+    let preparedClaude = try #require(claude.prepared)
+    let claudeSentinel = try #require(preparedClaude.invocation.arguments.firstIndex(of: "--"))
+    let settings = try #require(preparedClaude.invocation.arguments.firstIndex(of: "--settings"))
+    #expect(settings < claudeSentinel)
+
+    let codex = CodexManagedNotifyRenderer.prepare(
+      invocation: AgentInvocation(executable: "codex", arguments: ["exec", "--", "literal prompt"]),
+      bundledCLIPath: "/bundle/prowl",
+      promptArgumentIndex: 2
+    )
+    let codexSentinel = try #require(codex.invocation.arguments.firstIndex(of: "--"))
+    let override = try #require(codex.invocation.arguments.firstIndex(of: "-c"))
+    #expect(override < codexSentinel)
+  }
+
+  @Test func userSettingsAfterEndOfOptionsAreNotParsedAsOptions() throws {
+    var reads = 0
+    let outcome = ClaudeHookSettingsPreparer.prepare(
+      invocation: AgentInvocation(
+        executable: "claude",
+        arguments: ["--", "--settings", "/tmp/not-an-option"]
+      ),
+      launchDirectory: URL(filePath: "/tmp", directoryHint: .isDirectory),
+      hookCommands: hookCommands,
+      readFile: { _, _ in
+        reads += 1
+        return .unreadable
+      }
+    )
+
+    let prepared = try #require(outcome.prepared)
+    #expect(reads == 0)
+    #expect(prepared.invocation.arguments.prefix(3) == ["--settings", "{}", "--"])
+  }
+
   @Test func unpromptedOptionValuePairsAreNeverInferredAsPrompts() throws {
     let claude = ClaudeHookSettingsPreparer.prepare(
       invocation: AgentInvocation(executable: "claude", arguments: ["-p", "--model", "opus"]),

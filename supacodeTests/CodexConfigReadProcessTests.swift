@@ -1,9 +1,43 @@
+import Darwin
 import Foundation
 import Testing
 
 @testable import supacode
 
 struct CodexConfigReadProcessTests {
+  @Test func appServerInputPipeSuppressesSIGPIPE() {
+    let pipe = Pipe()
+    defer {
+      try? pipe.fileHandleForReading.close()
+      try? pipe.fileHandleForWriting.close()
+    }
+    let descriptor = pipe.fileHandleForWriting.fileDescriptor
+    #expect(fcntl(descriptor, F_GETNOSIGPIPE) == 0)
+
+    #expect(CodexConfigReadProcess.configureNoSigPipe(descriptor))
+    #expect(fcntl(descriptor, F_GETNOSIGPIPE) == 1)
+  }
+
+  @Test func appServerExitBeforeInputFailsWithoutWaitingForTimeout() async throws {
+    let root = temporaryDirectory("codex-early-exit")
+    let home = root.appending(path: "home", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let executable = root.appending(path: "early-exit.sh", directoryHint: .notDirectory)
+    try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let process = CodexConfigReadProcess(
+      executableURL: executable,
+      temporaryBaseDirectory: root,
+      timeout: 2
+    )
+    await #expect(throws: CodexConfigReadProcessError.processFailed) {
+      try await process.query(
+        CodexConfigQuery(kind: .base, codexHome: home, cwd: root, overrides: [])
+      )
+    }
+  }
+
   @Test func profileParserHomeIsOwnerOnlyAndRemovedAfterResponse() async throws {
     let root = temporaryDirectory("codex-process")
     let parser = root.appending(path: "parser", directoryHint: .isDirectory)

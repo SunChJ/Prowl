@@ -46,8 +46,10 @@ respawn.
 
 Every launch creates a **new** tab or split; Prowl never types the invocation into an
 existing shell. Toolbar and Command Palette launches use the Profile's saved placement in
-the current worktree and start interactively with no initial prompt. CLI launches override
-placement from the `create tab|pane` command and may supply the kickoff prompt. A prompted
+the current worktree and start interactively with no initial prompt; if a saved split cannot
+be created, these interactive launchers fall back to a foreground tab. CLI launches override
+placement from the `create tab|pane` command, remain strict about pane placement, and may
+supply the kickoff prompt. A prompted
 CLI launch is also an atomic dispatch: its create response includes a pending opaque receipt,
 the launched child alone receives `PROWL_DISPATCH_ID`, and the effective prompt tells the
 agent to finish with `prowl agents dispatch-complete --outcome … --summary …`; the required
