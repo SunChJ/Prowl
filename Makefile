@@ -348,18 +348,40 @@ test-scripts: # Run tests for the repository's Python scripts
 
 test-app: ensure-ghostty # Run app/unit tests via xcodebuild
 	@set -euo pipefail; \
-	result_bundle="$(CURRENT_MAKEFILE_DIR)/build/test-results/supacode-tests.xcresult"; \
-	mkdir -p "$$(dirname "$$result_bundle")"; \
-	rm -rf "$$result_bundle"; \
-	set +e; \
-	xcodebuild test -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" $(TEST_SIGNING_ARGS) -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental 2>&1 | mise exec -- xcsift -w --format toon; \
-	xcodebuild_status=$${PIPESTATUS[0]}; \
-	set -e; \
-	if [ "$$xcodebuild_status" -ne 0 ]; then \
-		bash "$(CURRENT_MAKEFILE_DIR)/scripts/print-xcresult-failures.sh" "$$result_bundle" || true; \
-		exit "$$xcodebuild_status"; \
-	fi; \
-	bash "$(CURRENT_MAKEFILE_DIR)/scripts/assert-xcresult-tests.sh" "$$result_bundle"
+	result_root="$(CURRENT_MAKEFILE_DIR)/build/test-results"; \
+	mkdir -p "$$result_root"; \
+	run_xcode_tests() { \
+		local result_bundle="$$1"; \
+		local action="$$2"; \
+		local expected_test_count="$$3"; \
+		shift 3; \
+		rm -rf "$$result_bundle"; \
+		set +e; \
+		xcodebuild "$$action" -project supacode.xcodeproj -scheme supacode -destination "platform=macOS" -resultBundlePath "$$result_bundle" $(TEST_SIGNING_ARGS) -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental "$$@" 2>&1 | mise exec -- xcsift -w --format toon; \
+		local xcodebuild_status=$${PIPESTATUS[0]}; \
+		set -e; \
+		if [ "$$xcodebuild_status" -ne 0 ]; then \
+			bash "$(CURRENT_MAKEFILE_DIR)/scripts/print-xcresult-failures.sh" "$$result_bundle" || true; \
+			return "$$xcodebuild_status"; \
+		fi; \
+		if [ -n "$$expected_test_count" ]; then \
+			bash "$(CURRENT_MAKEFILE_DIR)/scripts/assert-xcresult-tests.sh" "$$result_bundle" "$$expected_test_count"; \
+		else \
+			bash "$(CURRENT_MAKEFILE_DIR)/scripts/assert-xcresult-tests.sh" "$$result_bundle"; \
+		fi; \
+	}; \
+	shell_cancellation_tests=( \
+		"supacodeTests/ShellClientStreamingTests/cancellingRunStreamConsumerTerminatesProcessAfterItIsReady()" \
+		"supacodeTests/ShellClientStreamingTests/runTerminatesReadyProcessWhenCallingTaskIsCancelled()" \
+	); \
+	skip_args=(); \
+	only_args=(); \
+	for test_id in "$${shell_cancellation_tests[@]}"; do \
+		skip_args+=("-skip-testing:$$test_id"); \
+		only_args+=("-only-testing:$$test_id"); \
+	done; \
+	run_xcode_tests "$$result_root/supacode-tests.xcresult" test "" "$${skip_args[@]}"; \
+	run_xcode_tests "$$result_root/supacode-shell-cancellation-tests.xcresult" test-without-building 2 "$${only_args[@]}"
 
 test-cli-smoke: build-cli # Smoke test CLI executable
 	@set -euo pipefail; \

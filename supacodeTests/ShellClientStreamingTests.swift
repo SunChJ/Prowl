@@ -170,15 +170,41 @@ nonisolated private final class NamedPipeWatcher: @unchecked Sendable {
   }
 }
 
+nonisolated private final class NamedPipeSender {
+  private let descriptor: Int32
+
+  init(url: URL) throws {
+    let path = url.path(percentEncoded: false)
+    guard mkfifo(path, 0o600) == 0 else { throw NamedPipeWatcherError.creationFailed }
+    let descriptor = open(path, O_RDWR | O_CLOEXEC)
+    guard descriptor >= 0 else { throw NamedPipeWatcherError.openFailed }
+    self.descriptor = descriptor
+  }
+
+  deinit {
+    Darwin.close(descriptor)
+  }
+
+  func send(_ value: String) throws {
+    let data = Data(value.utf8)
+    let count = data.withUnsafeBytes {
+      Darwin.write(descriptor, $0.baseAddress, $0.count)
+    }
+    guard count == data.count else { throw NamedPipeWatcherError.writeFailed }
+  }
+}
+
 nonisolated private enum NamedPipeWatcherError: Error {
   case creationFailed
   case openFailed
+  case writeFailed
 }
 
 private struct ShellCancellationFixture {
   let root: URL
   let readyURL: URL
   let resultURL: URL
+  let watchdogURL: URL
   let executableURL = URL(fileURLWithPath: "/usr/bin/python3")
   let arguments: [String]
 
@@ -191,6 +217,7 @@ private struct ShellCancellationFixture {
     let scriptURL = root.appending(path: "fixture.py", directoryHint: .notDirectory)
     let readyURL = root.appending(path: "ready", directoryHint: .notDirectory)
     let resultURL = root.appending(path: "result", directoryHint: .notDirectory)
+    let watchdogURL = root.appending(path: "watchdog", directoryHint: .notDirectory)
     try """
     import pathlib
     import signal
@@ -198,6 +225,7 @@ private struct ShellCancellationFixture {
 
     ready = pathlib.Path(sys.argv[1])
     result = pathlib.Path(sys.argv[2])
+    watchdog = pathlib.Path(sys.argv[3])
 
     def publish(path, value):
         with path.open("w") as stream:
@@ -209,18 +237,21 @@ private struct ShellCancellationFixture {
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, lambda *_: finish("terminated"))
-    # Bound a broken cancellation path without measuring host-side wall-clock latency.
+    # Arm the fallback only after the Swift consumer has observed cancellation.
     signal.signal(signal.SIGALRM, lambda *_: finish("natural"))
     publish(ready, "ready")
-    signal.alarm(20)
+    with watchdog.open("r") as stream:
+        stream.read(3)
+    signal.alarm(5)
     signal.pause()
     """.write(to: scriptURL, atomically: true, encoding: .utf8)
     self.root = root
     self.readyURL = readyURL
     self.resultURL = resultURL
+    self.watchdogURL = watchdogURL
     arguments = [
       scriptURL.path(percentEncoded: false), readyURL.path(percentEncoded: false),
-      resultURL.path(percentEncoded: false),
+      resultURL.path(percentEncoded: false), watchdogURL.path(percentEncoded: false),
     ]
   }
 }
@@ -334,6 +365,7 @@ struct ShellClientStreamingTests {
       url: fixture.readyURL,
       onCompletion: { if $0 == "ready" { readyCancellation.signalReady() } }
     )
+    let watchdog = try NamedPipeSender(url: fixture.watchdogURL)
     let resultEvent = AsyncStream<String>.makeStream()
     let resultWatcher = try NamedPipeWatcher(
       url: fixture.resultURL,
@@ -359,9 +391,10 @@ struct ShellClientStreamingTests {
 
     await consumer.value
     try #require(readyCancellation.cancellationWasIssued)
+    try watchdog.send("arm")
     var resultIterator = resultEvent.stream.makeAsyncIterator()
     let result = try #require(await resultIterator.next())
-    withExtendedLifetime((readyWatcher, resultWatcher)) {}
+    withExtendedLifetime((readyWatcher, resultWatcher, watchdog)) {}
 
     #expect(result == "terminated")
   }
@@ -374,6 +407,7 @@ struct ShellClientStreamingTests {
       url: fixture.readyURL,
       onCompletion: { if $0 == "ready" { readyCancellation.signalReady() } }
     )
+    let watchdog = try NamedPipeSender(url: fixture.watchdogURL)
     let resultEvent = AsyncStream<String>.makeStream()
     let resultWatcher = try NamedPipeWatcher(
       url: fixture.resultURL,
@@ -393,9 +427,10 @@ struct ShellClientStreamingTests {
 
     _ = await runTask.result
     try #require(readyCancellation.cancellationWasIssued)
+    try watchdog.send("arm")
     var resultIterator = resultEvent.stream.makeAsyncIterator()
     let result = try #require(await resultIterator.next())
-    withExtendedLifetime((readyWatcher, resultWatcher)) {}
+    withExtendedLifetime((readyWatcher, resultWatcher, watchdog)) {}
 
     #expect(result == "terminated")
   }
