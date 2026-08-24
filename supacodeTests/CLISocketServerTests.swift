@@ -88,6 +88,62 @@ struct CLISocketServerTests {
     #expect(!CLISocketServer.isAllowedPeerUID(502, currentUID: 501))
   }
 
+  @Test func descriptorDuplicationFailureRejectsConnectionBeforeRouting() async throws {
+    let socketPath = temporarySocketPath(suffix: "monitor-dup-failure")
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    var recordedSignal: AgentSignal?
+    let handler = AgentSignalCommandHandler(
+      resolveCaller: { _ in pane },
+      recordSignal: { _, signal in
+        recordedSignal = signal
+        return true
+      }
+    )
+    let accepted = DispatchSemaphore(value: 0)
+    let closed = DispatchSemaphore(value: 0)
+    let peerClosed = DisconnectObservation()
+    let rejected = DisconnectObservation()
+    let server = CLISocketServer(
+      router: CLICommandRouter(agentsSignalHandler: handler),
+      socketPath: socketPath,
+      onClientAccepted: {
+        accepted.signal()
+        if closed.wait(timeout: .now() + 10) == .success {
+          peerClosed.signal()
+        }
+      },
+      onPeerMonitorUnavailable: { rejected.signal() },
+      duplicatePeerDescriptor: { _ in -1 }
+    )
+    try server.start()
+    defer { server.stop() }
+    let requestData = try JSONEncoder().encode(
+      CommandEnvelope(
+        output: .json,
+        command: .agentsSignal(AgentSignalInput(event: .turnEnded, detail: "must not route"))
+      )
+    )
+
+    try await Task.detached {
+      try Self.sendAndCloseAfterAcceptance(
+        requestData: requestData,
+        socketPath: socketPath,
+        accepted: accepted,
+        closed: closed
+      )
+    }.value
+    let closedBeforeRouting = await Task.detached {
+      peerClosed.wait(timeout: .now() + 10)
+    }.value
+    #expect(closedBeforeRouting)
+    let connectionRejected = await Task.detached {
+      rejected.wait(timeout: .now() + 10)
+    }.value
+
+    #expect(connectionRejected)
+    #expect(recordedSignal == nil)
+  }
+
   @Test func socketRoundTripThreadsKernelPeerPIDIntoAgentSignalHandler() async throws {
     let socketPath = temporarySocketPath(suffix: "signal-context")
     let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
@@ -297,6 +353,26 @@ struct CLISocketServerTests {
   }
 
   #if canImport(Darwin)
+    @Test func disconnectMonitorActivatesDuringCreation() async throws {
+      var descriptors: [Int32] = [-1, -1]
+      #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+      defer { close(descriptors[0]) }
+      let observation = DisconnectObservation()
+      let monitor = try #require(
+        CLIPeerDisconnectMonitor(fileDescriptor: descriptors[0]) {
+          observation.signal()
+        }
+      )
+
+      close(descriptors[1])
+      let activatedDuringCreation = await Task.detached {
+        observation.wait(timeout: .now() + 1)
+      }.value
+
+      #expect(activatedDuringCreation)
+      monitor.cancel()
+    }
+
     @Test func disconnectMonitorOutlivesOriginalDescriptor() async throws {
       var descriptors: [Int32] = [-1, -1]
       #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
@@ -306,7 +382,6 @@ struct CLISocketServerTests {
           observation.signal()
         }
       )
-      monitor.start()
 
       close(descriptors[0])
       close(descriptors[1])
@@ -376,28 +451,6 @@ struct CLISocketServerTests {
     let lengthData = try readExact(socketFD, count: 4)
     let responseLength = lengthData.withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
     return try readExact(socketFD, count: Int(responseLength))
-  }
-
-  nonisolated private static func sendAndClose(
-    requestData: Data,
-    socketPath: String
-  ) throws {
-    let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard socketFD >= 0 else { throw CLIServiceError.socketCreationFailed }
-    defer { close(socketFD) }
-
-    let connected = withSocketAddress(socketPath) { address in
-      withUnsafePointer(to: address) { pointer in
-        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketPointer in
-          connect(socketFD, socketPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
-        }
-      }
-    }
-    guard connected == 0 else { throw TestSocketClientError.connectFailed }
-
-    var requestLength = UInt32(requestData.count).bigEndian
-    try withUnsafeBytes(of: &requestLength) { try writeAll(socketFD, buffer: $0) }
-    try requestData.withUnsafeBytes { try writeAll(socketFD, buffer: $0) }
   }
 
   nonisolated private static func sendAndCloseAfterAcceptance(

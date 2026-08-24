@@ -18,6 +18,7 @@ private struct ManagedHookRegistrationRecord {
   var evidenceEpoch: UUID
   var processGeneration: AgentProcessGeneration?
   var sessionID: String?
+  var retiredSessionIDs: Set<String> = []
   var verified = false
   var pendingSignals: [PendingManagedHookSignal] = []
 }
@@ -290,6 +291,7 @@ final class AgentObservationStore {
     guard callerAncestry.contains(generation), managed.processGeneration == generation else {
       return .rejected
     }
+    if managed.retiredSessionIDs.contains(input.signal.sessionID) { return .rejected }
 
     if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
@@ -298,6 +300,9 @@ final class AgentObservationStore {
         input.runtime == .codex
         || (input.runtime == .claude && input.signal.event == .sessionStart)
       guard mayRotateSession else { return .rejected }
+      if input.runtime == .codex {
+        managed.retiredSessionIDs.insert(currentSession)
+      }
       record.evidenceEpoch = UUID()
       record.channels.removeAll()
       record.latestCurrentSignal = nil
@@ -368,6 +373,7 @@ final class AgentObservationStore {
     {
       return AgentEvidenceEpochUpdate()
     }
+    let acceptedSessionID = acceptedManagedSessionID(sessionID, record: record)
     let firstGenerationIsTimely =
       processGeneration.map {
         $0.startedAt <= (record.firstProcessGenerationStartedBefore ?? .distantPast)
@@ -389,8 +395,8 @@ final class AgentObservationStore {
     let sessionChanged =
       !processChanged
       && record.sessionID != nil
-      && sessionID != nil
-      && record.sessionID != sessionID
+      && acceptedSessionID != nil
+      && record.sessionID != acceptedSessionID
     var update = AgentEvidenceEpochUpdate()
     if processChanged || sessionChanged {
       record.evidenceEpoch = UUID()
@@ -409,7 +415,14 @@ final class AgentObservationStore {
         managed.evidenceEpoch = record.evidenceEpoch
         managed.verified = false
         managed.pendingSignals.removeAll()
-        if managed.launch.runtime == .codex { managed.sessionID = nil }
+        if managed.launch.runtime == .codex {
+          if let managedSessionID = managed.sessionID,
+            managedSessionID != acceptedSessionID
+          {
+            managed.retiredSessionIDs.insert(managedSessionID)
+          }
+          managed.sessionID = nil
+        }
         record.managedHook = managed
       }
     }
@@ -423,7 +436,7 @@ final class AgentObservationStore {
       managed.pendingSignals.removeAll()
       record.managedHook = managed
       record.processGeneration = processGeneration
-      if let sessionID { record.sessionID = sessionID }
+      if let acceptedSessionID { record.sessionID = acceptedSessionID }
       records[surfaceID] = record
       for pendingSignal in pending {
         if case .accepted(let signal, _) = recordManagedHook(
@@ -437,9 +450,21 @@ final class AgentObservationStore {
       return update
     }
     record.processGeneration = processGeneration
-    if let sessionID { record.sessionID = sessionID }
+    if let acceptedSessionID { record.sessionID = acceptedSessionID }
     records[surfaceID] = record
     return update
+  }
+
+  private func acceptedManagedSessionID(
+    _ sessionID: String?,
+    record: SurfaceRecord
+  ) -> String? {
+    guard let sessionID,
+      let managed = record.managedHook,
+      managed.launch.runtime == .codex,
+      managed.retiredSessionIDs.contains(sessionID)
+    else { return sessionID }
+    return nil
   }
 
   func bindingForSignal(

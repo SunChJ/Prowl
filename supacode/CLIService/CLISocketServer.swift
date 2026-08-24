@@ -9,6 +9,8 @@ import Foundation
   import Glibc
 #endif
 
+private let cliSocketLogger = SupaLogger("CLISocketServer")
+
 @MainActor
 final class CLISocketServer {
   private static let maximumFrameLength = 32 * 1_024 * 1_024
@@ -17,6 +19,8 @@ final class CLISocketServer {
   private let socketPath: String
   private let lockPath: String
   private let onClientAccepted: (@Sendable () -> Void)?
+  private let onPeerMonitorUnavailable: (@Sendable () -> Void)?
+  private let duplicatePeerDescriptor: @Sendable (Int32) -> Int32
   private var serverFD: Int32 = -1
   private var lockFD: Int32 = -1
   private var ownsSocket = false
@@ -28,12 +32,18 @@ final class CLISocketServer {
     router: CLICommandRouter,
     socketPath: String = ProwlSocket.defaultPath,
     lockPath: String? = nil,
-    onClientAccepted: (@Sendable () -> Void)? = nil
+    onClientAccepted: (@Sendable () -> Void)? = nil,
+    onPeerMonitorUnavailable: (@Sendable () -> Void)? = nil,
+    duplicatePeerDescriptor: @escaping @Sendable (Int32) -> Int32 = {
+      fcntl($0, F_DUPFD_CLOEXEC, 0)
+    }
   ) {
     self.router = router
     self.socketPath = socketPath
     self.lockPath = lockPath ?? "\(socketPath).lock"
     self.onClientAccepted = onClientAccepted
+    self.onPeerMonitorUnavailable = onPeerMonitorUnavailable
+    self.duplicatePeerDescriptor = duplicatePeerDescriptor
   }
 
   /// Start listening for CLI connections.
@@ -241,16 +251,21 @@ final class CLISocketServer {
       } else {
         preservesRouteAfterDisconnect = false
       }
+      let monitorDescriptor = duplicatePeerDescriptor(clientFD)
+      guard monitorDescriptor >= 0 else {
+        cliSocketLogger.warning("Failed to duplicate a CLI peer descriptor")
+        onPeerMonitorUnavailable?()
+        return
+      }
       let routeTask = Task { @MainActor [router] in
         await router.route(envelope, context: context)
       }
-      let monitor = CLIPeerDisconnectMonitor(fileDescriptor: clientFD) {
+      let monitor = CLIPeerDisconnectMonitor(ownedFileDescriptor: monitorDescriptor) {
         if !preservesRouteAfterDisconnect { routeTask.cancel() }
       }
-      monitor?.start()
       let response = await routeTask.value
-      monitor?.cancel()
-      guard monitor?.didDisconnect != true else { return }
+      monitor.cancel()
+      guard !monitor.didDisconnect else { return }
 
       // Encode and send response
       let encoder = JSONEncoder()
@@ -416,18 +431,27 @@ nonisolated final class CLIPeerDisconnectMonitor: @unchecked Sendable {
   private let lock = NSLock()
   private var disconnected = false
 
-  init?(fileDescriptor: Int32, onDisconnect: @escaping @Sendable () -> Void) {
-    let ownedDescriptor = fcntl(fileDescriptor, F_DUPFD_CLOEXEC, 0)
-    guard ownedDescriptor >= 0 else { return nil }
+  convenience init?(
+    fileDescriptor: Int32,
+    duplicateDescriptor: @Sendable (Int32) -> Int32 = { fcntl($0, F_DUPFD_CLOEXEC, 0) },
+    onDisconnect: @escaping @Sendable () -> Void
+  ) {
+    let ownedFileDescriptor = duplicateDescriptor(fileDescriptor)
+    guard ownedFileDescriptor >= 0 else { return nil }
+    self.init(ownedFileDescriptor: ownedFileDescriptor, onDisconnect: onDisconnect)
+  }
+
+  init(ownedFileDescriptor: Int32, onDisconnect: @escaping @Sendable () -> Void) {
     let source = DispatchSource.makeReadSource(
-      fileDescriptor: ownedDescriptor,
+      fileDescriptor: ownedFileDescriptor,
       queue: DispatchQueue.global(qos: .userInitiated)
     )
-    self.fileDescriptor = ownedDescriptor
+    fileDescriptor = ownedFileDescriptor
     self.onDisconnect = onDisconnect
     self.source = source
     source.setEventHandler { [weak self] in self?.inspect() }
-    source.setCancelHandler { Darwin.close(ownedDescriptor) }
+    source.setCancelHandler { Darwin.close(ownedFileDescriptor) }
+    source.activate()
   }
 
   deinit {
@@ -436,10 +460,6 @@ nonisolated final class CLIPeerDisconnectMonitor: @unchecked Sendable {
 
   var didDisconnect: Bool {
     lock.withLock { disconnected }
-  }
-
-  func start() {
-    source.resume()
   }
 
   func cancel() {

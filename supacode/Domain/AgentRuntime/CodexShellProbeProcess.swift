@@ -138,11 +138,17 @@ nonisolated struct CodexShellProbeProcess: Sendable {
       var pollDescriptors = descriptors.map {
         pollfd(fd: $0.fileDescriptor, events: Int16(POLLIN | POLLHUP), revents: 0)
       }
-      let status = poll(&pollDescriptors, nfds_t(pollDescriptors.count), 25)
+      let processIsRunning = process.isRunning
+      let status = poll(
+        &pollDescriptors,
+        nfds_t(pollDescriptors.count),
+        processIsRunning ? 25 : 0
+      )
       if status < 0 {
         if errno == EINTR { continue }
         throw CodexShellProbeProcessError.processFailed
       }
+      if status == 0, !processIsRunning { break }
       try drainReadyDescriptors(
         &descriptors,
         pollDescriptors: pollDescriptors,

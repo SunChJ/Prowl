@@ -14,6 +14,7 @@ struct CodexShellLaunchEnvironmentTests {
           __PROWL_CODEX_EXECUTABLE__/opt/custom/bin/codex
           __PROWL_CODEX_HOME_BASE__/Users/tester
           __PROWL_CODEX_HOME__/tmp/codex-home
+          __PROWL_CODEX_END__
 
           """,
         stderr: "ignored",
@@ -44,6 +45,7 @@ struct CodexShellLaunchEnvironmentTests {
         __PROWL_CODEX_EXECUTABLE__/opt/codex
         __PROWL_CODEX_HOME_BASE__/Users/tester
         __PROWL_CODEX_HOME__
+        __PROWL_CODEX_END__
         Login complete
         """,
       stderr: "",
@@ -60,6 +62,30 @@ struct CodexShellLaunchEnvironmentTests {
 
     #expect(environment.executableURL.path(percentEncoded: false) == "/opt/codex")
     #expect(environment.processEnvironment == ["HOME": "/Users/tester"])
+  }
+
+  @Test func multilineMarkerValueDegradesInsteadOfUsingItsFirstLine() async {
+    let output = ShellOutput(
+      stdout: """
+        Login banner
+        __PROWL_CODEX_EXECUTABLE__/opt/codex
+        __PROWL_CODEX_HOME_BASE__/Users/tester
+        __PROWL_CODEX_HOME__/tmp/first
+        second
+        __PROWL_CODEX_END__
+        Login complete
+        """,
+      stderr: "",
+      exitCode: 0
+    )
+
+    #expect(
+      await CodexShellLaunchEnvironmentProbe.resolve(
+        cwd: URL(filePath: "/tmp", directoryHint: .isDirectory),
+        run: { _, _ in output },
+        isExecutable: { $0 == "/opt/codex" }
+      ) == nil
+    )
   }
 
   @Test func malformedNonAbsoluteAndFailedProbeDegrade() async {
@@ -101,6 +127,7 @@ struct CodexShellLaunchEnvironmentTests {
       __PROWL_CODEX_EXECUTABLE__/custom/bin/codex
       __PROWL_CODEX_HOME_BASE__/Users/tester
       __PROWL_CODEX_HOME__
+      __PROWL_CODEX_END__
 
       """
     let result = await CodexShellLaunchEnvironmentProbe.resolve(

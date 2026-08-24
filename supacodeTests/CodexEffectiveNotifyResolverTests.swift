@@ -133,6 +133,22 @@ struct CodexEffectiveNotifyResolverTests {
     }
   }
 
+  @Test func launchContextStopsScanningOptionsAtSentinel() throws {
+    let base = temporaryDirectory("codex-sentinel")
+    let context = try CodexLaunchContext.capture(
+      invocation: AgentInvocation(
+        executable: "codex",
+        arguments: ["exec", "--", "-C", "/must-remain-literal", "Prompt"]
+      ),
+      inheritedCWD: base,
+      environment: [:],
+      promptArgumentIndex: 4
+    )
+
+    #expect(context.effectiveCWD == base.standardizedFileURL)
+    #expect(context.configOverrides.isEmpty)
+  }
+
   @Test func positionalPromptNeverBecomesAConfigOverride() throws {
     let base = temporaryDirectory("codex-prompt")
     let invocation = AgentInvocation(

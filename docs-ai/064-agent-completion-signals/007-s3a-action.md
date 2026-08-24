@@ -222,6 +222,30 @@ source wait. The regression tests coordinate accept, peer close, and MainActor r
 they prove the peer closed after identity capture but before routing. The owned-descriptor test failed against the
 previous monitor and passes after duplication; the three disconnect-seam tests also passed ten repeated runs.
 
+A second post-merge review exposed four additional asymmetric boundaries. The login-shell runner now stops waiting
+for inherited pipe writers after the tracked shell exits, while still draining all immediately buffered output. The
+launch option scanner stops at `--`, matching managed-option insertion. Codex thread rotation retains a per-process
+set of retired session IDs, so detector-confirmed and hook-driven rotation accept a new thread without allowing a
+late event to rebind an old one. Login-shell facts now end with an explicit marker and must form one ordered,
+contiguous record, preserving unrelated profile output while rejecting multiline value truncation.
+
+The same review hardened descriptor exhaustion and lifecycle handling: peer descriptor duplication happens before
+routing and fails the connection closed with a warning, and the monitor activates its owned DispatchSource during
+construction so no suspended source can reach deinitialization. Seven focused regressions failed against the prior
+implementation and passed ten repeated runs after correction. The review's proposed narrowing of menu split fallback
+was rejected because menu/palette compatibility intentionally retries any failed saved split as a tab; the user guide
+now documents that behavior. A finite managed first-generation lifetime remains a separate design decision: restoring
+the old ten-second cutoff would reintroduce the verified slow-start failure, while indefinite registration remains
+constrained by token, runtime, CWD, event, and ancestry validation.
+
+The descriptor-duplication regression initially used an unbounded client response read, which could stall the full
+parallel test host under load. It now coordinates accept, peer close, and explicit rejection with semantic evidence.
+The final serialized app suite passed 2549 tests in 40.8 seconds, and the default parallel suite completed without a
+stall. Its only failures were the two pre-existing `ShellClientStreamingTests` cancellation timing flakes; both passed
+immediately in an isolated two-test run. Static format/lint checks, the CLI build and 97-test integration suite, and
+the Debug app build also passed. A final read-only adversarial review found no P0/P1 defects; its sole P2 corrected
+user documentation that still described the first managed generation as subject to the old acquisition deadline.
+
 ## Deferred scope
 
 S3b owns Copilot/Droid/Qoder adapters. S3c owns Pi/OMP/OpenCode adapters and the Active Agents exact
