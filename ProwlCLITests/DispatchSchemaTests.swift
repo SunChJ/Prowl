@@ -49,7 +49,7 @@ final class DispatchSchemaTests: XCTestCase {
   private func assertValid(_ instance: String) throws {
     let schemaText = try XCTUnwrap(String(data: ProwlCLIContractBundle.schemaData, encoding: .utf8))
     let result = try Schema(instance: schemaText).validate(instance: instance)
-    XCTAssertTrue(result.isValid, "Expected valid schema fixture: \(result.errors)")
+    XCTAssertTrue(result.isValid, "Expected valid schema fixture: \(result.errors ?? [])")
   }
 
   private func assertInvalid(_ instance: String) throws {

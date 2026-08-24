@@ -44,6 +44,6 @@ final class LifecycleWarningSchemaTests: XCTestCase {
   private func assertValidity(_ instance: String, expected: Bool) throws {
     let schemaText = try XCTUnwrap(String(data: ProwlCLIContractBundle.schemaData, encoding: .utf8))
     let result = try Schema(instance: schemaText).validate(instance: instance)
-    XCTAssertEqual(result.isValid, expected, "Schema errors: \(result.errors)")
+    XCTAssertEqual(result.isValid, expected, "Schema errors: \(result.errors ?? [])")
   }
 }
