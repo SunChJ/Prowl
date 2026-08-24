@@ -23,7 +23,8 @@ Detection covers
 common wrappers (node, python, bun, bash, etc.) so agents launched indirectly are
 still found. Pi and Oh My Pi are independent detected agents. Pi recognizes its
 own minimal working/idle cues, including its built-in braille-prefixed `Working...`
-loader; Oh My Pi owns its richer spinner and interactive
+loader and a running `pi-subagents` background card after the parent turn settles;
+Oh My Pi owns its richer spinner and interactive
 Ask-prompt heuristics, plus its own session layout and icon. Grok Build also
 ships an `agent` symlink; Prowl only treats that name as Grok when the path points
 at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
@@ -34,8 +35,9 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    process names / argv against known agent executables, scoring argv[0] highest,
    then process name, then command-line tokens.
 2. **Screen heuristics.** Claude detection consumes the full active screen (bounded
-   by the terminal height); every other agent starts from the last ~24 non-blank
-   lines as a guard against transcript history. The classifier then selects
+   by the terminal height); Pi starts from the last ~32 non-blank lines so an
+   expanded background-agent widget stays intact, and every other agent starts
+   from the last ~24 as a guard against transcript history. The classifier then selects
    agent-specific live UI regions rather than treating every transcript line as current
    state. Structured confirmation/permission chrome is **Blocked**; status rows and
    spinners are **Working**. Claude working rows come from a live status block walked
@@ -51,8 +53,12 @@ at a `~/.grok/` install (so Cursor's own `agent` entrypoint stays Cursor).
    the current directory-trust, hook-review, and initial sign-in menus as **Blocked** from
    their complete selected-choice and footer structures. Ordinary prompt text and completed
    responses are not confirmation boundaries.
-   Other agent families keep their own patterns (including Oh My Pi's
-   `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
+   Pi also treats the adjacent `async subagent … · background` header and matching
+   braille job row as **Working**. The compact `subagents (N/M running)`, progressive
+   `Async agents · N agent(s) running`, and multi-job `Async agents · background`
+   layouts carry the same signal; completed, paused, and failed cards use static
+   glyphs and remain idle. Other agent families keep their own patterns (including
+   Oh My Pi's `Working… ⟦esc⟧` loader, braille frames, symbol cycles, Cursor's
    hexagons, Kimi's moon phases, etc.).
    Claude's live status row (`● <label>… (<elapsed> · …)`) accepts a multi-word
    label and a compound elapsed segment such as `28m 34s` or `1h 4m 2s`, so a turn
