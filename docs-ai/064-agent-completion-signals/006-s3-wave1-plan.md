@@ -2,9 +2,10 @@
 
 ## Status
 
-Planning and owner alignment. No implementation has started.
+Owner-approved plan; S3a implemented on `feat/agent-signal-hooks-s3a-implementation`.
+Implementation record: [007-s3a-action.md](007-s3a-action.md).
 
-- Branch: `feat/agent-signal-hooks-s3a`
+- Planning branch: `feat/agent-signal-hooks-s3a`
 - Prerequisites: 063-A2, 064-S1, and 064-S2 are merged.
 - Runtime baseline rechecked 2026-08-23: Claude Code 2.1.241; Codex CLI 0.149.0.
 - S3 has no wave 2. Managed hooks are limited to runtimes that accept process-scoped
@@ -302,8 +303,9 @@ verification where unit tests cannot prove third-party behavior.
   scratch-home precedence matrix for absent/base/profile/final-CLI-override `notify`, including
   proof that project-layer `notify` is ignored; retain sanitized fixtures, not returned
   user/provider config.
-- Freeze supported Codex `-C/--cd` token forms, last-wins behavior, relative-path base, and
-  config-read cwd against 0.149 help/live probes.
+- Freeze supported Codex `-C/--cd` token forms, repeated-option behavior, relative-path base, and
+  config-read cwd against 0.149 help/live probes. Phase 0 found that repeated cwd options are
+  rejected rather than last-wins; S3a therefore degrades without injection and preserves argv.
 - Use scratch homes/directories only; never edit live user/global config.
 - Add representative official native payload fixtures, including optional/unknown fields,
   malformed data, oversized strings, Codex memories cwd, and paths with spaces/non-ASCII.

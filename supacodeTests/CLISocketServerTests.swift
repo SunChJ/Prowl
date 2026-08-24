@@ -133,6 +133,56 @@ struct CLISocketServerTests {
     #expect(recordedSignal?.detail == "socket result")
   }
 
+  @Test func nativeHookRoundTripThreadsKernelPeerPIDWithoutExposingToken() async throws {
+    let socketPath = temporarySocketPath(suffix: "hook-context")
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    let input = AgentNativeHookInput(
+      runtime: .codex,
+      token: "private-token",
+      signal: AgentNativeHookSignal(
+        event: .turnEnded,
+        nativeEvent: "agent-turn-complete",
+        cwd: "/tmp/project",
+        sessionID: "thread-1"
+      )
+    )
+    var recordedInput: AgentNativeHookInput?
+    let handler = AgentNativeHookCommandHandler(
+      resolveCaller: { processID in
+        #expect(processID == getpid())
+        return pane
+      },
+      recordHook: { caller, received in
+        #expect(caller == pane)
+        recordedInput = received
+        return true
+      }
+    )
+    let server = CLISocketServer(
+      router: CLICommandRouter(agentsHookHandler: handler),
+      socketPath: socketPath
+    )
+    try server.start()
+    defer { server.stop() }
+    let requestData = try JSONEncoder().encode(
+      CommandEnvelope(output: .json, command: .agentsHook(input))
+    )
+
+    let responseData = try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        continuation.resume(
+          with: Result { try Self.send(requestData: requestData, socketPath: socketPath) }
+        )
+      }
+    }
+    let response = try JSONDecoder().decode(CommandResponse.self, from: responseData)
+
+    #expect(response.ok)
+    #expect(recordedInput == input)
+    let responseText = try #require(String(bytes: responseData, encoding: .utf8))
+    #expect(!responseText.contains(input.token))
+  }
+
   @Test func closingPeerCancelsInFlightWaitRequest() async throws {
     let socketPath = temporarySocketPath(suffix: "wait-peer-eof")
     let probe = CancellationProbe()

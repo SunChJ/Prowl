@@ -134,7 +134,10 @@ struct WorktreeTerminalManagerTests {
   }
 
   @Test func backgroundProfileSplitInHiddenWorktreePreservesVisibleSelection() throws {
-    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      skipsSurfaceCreationForTesting: true
+    )
     let visibleWorktree = makeWorktree(id: "/tmp/repo/visible", name: "visible")
     let hiddenWorktree = makeWorktree(id: "/tmp/repo/hidden", name: "hidden")
     let visibleState = manager.state(for: visibleWorktree)
@@ -176,6 +179,116 @@ struct WorktreeTerminalManagerTests {
     #expect(hiddenState.tabManager.selectedTabId == hiddenTab)
     #expect(hiddenState.focusedSurfaceId(in: hiddenTab) == hiddenAnchor)
     #expect(launched.tabID == hiddenTab)
+  }
+
+  @Test func startupHookMaintenanceSweepsAgedCrashForwardingRecords() throws {
+    let base = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-tests-forward-startup-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: base) }
+    let oldStore = try CodexForwardingRecordStore(
+      baseDirectory: base,
+      orphanMaximumAge: 60,
+      now: { Date(timeIntervalSince1970: 100) }
+    )
+    let oldRecord = try oldStore.create(argv: ["/tmp/notifier"])
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      forwardingRecordBaseDirectory: base
+    )
+
+    manager.startAgentHookRuntimeMaintenance()
+
+    #expect(!FileManager.default.fileExists(atPath: oldRecord.locator.path(percentEncoded: false)))
+  }
+
+  @Test func unavailableHookResourcesWarnOnceAndLaunchTheOriginalInvocation() async throws {
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      hookResourcesProvider: { nil },
+      skipsSurfaceCreationForTesting: true
+    )
+    let worktree = makeWorktree()
+    let original = AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: "Codex",
+      runtime: .codex,
+      invocation: AgentInvocation(executable: "codex", arguments: ["Prompt"]),
+      commandEnvironmentTokens: [],
+      placement: .tab,
+      splitDirection: .right,
+      surfaceEnvironment: [AgentProfileLaunchPlanner.promptCarrierName: "Prompt"],
+      dedicatedHome: nil
+    )
+    let request = AgentProfileLaunchRequest(plan: original, placement: .tab(background: false))
+
+    let preparation = try await manager.prepareAgentProfileLaunch(request, in: worktree).get()
+
+    #expect(preparation.warnings.count == 1)
+    #expect(preparation.warnings[0].code == .managedHookDegraded)
+    #expect(preparation.context.request.plan.invocation == original.invocation)
+    #expect(preparation.context.request.plan.hookRegistration == nil)
+    let launched = try manager.launchPreparedAgentProfile(preparation, in: worktree).get()
+    #expect(manager.state(for: worktree).surfaceView(for: launched.surfaceID) != nil)
+    manager.state(for: worktree).cleanupAllAgentDetectionState()
+  }
+
+  @Test func promptedManagedHookLaunchBindsDispatchToTheRegistrationEpoch() throws {
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      skipsSurfaceCreationForTesting: true
+    )
+    let worktree = makeWorktree()
+    let state = manager.state(for: worktree)
+    let base = AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: "Codex",
+      runtime: .codex,
+      invocation: AgentInvocation(executable: "codex", arguments: ["Prompt"]),
+      commandEnvironmentTokens: [],
+      placement: .tab,
+      splitDirection: .right,
+      surfaceEnvironment: [AgentProfileLaunchPlanner.promptCarrierName: "Prompt"],
+      dedicatedHome: nil
+    )
+    let plan = base.applyingManagedHook(
+      AgentHookPreparedInvocation(
+        invocation: AgentInvocation(executable: "codex", arguments: ["-c", "notify=[]", "Prompt"]),
+        argumentValues: [1: "notify=[]"]
+      ),
+      resources: AgentHookResources(bundledCLIPath: "/bundle/prowl", socketPath: "/tmp/prowl.sock"),
+      launchCWD: worktree.workingDirectory,
+      token: "token",
+      nativeEvents: ["agent-turn-complete": .turnEnded],
+      coveredEvents: [.turnEnded]
+    )
+    let launched = try manager.launchAgentProfile(
+      AgentProfileLaunchRequest(plan: plan, placement: .tab(background: false)),
+      in: worktree
+    ).get()
+    let registrationEpoch = try #require(manager.agentEvidenceEpochForTesting(surfaceID: launched.surfaceID))
+    let dispatch = try manager.issueAgentDispatch()
+    let dispatchID = dispatch.record.id
+    let target = TabResolvedTarget(
+      worktreeID: worktree.id,
+      worktreeName: worktree.name,
+      worktreePath: worktree.workingDirectory.path,
+      worktreeRootPath: worktree.repositoryRootURL.path,
+      worktreeKind: "git",
+      tabID: launched.tabID.rawValue.uuidString,
+      tabTitle: "Codex",
+      tabSelected: true,
+      paneID: launched.surfaceID.uuidString,
+      paneTitle: "codex",
+      paneCWD: worktree.workingDirectory.path,
+      paneFocused: true
+    )
+
+    try manager.bindAgentDispatch(dispatchID: dispatchID, target: target)
+
+    #expect(manager.agentDispatchSnapshot(dispatchID: dispatchID)?.binding?.evidenceEpoch == registrationEpoch)
+    state.cleanupAllAgentDetectionState()
   }
 
   @Test func firstTabUsesTabSurfaceContext() throws {

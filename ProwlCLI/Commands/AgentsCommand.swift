@@ -10,6 +10,7 @@ struct AgentsCommand: ParsableCommand {
     subcommands: [
       AgentsReadCommand.self,
       AgentsSignalCommand.self,
+      AgentsHookCommand.self,
       AgentsDispatchCompleteCommand.self,
       AgentsDispatchAbandonCommand.self,
       AgentsWaitCommand.self,

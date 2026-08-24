@@ -145,6 +145,7 @@ enum OutputRenderer {
          let payload = try? data.decode(as: LifecycleCommandPayload.self)
       {
         print(renderLifecycle(payload, command: response.command))
+        renderLifecycleWarnings(payload)
         return
       }
 
@@ -475,6 +476,14 @@ enum OutputRenderer {
       lines.append("  \("cwd:".dim) \(cwd)")
     }
     return lines.joined(separator: "\n")
+  }
+
+  private static func renderLifecycleWarnings(_ payload: LifecycleCommandPayload) {
+    guard let warnings = payload.warnings else { return }
+    for warning in warnings {
+      let line = "warning: [\(warning.code.rawValue)] \(warning.runtime): \(warning.message)\n"
+      FileHandle.standardError.write(Data(line.utf8))
+    }
   }
 
   private static func renderLifecycle(_ payload: LifecycleCommandPayload, command: String) -> String {

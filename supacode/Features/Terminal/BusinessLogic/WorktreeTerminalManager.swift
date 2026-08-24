@@ -11,9 +11,16 @@ private let layoutRestoreFailureMessage = "Saved terminal layout was invalid and
 final class WorktreeTerminalManager {
   private let runtime: GhosttyRuntime?
   private let layoutPersistence: TerminalLayoutPersistenceClient
+  private let skipsSurfaceCreationForTesting: Bool
   private let targetHandleRegistry = TerminalTargetHandleRegistry()
   @ObservationIgnored private let agentObservationStore: AgentObservationStore
   @ObservationIgnored private let agentDispatchStore: AgentDispatchStore
+  @ObservationIgnored private let codexConfigReadProcess: CodexConfigReadProcess
+  @ObservationIgnored private let codexShellEnvironmentResolver:
+    @Sendable (URL, String?) async -> CodexShellLaunchEnvironment?
+  @ObservationIgnored private let hookResourcesProvider: @MainActor () -> AgentHookResources?
+  @ObservationIgnored private let forwardingRecordBaseDirectory: URL
+  @ObservationIgnored private var codexForwardingRecordStore: CodexForwardingRecordStore?
   private var states: [Worktree.ID: WorktreeTerminalState] = [:]
   private var notificationsEnabled = true
   private var commandFinishedNotificationEnabled = true
@@ -38,13 +45,31 @@ final class WorktreeTerminalManager {
     preferredFontSize: Float32? = nil,
     layoutPersistence: TerminalLayoutPersistenceClient = .liveValue,
     agentObservationBufferCapacity: Int = 64,
-    agentDispatchStore: AgentDispatchStore = AgentDispatchStore()
+    agentDispatchStore: AgentDispatchStore = AgentDispatchStore(),
+    codexConfigReadProcess: CodexConfigReadProcess = CodexConfigReadProcess(),
+    codexShellEnvironmentResolver: @escaping @Sendable (URL, String?) async -> CodexShellLaunchEnvironment? = {
+      await CodexShellLaunchEnvironmentProbe.resolve(cwd: $0, pathOverride: $1)
+    },
+    hookResourcesProvider: @escaping @MainActor () -> AgentHookResources? = {
+      guard let url = SupacodePaths.bundledCLIURL else { return nil }
+      return AgentHookResources(
+        bundledCLIPath: url.path(percentEncoded: false),
+        socketPath: ProwlSocket.defaultPath
+      )
+    },
+    forwardingRecordBaseDirectory: URL = SupacodePaths.agentHookForwardingDirectory,
+    skipsSurfaceCreationForTesting: Bool = false
   ) {
     self.runtime = runtime
     self.layoutPersistence = layoutPersistence
+    self.skipsSurfaceCreationForTesting = skipsSurfaceCreationForTesting
     self.preferredFontSize = preferredFontSize
     self.agentObservationStore = AgentObservationStore(bufferCapacity: agentObservationBufferCapacity)
     self.agentDispatchStore = agentDispatchStore
+    self.codexConfigReadProcess = codexConfigReadProcess
+    self.codexShellEnvironmentResolver = codexShellEnvironmentResolver
+    self.hookResourcesProvider = hookResourcesProvider
+    self.forwardingRecordBaseDirectory = forwardingRecordBaseDirectory
     baselineFontSize = runtime.defaultFontSize()
   }
 
@@ -75,14 +100,179 @@ final class WorktreeTerminalManager {
     state(for: worktree).launchAgentProfile(request)
   }
 
+  func prepareAgentProfileLaunch(
+    _ request: AgentProfileLaunchRequest,
+    in worktree: Worktree
+  ) async -> Result<PreparedAgentProfileLaunch, AgentProfileLaunchError> {
+    let terminalState = state(for: worktree)
+    guard terminalState.provisionAgentProfileHome(for: request.plan) else {
+      return .failure(.homeProvisioningFailed)
+    }
+    var latestContext: FrozenAgentProfileLaunchContext?
+    for attempt in 0..<2 {
+      let context: FrozenAgentProfileLaunchContext
+      switch terminalState.freezeAgentProfileLaunchContext(request) {
+      case .success(let value): context = value
+      case .failure(let error): return .failure(error)
+      }
+      latestContext = context
+      let resources = hookResourcesProvider()
+      let codexShellEnvironment: CodexShellLaunchEnvironment?
+      if context.request.plan.runtime == .codex, resources != nil {
+        codexShellEnvironment = await codexShellEnvironmentResolver(
+          context.inheritedCWD,
+          context.request.plan.profileEnvironmentOverrides["PATH"]
+        )
+      } else {
+        codexShellEnvironment = nil
+      }
+      guard !Task.isCancelled else { return .failure(.preparationCancelled) }
+      let preparation = await AgentManagedHookPreparer.prepare(
+        plan: context.request.plan,
+        inheritedCWD: context.inheritedCWD,
+        resources: resources,
+        codexShellEnvironment: codexShellEnvironment,
+        codexConfigReadProcess: codexConfigReadProcess
+      )
+      guard !Task.isCancelled else { return .failure(.preparationCancelled) }
+      guard terminalState.isAgentProfileLaunchContextValid(context) else {
+        if attempt == 0 { continue }
+        let warning = LifecycleCommandWarning(
+          code: .managedHookDegraded,
+          runtime: request.plan.runtime.rawValue,
+          message: "The launch target changed during managed hook preparation."
+        )
+        return .success(PreparedAgentProfileLaunch(context: context, warnings: [warning]))
+      }
+      guard let capability = preparation.capability,
+        let preparedInvocation = preparation.preparedInvocation,
+        let resources
+      else {
+        return .success(
+          PreparedAgentProfileLaunch(
+            context: context,
+            warnings: preparation.warning.map { [$0] } ?? []
+          )
+        )
+      }
+
+      var forwardingRecord: CodexForwardingRecord?
+      if let argv = preparation.forwardingArgv {
+        guard let store = forwardingRecordStore(),
+          let record = try? store.create(argv: argv)
+        else {
+          let warning = LifecycleCommandWarning(
+            code: .managedHookDegraded,
+            runtime: request.plan.runtime.rawValue,
+            message: "The existing Codex notifier could not be preserved safely."
+          )
+          return .success(PreparedAgentProfileLaunch(context: context, warnings: [warning]))
+        }
+        forwardingRecord = record
+      }
+      if Task.isCancelled {
+        if let forwardingRecord { codexForwardingRecordStore?.discardUnexposed(forwardingRecord) }
+        return .failure(.preparationCancelled)
+      }
+      let executionPlan = context.request.plan.applyingManagedHook(
+        preparedInvocation,
+        resources: resources,
+        launchCWD: preparation.launchCWD,
+        token: UUID().uuidString,
+        nativeEvents: capability.nativeEvents,
+        coveredEvents: capability.coveredEvents,
+        forwardingRecord: forwardingRecord
+      )
+      let preparedContext = FrozenAgentProfileLaunchContext(
+        request: AgentProfileLaunchRequest(
+          plan: executionPlan,
+          placement: context.request.placement,
+          workingDirectoryOverride: context.request.workingDirectoryOverride,
+          inheritanceAnchor: context.request.inheritanceAnchor,
+          title: context.request.title
+        ),
+        inheritedCWD: context.inheritedCWD,
+        anchorSurfaceID: context.anchorSurfaceID,
+        tracksFocusedAnchor: context.tracksFocusedAnchor,
+        tracksInheritedCWD: context.tracksInheritedCWD
+      )
+      return .success(
+        PreparedAgentProfileLaunch(
+          context: preparedContext,
+          warnings: preparation.warning.map { [$0] } ?? []
+        )
+      )
+    }
+    guard let latestContext else { return .failure(.tabCreationFailed) }
+    return .success(PreparedAgentProfileLaunch(context: latestContext, warnings: []))
+  }
+
+  func discardPreparedAgentProfileLaunch(_ preparation: PreparedAgentProfileLaunch) {
+    guard let record = preparation.context.request.plan.hookRegistration?.forwardingRecord else { return }
+    codexForwardingRecordStore?.discardUnexposed(record)
+  }
+
+  func launchPreparedAgentProfile(
+    _ preparation: PreparedAgentProfileLaunch,
+    in worktree: Worktree
+  ) -> Result<LaunchedSurface, AgentProfileLaunchError> {
+    let result = state(for: worktree).launchAgentProfile(preparation.context.request)
+    if case .failure = result,
+      let record = preparation.context.request.plan.hookRegistration?.forwardingRecord
+    {
+      codexForwardingRecordStore?.discardUnexposed(record)
+    }
+    return result
+  }
+
+  func startAgentHookRuntimeMaintenance() {
+    _ = forwardingRecordStore()
+  }
+
+  private func forwardingRecordStore() -> CodexForwardingRecordStore? {
+    if let codexForwardingRecordStore { return codexForwardingRecordStore }
+    guard
+      let store = try? CodexForwardingRecordStore(baseDirectory: forwardingRecordBaseDirectory)
+    else { return nil }
+    store.sweepOrphans()
+    codexForwardingRecordStore = store
+    return store
+  }
+
   /// The launch outcome is reported as an event either way: the reducer
   /// records the per-repo launch memory only on success and surfaces the
   /// failure as a toast (docs-ai 053/005).
   private func launchAgentProfile(_ plan: AgentProfileLaunchPlan, in worktree: Worktree) {
-    if state(for: worktree).launchAgentProfile(plan) != nil {
-      emit(.agentProfileLaunched(worktreeID: worktree.id, profileID: plan.profileID))
-    } else {
-      emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let request = AgentProfileLaunchRequest(
+        plan: plan,
+        placement: plan.placement == .split
+          ? .split(anchor: nil, direction: plan.splitDirection, background: false)
+          : .tab(background: false)
+      )
+      switch await prepareAgentProfileLaunch(request, in: worktree) {
+      case .failure where Task.isCancelled:
+        return
+      case .failure:
+        emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
+      case .success(let preparation):
+        switch launchPreparedAgentProfile(preparation, in: worktree) {
+        case .success:
+          for warning in preparation.warnings {
+            emit(
+              .agentProfileLaunchWarning(
+                worktreeID: worktree.id,
+                profileName: plan.profileName,
+                message: warning.message
+              )
+            )
+          }
+          emit(.agentProfileLaunched(worktreeID: worktree.id, profileID: plan.profileID))
+        case .failure:
+          emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
+        }
+      }
     }
   }
 
@@ -246,10 +436,13 @@ final class WorktreeTerminalManager {
   func recordAgentSignal(_ signal: AgentSignal, caller: CallerPane) -> Bool {
     guard containsSurface(caller.surfaceID) else { return false }
     let evidence = currentAgentEvidence(surfaceID: caller.surfaceID)
-    agentObservationStore.updateEvidenceEpoch(
-      surfaceID: caller.surfaceID,
-      processGeneration: evidence.generation,
-      sessionID: evidence.sessionID
+    handleEvidenceEpochUpdate(
+      agentObservationStore.updateEvidenceEpoch(
+        surfaceID: caller.surfaceID,
+        processGeneration: evidence.generation,
+        sessionID: evidence.sessionID
+      ),
+      surfaceID: caller.surfaceID
     )
     let generationMatches = evidence.generation.map(caller.processAncestry.contains) ?? false
     let binding = agentObservationStore.bindingForSignal(
@@ -268,6 +461,50 @@ final class WorktreeTerminalManager {
       evidenceEpoch: evidenceEpoch
     )
     return true
+  }
+
+  @discardableResult
+  func recordAgentNativeHook(_ input: AgentNativeHookInput, caller: CallerPane) -> Bool {
+    guard containsSurface(caller.surfaceID) else { return false }
+    let evidence = currentAgentEvidence(surfaceID: caller.surfaceID)
+    handleEvidenceEpochUpdate(
+      agentObservationStore.updateEvidenceEpoch(
+        surfaceID: caller.surfaceID,
+        processGeneration: evidence.generation,
+        sessionID: evidence.sessionID
+      ),
+      surfaceID: caller.surfaceID
+    )
+    switch agentObservationStore.recordManagedHook(
+      input,
+      callerAncestry: caller.processAncestry,
+      surfaceID: caller.surfaceID
+    ) {
+    case .rejected:
+      return false
+    case .pending:
+      return true
+    case .accepted(let signal, let evidenceEpoch):
+      noteDispatchEvidence(signal, surfaceID: caller.surfaceID, evidenceEpoch: evidenceEpoch)
+      return true
+    }
+  }
+
+  private func handleEvidenceEpochUpdate(
+    _ update: AgentEvidenceEpochUpdate,
+    surfaceID: UUID
+  ) {
+    for signal in update.activatedSignals {
+      guard let epoch = agentObservationStore.currentEvidenceEpoch(surfaceID: surfaceID) else { continue }
+      noteDispatchEvidence(signal, surfaceID: surfaceID, evidenceEpoch: epoch)
+    }
+    for record in update.revokedForwardingRecords {
+      retireForwardingRecord(record)
+    }
+  }
+
+  private func retireForwardingRecord(_ record: CodexForwardingRecord) {
+    codexForwardingRecordStore?.retire(record)
   }
 
   private func noteDispatchEvidence(
@@ -308,6 +545,10 @@ final class WorktreeTerminalManager {
     agentObservationStore.snapshot(surfaceID: surfaceID)
   }
 
+  func agentEvidenceEpochForTesting(surfaceID: UUID) -> UUID? {
+    agentObservationStore.currentEvidenceEpoch(surfaceID: surfaceID)
+  }
+
   func isSurfaceLive(_ surfaceID: UUID) -> Bool {
     containsSurface(surfaceID)
   }
@@ -317,10 +558,13 @@ final class WorktreeTerminalManager {
     includeDiagnosticLast: Bool = true
   ) -> AgentSignalsPayload {
     let evidence = currentAgentEvidence(surfaceID: surfaceID)
-    agentObservationStore.updateEvidenceEpoch(
-      surfaceID: surfaceID,
-      processGeneration: evidence.generation,
-      sessionID: evidence.sessionID
+    handleEvidenceEpochUpdate(
+      agentObservationStore.updateEvidenceEpoch(
+        surfaceID: surfaceID,
+        processGeneration: evidence.generation,
+        sessionID: evidence.sessionID
+      ),
+      surfaceID: surfaceID
     )
     return agentObservationStore.signalsPayload(
       surfaceID: surfaceID,
@@ -385,12 +629,21 @@ final class WorktreeTerminalManager {
     guard snapshot.record.state == .pending else {
       throw AgentDispatchStoreError.alreadyTerminal
     }
+    let evidenceEpoch: UUID
+    if agentObservationStore.hasManagedHook(surfaceID: surfaceID) {
+      guard let current = agentObservationStore.currentEvidenceEpoch(surfaceID: surfaceID) else {
+        throw AgentDispatchStoreError.bindingMissing
+      }
+      evidenceEpoch = current
+    } else {
+      evidenceEpoch = agentObservationStore.beginDispatchEpoch(surfaceID: surfaceID)
+    }
     try agentDispatchStore.bind(
       dispatchID: dispatchID,
       binding: AgentDispatchBinding(
         surfaceID: surfaceID,
         target: target,
-        evidenceEpoch: agentObservationStore.beginDispatchEpoch(surfaceID: surfaceID)
+        evidenceEpoch: evidenceEpoch
       )
     )
   }
@@ -471,7 +724,8 @@ final class WorktreeTerminalManager {
       worktree: worktree,
       runSetupScript: runSetupScript,
       defaultFontSize: preferredFontSize,
-      targetHandleRegistry: targetHandleRegistry
+      targetHandleRegistry: targetHandleRegistry,
+      skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting
     )
     state.setNotificationsEnabled(notificationsEnabled)
     state.setCommandFinishedNotification(
@@ -509,34 +763,7 @@ final class WorktreeTerminalManager {
     state.onTaskStatusChanged = { [weak self] status in
       self?.emit(.taskStatusChanged(worktreeID: worktree.id, status: status))
     }
-    state.onAgentEntryChanged = { [weak self] entry in
-      guard let self else { return }
-      let beganWorking = agentObservationStore.publishAgentChanged(entry)
-      if beganWorking {
-        let evidence = currentAgentEvidence(surfaceID: entry.surfaceID)
-        agentObservationStore.updateEvidenceEpoch(
-          surfaceID: entry.surfaceID,
-          processGeneration: evidence.generation,
-          sessionID: evidence.sessionID
-        )
-        if let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: entry.surfaceID) {
-          agentDispatchStore.noteActivity(
-            surfaceID: entry.surfaceID,
-            evidenceEpoch: evidenceEpoch
-          )
-        }
-      }
-      emit(.agentEntryChanged(entry))
-    }
-    state.onAgentEntryRemoved = { [weak self] id in
-      guard let self else { return }
-      agentObservationStore.publishAgentRemoved(surfaceID: id)
-      emit(.agentEntryRemoved(id))
-    }
-    state.onSurfaceClosed = { [weak self] surfaceID in
-      self?.agentObservationStore.publishSurfaceClosed(surfaceID: surfaceID)
-      self?.agentDispatchStore.surfaceClosed(surfaceID: surfaceID)
-    }
+    configureAgentObservationCallbacks(state)
     state.onRunScriptStatusChanged = { [weak self] isRunning in
       self?.emit(.runScriptStatusChanged(worktreeID: worktree.id, isRunning: isRunning))
     }
@@ -555,6 +782,50 @@ final class WorktreeTerminalManager {
     states[worktree.id] = state
     terminalLogger.info("Created terminal state for worktree \(worktree.id)")
     return state
+  }
+
+  private func configureAgentObservationCallbacks(_ state: WorktreeTerminalState) {
+    state.onAgentEntryChanged = { [weak self] entry in
+      guard let self else { return }
+      let beganWorking = agentObservationStore.publishAgentChanged(entry)
+      let evidence = currentAgentEvidence(surfaceID: entry.surfaceID)
+      handleEvidenceEpochUpdate(
+        agentObservationStore.updateEvidenceEpoch(
+          surfaceID: entry.surfaceID,
+          processGeneration: evidence.generation,
+          sessionID: evidence.sessionID
+        ),
+        surfaceID: entry.surfaceID
+      )
+      if beganWorking,
+        let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: entry.surfaceID)
+      {
+        agentDispatchStore.noteActivity(surfaceID: entry.surfaceID, evidenceEpoch: evidenceEpoch)
+      }
+      emit(.agentEntryChanged(entry))
+    }
+    state.onAgentEntryRemoved = { [weak self] surfaceID in
+      guard let self else { return }
+      if let record = agentObservationStore.revokeManagedHook(surfaceID: surfaceID) {
+        retireForwardingRecord(record)
+      }
+      agentObservationStore.publishAgentRemoved(surfaceID: surfaceID)
+      emit(.agentEntryRemoved(surfaceID))
+    }
+    state.onSurfaceClosed = { [weak self] surfaceID in
+      guard let self else { return }
+      if let record = agentObservationStore.revokeManagedHook(surfaceID: surfaceID) {
+        retireForwardingRecord(record)
+      }
+      agentObservationStore.publishSurfaceClosed(surfaceID: surfaceID)
+      agentDispatchStore.surfaceClosed(surfaceID: surfaceID)
+    }
+    state.onAgentProfileSurfacePrepared = { [weak self] surfaceID, plan in
+      guard let self, containsSurface(surfaceID) else { return false }
+      guard let registration = plan.hookRegistration else { return true }
+      _ = agentObservationStore.registerManagedHook(registration, surfaceID: surfaceID)
+      return true
+    }
   }
 
   @discardableResult
@@ -976,9 +1247,14 @@ final class WorktreeTerminalManager {
     private init(preview: Void) {
       self.runtime = nil
       self.layoutPersistence = .liveValue
+      self.skipsSurfaceCreationForTesting = true
       self.preferredFontSize = nil
       self.agentObservationStore = AgentObservationStore(bufferCapacity: 64)
       self.agentDispatchStore = AgentDispatchStore()
+      self.codexConfigReadProcess = CodexConfigReadProcess()
+      self.codexShellEnvironmentResolver = { _, _ in nil }
+      self.hookResourcesProvider = { nil }
+      self.forwardingRecordBaseDirectory = SupacodePaths.agentHookForwardingDirectory
       self.baselineFontSize = 13
     }
   #endif

@@ -43,6 +43,112 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(help.stdout.contains("close"))
   }
 
+  func testNativeHookBridgeIsHiddenSilentAndFailOpenWithoutListener() throws {
+    let help = try runProwl(args: ["agents", "--help"])
+    XCTAssertEqual(help.exitCode, 0)
+    XCTAssertFalse(help.stdout.contains("_hook"))
+
+    let payload = Data(
+      #"{"hook_event_name":"Stop","session_id":"session-1","cwd":"/tmp/project"}"#.utf8
+    )
+    let result = try runProwl(
+      args: ["agents", "_hook", "claude", "Stop"],
+      environment: [
+        AgentNativeHookInput.tokenEnvironmentKey: "token-1",
+        ProwlSocket.environmentKey: temporarySocketPath(suffix: "missing-hook-listener"),
+      ],
+      stdinData: payload
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertEqual(result.stderr, "")
+  }
+
+  func testNativeHookBridgeEnforcesATotalDeadlineAgainstDripResponse() throws {
+    let socketPath = temporarySocketPath(suffix: "hook-drip-deadline")
+    let server = try MockSocketServer(
+      socketPath: socketPath,
+      responseData: Data("abcde".utf8),
+      responseByteDelayMicroseconds: 200_000
+    )
+    try server.start()
+    defer { server.stop() }
+    let payload = Data(
+      #"{"hook_event_name":"Stop","session_id":"session-1","cwd":"/tmp/project"}"#.utf8
+    )
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    let result = try runProwl(
+      args: ["agents", "_hook", "claude", "Stop"],
+      environment: [
+        AgentNativeHookInput.tokenEnvironmentKey: "token-1",
+        ProwlSocket.environmentKey: socketPath,
+      ],
+      stdinData: payload
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertEqual(result.stderr, "")
+    XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(700))
+  }
+
+  func testCodexHookForwardsExactPayloadOnTransportLossAndScrubsInternalEnvironment() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "prowl-hook-forward-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o700]
+    )
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: root.path
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let script = root.appendingPathComponent("notifier.py")
+    let output = root.appendingPathComponent("result.json")
+    try """
+    import json, os, sys
+    with open(os.environ["PROWL_FORWARD_TEST_OUTPUT"], "w") as handle:
+        json.dump({
+            "argv": sys.argv[1:],
+            "token": os.environ.get("PROWL_AGENT_HOOK_TOKEN"),
+            "record": os.environ.get("PROWL_AGENT_HOOK_FORWARD_RECORD")
+        }, handle, ensure_ascii=False)
+    raise SystemExit(7)
+    """.write(to: script, atomically: true, encoding: .utf8)
+    let record = root.appendingPathComponent("record.json")
+    let notifierArgv = ["/usr/bin/python3", script.path, "space value", "", "秘密-like"]
+    try JSONSerialization.data(withJSONObject: notifierArgv).write(to: record, options: .atomic)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
+    let payload = #"{"type":"agent-turn-complete","thread-id":"thread-1","turn-id":"turn-1","cwd":"/tmp/project","last-assistant-message":"excluded"}"#
+
+    let result = try runProwl(
+      args: ["agents", "_hook", "codex", "agent-turn-complete", payload],
+      environment: [
+        AgentNativeHookInput.tokenEnvironmentKey: "invalid-but-forwarding-independent",
+        AgentNativeHookInput.forwardRecordEnvironmentKey: record.path,
+        ProwlSocket.environmentKey: temporarySocketPath(suffix: "missing-forward-listener"),
+        "PROWL_FORWARD_TEST_OUTPUT": output.path,
+      ]
+    )
+
+    XCTAssertEqual(result.exitCode, 7)
+    XCTAssertEqual(result.stdout, "")
+    XCTAssertEqual(result.stderr, "")
+    let forwarded = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any]
+    )
+    XCTAssertEqual(forwarded["argv"] as? [String], ["space value", "", "秘密-like", payload])
+    XCTAssertTrue(forwarded["token"] is NSNull)
+    XCTAssertTrue(forwarded["record"] is NSNull)
+  }
+
   func testLegacyLifecycleHelpIsMarkedDeprecated() throws {
     let tabHelp = try runProwl(args: ["tab", "--help"])
     XCTAssertEqual(tabHelp.exitCode, 0)
@@ -707,6 +813,50 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     } else {
       XCTFail("Expected create command envelope")
     }
+  }
+
+  func testCreateWarningStaysInJSONAndRendersExactlyOnceToTextStderr() throws {
+    let launch = LifecycleCommandLaunch(
+      profileID: UUID().uuidString,
+      profileName: "Codex",
+      agent: "codex"
+    )
+    let warning = LifecycleCommandWarning(
+      code: .managedHookDegraded,
+      runtime: "codex",
+      message: "Notifier resolver unavailable."
+    )
+    let response = try CommandResponse(
+      ok: true,
+      command: "create",
+      schemaVersion: "prowl.cli.create.v1",
+      data: RawJSON(
+        encoding: makeLifecyclePayload(resource: .tab, launch: launch, warnings: [warning])
+      )
+    )
+
+    let textSocket = temporarySocketPath(suffix: "create-warning-text")
+    let (_, text) = try runWithMockServer(
+      socketPath: textSocket,
+      response: response,
+      args: ["create", "tab", "App", "--profile", launch.profileID]
+    )
+    XCTAssertEqual(text.exitCode, 0)
+    XCTAssertEqual(
+      text.stderr,
+      "warning: [managed_hook_degraded] codex: Notifier resolver unavailable.\n"
+    )
+    XCTAssertFalse(text.stdout.contains("managed_hook_degraded"))
+
+    let jsonSocket = temporarySocketPath(suffix: "create-warning-json")
+    let (_, json) = try runWithMockServer(
+      socketPath: jsonSocket,
+      response: response,
+      args: ["create", "tab", "App", "--profile", launch.profileID, "--json"]
+    )
+    XCTAssertEqual(json.exitCode, 0)
+    XCTAssertEqual(json.stderr, "")
+    XCTAssertTrue(json.stdout.contains("managed_hook_degraded"))
   }
 
   func testCreateProfileFailsClosedWhenTheAppOmitsLaunchMetadata() throws {
@@ -2730,7 +2880,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     anchor: TabTarget? = nil,
     direction: CreatePaneDirection? = nil,
     launch: LifecycleCommandLaunch? = nil,
-    dispatch: DispatchPendingRecord? = nil
+    dispatch: DispatchPendingRecord? = nil,
+    warnings: [LifecycleCommandWarning]? = nil
   ) -> LifecycleCommandPayload {
     LifecycleCommandPayload(
       resource: resource,
@@ -2738,6 +2889,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       direction: direction,
       launch: launch,
       dispatch: dispatch,
+      warnings: warnings,
       target: makeTabTarget()
     )
   }
@@ -3322,15 +3474,21 @@ private struct CommandResult {
 private final class MockSocketServer: @unchecked Sendable {
   private let socketPath: String
   private let responseData: Data
+  private let responseByteDelayMicroseconds: useconds_t
 
   private var serverFD: Int32 = -1
   private var receivedRequestData: Data?
   private let lock = NSLock()
   private let requestSemaphore = DispatchSemaphore(value: 0)
 
-  init(socketPath: String, responseData: Data) throws {
+  init(
+    socketPath: String,
+    responseData: Data,
+    responseByteDelayMicroseconds: useconds_t = 0
+  ) throws {
     self.socketPath = socketPath
     self.responseData = responseData
+    self.responseByteDelayMicroseconds = responseByteDelayMicroseconds
   }
 
   deinit { stop() }
@@ -3388,6 +3546,10 @@ private final class MockSocketServer: @unchecked Sendable {
       let clientFD = accept(self.serverFD, nil, nil)
       guard clientFD >= 0 else { return }
       defer { close(clientFD) }
+      var noSigPipe: Int32 = 1
+      _ = withUnsafePointer(to: &noSigPipe) {
+        setsockopt(clientFD, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
+      }
 
       do {
         let lengthData = try self.readExact(fd: clientFD, count: 4)
@@ -3405,8 +3567,16 @@ private final class MockSocketServer: @unchecked Sendable {
         try withUnsafeBytes(of: &responseLength) { lengthBytes in
           try self.writeAll(fd: clientFD, bytes: lengthBytes)
         }
-        try self.responseData.withUnsafeBytes { bytes in
-          try self.writeAll(fd: clientFD, bytes: bytes)
+        if self.responseByteDelayMicroseconds == 0 {
+          try self.responseData.withUnsafeBytes { bytes in
+            try self.writeAll(fd: clientFD, bytes: bytes)
+          }
+        } else {
+          for byte in self.responseData {
+            var value = byte
+            try withUnsafeBytes(of: &value) { try self.writeAll(fd: clientFD, bytes: $0) }
+            usleep(self.responseByteDelayMicroseconds)
+          }
         }
       } catch {
         self.requestSemaphore.signal()

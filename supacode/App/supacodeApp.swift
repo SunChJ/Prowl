@@ -198,6 +198,7 @@ struct SupacodeApp: App {
       runtime: runtime,
       preferredFontSize: initialSettings.terminalFontSize
     )
+    terminalManager.startAgentHookRuntimeMaintenance()
     _terminalManager = State(initialValue: terminalManager)
     let worktreeInfoWatcher = WorktreeInfoWatcherManager()
     _worktreeInfoWatcher = State(initialValue: worktreeInfoWatcher)
@@ -353,7 +354,12 @@ struct SupacodeApp: App {
         terminalManager.createTabInDirectory(worktree, directory: directory)
       },
       launchAgentProfile: { worktree, request in
-        terminalManager.launchAgentProfile(request, in: worktree)
+        switch await terminalManager.prepareAgentProfileLaunch(request, in: worktree) {
+        case .success(let preparation):
+          terminalManager.launchPreparedAgentProfile(preparation, in: worktree)
+        case .failure(let error):
+          .failure(error)
+        }
       },
       events: {
         terminalManager.eventStream()
@@ -732,6 +738,12 @@ struct SupacodeApp: App {
         terminalManager.recordAgentSignal(signal, caller: caller)
       }
     )
+    let agentHookHandler = AgentNativeHookCommandHandler(
+      resolveCaller: resolveAgentSignalCaller,
+      recordHook: { caller, input in
+        terminalManager.recordAgentNativeHook(input, caller: caller)
+      }
+    )
     let dispatchCompleteHandler = AgentDispatchCompleteCommandHandler(
       resolveCaller: resolveAgentSignalCaller,
       complete: { dispatchID, outcome, summary, surfaceID in
@@ -1003,12 +1015,23 @@ struct SupacodeApp: App {
         @Shared(.userGlobalSettings) var settings
         return settings.agentProfiles
       },
+      prepareAgentProfile: { request in
+        await prepareCLIProfileLaunch(
+          request,
+          appStore: appStore,
+          terminalManager: terminalManager
+        )
+      },
       launchAgentProfile: { request in
         launchCLIProfile(
           request,
           appStore: appStore,
           terminalManager: terminalManager
         )
+      },
+      cancelProfilePreparation: { request in
+        guard let preparation = request.preparedLaunch else { return }
+        terminalManager.discardPreparedAgentProfileLaunch(preparation)
       },
       issueDispatch: {
         do {
@@ -1130,6 +1153,7 @@ struct SupacodeApp: App {
       agentsHandler: agentsHandler,
       agentsReadHandler: agentReadHandler,
       agentsSignalHandler: agentSignalHandler,
+      agentsHookHandler: agentHookHandler,
       agentsDispatchCompleteHandler: dispatchCompleteHandler,
       agentsDispatchAbandonHandler: dispatchAbandonHandler,
       agentsWaitHandler: agentWaitHandler,
@@ -1394,11 +1418,11 @@ struct SupacodeApp: App {
     return nil
   }
 
-  private static func launchCLIProfile(
+  private static func prepareCLIProfileLaunch(
     _ request: CLIProfileLaunchRequest,
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager
-  ) -> Result<TabResolvedTarget, CLIProfileLaunchFailure> {
+  ) async -> Result<CLIProfileLaunchRequest, CLIProfileLaunchFailure> {
     let repositories = Array(appStore.state.repositories.repositories)
     guard
       let worktree = resolveCLITerminalWorktree(
@@ -1408,27 +1432,23 @@ struct SupacodeApp: App {
     else {
       return .failure(.createFailed("The resolved worktree is no longer available."))
     }
-
     let intent = request.prompt.map(AgentStartIntent.prompt) ?? .interactive
     let plan: AgentProfileLaunchPlan
     do {
       plan = try AgentProfileLaunchPlanner.plan(
         for: request.profile,
         intent: intent,
-        homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory,
-        dispatchID: request.dispatchID
+        homeBaseDirectory: SupacodePaths.agentProfileHomesDirectory
       )
     } catch {
       return .failure(.planning(error, profile: request.profile))
     }
-
     let placement: AgentProfileLaunchRequest.Placement
     switch request.resource {
     case .tab:
       placement = .tab(background: request.background)
     case .pane:
-      guard
-        let anchor = UUID(uuidString: request.target.paneID),
+      guard let anchor = UUID(uuidString: request.target.paneID),
         let direction = request.direction
       else {
         return .failure(.createFailed("The resolved split anchor is invalid."))
@@ -1439,15 +1459,75 @@ struct SupacodeApp: App {
         background: request.background
       )
     }
-    let directory = request.path.map { URL(fileURLWithPath: $0, isDirectory: true) }
     let launchRequest = AgentProfileLaunchRequest(
       plan: plan,
       placement: placement,
-      workingDirectoryOverride: directory,
+      workingDirectoryOverride: request.path.map { URL(fileURLWithPath: $0, isDirectory: true) },
       title: request.profile.name
     )
+    switch await terminalManager.prepareAgentProfileLaunch(launchRequest, in: worktree) {
+    case .failure(let error):
+      return .failure(.creation(error, profile: request.profile))
+    case .success(let preparation):
+      return .success(
+        CLIProfileLaunchRequest(
+          resource: request.resource,
+          target: request.target,
+          profile: request.profile,
+          prompt: request.prompt,
+          path: request.path,
+          direction: request.direction,
+          background: request.background,
+          dispatchID: nil,
+          preparedLaunch: preparation
+        )
+      )
+    }
+  }
+
+  private static func launchCLIProfile(
+    _ request: CLIProfileLaunchRequest,
+    appStore: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager
+  ) -> Result<TabResolvedTarget, CLIProfileLaunchFailure> {
+    let repositories = Array(appStore.state.repositories.repositories)
+    guard
+      let worktree = resolveCLITerminalWorktree(
+        id: request.target.worktreeID,
+        repositories: repositories
+      ),
+      var preparation = request.preparedLaunch
+    else {
+      return .failure(.createFailed("The prepared Agent Profile launch is no longer available."))
+    }
+    if let dispatchID = request.dispatchID, let prompt = request.prompt {
+      do {
+        let pairedPlan = try preparation.context.request.plan.attachingDispatch(
+          id: dispatchID,
+          userPrompt: prompt
+        )
+        preparation = PreparedAgentProfileLaunch(
+          context: FrozenAgentProfileLaunchContext(
+            request: AgentProfileLaunchRequest(
+              plan: pairedPlan,
+              placement: preparation.context.request.placement,
+              workingDirectoryOverride: preparation.context.request.workingDirectoryOverride,
+              inheritanceAnchor: preparation.context.request.inheritanceAnchor,
+              title: preparation.context.request.title
+            ),
+            inheritedCWD: preparation.context.inheritedCWD,
+            anchorSurfaceID: preparation.context.anchorSurfaceID,
+            tracksFocusedAnchor: preparation.context.tracksFocusedAnchor,
+            tracksInheritedCWD: preparation.context.tracksInheritedCWD
+          ),
+          warnings: preparation.warnings
+        )
+      } catch {
+        return .failure(.planning(error, profile: request.profile))
+      }
+    }
     let launched: LaunchedSurface
-    switch terminalManager.launchAgentProfile(launchRequest, in: worktree) {
+    switch terminalManager.launchPreparedAgentProfile(preparation, in: worktree) {
     case .success(let surface):
       launched = surface
     case .failure(let error):

@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 merged in #715; S2 merged in #718; S3 wave 1 planning is active |
+| **Status** | In progress — S1 #715 and S2 #718 merged; S3a Claude/Codex implementation is ready for review |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); #718 (S2); S3a–S3c TBD |
+| **Primary PRs** | #715 (S1); #718 (S2); #721 (S3a); S3b–S3c TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -244,6 +244,10 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-24: implemented S3a's shared trusted-hook foundation plus Claude/Codex
+  adapters, resolver/forwarding boundary, launch transaction, hidden ingress, warnings, and
+  focused/live contract coverage. See [007-s3a-action.md](007-s3a-action.md). S3 wave 1 remains
+  incomplete until S3b/S3c.
 - Updated 2026-08-23: split S3 wave 1 into three merge-safe PRs: S3a foundation plus
   Claude/Codex, S3b Copilot/Droid/Qoder, and S3c Pi/OMP/OpenCode plus UI/docs/full closure.
   Detailed S3a research, implementation phases, and validation live in

@@ -74,7 +74,8 @@ extension WorktreeTerminalState {
     initialInput: String? = nil,
     workingDirectoryOverride: URL? = nil,
     context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_TAB,
-    additionalEnvironment: [String: String] = [:]
+    additionalEnvironment: [String: String] = [:],
+    defersSurfaceCreation: Bool = false
   ) -> SplitTree<GhosttySurfaceView> {
     guard tabManager.tabs.contains(where: { $0.id == tabId }) else {
       return SplitTree()
@@ -88,7 +89,8 @@ extension WorktreeTerminalState {
       inheritingFromSurfaceId: inheritingFromSurfaceId,
       workingDirectoryOverride: workingDirectoryOverride,
       context: context,
-      additionalEnvironment: additionalEnvironment
+      additionalEnvironment: additionalEnvironment,
+      defersSurfaceCreation: defersSurfaceCreation
     )
     let tree = SplitTree(view: surface)
     trees[tabId] = tree
@@ -103,8 +105,10 @@ extension WorktreeTerminalState {
     of anchorSurfaceID: UUID,
     direction: UserCustomSplitDirection,
     initialInput: String?,
+    workingDirectoryOverride: URL? = nil,
     additionalEnvironment: [String: String] = [:],
-    focusing: Bool = true
+    focusing: Bool = true,
+    defersSurfaceCreation: Bool = false
   ) -> Result<UUID, SplitCreationError> {
     guard let tabID = tabId(containing: anchorSurfaceID),
       let tree = trees[tabID],
@@ -117,8 +121,10 @@ extension WorktreeTerminalState {
       tabId: tabID,
       initialInput: initialInput.flatMap { runScriptInput($0) },
       inheritingFromSurfaceId: anchorSurfaceID,
+      workingDirectoryOverride: workingDirectoryOverride,
       context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-      additionalEnvironment: additionalEnvironment
+      additionalEnvironment: additionalEnvironment,
+      defersSurfaceCreation: defersSurfaceCreation
     )
     do {
       let newTree = try tree.inserting(
@@ -351,7 +357,8 @@ extension WorktreeTerminalState {
     inheritingFromSurfaceId: UUID?,
     workingDirectoryOverride: URL? = nil,
     context: ghostty_surface_context_e,
-    additionalEnvironment: [String: String] = [:]
+    additionalEnvironment: [String: String] = [:],
+    defersSurfaceCreation: Bool = false
   ) -> GhosttySurfaceView {
     let inherited = inheritedSurfaceConfig(fromSurfaceId: inheritingFromSurfaceId, context: context)
     let resolvedFontSize = Self.resolvedFontSizeForNewSurface(
@@ -365,7 +372,10 @@ extension WorktreeTerminalState {
       initialInput: initialInput,
       fontSize: resolvedFontSize,
       context: context,
-      environment: worktree.scriptEnvironment.merging(additionalEnvironment) { _, patched in patched }
+      environment: worktree.scriptEnvironment.merging(additionalEnvironment) { _, patched in patched },
+      skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting,
+      failsSurfaceCreationForTesting: failsSurfaceCreationForTesting,
+      defersSurfaceCreation: defersSurfaceCreation
     )
     // Sending a no-op font size action marks the Ghostty surface as
     // "font_size_adjusted", which prevents config reloads (triggered by
@@ -377,7 +387,7 @@ extension WorktreeTerminalState {
     configureBridgeCallbacks(for: view, tabId: tabId)
     configureSurfaceCallbacks(for: view, tabId: tabId)
     surfaces[view.id] = view
-    if initialInput?.isEmpty == false {
+    if !defersSurfaceCreation, initialInput?.isEmpty == false {
       wakeAgentDetection(for: view, tabId: tabId)
     }
     return view

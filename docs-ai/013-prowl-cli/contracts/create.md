@@ -43,11 +43,18 @@ line is one `env -u` command with no assignment statement or shell builtin, so t
 runs in zsh, bash, and fish. `env -u` keeps the carrier out of the Profile process; the pane
 shell retains the reserved carrier for its lifetime. NUL bytes are rejected.
 
+Profile launches first complete any bounded managed-signal preflight. No dispatch slot or
+surface exists while that asynchronous work is suspended. After preflight, dispatch issuance,
+surface creation, exact pre-input signal registration, dispatch binding, and rollback are one
+synchronous transaction with no suspension point. One Profile launch owns one evidence epoch;
+a prompted dispatch adopts the epoch already created by its managed hook registration.
+
 Every prompted Profile launch is paired atomically with a pending dispatch; there is no
 opt-out. Prowl injects `PROWL_DISPATCH_ID` into the launched child only and appends the
 versioned completion instruction to the effective prompt. An unprompted Profile launch
-retains its interactive behavior and creates no dispatch. If launch, target snapshot, or
-dispatch binding fails, Prowl removes the new resource and cancels the unreturned receipt.
+retains its interactive behavior and creates no dispatch. If launch, target snapshot, signal
+registration, or dispatch binding fails, Prowl removes the new resource and cancels the
+unreturned receipt.
 
 Foreground profile launches select the destination worktree/tab and focus the returned pane.
 A background tab is created without changing the selected worktree, tab, or pane. A
@@ -135,6 +142,25 @@ otherwise have no completion contract:
 `dispatch` is absent for unprompted Profile launches and ordinary shell creation. The target
 returned alongside it is the immutable target retained by the dispatch store for later wait
 success and error payloads.
+
+A safe managed-hook preparation failure does not fail the Profile launch or alter its original
+argv. Success instead adds exactly one optional warning (omitted when empty):
+
+```json
+{
+  "warnings": [
+    {
+      "code": "managed_hook_degraded",
+      "runtime": "codex",
+      "message": "The effective Codex notifier could not be resolved."
+    }
+  ]
+}
+```
+
+JSON mode retains `warnings` in stdout. Text mode renders the successful launch normally on
+stdout and writes each warning exactly once to stderr. Degradation creates no persistent
+public channel state and never changes dispatch receipt semantics.
 
 ## Errors
 

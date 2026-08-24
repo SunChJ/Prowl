@@ -145,6 +145,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
     context
   }
   private let skipsSurfaceCreationForTesting: Bool
+  private let failsSurfaceCreationForTesting: Bool
+  private(set) var surfaceCreationArmed = false
   private var trackingArea: NSTrackingArea?
   private var lastBackingSize: CGSize = .zero
   var lastPerformKeyEvent: TimeInterval?
@@ -267,7 +269,9 @@ final class GhosttySurfaceView: NSView, Identifiable {
     fontSize: Float32? = nil,
     context: ghostty_surface_context_e,
     environment: [String: String] = [:],
-    skipsSurfaceCreationForTesting: Bool = false
+    skipsSurfaceCreationForTesting: Bool = false,
+    failsSurfaceCreationForTesting: Bool = false,
+    defersSurfaceCreation: Bool = false
   ) {
     let id = UUID()
     self.id = id
@@ -276,6 +280,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     self.fontSize = fontSize ?? 0
     self.context = context
     self.skipsSurfaceCreationForTesting = skipsSurfaceCreationForTesting
+    self.failsSurfaceCreationForTesting = failsSurfaceCreationForTesting
     if let workingDirectory {
       let path = Self.normalizedWorkingDirectoryPath(
         workingDirectory.path(percentEncoded: false)
@@ -323,11 +328,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
     super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
     wantsLayer = true
     bridge.surfaceView = self
-    if !skipsSurfaceCreationForTesting {
-      createSurface()
-      if let surface {
-        surfaceRef = runtime.registerSurface(surface)
-      }
+    if !skipsSurfaceCreationForTesting, !defersSurfaceCreation {
+      _ = armSurfaceCreation()
     }
     registerForDraggedTypes(Array(Self.dropTypes))
 
@@ -363,6 +365,24 @@ final class GhosttySurfaceView: NSView, Identifiable {
     for pointer in envVarCStrings {
       free(pointer)
     }
+  }
+
+  @discardableResult
+  func armSurfaceCreation() -> Bool {
+    guard !surfaceCreationArmed else { return true }
+    surfaceCreationArmed = true
+    guard !skipsSurfaceCreationForTesting else { return true }
+    guard !failsSurfaceCreationForTesting else {
+      surfaceCreationArmed = false
+      return false
+    }
+    createSurface()
+    guard let surface else {
+      surfaceCreationArmed = false
+      return false
+    }
+    surfaceRef = runtime.registerSurface(surface)
+    return true
   }
 
   func closeSurface() {

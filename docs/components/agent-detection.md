@@ -149,6 +149,36 @@ keeps the pane stream alive; pane closure emits `surfaceClosed` and finishes it.
 overflow is explicit so future waiters can re-subscribe and resnapshot rather than silently
 lose lifecycle or signal evidence.
 
+## Managed native completion signals
+
+Prowl Agent Profile launches of **Claude Code** and **Codex** also attach process-scoped
+native event bridges without writing user, dedicated-home, or project configuration:
+
+- Claude `SessionStart` verifies launch coverage; `Stop` / `StopFailure` report
+  `turn-ended`; `PermissionRequest` and supported elicitation notifications report
+  `needs-input`; `SessionEnd` reports `session-end`.
+- Codex's native `agent-turn-complete` notifier reports `turn-ended`. Prowl never passes
+  Codex's hook-trust bypass flag.
+
+Only an app-issued token plus exact caller-process ancestry and matching pane/runtime/cwd can
+produce `hook_claude` / `hook_codex` evidence. The channel is not advertised as
+`verified_live` until a valid native event completes that end-to-end check. Early Claude
+`SessionStart` payloads wait for the first timely process generation instead of being lost;
+a late or replacement process, pane close, or launched-agent exit revokes coverage.
+
+Codex exposes only one effective notifier. Before launch, Prowl asks Codex's own bounded
+`app-server config/read` protocol for the effective notifier, applies selected-profile and
+final CLI-override precedence, and ignores project-layer `notify` exactly as Codex does. An
+existing notifier is preserved through an owner-only ephemeral forwarding record and is
+`exec`'d with the original payload whether Prowl transport succeeds or fails. If resolution
+or record preparation is uncertain, Prowl launches the original argv unchanged, exposes no
+exact coverage, and reports one non-blocking launch warning.
+
+Managed hooks apply only to Profile launches. Typing `claude`, `codex`, or any other runtime
+manually keeps the existing cooperative/transcript/process/screen evidence. A hook
+`turn-ended` still does not prove assigned-task completion: dispatch receipts and workflow
+completion remain separate protocols.
+
 ## How often it runs
 
 - **No polling** for cold panes that have not received recent input.

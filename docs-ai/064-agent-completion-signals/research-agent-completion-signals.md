@@ -5,6 +5,13 @@
 > enabled per launch, what the payload carries, and what is not achievable. Update rows in
 > place when a CLI changes; record the version and verification method per row.
 
+**S3a re-attestation (2026-08-24):** Claude Code 2.1.241 · Codex CLI 0.149.0 · Pi 0.84.2.
+Claude final repeated `--settings` wins and retained the documented payloads. Codex's official
+app-server `config/read` returns effective base/CLI `notify`, excludes project `notify` even for
+a trusted project, and profile-v2 lives at `$CODEX_HOME/<name>.config.toml`; app-server rejects
+`--profile`. Codex accepts `-C dir`, `--cd dir`, `--cd=dir`, and `-Cdir`, but rejects repeated cwd
+options rather than applying last-wins. See [007-s3a-action.md](007-s3a-action.md).
+
 **Baseline (2026-08-22, this Mac):** claude 2.1.239 · codex 0.147.0 · gemini 0.46.0 ·
 cursor-agent 2026.05.09 · cline 3.0.48→3.0.56 · opencode 1.18.11 · copilot 1.0.77 ·
 kimi 1.41.0 · droid 0.186.0 · amp 0.0.1783746383 · qodercli 1.0.48 · qwen 0.21.3 ·
@@ -55,7 +62,9 @@ Confidence: **V** verified locally (live run or binary/source) · **D** official
   https://learn.chatgpt.com/docs/config-file/config-advanced.md#notifications. Live:
   `codex exec -c 'notify=["/abs/capture.sh","tag"]'` fired `agent-turn-complete` (payload as
   last argv incl. `last-assistant-message`); `-c hooks.*` fired only with
-  `--dangerously-bypass-hook-trust`. An internal "memories" sub-session (cwd
+  `--dangerously-bypass-hook-trust`. S3a's 0.149 re-attestation pinned app-server
+  initialize/`config/read`, base/profile-v2/final-CLI notifier precedence, project-notify
+  exclusion, and repeated-cwd rejection. An internal "memories" sub-session (cwd
   `~/.codex/memories`, `transcript_path:null`) also fires SessionStart/End — filter on cwd.
 - **Gemini CLI** — https://geminicli.com/docs/hooks/reference/ ,
   https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/notifications.md. Hooks

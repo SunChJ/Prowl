@@ -122,6 +122,44 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.currentFocusedSurfaceId() == anchor.surfaceID)
   }
 
+  @Test func frozenDynamicProfileContextRejectsFocusAndInheritedCWDDrift() throws {
+    let state = makeState()
+    let first = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    _ = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+    let request = AgentProfileLaunchRequest(
+      plan: makePlan(dedicatedHome: nil),
+      placement: .tab(background: false)
+    )
+    let frozen = try state.freezeAgentProfileLaunchContext(request).get()
+    #expect(state.isAgentProfileLaunchContextValid(frozen))
+
+    #expect(state.focusSurface(id: first.surfaceID))
+    #expect(!state.isAgentProfileLaunchContextValid(frozen))
+    let cwdOnly = FrozenAgentProfileLaunchContext(
+      request: frozen.request,
+      inheritedCWD: frozen.inheritedCWD,
+      anchorSurfaceID: frozen.anchorSurfaceID,
+      tracksFocusedAnchor: false,
+      tracksInheritedCWD: true
+    )
+    #expect(
+      !state.isAgentProfileLaunchContextValid(
+        cwdOnly,
+        inheritedCWDOverride: URL(filePath: "/tmp/repo/changed", directoryHint: .isDirectory)
+      )
+    )
+  }
+
   @Test func explicitSplitFailureDoesNotFallBackToATab() {
     let state = makeState()
     let missingAnchor = UUID()
@@ -148,6 +186,77 @@ struct WorktreeTerminalStateAgentProfileTests {
 
     #expect(state.tabManager.tabs.count == 1)
     #expect(state.tabID(containing: surfaceID) == state.tabManager.tabs.first?.id)
+  }
+
+  @Test func surfaceIsInstalledAndRegisteredBeforeProfileInputIsArmed() throws {
+    let state = makeState()
+    var callbackSurfaceID: UUID?
+    var callbackObservedInstalledSurface = false
+    var callbackObservedUnarmedSurface = false
+    state.onAgentProfileSurfacePrepared = { surfaceID, _ in
+      callbackSurfaceID = surfaceID
+      callbackObservedInstalledSurface =
+        state.surfaceView(for: surfaceID) != nil
+        && state.launchProfilesBySurface[surfaceID] != nil
+      callbackObservedUnarmedSurface = state.surfaceView(for: surfaceID)?.surfaceCreationArmed == false
+      return true
+    }
+
+    let launched = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+
+    #expect(callbackSurfaceID == launched.surfaceID)
+    #expect(callbackObservedInstalledSurface)
+    #expect(callbackObservedUnarmedSurface)
+    #expect(state.surfaceView(for: launched.surfaceID)?.surfaceCreationArmed == true)
+  }
+
+  @Test func deferredGhosttyCreationFailureRollsBackRegistrationAndSurface() {
+    let state = makeState(
+      skipsSurfaceCreationForTesting: false,
+      failsSurfaceCreationForTesting: true
+    )
+    var registeredSurface: UUID?
+    var closedSurface: UUID?
+    state.onAgentProfileSurfacePrepared = { surfaceID, _ in
+      registeredSurface = surfaceID
+      return true
+    }
+    state.onSurfaceClosed = { closedSurface = $0 }
+
+    let result = state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    )
+
+    #expect(result == .failure(.surfaceCreationFailed))
+    #expect(closedSurface == registeredSurface)
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.surfaces.isEmpty)
+    #expect(state.launchProfilesBySurface.isEmpty)
+  }
+
+  @Test func registrationFailureRollsBackBeforeLeavingALiveSurface() {
+    let state = makeState()
+    state.onAgentProfileSurfacePrepared = { _, _ in false }
+
+    let result = state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    )
+
+    #expect(result == .failure(.hookRegistrationFailed))
+    #expect(state.tabManager.tabs.isEmpty)
+    #expect(state.surfaces.isEmpty)
+    #expect(state.launchProfilesBySurface.isEmpty)
   }
 
   @Test func launchProfileNameOnlyAppliesToTheLaunchedRuntime() {
@@ -267,7 +376,10 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.tabManager.tabs.first?.iconLock == .script)
   }
 
-  private func makeState() -> WorktreeTerminalState {
+  private func makeState(
+    skipsSurfaceCreationForTesting: Bool = true,
+    failsSurfaceCreationForTesting: Bool = false
+  ) -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),
       worktree: Worktree(
@@ -276,7 +388,9 @@ struct WorktreeTerminalStateAgentProfileTests {
         detail: "",
         workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
         repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
-      )
+      ),
+      skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting,
+      failsSurfaceCreationForTesting: failsSurfaceCreationForTesting
     )
   }
 

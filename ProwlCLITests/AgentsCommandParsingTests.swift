@@ -92,6 +92,47 @@ final class AgentsCommandParsingTests: XCTestCase {
     )
   }
 
+  func testNativeHookCommandIsHiddenAndBuildsBoundedRuntimeInput() throws {
+    XCTAssertFalse(AgentsCommand.helpMessage().contains("_hook"))
+    let command = try AgentsHookCommand.parse([
+      "codex",
+      "agent-turn-complete",
+      #"{"type":"agent-turn-complete","thread-id":"thread-1","cwd":"/tmp/project","last-assistant-message":"excluded"}"#,
+    ])
+    let input = try command.makeInput(
+      environment: [AgentNativeHookInput.tokenEnvironmentKey: "token-1"],
+      stdin: Data()
+    )
+
+    XCTAssertEqual(input.runtime, .codex)
+    XCTAssertEqual(input.token, "token-1")
+    XCTAssertEqual(input.signal.event, .turnEnded)
+    XCTAssertEqual(input.signal.sessionID, "thread-1")
+    XCTAssertNil(input.signal.detail)
+  }
+
+  func testNativeHookCommandRejectsMissingTokenWrongTransportAndOversizedPayload() throws {
+    let claude = try AgentsHookCommand.parse(["claude", "Stop"])
+    let payload = Data(
+      #"{"hook_event_name":"Stop","session_id":"session-1","cwd":"/tmp/project"}"#.utf8
+    )
+    XCTAssertThrowsError(try claude.makeInput(environment: [:], stdin: payload))
+
+    let codex = try AgentsHookCommand.parse(["codex", "agent-turn-complete"])
+    XCTAssertThrowsError(
+      try codex.makeInput(
+        environment: [AgentNativeHookInput.tokenEnvironmentKey: "token"],
+        stdin: payload
+      )
+    )
+    XCTAssertThrowsError(
+      try claude.makeInput(
+        environment: [AgentNativeHookInput.tokenEnvironmentKey: "token"],
+        stdin: Data(repeating: 0, count: AgentNativeHookDecoder.maximumPayloadBytes + 1)
+      )
+    )
+  }
+
   func testDispatchCompleteParsesRequiredOutcomeAndSummaryFromImplicitContext() throws {
     let command = try AgentsDispatchCompleteCommand.parse([
       "--outcome", "succeeded",
