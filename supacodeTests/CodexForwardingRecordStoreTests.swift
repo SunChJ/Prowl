@@ -95,17 +95,17 @@ struct CodexForwardingRecordStoreTests {
     }
   }
 
-  @Test func orphanSweepOnlyRemovesAgedOwnedSessionDirectories() throws {
+  @Test func orphanSweepKeepsAgedLiveStoreAndRemovesItAfterOwnerExit() throws {
     let base = temporaryDirectory("forward-orphans")
     defer { try? FileManager.default.removeItem(at: base) }
     var now = Date(timeIntervalSince1970: 1_000)
-    let oldStore = try CodexForwardingRecordStore(
+    var oldStore: CodexForwardingRecordStore? = try CodexForwardingRecordStore(
       baseDirectory: base,
       retirementGrace: 0,
       orphanMaximumAge: 60,
       now: { now }
     )
-    let oldRecord = try oldStore.create(argv: ["/tmp/old"])
+    let oldRecord = try #require(oldStore).create(argv: ["/tmp/old"])
     now.addTimeInterval(120)
 
     let liveStore = try CodexForwardingRecordStore(
@@ -117,8 +117,12 @@ struct CodexForwardingRecordStoreTests {
     let liveRecord = try liveStore.create(argv: ["/tmp/live"])
     liveStore.sweepOrphans()
 
-    #expect(!FileManager.default.fileExists(atPath: oldRecord.locator.path(percentEncoded: false)))
+    #expect(FileManager.default.fileExists(atPath: oldRecord.locator.path(percentEncoded: false)))
     #expect(FileManager.default.fileExists(atPath: liveRecord.locator.path(percentEncoded: false)))
+
+    oldStore = nil
+    liveStore.sweepOrphans()
+    #expect(!FileManager.default.fileExists(atPath: oldRecord.locator.path(percentEncoded: false)))
   }
 
   private func temporaryDirectory(_ name: String) -> URL {

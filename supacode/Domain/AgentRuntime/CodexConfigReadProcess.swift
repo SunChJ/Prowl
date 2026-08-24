@@ -166,21 +166,29 @@ nonisolated struct CodexConfigReadProcess: Sendable {
     process.standardInput = input
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice
+    guard configureNoSigPipe(input.fileHandleForWriting.fileDescriptor) else {
+      throw CodexConfigReadProcessError.processFailed
+    }
     processBox.install(process)
     try process.run()
+    defer {
+      stop(process)
+      try? input.fileHandleForWriting.close()
+      try? output.fileHandleForReading.close()
+    }
     let request = CodexConfigReadProtocol.requestData(
       cwd: query.cwd.path(percentEncoded: false)
     )
-    try input.fileHandleForWriting.write(contentsOf: request)
-    try input.fileHandleForWriting.close()
+    do {
+      try input.fileHandleForWriting.write(contentsOf: request)
+      try input.fileHandleForWriting.close()
+    } catch {
+      throw CodexConfigReadProcessError.processFailed
+    }
 
     let descriptor = output.fileHandleForReading.fileDescriptor
     let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(timeout * 1_000_000_000)
     var transcript = Data()
-    defer {
-      stop(process)
-      try? output.fileHandleForReading.close()
-    }
 
     while DispatchTime.now().uptimeNanoseconds < deadline {
       if Task.isCancelled { throw CodexConfigReadProcessError.cancelled }
@@ -210,6 +218,14 @@ nonisolated struct CodexConfigReadProcess: Sendable {
       }
     }
     throw CodexConfigReadProcessError.timeout
+  }
+
+  static func configureNoSigPipe(_ descriptor: Int32) -> Bool {
+    #if canImport(Darwin)
+      fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0
+    #else
+      true
+    #endif
   }
 
   private static func stop(_ process: Process) {

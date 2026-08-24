@@ -37,6 +37,31 @@ struct CodexShellLaunchEnvironmentTests {
       ])
   }
 
+  @Test func loginShellBannerDoesNotHideTheFramedLaunchFacts() async throws {
+    let output = ShellOutput(
+      stdout: """
+        Welcome from zprofile
+        __PROWL_CODEX_EXECUTABLE__/opt/codex
+        __PROWL_CODEX_HOME_BASE__/Users/tester
+        __PROWL_CODEX_HOME__
+        Login complete
+        """,
+      stderr: "",
+      exitCode: 0
+    )
+
+    let environment = try #require(
+      await CodexShellLaunchEnvironmentProbe.resolve(
+        cwd: URL(filePath: "/tmp", directoryHint: .isDirectory),
+        run: { _, _ in output },
+        isExecutable: { $0 == "/opt/codex" }
+      )
+    )
+
+    #expect(environment.executableURL.path(percentEncoded: false) == "/opt/codex")
+    #expect(environment.processEnvironment == ["HOME": "/Users/tester"])
+  }
+
   @Test func malformedNonAbsoluteAndFailedProbeDegrade() async {
     for output in [
       ShellOutput(stdout: "not-json", stderr: "", exitCode: 0),

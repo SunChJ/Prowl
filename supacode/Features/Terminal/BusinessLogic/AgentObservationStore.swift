@@ -291,10 +291,13 @@ final class AgentObservationStore {
       return .rejected
     }
 
-    if input.runtime == .claude, input.signal.event == .sessionStart,
-      let currentSession = managed.sessionID,
+    if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
     {
+      let mayRotateSession =
+        input.runtime == .codex
+        || (input.runtime == .claude && input.signal.event == .sessionStart)
+      guard mayRotateSession else { return .rejected }
       record.evidenceEpoch = UUID()
       record.channels.removeAll()
       record.latestCurrentSignal = nil
@@ -302,10 +305,6 @@ final class AgentObservationStore {
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       managed.evidenceEpoch = record.evidenceEpoch
       managed.verified = false
-    } else if let currentSession = managed.sessionID,
-      currentSession != input.signal.sessionID
-    {
-      return .rejected
     }
     record.sessionID = input.signal.sessionID
     managed.sessionID = input.signal.sessionID
@@ -363,6 +362,12 @@ final class AgentObservationStore {
     sessionID: String?
   ) -> AgentEvidenceEpochUpdate {
     var record = records[surfaceID] ?? SurfaceRecord()
+    if record.managedHook != nil,
+      record.processGeneration != nil,
+      processGeneration == nil
+    {
+      return AgentEvidenceEpochUpdate()
+    }
     let firstGenerationIsTimely =
       processGeneration.map {
         $0.startedAt <= (record.firstProcessGenerationStartedBefore ?? .distantPast)
@@ -370,12 +375,14 @@ final class AgentObservationStore {
     let attachesFirstLaunchGeneration =
       record.awaitingFirstProcessGeneration
       && record.processGeneration == nil
-      && firstGenerationIsTimely
+      && processGeneration != nil
+      && (firstGenerationIsTimely || record.managedHook != nil)
     let rejectsLateFirstGeneration =
       record.awaitingFirstProcessGeneration
       && record.processGeneration == nil
       && processGeneration != nil
       && !firstGenerationIsTimely
+      && record.managedHook == nil
     let processChanged =
       rejectsLateFirstGeneration
       || (!attachesFirstLaunchGeneration && record.processGeneration != processGeneration)
@@ -392,6 +399,7 @@ final class AgentObservationStore {
       record.activeTerminalSignal = nil
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       record.sessionlessSignalsAllowed = processChanged
+      if processChanged { record.sessionID = nil }
       if processChanged, let managed = record.managedHook {
         if let forwardingRecord = managed.launch.forwardingRecord {
           update.revokedForwardingRecords.append(forwardingRecord)
@@ -401,6 +409,7 @@ final class AgentObservationStore {
         managed.evidenceEpoch = record.evidenceEpoch
         managed.verified = false
         managed.pendingSignals.removeAll()
+        if managed.launch.runtime == .codex { managed.sessionID = nil }
         record.managedHook = managed
       }
     }

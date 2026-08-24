@@ -18,6 +18,7 @@ final class CodexForwardingRecordStore {
   private let orphanMaximumAge: TimeInterval
   private let now: @MainActor () -> Date
   private let retirementClock: any Clock<Duration>
+  private var sessionLockDescriptor: Int32 = -1
   private var retired: [URL: Date] = [:]
   private var cleanupTask: Task<Void, Never>?
 
@@ -39,10 +40,18 @@ final class CodexForwardingRecordStore {
       directoryHint: .isDirectory
     )
     try Self.ensureOwnerOnlyDirectory(sessionDirectory)
+    sessionLockDescriptor = try Self.acquireSessionOwnerLock(in: sessionDirectory)
     try FileManager.default.setAttributes(
       [.modificationDate: now()],
       ofItemAtPath: sessionDirectory.path(percentEncoded: false)
     )
+  }
+
+  isolated deinit {
+    if sessionLockDescriptor >= 0 {
+      flock(sessionLockDescriptor, LOCK_UN)
+      Darwin.close(sessionLockDescriptor)
+    }
   }
 
   func create(argv: [String]) throws -> CodexForwardingRecord {
@@ -149,11 +158,20 @@ final class CodexForwardingRecordStore {
         let values = try? directory.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey]),
         values.isDirectory == true,
         let modified = values.contentModificationDate,
-        modified <= cutoff,
-        canExclusivelyLeaseEveryRecord(in: directory)
+        modified <= cutoff
       else { continue }
-      try? FileManager.default.removeItem(at: directory)
+      removeOrphanDirectoryIfUnlocked(directory)
     }
+  }
+
+  private func removeOrphanDirectoryIfUnlocked(_ directory: URL) {
+    guard let descriptor = try? Self.acquireSessionOwnerLock(in: directory) else { return }
+    defer {
+      flock(descriptor, LOCK_UN)
+      Darwin.close(descriptor)
+    }
+    guard canExclusivelyLeaseEveryRecord(in: directory) else { return }
+    try? FileManager.default.removeItem(at: directory)
   }
 
   private func canExclusivelyLeaseEveryRecord(in directory: URL) -> Bool {
@@ -190,6 +208,27 @@ final class CodexForwardingRecordStore {
     guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { return false }
     defer { flock(descriptor, LOCK_UN) }
     return unlink(path) == 0 || errno == ENOENT
+  }
+
+  private static func acquireSessionOwnerLock(in directory: URL) throws -> Int32 {
+    let lockURL = directory.appending(path: ".owner.lock", directoryHint: .notDirectory)
+    let descriptor = Darwin.open(
+      lockURL.path(percentEncoded: false),
+      O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC,
+      0o600
+    )
+    guard descriptor >= 0 else { throw CodexForwardingRecordError.invalidRecord }
+    var metadata = stat()
+    guard fstat(descriptor, &metadata) == 0,
+      (metadata.st_mode & S_IFMT) == S_IFREG,
+      metadata.st_uid == geteuid(),
+      metadata.st_mode & 0o777 == 0o600,
+      flock(descriptor, LOCK_EX | LOCK_NB) == 0
+    else {
+      Darwin.close(descriptor)
+      throw CodexForwardingRecordError.invalidRecord
+    }
+    return descriptor
   }
 
   private static func ensureOwnerOnlyDirectory(_ directory: URL) throws {

@@ -187,12 +187,13 @@ struct WorktreeTerminalManagerTests {
       directoryHint: .isDirectory
     )
     defer { try? FileManager.default.removeItem(at: base) }
-    let oldStore = try CodexForwardingRecordStore(
+    var oldStore: CodexForwardingRecordStore? = try CodexForwardingRecordStore(
       baseDirectory: base,
       orphanMaximumAge: 60,
       now: { Date(timeIntervalSince1970: 100) }
     )
-    let oldRecord = try oldStore.create(argv: ["/tmp/notifier"])
+    let oldRecord = try #require(oldStore).create(argv: ["/tmp/notifier"])
+    oldStore = nil
     let manager = WorktreeTerminalManager(
       runtime: GhosttyRuntime(),
       forwardingRecordBaseDirectory: base
@@ -201,6 +202,39 @@ struct WorktreeTerminalManagerTests {
     manager.startAgentHookRuntimeMaintenance()
 
     #expect(!FileManager.default.fileExists(atPath: oldRecord.locator.path(percentEncoded: false)))
+  }
+
+  @Test func menuSplitProfileFallsBackToATabWhenNoAnchorExists() async throws {
+    let manager = WorktreeTerminalManager(
+      runtime: GhosttyRuntime(),
+      hookResourcesProvider: { nil },
+      skipsSurfaceCreationForTesting: true
+    )
+    let worktree = makeWorktree()
+    let profileID = UUID()
+    let plan = AgentProfileLaunchPlan(
+      profileID: profileID,
+      profileName: "Codex",
+      runtime: .codex,
+      invocation: AgentInvocation(executable: "codex", arguments: []),
+      commandEnvironmentTokens: [],
+      placement: .split,
+      splitDirection: .right,
+      surfaceEnvironment: [:],
+      dedicatedHome: nil
+    )
+    let stream = manager.eventStream()
+
+    manager.handleCommand(.launchAgentProfile(worktree, plan: plan))
+    let event = await nextEvent(stream) {
+      switch $0 {
+      case .agentProfileLaunched, .agentProfileLaunchFailed: true
+      default: false
+      }
+    }
+
+    #expect(event == .agentProfileLaunched(worktreeID: worktree.id, profileID: profileID))
+    #expect(manager.state(for: worktree).tabManager.tabs.count == 1)
   }
 
   @Test func unavailableHookResourcesWarnOnceAndLaunchTheOriginalInvocation() async throws {

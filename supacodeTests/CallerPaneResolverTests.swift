@@ -26,6 +26,32 @@ struct CallerPaneResolverTests {
     )
   }
 
+  @Test func resolvesFromAnAncestrySnapshotAfterTheCallerIsGone() throws {
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    let callerStart = Date(timeIntervalSince1970: 100)
+    let agentStart = Date(timeIntervalSince1970: 90)
+    let identities = [
+      CallerProcessIdentity(processID: 400, startedAt: callerStart),
+      CallerProcessIdentity(processID: 300, startedAt: agentStart),
+      CallerProcessIdentity(processID: 100, startedAt: nil),
+    ]
+
+    let resolved = try #require(
+      CallerPaneResolver.pane(
+        forCallerProcessAncestry: identities,
+        paneByShellPID: [100: pane]
+      )
+    )
+
+    #expect(resolved.surfaceID == pane.surfaceID)
+    #expect(
+      resolved.processAncestry == [
+        AgentProcessGeneration(pid: 400, startedAt: callerStart),
+        AgentProcessGeneration(pid: 300, startedAt: agentStart),
+      ]
+    )
+  }
+
   @Test func unresolvedAndCyclicAncestryNeverGuess() {
     let focusedButUnrelated = CallerPane(worktreeID: "focused", surfaceID: UUID())
 

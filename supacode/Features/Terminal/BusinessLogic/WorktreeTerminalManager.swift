@@ -245,32 +245,44 @@ final class WorktreeTerminalManager {
   private func launchAgentProfile(_ plan: AgentProfileLaunchPlan, in worktree: Worktree) {
     Task { @MainActor [weak self] in
       guard let self else { return }
-      let request = AgentProfileLaunchRequest(
-        plan: plan,
-        placement: plan.placement == .split
-          ? .split(anchor: nil, direction: plan.splitDirection, background: false)
-          : .tab(background: false)
-      )
-      switch await prepareAgentProfileLaunch(request, in: worktree) {
-      case .failure where Task.isCancelled:
-        return
-      case .failure:
-        emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
-      case .success(let preparation):
-        switch launchPreparedAgentProfile(preparation, in: worktree) {
-        case .success:
-          for warning in preparation.warnings {
-            emit(
-              .agentProfileLaunchWarning(
-                worktreeID: worktree.id,
-                profileName: plan.profileName,
-                message: warning.message
-              )
-            )
+      var placement: AgentProfileLaunchRequest.Placement =
+        plan.placement == .split
+        ? .split(anchor: nil, direction: plan.splitDirection, background: false)
+        : .tab(background: false)
+      for attempt in 0..<2 {
+        let request = AgentProfileLaunchRequest(plan: plan, placement: placement)
+        switch await prepareAgentProfileLaunch(request, in: worktree) {
+        case .failure where Task.isCancelled:
+          return
+        case .failure(let error):
+          if attempt == 0, case .split = placement, error == .splitAnchorUnavailable {
+            placement = .tab(background: false)
+            continue
           }
-          emit(.agentProfileLaunched(worktreeID: worktree.id, profileID: plan.profileID))
-        case .failure:
           emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
+          return
+        case .success(let preparation):
+          switch launchPreparedAgentProfile(preparation, in: worktree) {
+          case .success:
+            for warning in preparation.warnings {
+              emit(
+                .agentProfileLaunchWarning(
+                  worktreeID: worktree.id,
+                  profileName: plan.profileName,
+                  message: warning.message
+                )
+              )
+            }
+            emit(.agentProfileLaunched(worktreeID: worktree.id, profileID: plan.profileID))
+            return
+          case .failure:
+            if attempt == 0, case .split = placement {
+              placement = .tab(background: false)
+              continue
+            }
+            emit(.agentProfileLaunchFailed(worktreeID: worktree.id, profileName: plan.profileName))
+            return
+          }
         }
       }
     }

@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class AgentNativeHookCommandHandler: CommandHandler {
-  typealias ResolveCaller = @MainActor (pid_t) -> CallerPane?
+  typealias ResolveCaller = @MainActor (CLICommandContext) -> CallerPane?
   typealias RecordHook = @MainActor (CallerPane, AgentNativeHookInput) -> Bool
 
   private let resolveCaller: ResolveCaller
@@ -37,8 +37,8 @@ final class AgentNativeHookCommandHandler: CommandHandler {
     else {
       return failure(code: CLIErrorCode.invalidArgument)
     }
-    guard let processID = context.callerProcessID,
-      let caller = resolveCaller(processID),
+    guard context.callerProcessID != nil,
+      let caller = resolveCaller(context),
       recordHook(caller, input)
     else {
       return failure(code: CLIErrorCode.sourceRequired)

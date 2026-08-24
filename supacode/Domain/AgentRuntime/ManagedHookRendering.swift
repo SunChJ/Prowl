@@ -97,11 +97,10 @@ nonisolated enum ClaudeHookSettingsPreparer {
         carrierIndex = source.argumentIndex + 1
       }
     } else {
-      let insertionIndex =
-        resolvedPromptIndex(
-          promptArgumentIndex,
-          arguments: arguments
-        ) ?? arguments.endIndex
+      let insertionIndex = managedOptionInsertionIndex(
+        promptArgumentIndex: promptArgumentIndex,
+        arguments: arguments
+      )
       arguments.insert(contentsOf: ["--settings", "{}"], at: insertionIndex)
       carrierIndex = insertionIndex + 1
     }
@@ -150,6 +149,7 @@ nonisolated enum ClaudeHookSettingsPreparer {
         continue
       }
       let argument = arguments[index]
+      if argument == "--" { break }
       if argument == "--settings" {
         guard arguments.indices.contains(index + 1), index + 1 != promptArgumentIndex else {
           return .malformed
@@ -242,12 +242,16 @@ nonisolated enum ClaudeHookSettingsPreparer {
     }
   }
 
-  private static func resolvedPromptIndex(
-    _ explicit: Int?,
+  private static func managedOptionInsertionIndex(
+    promptArgumentIndex: Int?,
     arguments: [String]
-  ) -> Int? {
-    guard let explicit, arguments.indices.contains(explicit) else { return nil }
-    return explicit
+  ) -> Int {
+    let promptIndex =
+      promptArgumentIndex.flatMap {
+        arguments.indices.contains($0) ? $0 : nil
+      } ?? arguments.endIndex
+    let sentinelIndex = arguments.firstIndex(of: "--") ?? arguments.endIndex
+    return min(promptIndex, sentinelIndex)
   }
 
   private static func degraded(_ invocation: AgentInvocation) -> AgentHookPreparationOutcome {
@@ -282,10 +286,12 @@ nonisolated enum CodexManagedNotifyRenderer {
     )
     let notifyJSON = notifyData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
     var arguments = invocation.arguments
-    let explicitPromptIndex = promptArgumentIndex.flatMap {
-      arguments.indices.contains($0) ? $0 : nil
-    }
-    let insertionIndex = explicitPromptIndex ?? arguments.endIndex
+    let promptIndex =
+      promptArgumentIndex.flatMap {
+        arguments.indices.contains($0) ? $0 : nil
+      } ?? arguments.endIndex
+    let sentinelIndex = arguments.firstIndex(of: "--") ?? arguments.endIndex
+    let insertionIndex = min(promptIndex, sentinelIndex)
     arguments.insert(contentsOf: ["-c", "notify=[]"], at: insertionIndex)
     return AgentHookPreparedInvocation(
       invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),

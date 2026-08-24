@@ -34,6 +34,7 @@ enum SocketTransportClient {
       )
     }
     defer { close(clientFD) }
+    try configureNoSigPipe(clientFD)
     let deadline = timeoutMilliseconds.map {
       DispatchTime.now().uptimeNanoseconds + UInt64(max(1, $0)) * 1_000_000
     }
@@ -72,6 +73,24 @@ enum SocketTransportClient {
   }
 
   // MARK: - Low-level I/O using Darwin/Glibc read/write
+
+  private static func configureNoSigPipe(_ descriptor: Int32) throws {
+    #if canImport(Darwin)
+      var enabled: Int32 = 1
+      let result = withUnsafePointer(to: &enabled) {
+        setsockopt(
+          descriptor,
+          SOL_SOCKET,
+          SO_NOSIGPIPE,
+          $0,
+          socklen_t(MemoryLayout<Int32>.size)
+        )
+      }
+      guard result == 0 else {
+        throw ExitError(code: CLIErrorCode.transportFailed, message: "Failed to configure socket safety.")
+      }
+    #endif
+  }
 
   private static func configureTimeout(_ descriptor: Int32, milliseconds: Int) throws {
     let bounded = max(1, milliseconds)
@@ -172,6 +191,7 @@ enum SocketTransportClient {
     case EINVAL: "EINVAL"
     case ENOENT: "ENOENT"
     case ENOTSOCK: "ENOTSOCK"
+    case EPIPE: "EPIPE"
     case EPERM: "EPERM"
     default: "errno \(errorNumber)"
     }

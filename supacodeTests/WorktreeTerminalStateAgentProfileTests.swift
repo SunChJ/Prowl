@@ -215,6 +215,24 @@ struct WorktreeTerminalStateAgentProfileTests {
     #expect(state.surfaceView(for: launched.surfaceID)?.surfaceCreationArmed == true)
   }
 
+  @Test func deferredProfileAppliesFontSizeAdjustmentAfterSurfaceCreation() throws {
+    let state = makeState(
+      skipsSurfaceCreationForTesting: false,
+      defaultFontSize: 18
+    )
+    defer { state.cleanupAllAgentDetectionState() }
+
+    let launched = try state.launchAgentProfile(
+      AgentProfileLaunchRequest(
+        plan: makePlan(dedicatedHome: nil),
+        placement: .tab(background: false)
+      )
+    ).get()
+
+    let view = try #require(state.surfaceView(for: launched.surfaceID))
+    #expect(view.didApplyFontSizeAdjustmentMarker)
+  }
+
   @Test func deferredGhosttyCreationFailureRollsBackRegistrationAndSurface() {
     let state = makeState(
       skipsSurfaceCreationForTesting: false,
@@ -378,7 +396,8 @@ struct WorktreeTerminalStateAgentProfileTests {
 
   private func makeState(
     skipsSurfaceCreationForTesting: Bool = true,
-    failsSurfaceCreationForTesting: Bool = false
+    failsSurfaceCreationForTesting: Bool = false,
+    defaultFontSize: Float32? = nil
   ) -> WorktreeTerminalState {
     WorktreeTerminalState(
       runtime: GhosttyRuntime(),
@@ -389,6 +408,7 @@ struct WorktreeTerminalStateAgentProfileTests {
         workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
         repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
       ),
+      defaultFontSize: defaultFontSize,
       skipsSurfaceCreationForTesting: skipsSurfaceCreationForTesting,
       failsSurfaceCreationForTesting: failsSurfaceCreationForTesting
     )

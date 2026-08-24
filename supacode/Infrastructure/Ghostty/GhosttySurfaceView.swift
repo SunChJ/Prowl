@@ -140,6 +140,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
   private let envVarEntries: UnsafeMutablePointer<ghostty_env_var_s>?
   private let envVarCount: Int
   private let fontSize: Float32
+  private let appliesFontSizeAdjustmentMarker: Bool
+  private(set) var didApplyFontSizeAdjustmentMarker = false
   private let context: ghostty_surface_context_e
   var surfaceContextForTesting: ghostty_surface_context_e {
     context
@@ -278,6 +280,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
     self.runtime = runtime
     self.bridge = GhosttySurfaceBridge()
     self.fontSize = fontSize ?? 0
+    self.appliesFontSizeAdjustmentMarker = fontSize != nil
     self.context = context
     self.skipsSurfaceCreationForTesting = skipsSurfaceCreationForTesting
     self.failsSurfaceCreationForTesting = failsSurfaceCreationForTesting
@@ -382,6 +385,12 @@ final class GhosttySurfaceView: NSView, Identifiable {
       return false
     }
     surfaceRef = runtime.registerSurface(surface)
+    // This no-op marks the native surface as font-size adjusted so a config
+    // reload cannot reset an inherited/preferred size. It must run post-create.
+    if appliesFontSizeAdjustmentMarker {
+      performBindingAction("increase_font_size:0")
+      didApplyFontSizeAdjustmentMarker = true
+    }
     return true
   }
 

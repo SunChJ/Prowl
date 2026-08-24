@@ -377,13 +377,6 @@ extension WorktreeTerminalState {
       failsSurfaceCreationForTesting: failsSurfaceCreationForTesting,
       defersSurfaceCreation: defersSurfaceCreation
     )
-    // Sending a no-op font size action marks the Ghostty surface as
-    // "font_size_adjusted", which prevents config reloads (triggered by
-    // keybind changes on worktree switch) from resetting the font to the
-    // config default.
-    if resolvedFontSize != nil {
-      view.performBindingAction("increase_font_size:0")
-    }
     configureBridgeCallbacks(for: view, tabId: tabId)
     configureSurfaceCallbacks(for: view, tabId: tabId)
     surfaces[view.id] = view

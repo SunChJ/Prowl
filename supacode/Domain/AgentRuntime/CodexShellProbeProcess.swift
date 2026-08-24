@@ -21,6 +21,11 @@ nonisolated struct CodexShellProbeProcess: Sendable {
     let shellOverrideArguments: [String]
   }
 
+  private struct OutputDescriptor {
+    let fileDescriptor: Int32
+    let isStandardOutput: Bool
+  }
+
   private final class ProcessBox: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
@@ -102,9 +107,15 @@ nonisolated struct CodexShellProbeProcess: Sendable {
     process.standardError = errors
     processBox.install(process)
     try process.run()
-    let descriptors = [
-      output.fileHandleForReading.fileDescriptor,
-      errors.fileHandleForReading.fileDescriptor,
+    var descriptors = [
+      OutputDescriptor(
+        fileDescriptor: output.fileHandleForReading.fileDescriptor,
+        isStandardOutput: true
+      ),
+      OutputDescriptor(
+        fileDescriptor: errors.fileHandleForReading.fileDescriptor,
+        isStandardOutput: false
+      ),
     ]
     let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(options.timeout * 1_000_000_000)
     var stdout = Data()
@@ -115,33 +126,30 @@ nonisolated struct CodexShellProbeProcess: Sendable {
       try? errors.fileHandleForReading.close()
     }
 
-    while process.isRunning || hasReadableData(descriptors) {
+    while process.isRunning || !descriptors.isEmpty {
       if Task.isCancelled { throw CodexShellProbeProcessError.cancelled }
       guard DispatchTime.now().uptimeNanoseconds < deadline else {
         throw CodexShellProbeProcessError.timeout
       }
-      var pollDescriptors = descriptors.map { pollfd(fd: $0, events: Int16(POLLIN), revents: 0) }
+      guard !descriptors.isEmpty else {
+        usleep(1_000)
+        continue
+      }
+      var pollDescriptors = descriptors.map {
+        pollfd(fd: $0.fileDescriptor, events: Int16(POLLIN | POLLHUP), revents: 0)
+      }
       let status = poll(&pollDescriptors, nfds_t(pollDescriptors.count), 25)
       if status < 0 {
         if errno == EINTR { continue }
         throw CodexShellProbeProcessError.processFailed
       }
-      for index in pollDescriptors.indices where pollDescriptors[index].revents & Int16(POLLIN) != 0 {
-        var chunk = [UInt8](repeating: 0, count: 4 * 1_024)
-        let count = chunk.withUnsafeMutableBytes {
-          Darwin.read(descriptors[index], $0.baseAddress, $0.count)
-        }
-        if count > 0 {
-          if index == 0 {
-            stdout.append(contentsOf: chunk.prefix(count))
-          } else {
-            stderr.append(contentsOf: chunk.prefix(count))
-          }
-          guard stdout.count + stderr.count <= options.maximumOutputBytes else {
-            throw CodexShellProbeProcessError.outputTooLarge
-          }
-        }
-      }
+      try drainReadyDescriptors(
+        &descriptors,
+        pollDescriptors: pollDescriptors,
+        standardOutput: &stdout,
+        standardError: &stderr,
+        maximumOutputBytes: options.maximumOutputBytes
+      )
     }
     guard process.terminationStatus == 0 else { throw CodexShellProbeProcessError.processFailed }
     guard let stdoutText = String(data: stdout, encoding: .utf8),
@@ -150,9 +158,38 @@ nonisolated struct CodexShellProbeProcess: Sendable {
     return ShellOutput(stdout: stdoutText, stderr: stderrText, exitCode: process.terminationStatus)
   }
 
-  private static func hasReadableData(_ descriptors: [Int32]) -> Bool {
-    var values = descriptors.map { pollfd(fd: $0, events: Int16(POLLIN), revents: 0) }
-    return poll(&values, nfds_t(values.count), 0) > 0
+  private static func drainReadyDescriptors(
+    _ descriptors: inout [OutputDescriptor],
+    pollDescriptors: [pollfd],
+    standardOutput: inout Data,
+    standardError: inout Data,
+    maximumOutputBytes: Int
+  ) throws {
+    for index in pollDescriptors.indices.reversed() {
+      let events = pollDescriptors[index].revents
+      if events & Int16(POLLNVAL | POLLERR) != 0 {
+        throw CodexShellProbeProcessError.processFailed
+      }
+      guard events & Int16(POLLIN | POLLHUP) != 0 else { continue }
+      var chunk = [UInt8](repeating: 0, count: 4 * 1_024)
+      let count = chunk.withUnsafeMutableBytes {
+        Darwin.read(descriptors[index].fileDescriptor, $0.baseAddress, $0.count)
+      }
+      if count > 0 {
+        if descriptors[index].isStandardOutput {
+          standardOutput.append(contentsOf: chunk.prefix(count))
+        } else {
+          standardError.append(contentsOf: chunk.prefix(count))
+        }
+        guard standardOutput.count + standardError.count <= maximumOutputBytes else {
+          throw CodexShellProbeProcessError.outputTooLarge
+        }
+      } else if count == 0 {
+        descriptors.remove(at: index)
+      } else if errno != EINTR && errno != EAGAIN {
+        throw CodexShellProbeProcessError.processFailed
+      }
+    }
   }
 
   private static func stop(_ process: Process) {

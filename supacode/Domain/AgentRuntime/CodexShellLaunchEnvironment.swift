@@ -54,17 +54,14 @@ nonisolated enum CodexShellLaunchEnvironmentProbe {
   }
 
   private static func parse(_ output: String) -> [String: String]? {
-    let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
-    guard lines.count == 4, lines.last?.isEmpty == true else { return nil }
+    let markers = [executableMarker, homeMarker, codexHomeMarker]
     var values: [String: String] = [:]
-    for line in lines.dropLast() {
+    for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
       let value = String(line)
-      guard
-        let marker = [executableMarker, homeMarker, codexHomeMarker].first(where: value.hasPrefix),
-        values[marker] == nil
-      else { return nil }
+      guard let marker = markers.first(where: value.hasPrefix) else { continue }
+      guard values[marker] == nil else { return nil }
       values[marker] = String(value.dropFirst(marker.count))
     }
-    return values.count == 3 ? values : nil
+    return values.count == markers.count ? values : nil
   }
 }
