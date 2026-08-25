@@ -85,7 +85,12 @@ Confidence: **V** verified locally (live run or binary/source) · **D** official
   re-supply the user's providers.
 - **Factory Droid** — https://docs.factory.ai/reference/hooks-reference. Live:
   `droid exec --settings /abs/settings.json` fired SessionStart/Stop/SessionEnd (Stop even
-  though the exec failed).
+  though the exec failed). Process shape (0.203.0, 2026-08-25): the interactive TUI is one
+  `droid` process, and once the folder is trusted it forks a second `droid exec
+  --input-format stream-jsonrpc --output-format stream-jsonrpc` engine in the same process
+  group; every hook (`bash -c`) is a child of that engine, so a hook's ancestry contains both
+  processes. Prowl's process probe lists the newer engine first and identifies it once it
+  exists.
 - **Amp** — https://ampcode.com/manual/plugin-api. Plugins only from project
   `.amp/plugins/` or `~/.config/amp/plugins/`; `ctx.thread.state` exposes
   `awaiting-approval` in-process.

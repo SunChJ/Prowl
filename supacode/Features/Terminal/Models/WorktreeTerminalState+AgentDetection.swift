@@ -142,6 +142,7 @@ extension WorktreeTerminalState {
       // Presence holds keep the last known pid so a probe gap does not flap
       // the session to nil and back (the resolver re-binds on the next hit).
       agentProcessID: identified?.process.pid ?? previous.agentProcessID,
+      launchProcessID: identified?.launchProcessID ?? previous.launchProcessID,
       launchObservation: launchObservation,
       session: session,
       iconLookupToken: iconLookupToken,

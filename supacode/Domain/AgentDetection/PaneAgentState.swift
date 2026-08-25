@@ -3,6 +3,10 @@ import Foundation
 struct PaneAgentState: Equatable, Sendable {
   var detectedAgent: DetectedAgent?
   var agentProcessID: pid_t?
+  /// The process the shell launched for the agent, which may differ from
+  /// `agentProcessID` once the runtime forks an engine child. Process
+  /// generations key on this so such a child is not mistaken for a relaunch.
+  var launchProcessID: pid_t?
   var launchObservation: AgentLaunchObservation?
   var session: AgentSession?
   /// Consecutive resolver misses while the same process stayed detected;
@@ -17,6 +21,7 @@ struct PaneAgentState: Equatable, Sendable {
   init(
     detectedAgent: DetectedAgent? = nil,
     agentProcessID: pid_t? = nil,
+    launchProcessID: pid_t? = nil,
     launchObservation: AgentLaunchObservation? = nil,
     session: AgentSession? = nil,
     iconLookupToken: String? = nil,
@@ -27,6 +32,7 @@ struct PaneAgentState: Equatable, Sendable {
   ) {
     self.detectedAgent = detectedAgent
     self.agentProcessID = agentProcessID
+    self.launchProcessID = launchProcessID
     self.launchObservation = launchObservation
     self.session = session
     self.iconLookupToken = iconLookupToken

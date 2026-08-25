@@ -654,7 +654,10 @@ final class WorktreeTerminalManager {
   ) -> (generation: AgentProcessGeneration?, sessionID: String?) {
     for state in states.values {
       guard let paneState = state.surfaceAgentStates[surfaceID] else { continue }
-      let generation = paneState.agentProcessID.flatMap { pid in
+      // The launch process, not the identified one, is the generation subject:
+      // hooks descend from both, and only the launch survives an engine child
+      // taking over identification.
+      let generation = (paneState.launchProcessID ?? paneState.agentProcessID).flatMap { pid in
         ProcessDetection.processStartDate(pid: pid).map {
           AgentProcessGeneration(pid: pid, startedAt: $0)
         }

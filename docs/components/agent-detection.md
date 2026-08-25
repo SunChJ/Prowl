@@ -126,9 +126,12 @@ does not create or overwrite a detected-agent entry. `turn-ended` means one inte
 ended, not that a workflow step completed; only `prowl workflow done` will advance a
 workflow, and only a matching `agents dispatch-complete` can complete an exact dispatch.
 
-Signal eligibility is generation-aware. Prowl binds evidence to the detected process's PID
-**and process start time**, plus its current session only when that attribution is exact or
-high confidence. A dispatch launch accepts its first process generation only when the process
+Signal eligibility is generation-aware. Prowl binds evidence to the agent's launch process —
+the topmost member of the pane's foreground job above the detected process — by PID **and
+process start time**, plus its current session only when that attribution is exact or high
+confidence. Reading state from a forked engine child (Droid runs its TUI and a `droid exec`
+engine as two processes) therefore never counts as a replacement: hooks descend from both, and
+only a new launch changes the generation. A dispatch launch accepts its first process generation only when the process
 started within ten seconds of launch binding; a later-started process is a replacement even if
 the original runtime exited before detection. A medium-confidence session guess remains
 diagnostic and never rotates an evidence epoch. Evidence from a reused PID, a replaced session,
