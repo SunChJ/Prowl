@@ -146,6 +146,44 @@ entry has been corrected: the original probe ran in a directory that had already
 interactively, which hid the gate. Practical consequence: Qoder gains exact coverage only after
 the user trusts the worktree, which they must do anyway before the agent can work there.
 
+### Static-review hardening (2026-08-26)
+
+A static review of the branch surfaced four contract gaps that the tests missed because the
+stubs encoded the same assumptions. Each is now pinned by a test and fixed:
+
+- **Runtime working directory was not registered.** Copilot `-C`, Droid `--cwd`, and Qoder
+  `-w`/`--cwd` change directory before their hooks run (measured: the hooks report the changed
+  path), while a relative `--settings` path is still resolved against the launch directory. The
+  preparer registered `inheritedCWD` for the hook, so every event from a `--cwd`-launched agent
+  was rejected on the cwd guard. A shared `ManagedHookWorkingDirectory` scanner now resolves the
+  effective directory per runtime (last-wins for Copilot/Droid, first-wins for Qoder, `=`/joined
+  forms accepted) and degrades on a malformed option;
+  `AgentS3bHookRenderingTests` covers the precedence and the register-changed-but-read-inherited
+  split.
+- **Droid could override env-var settings.** `FACTORY_RUNTIME_SETTINGS_PATH` is a real Droid
+  settings source that the injected `--settings` flag outranks, so a user relying on it would
+  lose their models/keys/hooks. The preparer now reads it when it is set through the Profile's
+  environment overrides and merges it as the base (flag still wins; unreadable degrades). The
+  shell-rc / globally exported case needs a shell probe like Codex's and is a follow-up. The plan
+  doc's "unused" note was corrected.
+- **A stale detector session could roll back a hook-announced one.** After `SessionStart(S1)` →
+  `SessionStart(S2)`, a lagging detector still reporting `S1` drove a session-change that revoked
+  the freshly verified `S2` channel and rolled `record.sessionID` back. An announced rotation now
+  retires the superseded session for every runtime, so a detector read of it is ignored while a
+  genuinely new session still invalidates the channel until the hook re-announces
+  (`staleDetectorSessionDoesNotRollBackAHookAnnouncedNewSession`).
+- **A transient sample could revoke the launch generation.** If one `proc_listpids` dropped the
+  launcher while keeping the engine child, the launch root flipped to the child and read as a
+  process replacement, permanently revoking the registration and private file. The launch process
+  is now kept while it is still a live ancestor of the identified process
+  (`PaneAgentState.retainedLaunchProcessID`; `PaneAgentStateTests`).
+
+Two smaller correctness items from the same review: Droid's `--settings` is treated as path-only
+(a `{`-prefixed value is a missing path, not inline JSON to synthesize), and the Droid merge is
+capped at the owner-only private-file limit so an oversize merge degrades with the Droid reason
+instead of failing opaquely at write time. The symlink cwd-comparison test deleted during the
+session-takeover change was restored.
+
 ### Upgrade re-verification (2026-08-25)
 
 All five managed-hook runtimes were updated to their latest release and re-run through the same
