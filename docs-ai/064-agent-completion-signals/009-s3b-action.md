@@ -168,6 +168,10 @@ live contract test whenever Codex is upgraded.
 
 ## Open questions
 
+- Drift protection for the managed-hook contracts (version attestation + headless contract
+  tests against the real binaries) is tracked in
+  [#726](https://github.com/onevcat/Prowl/issues/726), to be designed once S3c has added
+  Pi, Oh My Pi, and OpenCode. Interactive E2E stays a manual runbook aid.
 - The launch-process subject also keeps a managed hook alive when a launched agent runs another
   agent CLI as a tool (the nested process is identified, but its launch root is unchanged).
   That case has not been exercised live.
