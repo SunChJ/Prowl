@@ -250,10 +250,11 @@ tmux/detached ancestry, and already-closed panes fail with `SOURCE_REQUIRED` or
 means explicit channel and caller-pane attribution, not verified business completion.
 Claimed origin never upgrades trust. JSON uses `prowl.cli.agents.signal.v1`.
 
-Prowl's bundled CLI has a hidden, silent native-hook ingress for managed Claude Code and
-Codex Profile launches. It is not a user command and does not appear in help/completion.
-Only an app-issued in-memory token plus exact caller ancestry, runtime, native event, launch
-cwd, and process generation can produce `source=hook_claude|hook_codex` and a
+Prowl's bundled CLI has a hidden, silent native-hook ingress for managed Claude Code, Codex,
+Copilot, Droid, and Qoder Profile launches. It is not a user command and does not appear in
+help/completion. Only an app-issued in-memory token plus exact caller ancestry, runtime,
+native event, launch cwd, and process generation can produce
+`source=hook_claude|hook_codex|hook_copilot|hook_droid|hook_qodercli` and a
 `verified_live` channel. Public `agents signal` cannot claim that provenance. Hook delivery
 is bounded and fail-open for the runtime; native `turn-ended` remains observation evidence,
 not dispatch or workflow completion.
