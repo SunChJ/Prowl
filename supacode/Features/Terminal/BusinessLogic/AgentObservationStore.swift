@@ -292,17 +292,32 @@ final class AgentObservationStore {
       return .pending
     }
     guard callerAncestry.contains(generation), managed.processGeneration == generation else {
+      observationLogger.debug(
+        "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=generation-mismatch"
+      )
       return .rejected
     }
-    if managed.retiredSessionIDs.contains(input.signal.sessionID) { return .rejected }
+    if managed.retiredSessionIDs.contains(input.signal.sessionID) {
+      observationLogger.debug(
+        "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=retired-session"
+      )
+      return .rejected
+    }
 
     if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
     {
-      let mayRotateSession =
-        input.runtime == .codex
-        || (input.runtime == .claude && input.signal.event == .sessionStart)
-      guard mayRotateSession else { return .rejected }
+      // Codex rotates its thread without a start event. Every Claude-shaped runtime announces
+      // a new session with `SessionStart`, so all of them may take over on that event —
+      // otherwise a user starting a fresh session (Droid's `/new`, for example) would leave
+      // the channel permanently unable to accept its own agent's events.
+      let mayRotateSession = input.runtime == .codex || input.signal.event == .sessionStart
+      guard mayRotateSession else {
+        observationLogger.debug(
+          "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=session-changed"
+        )
+        return .rejected
+      }
       if input.runtime == .codex {
         managed.retiredSessionIDs.insert(currentSession)
       }
