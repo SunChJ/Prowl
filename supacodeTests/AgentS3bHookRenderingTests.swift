@@ -620,7 +620,7 @@ struct AgentS3bHookRenderingTests {
             let data = out.fileHandleForReading.readDataToEndOfFile()
             continuation.resume(
               returning: ShellOutput(
-                stdout: String(decoding: data, as: UTF8.self), stderr: "", exitCode: proc.terminationStatus))
+                stdout: String(bytes: data, encoding: .utf8) ?? "", stderr: "", exitCode: proc.terminationStatus))
           }
           do { try process.run() } catch { continuation.resume(throwing: error) }
         }
