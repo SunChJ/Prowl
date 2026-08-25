@@ -80,13 +80,24 @@ trust entries written by the runtimes were removed afterward.
 | Qoder Profile launch and channel | **NOT VERIFIED** |
 
 Droid's hook demonstrably runs (its TUI reports `Hooks Stop … Exit code 0`) but no channel
-appears. Ruled out by measurement: missing token (present in the process environment), broken
-ancestry (its hook's parent chain is identical to Copilot's), a stripped environment (a marker
-variable reaches the hook), payload shape (its fields match the decoder), and cwd form (the
-symlink fix above, which did not change the outcome). The remaining suspects are the CLI's
-stdin read for this runtime and the first-process-generation timing window; neither was
-confirmed because the app's stdout could not be captured reliably in this setup, so the new
-rejection diagnostics were never observed.
+appears. A timeboxed follow-up narrowed this to the app's receiving end.
+
+Ruled out by measurement:
+
+- **The CLI transmits.** Pointed at a stub Unix socket, `agents _hook droid Stop` with a token
+  and a Droid-shaped payload on stdin sends a well-formed 177-byte `agentsHook` frame, exactly
+  like `claude` and `copilot`. So the runtime argument, the stdin read, the decoder, and the
+  transport all work for this runtime.
+- Token presence, process ancestry (its hook's parent chain is identical to Copilot's),
+  environment propagation (a marker variable reaches the hook), payload shape, and cwd form
+  (the symlink fix above, which did not change the outcome).
+
+That leaves `AgentNativeHookCommandHandler`'s `resolveCaller` / `recordHook` pair in
+`supacode/App/supacodeApp.swift`. Note that a `resolveCaller` failure returns `SOURCE_REQUIRED`
+**before** `AgentObservationStore.recordManagedHook` runs, so the new rejection diagnostics
+would stay silent in exactly that case — consistent with the empty logs observed here. The next
+step is to inspect the app's response to a real Droid hook (the CLI discards it) or to log the
+`resolveCaller` outcome, with the app started so its stdout is genuinely captured.
 
 Qoder could not be exercised because deferred Profile surface creation began failing for every
 runtime in that instance while plain tabs kept succeeding — the same symptom as the pre-existing
@@ -95,9 +106,9 @@ runtime in that instance while plain tabs kept succeeding — the same symptom a
 
 ## Open questions
 
-- Why Droid's hook never produces a channel despite executing successfully. Reproduce with the
-  debug rejection log visible (the app must be started so its stdout is actually captured), and
-  check whether `readBoundedStdin` returns for this runtime and whether the pane shell's process
+- Why Droid's hook never produces a channel despite the CLI transmitting a valid frame.
+  Instrument `resolveCaller` / `recordHook` (a `resolveCaller` miss returns `SOURCE_REQUIRED`
+  without reaching the store's diagnostics) and confirm whether the pane shell's process
   generation is bound before the agent's.
 - Qoder's end-to-end path is unverified. Its rendering, merging, and store handling are covered
   by tests, but no live launch has confirmed a channel.
