@@ -63,6 +63,25 @@ struct PaneAgentState: Equatable, Sendable {
     return (streak >= 3 ? nil : previous.session, streak)
   }
 
+  /// Launch-process stickiness: the launch process is the generation subject for managed hooks,
+  /// so a transient sample that drops it from the foreground job must not read as a relaunch.
+  /// A full probe gap (no agent identified) keeps the previous value; when the identified root
+  /// changes, keep the previous one only while it is still a live ancestor of the identified
+  /// process — otherwise the launch genuinely moved and the new root wins.
+  static func retainedLaunchProcessID(
+    identifiedLaunchProcessID: pid_t?,
+    identifiedProcessID: pid_t?,
+    previous: PaneAgentState,
+    isLiveAncestor: (_ ancestor: pid_t, _ descendant: pid_t) -> Bool
+  ) -> pid_t? {
+    guard let candidate = identifiedLaunchProcessID else { return previous.launchProcessID }
+    guard let previousLaunch = previous.launchProcessID,
+      previousLaunch != candidate,
+      let identifiedProcessID
+    else { return candidate }
+    return isLiveAncestor(previousLaunch, identifiedProcessID) ? previousLaunch : candidate
+  }
+
   /// An argv observation is usable only while it belongs to the same detected
   /// process. Unlike sessions, an absent probe never proves a safer mode.
   static func retainedLaunchObservation(

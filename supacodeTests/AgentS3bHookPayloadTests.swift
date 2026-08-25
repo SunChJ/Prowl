@@ -196,6 +196,67 @@ struct AgentS3bHookPayloadTests {
     #expect(AgentProfileRuntime.qoder.rawValue == "qodercli")
   }
 
+  /// Runtimes disagree on how they report their working directory: Copilot echoes the shell's
+  /// logical `/tmp/...` while Droid reports the kernel-resolved `/private/tmp/...`. Both name the
+  /// same directory, so hook validation must compare resolved paths or the events are silently
+  /// rejected (measured against Droid 0.202.0). Restored coverage for the fix in 9654f252.
+  @Test func hookCWDComparisonResolvesSymlinkedTemporaryPaths() throws {
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let capability = try #require(AgentRuntimeAdapterRegistry.profileAdapter(for: .droid)?.signalHooks)
+
+    // Resolution only applies to paths that exist, which a real launch directory always does.
+    let name = "prowl-cwd-probe-\(UUID().uuidString)"
+    let logical = "/tmp/\(name)"
+    let resolved = "/private/tmp/\(name)"
+    try FileManager.default.createDirectory(atPath: logical, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: logical) }
+
+    let registration = AgentHookLaunchRegistration(
+      token: "token-droid",
+      runtime: capability.runtime,
+      // The launch registers the logical path Prowl tracks for the worktree.
+      launchCWD: URL(filePath: logical, directoryHint: .isDirectory),
+      nativeEvents: capability.nativeEvents,
+      coveredEvents: capability.coveredEvents,
+      forwardingRecord: nil
+    )
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    // The hook reports the same directory through its resolved path.
+    let accepted = store.recordManagedHook(
+      AgentNativeHookInput(
+        runtime: .droid,
+        token: registration.token,
+        signal: AgentNativeHookSignal(
+          event: .turnEnded, nativeEvent: "Stop", cwd: resolved, sessionID: "session-1")
+      ),
+      callerAncestry: [generation],
+      surfaceID: surfaceID
+    )
+    guard case .accepted = accepted else {
+      Issue.record("resolved-equivalent cwd must be accepted, got \(accepted)")
+      return
+    }
+
+    // A genuinely different directory still fails closed.
+    let elsewhere = store.recordManagedHook(
+      AgentNativeHookInput(
+        runtime: .droid,
+        token: registration.token,
+        signal: AgentNativeHookSignal(
+          event: .turnEnded, nativeEvent: "Stop",
+          cwd: "/private/tmp/prowl-definitely-not-the-launch-directory", sessionID: "session-1")
+      ),
+      callerAncestry: [generation],
+      surfaceID: surfaceID
+    )
+    #expect(elsewhere == .rejected)
+  }
+
   /// The observation store must accept a real launch/registration cycle for each S3b runtime,
   /// not just Claude and Codex. This is the deterministic counterpart to the live gate.
   @Test func eachS3bRuntimeVerifiesItsChannelThroughTheObservationStore() throws {

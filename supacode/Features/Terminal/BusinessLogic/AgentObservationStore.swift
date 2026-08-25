@@ -322,9 +322,10 @@ final class AgentObservationStore {
         )
         return .rejected
       }
-      if !managed.announcesSessionStarts {
-        managed.retiredSessionIDs.insert(currentSession)
-      }
+      // Retire the superseded session for every runtime so a lagging detector read of it is
+      // ignored rather than rolling the channel back to it (announcing runtimes rotate here on
+      // their own SessionStart; Codex rotates on ordinary events).
+      managed.retiredSessionIDs.insert(currentSession)
       record.evidenceEpoch = UUID()
       record.channels.removeAll()
       record.latestCurrentSignal = nil
@@ -481,9 +482,12 @@ final class AgentObservationStore {
     _ sessionID: String?,
     record: SurfaceRecord
   ) -> String? {
+    // A session the hook has already superseded must never drive rotation: a detector that lags
+    // and reports the previous session would otherwise revoke the freshly verified new one and
+    // roll `record.sessionID` backwards. A genuinely new session the hook has not yet announced
+    // is still honored, so the channel is distrusted until the hook re-announces.
     guard let sessionID,
       let managed = record.managedHook,
-      !managed.announcesSessionStarts,
       managed.retiredSessionIDs.contains(sessionID)
     else { return sessionID }
     return nil

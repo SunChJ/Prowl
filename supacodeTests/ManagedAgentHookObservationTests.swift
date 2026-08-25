@@ -183,6 +183,47 @@ struct ManagedAgentHookObservationTests {
     #expect(channel.sessionID == "session-2")
   }
 
+  @Test func staleDetectorSessionDoesNotRollBackAHookAnnouncedNewSession() throws {
+    // Claude/Droid/Qoder announce their own sessions, so the detector's screen-derived
+    // session must never rotate the channel: a lagging read of the previous session would
+    // otherwise revoke the just-verified new one and roll `record.sessionID` backwards.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func sessionStart(_ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: "SessionStart",
+        event: .sessionStart, cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(store.recordManagedHook(sessionStart("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    #expect(store.recordManagedHook(sessionStart("S2"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    let epochAfterS2 = try #require(store.currentEvidenceEpoch(surfaceID: surfaceID))
+
+    // The detector resolver lags and still reports the previous session S1.
+    let update = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S1")
+    #expect(update.revokedForwardingRecords.isEmpty)
+    #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) == epochAfterS2)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.state == .verifiedLive)
+    #expect(channel.sessionID == "S2")
+
+    // A later Stop for the current session S2 is still accepted without a rotation.
+    #expect(
+      store.recordManagedHook(
+        makeInput(
+          runtime: .claude, token: registration.token, nativeEvent: "Stop", event: .turnEnded,
+          cwd: "/tmp/project", sessionID: "S2"),
+        callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+    #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) == epochAfterS2)
+  }
+
   @Test func processReplacementRevokesTrustAndReturnsForwardRecordForRetirement() {
     let now = Date(timeIntervalSince1970: 100)
     let store = AgentObservationStore(bufferCapacity: 8, now: { now })
