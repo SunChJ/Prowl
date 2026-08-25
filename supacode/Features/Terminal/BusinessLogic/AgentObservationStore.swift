@@ -17,6 +17,13 @@ private struct PendingManagedHookSignal {
 
 private struct ManagedHookRegistrationRecord {
   let launch: AgentHookLaunchRegistration
+  /// Whether the runtime announces a new session with its own start event.
+  ///
+  /// Such a runtime hands the channel over only on that event, so a late event from a
+  /// superseded session is simply rejected. A runtime without a start event (Codex, whose
+  /// only native event is a turn edge) can rotate on ordinary events, so its superseded
+  /// sessions must be retired explicitly or a late one would silently take the channel back.
+  var announcesSessionStarts: Bool { launch.coveredEvents.contains(.sessionStart) }
   var evidenceEpoch: UUID
   var processGeneration: AgentProcessGeneration?
   var sessionID: String?
@@ -307,18 +314,15 @@ final class AgentObservationStore {
     if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
     {
-      // Codex rotates its thread without a start event. Every Claude-shaped runtime announces
-      // a new session with `SessionStart`, so all of them may take over on that event —
-      // otherwise a user starting a fresh session (Droid's `/new`, for example) would leave
-      // the channel permanently unable to accept its own agent's events.
-      let mayRotateSession = input.runtime == .codex || input.signal.event == .sessionStart
+      let mayRotateSession =
+        !managed.announcesSessionStarts || input.signal.event == .sessionStart
       guard mayRotateSession else {
         observationLogger.debug(
           "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=session-changed"
         )
         return .rejected
       }
-      if input.runtime == .codex {
+      if !managed.announcesSessionStarts {
         managed.retiredSessionIDs.insert(currentSession)
       }
       record.evidenceEpoch = UUID()
@@ -433,7 +437,7 @@ final class AgentObservationStore {
         managed.evidenceEpoch = record.evidenceEpoch
         managed.verified = false
         managed.pendingSignals.removeAll()
-        if managed.launch.runtime == .codex {
+        if !managed.announcesSessionStarts {
           if let managedSessionID = managed.sessionID,
             managedSessionID != acceptedSessionID
           {
@@ -479,7 +483,7 @@ final class AgentObservationStore {
   ) -> String? {
     guard let sessionID,
       let managed = record.managedHook,
-      managed.launch.runtime == .codex,
+      !managed.announcesSessionStarts,
       managed.retiredSessionIDs.contains(sessionID)
     else { return sessionID }
     return nil
