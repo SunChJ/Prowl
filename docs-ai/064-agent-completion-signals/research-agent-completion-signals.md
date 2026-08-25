@@ -66,6 +66,9 @@ Confidence: **V** verified locally (live run or binary/source) · **D** official
   initialize/`config/read`, base/profile-v2/final-CLI notifier precedence, project-notify
   exclusion, and repeated-cwd rejection. An internal "memories" sub-session (cwd
   `~/.codex/memories`, `transcript_path:null`) also fires SessionStart/End — filter on cwd.
+  App-server note (0.149.1, 2026-08-25): `codex app-server --listen stdio://` exits on stdin EOF
+  and drops requests it has not answered yet; keep the request pipe open until the response
+  arrives (0.149.0 still answered queued requests after EOF).
 - **Gemini CLI** — https://geminicli.com/docs/hooks/reference/ ,
   https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/notifications.md. Hooks
   merge across user/project/system layers; project hooks are fingerprinted/trust-warned.

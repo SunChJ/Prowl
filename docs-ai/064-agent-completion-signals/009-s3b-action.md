@@ -146,6 +146,26 @@ entry has been corrected: the original probe ran in a directory that had already
 interactively, which hid the gate. Practical consequence: Qoder gains exact coverage only after
 the user trusts the worktree, which they must do anyway before the agent can work there.
 
+### Upgrade re-verification (2026-08-25)
+
+All five managed-hook runtimes were updated to their latest release and re-run through the same
+isolated-instance sweep (`create tab --profile` → answer the folder-trust prompt → one prompt →
+`agents wait --until idle` → `agents --json`), one after another in one app process:
+
+| Runtime | Version | Result |
+| --- | --- | --- |
+| Claude Code | 2.1.245 | PASS — `hook_claude` `verified_live`, `turn-ended` |
+| Codex | 0.149.1 (from 0.149.0) | FAIL on first run (`managed_hook_degraded`), PASS after the app-server EOF fix recorded in [007-s3a-action.md](007-s3a-action.md) |
+| Copilot | 1.0.80 | PASS — `hook_copilot` |
+| Droid | 0.203.0 | PASS — `hook_droid` |
+| Qoder | 1.1.29 | PASS — `hook_qodercli` |
+
+Every runtime asked to trust the scratch folder first (Claude, Codex, Copilot, Droid, Qoder all
+gate on it now), and the launch-process generation held across each engine child. The only
+regression came from the one runtime whose version changed, and it sat in preflight, not in the
+hook path — a reminder that the notifier resolution talks to a moving protocol and deserves the
+live contract test whenever Codex is upgraded.
+
 ## Open questions
 
 - The launch-process subject also keeps a managed hook alive when a launched agent runs another
