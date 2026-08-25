@@ -304,11 +304,22 @@ final class AgentObservationStore {
       )
       return .rejected
     }
-    if managed.retiredSessionIDs.contains(input.signal.sessionID) {
+    // A retired session is normally dead, but an announcing runtime can legitimately resume one:
+    // Claude's /resume re-announces the old id with a fresh authoritative SessionStart. Let that
+    // reactivate it (rotation below retires the current session and re-verifies); every other
+    // retired-session event, and Codex (no SessionStart), stays rejected.
+    let resumesRetiredSession =
+      managed.announcesSessionStarts
+      && input.signal.event == .sessionStart
+      && managed.retiredSessionIDs.contains(input.signal.sessionID)
+    if managed.retiredSessionIDs.contains(input.signal.sessionID), !resumesRetiredSession {
       observationLogger.debug(
         "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=retired-session"
       )
       return .rejected
+    }
+    if resumesRetiredSession {
+      managed.retiredSessionIDs.remove(input.signal.sessionID)
     }
 
     if let currentSession = managed.sessionID,

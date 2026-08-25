@@ -224,6 +224,42 @@ struct ManagedAgentHookObservationTests {
     #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) == epochAfterS2)
   }
 
+  @Test func announcedSessionStartCanResumeARetiredSession() throws {
+    // Claude's /resume re-announces an old session id with a fresh authoritative SessionStart.
+    // The retired-session guard must not reject that, or every event of the resumed session dies.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func sessionStart(_ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: "SessionStart",
+        event: .sessionStart, cwd: "/tmp/project", sessionID: session)
+    }
+    func stop(_ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: "Stop",
+        event: .turnEnded, cwd: "/tmp/project", sessionID: session)
+    }
+
+    #expect(store.recordManagedHook(sessionStart("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    #expect(store.recordManagedHook(sessionStart("S2"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    // User runs /resume back to S1: the retired id is reactivated by its own SessionStart.
+    #expect(store.recordManagedHook(sessionStart("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.state == .verifiedLive)
+    #expect(channel.sessionID == "S1")
+
+    // Events of the resumed session are now accepted; the superseded S2 is the retired one.
+    #expect(store.recordManagedHook(stop("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    #expect(store.recordManagedHook(stop("S2"), callerAncestry: [generation], surfaceID: surfaceID) == .rejected)
+  }
+
   @Test func processReplacementRevokesTrustAndReturnsForwardRecordForRetirement() {
     let now = Date(timeIntervalSince1970: 100)
     let store = AgentObservationStore(bufferCapacity: 8, now: { now })
