@@ -83,20 +83,33 @@ appears. A timeboxed follow-up narrowed this to the app's receiving end.
 
 Ruled out by measurement:
 
-- **The CLI transmits.** Pointed at a stub Unix socket, `agents _hook droid Stop` with a token
-  and a Droid-shaped payload on stdin sends a well-formed 177-byte `agentsHook` frame, exactly
-  like `claude` and `copilot`. So the runtime argument, the stdin read, the decoder, and the
-  transport all work for this runtime.
+- **The whole outbound path works, driven by Droid itself.** With a real Droid run configured
+  to call the real bundled CLI against a stub Unix socket, the hook produced a well-formed
+  339-byte `agentsHook` frame carrying the correct runtime, event, cwd, and session id. Droid
+  also invokes a single-quoted command path containing a space correctly and passes a 570-byte
+  JSON payload on stdin. So Droid's own behavior, the command rendering, the stdin read, the
+  decoder, and the transport are all correct — the frame reaches the app.
 - Token presence, process ancestry (its hook's parent chain is identical to Copilot's),
   environment propagation (a marker variable reaches the hook), payload shape, and cwd form
   (the symlink fix above, which did not change the outcome).
 
-That leaves `AgentNativeHookCommandHandler`'s `resolveCaller` / `recordHook` pair in
-`supacode/App/supacodeApp.swift`. Note that a `resolveCaller` failure returns `SOURCE_REQUIRED`
-**before** `AgentObservationStore.recordManagedHook` runs, so the new rejection diagnostics
-would stay silent in exactly that case — consistent with the empty logs observed here. The next
-step is to inspect the app's response to a real Droid hook (the CLI discards it) or to log the
-`resolveCaller` outcome, with the app started so its stdout is genuinely captured.
+That places the failure entirely on the app's receiving side, even though Copilot and Qoder
+traverse the same handler and store successfully. Two contributing gaps were found and fixed
+while narrowing this, though neither has been confirmed as *the* cause:
+
+- Session takeover was restricted to Codex and Claude, so once a Copilot/Droid/Qoder channel
+  bound a session id, no other session could ever be adopted — a fresh session in the same pane
+  (Droid's `/new`) would disable the channel permanently. All Claude-shaped runtimes now adopt
+  a new session on `SessionStart`.
+- The rejection diagnostics only covered the first guard. The generation, retired-session, and
+  session-change branches returned silently, which is why the logs stayed empty even when
+  capture worked. They now log a reason.
+
+The remaining candidate is the process-generation match: `callerAncestry.contains(generation)`
+compares `AgentProcessGeneration` by both `pid` **and** `startedAt`, so the generation the
+detector bound must be the exact process on the hook's ancestry chain. Note also that a
+`resolveCaller` failure returns `SOURCE_REQUIRED` before the store runs at all. The next step is
+a live run with the completed diagnostics visible.
 
 ### Qoder: resolved — its flag hooks are trust-gated
 
