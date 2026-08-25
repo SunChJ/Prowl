@@ -184,6 +184,26 @@ capped at the owner-only private-file limit so an oversize merge degrades with t
 instead of failing opaquely at write time. The symlink cwd-comparison test deleted during the
 session-takeover change was restored.
 
+### Static-review round 3 (2026-08-26)
+
+- **Delayed event for a detector-superseded session.** Round 1 retired a session only when the
+  *hook* rotated it; when the *detector* moved to an exact new session S2 while the hook's last
+  was S1, S1 was left un-retired, so a delayed `Stop(S1)` re-verified the channel and rolled
+  `record.sessionID` back to S1. A detector-driven session change now retires the superseded
+  session for every runtime (announcing runtimes keep `managed.sessionID` so a non-SessionStart
+  event for the new session stays rejected until its SessionStart; Codex clears it). Covered by
+  `detectorDrivenSessionChangeRetiresTheOldSessionAgainstDelayedEvents` (S1 → detector S2 →
+  delayed Stop(S1) must be rejected).
+- **CI flake — Codex config-read timeout.** `CodexConfigReadProcessTests` spawns a Python
+  app-server fake; under the full parallel suite the fake could be starved past the injected 2 s
+  deadline. The process-spawning suite is now `.serialized` and the fake-response deadlines were
+  raised to 15 s (production keeps its 1 s deadline against the real, fast app-server).
+- **Droid path normalization (P2).** A path-only `--settings` source and the
+  `FACTORY_RUNTIME_SETTINGS_PATH` value are now trimmed, tilde-expanded, and treated as unset when
+  blank, matching Droid 0.203 — a Profile override and the shell probe resolve to the same file the
+  runtime would. `DroidSettingsEnvironmentProbe` is now exercised through a real `/bin/sh` script
+  (set / unset / blank), not only an injected resolver.
+
 ### Static-review round 2 (2026-08-26)
 
 A second review pass found two remaining P1s; both are now pinned by tests and fixed:
