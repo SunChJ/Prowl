@@ -570,6 +570,19 @@ nonisolated private struct CopilotRuntimeAdapter: AgentRuntimeAdapter {
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "COPILOT_HOME"
   )
+  /// `PermissionRequest` is excluded on purpose: it fires whenever a tool enters the
+  /// permission service, including when `--allow-all-tools` auto-approves and nobody is
+  /// waiting. `Notification` is the only event that means a human is actually blocked.
+  /// `subagentStop` is excluded because a subagent finishing is not the main turn ending.
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .copilot,
+    nativeEvents: [
+      "Notification": .needsInput,
+      "SessionEnd": .sessionEnd,
+      "SessionStart": .sessionStart,
+      "Stop": .turnEnded,
+    ]
+  )
   let reasoningEffortSuggestions = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
@@ -623,6 +636,16 @@ nonisolated private struct KimiRuntimeAdapter: AgentRuntimeAdapter {
 nonisolated private struct DroidRuntimeAdapter: AgentRuntimeAdapter {
   let runtime: AgentProfileRuntime = .droid
   let displayName = "Droid"
+  /// Droid has no `PermissionRequest` event; attention arrives through `Notification`.
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .droid,
+    nativeEvents: [
+      "Notification": .needsInput,
+      "SessionEnd": .sessionEnd,
+      "SessionStart": .sessionStart,
+      "Stop": .turnEnded,
+    ]
+  )
 
   func observe(arguments _: [String]) -> AgentLaunchObservation { .init() }
 
@@ -666,6 +689,19 @@ nonisolated private struct QoderRuntimeAdapter: AgentRuntimeAdapter {
   let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     pathArguments: [AgentProfileHomePathArgument(option: "--config-dir", relativePath: "")]
+  )
+  /// `PermissionRequest` is excluded on purpose: Qoder was measured firing it under
+  /// `--permission-mode accept_edits` while the write was auto-approved and nobody was
+  /// waiting. `StopFailure` is included because Qoder reports a failed turn that way.
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .qoder,
+    nativeEvents: [
+      "Notification": .needsInput,
+      "SessionEnd": .sessionEnd,
+      "SessionStart": .sessionStart,
+      "Stop": .turnEnded,
+      "StopFailure": .turnEnded,
+    ]
   )
   let reasoningEffortSuggestions = ["low", "medium", "high"]
 

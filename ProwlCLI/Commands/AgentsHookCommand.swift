@@ -44,8 +44,8 @@ struct AgentsHookCommand: ParsableCommand {
     }
     let nativePayload: Data
     switch runtime {
-    case .claude:
-      guard payload == nil else { throw ValidationError("Claude hooks read JSON from stdin.") }
+    case .claude, .copilot, .droid, .qoder:
+      guard payload == nil else { throw ValidationError("This runtime's hooks read JSON from stdin.") }
       nativePayload = stdin
     case .codex:
       guard let payload else { throw ValidationError("Codex hooks require a final JSON payload argument.") }
@@ -62,7 +62,9 @@ struct AgentsHookCommand: ParsableCommand {
   }
 
   private func readBoundedStdin() -> Data {
-    guard runtime == .claude else { return Data() }
+    // Codex is the only runtime that delivers its payload as a final argv value; every other
+    // supported runtime writes JSON to the hook's stdin.
+    guard runtime != .codex else { return Data() }
     var payload = Data()
     while payload.count <= AgentNativeHookDecoder.maximumPayloadBytes {
       let remaining = AgentNativeHookDecoder.maximumPayloadBytes + 1 - payload.count

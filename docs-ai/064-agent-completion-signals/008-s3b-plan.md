@@ -76,11 +76,26 @@ Deliberately excluded: `PermissionRequest` (all three, per the matrix above); Co
 (waiting for a human is not the same as needing one — Droid was observed emitting no
 `idle_prompt` for 100 s after `Stop`).
 
-## Injection design per runtime
+## Payload shape asymmetry
 
 Copilot hooks must be configured with **PascalCase** event names to receive the VS Code
 compatible payload (`hook_event_name` / `session_id` / `cwd`), which is the same shape S3a
-already decodes; camelCase config yields a different field set and is not used.
+already decodes; camelCase config yields a different field set and is not used. That
+conversion is not total, and the exception lands exactly on the one event S3b depends on:
+
+| Runtime | `SessionStart` / `Stop` / `SessionEnd` | `Notification` |
+| --- | --- | --- |
+| Copilot | `session_id`, `hook_event_name` | `hook_event_name` but **`sessionId`** (camelCase) |
+| Droid | `session_id`, `hook_event_name` | documented common fields (`session_id`); confirm in the live gate |
+| Qoder | `session_id`, `hook_event_name` | `session_id`, `hook_event_name` (measured) |
+
+Copilot's `PermissionRequest` is fully camelCase and carries no `hook_event_name` at all, which
+is moot because it is excluded. But `Notification` is Copilot's *only* `needs-input` source, so a
+decoder that insists on `session_id` would reject it and silently drop the capability. The shared
+Claude-shaped decoder therefore resolves the session id as `session_id` first, then `sessionId`,
+rather than betting on one spelling per runtime.
+
+## Injection design per runtime
 
 - **Copilot** — a static plugin directory ships inside the app bundle (new
   `Resources/agent-hooks/copilot/`, checked in, added as an Xcode folder reference next to the

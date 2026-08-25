@@ -54,7 +54,8 @@ final class WorktreeTerminalManager {
       guard let url = SupacodePaths.bundledCLIURL else { return nil }
       return AgentHookResources(
         bundledCLIPath: url.path(percentEncoded: false),
-        socketPath: ProwlSocket.defaultPath
+        socketPath: ProwlSocket.defaultPath,
+        copilotPluginPath: SupacodePaths.bundledCopilotHookPluginURL?.path(percentEncoded: false)
       )
     },
     forwardingRecordBaseDirectory: URL = SupacodePaths.agentHookForwardingDirectory,
@@ -144,67 +145,121 @@ final class WorktreeTerminalManager {
         )
         return .success(PreparedAgentProfileLaunch(context: context, warnings: [warning]))
       }
-      guard let capability = preparation.capability,
-        let preparedInvocation = preparation.preparedInvocation,
-        let resources
-      else {
-        return .success(
-          PreparedAgentProfileLaunch(
-            context: context,
-            warnings: preparation.warning.map { [$0] } ?? []
-          )
-        )
-      }
+      return applyManagedHook(preparation, context: context, resources: resources)
+    }
+    guard let latestContext else { return .failure(.tabCreationFailed) }
+    return .success(PreparedAgentProfileLaunch(context: latestContext, warnings: []))
+  }
 
-      var forwardingRecord: CodexForwardingRecord?
-      if let argv = preparation.forwardingArgv {
-        guard let store = forwardingRecordStore(),
-          let record = try? store.create(argv: argv)
-        else {
-          let warning = LifecycleCommandWarning(
-            code: .managedHookDegraded,
-            runtime: request.plan.runtime.rawValue,
-            message: "The existing Codex notifier could not be preserved safely."
-          )
-          return .success(PreparedAgentProfileLaunch(context: context, warnings: [warning]))
-        }
-        forwardingRecord = record
-      }
-      if Task.isCancelled {
-        if let forwardingRecord { codexForwardingRecordStore?.discardUnexposed(forwardingRecord) }
-        return .failure(.preparationCancelled)
-      }
-      let executionPlan = context.request.plan.applyingManagedHook(
-        preparedInvocation,
-        resources: resources,
-        launchCWD: preparation.launchCWD,
-        token: UUID().uuidString,
-        nativeEvents: capability.nativeEvents,
-        coveredEvents: capability.coveredEvents,
-        forwardingRecord: forwardingRecord
+  /// Turn a completed hook preparation into an execution-ready launch context: materialize
+  /// any private files, patch the plan, and keep every failure path fail-open for the user's
+  /// launch. Any file already exposed to no child is discarded before returning.
+  private func applyManagedHook(
+    _ preparation: AgentManagedHookPreparation,
+    context: FrozenAgentProfileLaunchContext,
+    resources: AgentHookResources?
+  ) -> Result<PreparedAgentProfileLaunch, AgentProfileLaunchError> {
+    let runtimeRawValue = context.request.plan.runtime.rawValue
+    func degraded(_ message: String) -> Result<PreparedAgentProfileLaunch, AgentProfileLaunchError> {
+      .success(
+        PreparedAgentProfileLaunch(
+          context: context,
+          warnings: [
+            LifecycleCommandWarning(
+              code: .managedHookDegraded,
+              runtime: runtimeRawValue,
+              message: message
+            )
+          ]
+        )
       )
-      let preparedContext = FrozenAgentProfileLaunchContext(
-        request: AgentProfileLaunchRequest(
-          plan: executionPlan,
-          placement: context.request.placement,
-          workingDirectoryOverride: context.request.workingDirectoryOverride,
-          inheritanceAnchor: context.request.inheritanceAnchor,
-          title: context.request.title
-        ),
-        inheritedCWD: context.inheritedCWD,
-        anchorSurfaceID: context.anchorSurfaceID,
-        tracksFocusedAnchor: context.tracksFocusedAnchor,
-        tracksInheritedCWD: context.tracksInheritedCWD
-      )
+    }
+
+    // Droid's merged settings arrive as data because only this actor owns the owner-only
+    // store. Write it first, then render the argv against the resulting path.
+    let settingsFile = writePendingHookSettingsFile(preparation.pendingSettingsFile)
+    if preparation.pendingSettingsFile != nil, settingsFile == nil {
+      return degraded("The managed hook settings file could not be created.")
+    }
+    var privateFiles = [settingsFile?.record].compactMap { $0 }
+    func discardPrivateFiles() {
+      for file in privateFiles { codexForwardingRecordStore?.discardUnexposed(file) }
+    }
+
+    guard let capability = preparation.capability,
+      let preparedInvocation = settingsFile?.prepared ?? preparation.preparedInvocation,
+      let resources
+    else {
+      discardPrivateFiles()
       return .success(
         PreparedAgentProfileLaunch(
-          context: preparedContext,
+          context: context,
           warnings: preparation.warning.map { [$0] } ?? []
         )
       )
     }
-    guard let latestContext else { return .failure(.tabCreationFailed) }
-    return .success(PreparedAgentProfileLaunch(context: latestContext, warnings: []))
+
+    if let argv = preparation.forwardingArgv {
+      guard let store = forwardingRecordStore(),
+        let record = try? store.create(argv: argv)
+      else {
+        discardPrivateFiles()
+        return degraded("The existing Codex notifier could not be preserved safely.")
+      }
+      privateFiles.append(record)
+    }
+    if Task.isCancelled {
+      discardPrivateFiles()
+      return .failure(.preparationCancelled)
+    }
+
+    let executionPlan = context.request.plan.applyingManagedHook(
+      preparedInvocation,
+      resources: resources,
+      launchCWD: preparation.launchCWD,
+      token: UUID().uuidString,
+      nativeEvents: capability.nativeEvents,
+      coveredEvents: capability.coveredEvents,
+      forwardingRecord: privateFiles.last
+    )
+    let preparedContext = FrozenAgentProfileLaunchContext(
+      request: AgentProfileLaunchRequest(
+        plan: executionPlan,
+        placement: context.request.placement,
+        workingDirectoryOverride: context.request.workingDirectoryOverride,
+        inheritanceAnchor: context.request.inheritanceAnchor,
+        title: context.request.title
+      ),
+      inheritedCWD: context.inheritedCWD,
+      anchorSurfaceID: context.anchorSurfaceID,
+      tracksFocusedAnchor: context.tracksFocusedAnchor,
+      tracksInheritedCWD: context.tracksInheritedCWD
+    )
+    return .success(
+      PreparedAgentProfileLaunch(
+        context: preparedContext,
+        warnings: preparation.warning.map { [$0] } ?? []
+      )
+    )
+  }
+
+  /// Materialize a runtime's merged hook settings into the owner-only store and render the
+  /// argv that names it. Returns `nil` only when the file could not be created.
+  private func writePendingHookSettingsFile(
+    _ pending: PendingManagedHookSettingsFile?
+  ) -> (record: CodexForwardingRecord, prepared: AgentHookPreparedInvocation)? {
+    guard let pending,
+      let store = forwardingRecordStore(),
+      let record = try? store.createPrivateFile(pending.data)
+    else { return nil }
+    return (
+      record,
+      DroidHookSettingsPreparer.applying(
+        settingsPath: record.locator,
+        invocation: pending.invocation,
+        promptArgumentIndex: pending.promptArgumentIndex
+      )
+    )
   }
 
   func discardPreparedAgentProfileLaunch(_ preparation: PreparedAgentProfileLaunch) {

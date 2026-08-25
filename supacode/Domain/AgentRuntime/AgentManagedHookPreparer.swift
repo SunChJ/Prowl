@@ -1,10 +1,20 @@
 import Foundation
 
+/// Droid's `--settings` takes a path only, so its merged object must be written to an
+/// owner-only file before the argv can name it. The merge is pure; the write belongs to the
+/// main-actor store, so the preparer hands this back and the manager completes it.
+nonisolated struct PendingManagedHookSettingsFile: Equatable, Sendable {
+  let data: Data
+  let invocation: AgentInvocation
+  let promptArgumentIndex: Int?
+}
+
 nonisolated struct AgentManagedHookPreparation: Equatable, Sendable {
   let preparedInvocation: AgentHookPreparedInvocation?
   let capability: AgentSignalHookCapability?
   let launchCWD: URL
   let forwardingArgv: [String]?
+  var pendingSettingsFile: PendingManagedHookSettingsFile?
   let warning: LifecycleCommandWarning?
 }
 
@@ -34,6 +44,7 @@ nonisolated enum AgentManagedHookPreparer {
         capability: nil,
         launchCWD: inheritedCWD,
         forwardingArgv: nil,
+        pendingSettingsFile: nil,
         warning: nil
       )
     }
@@ -72,7 +83,149 @@ nonisolated enum AgentManagedHookPreparer {
           configReadProcess: codexConfigReadProcess
         )
       )
+    case .copilot:
+      return prepareCopilot(
+        plan: plan,
+        capability: capability,
+        inheritedCWD: inheritedCWD,
+        resources: resources,
+        promptIndex: promptIndex
+      )
+    case .droid, .qoder:
+      return await prepareSettingsRuntime(
+        plan: plan,
+        capability: capability,
+        inheritedCWD: inheritedCWD,
+        resources: resources,
+        promptIndex: promptIndex
+      )
     }
+  }
+
+  /// Copilot needs no merge: every `--plugin-dir` loads additively, so Prowl appends its
+  /// bundled plugin and leaves the user's plugins and hook files untouched.
+  private static func prepareCopilot(
+    plan: AgentProfileLaunchPlan,
+    capability: AgentSignalHookCapability,
+    inheritedCWD: URL,
+    resources: AgentHookResources,
+    promptIndex: Int?
+  ) -> AgentManagedHookPreparation {
+    guard let pluginPath = resources.copilotPluginPath,
+      pluginPath.hasPrefix("/"),
+      FileManager.default.fileExists(atPath: pluginPath + "/hooks.json")
+    else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The bundled Copilot hook plugin is unavailable."
+      )
+    }
+    return AgentManagedHookPreparation(
+      preparedInvocation: CopilotHookPluginRenderer.prepare(
+        invocation: plan.invocation,
+        pluginDirectory: URL(filePath: pluginPath, directoryHint: .isDirectory),
+        promptArgumentIndex: promptIndex
+      ),
+      capability: capability,
+      launchCWD: inheritedCWD,
+      forwardingArgv: nil,
+      pendingSettingsFile: nil,
+      warning: nil
+    )
+  }
+
+  /// Droid and Qoder both configure hooks through a settings object, but with opposite
+  /// precedence, and only Qoder accepts it inline. Droid's merged object therefore has to be
+  /// written to an owner-only file, which may hold user secrets.
+  private static func prepareSettingsRuntime(
+    plan: AgentProfileLaunchPlan,
+    capability: AgentSignalHookCapability,
+    inheritedCWD: URL,
+    resources: AgentHookResources,
+    promptIndex: Int?
+  ) async -> AgentManagedHookPreparation {
+    let hookCommands = shellHookCommands(capability: capability, resources: resources)
+    let invocation = plan.invocation
+    let runtime = capability.runtime
+
+    return await Task.detached(priority: .userInitiated) {
+      let readFile: (URL, Int) -> ClaudeSettingsReadResult = {
+        ClaudeSettingsStableReader.read($0, maximumBytes: $1)
+      }
+      switch runtime {
+      case .qoder:
+        let outcome = QoderHookSettingsPreparer.prepare(
+          invocation: invocation,
+          launchDirectory: inheritedCWD,
+          promptArgumentIndex: promptIndex,
+          hookCommands: hookCommands,
+          readFile: readFile
+        )
+        return AgentManagedHookPreparation(
+          preparedInvocation: outcome.prepared,
+          capability: capability,
+          launchCWD: inheritedCWD,
+          forwardingArgv: nil,
+          pendingSettingsFile: nil,
+          warning: outcome.warning
+        )
+      case .droid:
+        let merged = DroidHookSettingsPreparer.mergedSettings(
+          invocation: invocation,
+          launchDirectory: inheritedCWD,
+          promptArgumentIndex: promptIndex,
+          hookCommands: hookCommands,
+          readFile: readFile
+        )
+        return AgentManagedHookPreparation(
+          preparedInvocation: nil,
+          capability: capability,
+          launchCWD: inheritedCWD,
+          forwardingArgv: nil,
+          pendingSettingsFile: merged.data.map {
+            PendingManagedHookSettingsFile(
+              data: $0,
+              invocation: invocation,
+              promptArgumentIndex: promptIndex
+            )
+          },
+          warning: merged.warning
+        )
+      case .claude, .codex, .copilot:
+        return AgentManagedHookPreparation(
+          preparedInvocation: nil,
+          capability: capability,
+          launchCWD: inheritedCWD,
+          forwardingArgv: nil,
+          pendingSettingsFile: nil,
+          warning: LifecycleCommandWarning(
+            code: .managedHookDegraded,
+            runtime: runtime.rawValue,
+            message: "Managed hooks could not be prepared for this runtime."
+          )
+        )
+      }
+    }.value
+  }
+
+  /// One shell-quoted hook command per declared native event.
+  private static func shellHookCommands(
+    capability: AgentSignalHookCapability,
+    resources: AgentHookResources
+  ) -> [String: String] {
+    var commands: [String: String] = [:]
+    for event in capability.nativeEvents.keys.sorted() {
+      commands[event] = [
+        AgentInvocation.shellQuote(resources.bundledCLIPath),
+        "agents",
+        "_hook",
+        capability.runtime.rawValue,
+        event,
+      ].joined(separator: " ")
+    }
+    return commands
   }
 
   private static func prepareClaude(
@@ -106,6 +259,7 @@ nonisolated enum AgentManagedHookPreparer {
       capability: capability,
       launchCWD: inheritedCWD,
       forwardingArgv: nil,
+      pendingSettingsFile: nil,
       warning: outcome.warning
     )
   }
@@ -199,6 +353,7 @@ nonisolated enum AgentManagedHookPreparer {
       capability: capability,
       launchCWD: context.effectiveCWD,
       forwardingArgv: options.forwardingArgv,
+      pendingSettingsFile: nil,
       warning: nil
     )
   }
@@ -214,6 +369,7 @@ nonisolated enum AgentManagedHookPreparer {
       capability: capability,
       launchCWD: launchCWD,
       forwardingArgv: nil,
+      pendingSettingsFile: nil,
       warning: LifecycleCommandWarning(
         code: .managedHookDegraded,
         runtime: plan.runtime.rawValue,

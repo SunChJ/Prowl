@@ -3,6 +3,9 @@ import Foundation
 nonisolated struct AgentHookResources: Equatable, Sendable {
   let bundledCLIPath: String
   let socketPath: String
+  /// Absolute path to the bundled Copilot hook plugin directory. `nil` outside a real app
+  /// bundle, which degrades Copilot's managed hooks without affecting the other runtimes.
+  var copilotPluginPath: String?
 }
 
 nonisolated struct AgentHookLaunchRegistration: Equatable, Sendable {
@@ -141,7 +144,9 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
         "\(AgentNativeHookInput.tokenEnvironmentKey)=\"$\(AgentProfileLaunchPlanner.hookTokenCarrierName)\"",
         "\(ProwlSocket.environmentKey)=\"$\(AgentProfileLaunchPlanner.hookSocketCarrierName)\"",
       ]
-    if let forwardingRecord {
+    // Only Codex's bridge reads a private file out of the environment; Droid's settings file
+    // is named directly in its own argv, so its locator must not reach the child process.
+    if let forwardingRecord, runtime == .codex {
       environment[AgentProfileLaunchPlanner.hookForwardCarrierName] = forwardingRecord.locator.path(
         percentEncoded: false
       )
