@@ -186,8 +186,17 @@ nonisolated enum AgentManagedHookPreparer {
     promptIndex: Int?,
     resolver: DroidSettingsEnvironmentResolver?
   ) async -> DroidEnvironmentSettings {
+    // Droid treats a blank value as unset, so a Profile override matches the shell probe here
+    // (which already maps empty to unset). A non-empty path is tilde-expanded when the merge reads
+    // it, so both sources name the same file the runtime would.
+    func normalized(_ raw: String?) -> String? {
+      guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+        return nil
+      }
+      return value
+    }
     if let override = plan.profileEnvironmentOverrides[DroidSettingsEnvironmentProbe.variableName] {
-      return DroidEnvironmentSettings(path: override)
+      return DroidEnvironmentSettings(path: normalized(override))
     }
     let flagPresent =
       ManagedHookSettings.scanSettings(
@@ -198,7 +207,7 @@ nonisolated enum AgentManagedHookPreparer {
       ) != .none
     guard !flagPresent, let resolver else { return DroidEnvironmentSettings() }
     switch await resolver(inheritedCWD, plan.profileEnvironmentOverrides["PATH"]) {
-    case .value(let path): return DroidEnvironmentSettings(path: path)
+    case .value(let path): return DroidEnvironmentSettings(path: normalized(path))
     case .failed: return DroidEnvironmentSettings(resolutionFailed: true)
     }
   }

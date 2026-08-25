@@ -43,7 +43,9 @@ nonisolated enum DroidSettingsEnvironmentProbe {
       output.stdout.utf8.count <= 16 * 1_024,
       let value = parse(output.stdout)
     else { return .failed }
-    return .value(value.isEmpty ? nil : value)
+    // Droid treats a blank value as unset; trim so trailing shell whitespace does not become a path.
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return .value(trimmed.isEmpty ? nil : trimmed)
   }
 
   private static func parse(_ output: String) -> String? {

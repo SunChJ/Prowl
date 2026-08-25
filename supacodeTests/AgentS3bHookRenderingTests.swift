@@ -603,6 +603,80 @@ struct AgentS3bHookRenderingTests {
     #expect(trimmed(malformed.launchCWD) == trimmed(inherited))
   }
 
+  @Test func droidSettingsProbeReadsTheRealShellScriptForSetAndUnsetValues() async throws {
+    // Exercise the actual probe script + parser through /bin/sh, not just an injected resolver.
+    func runShell(env: [String: String]) -> @Sendable (URL, String) async throws -> ShellOutput {
+      { cwd, script in
+        try await withCheckedThrowingContinuation { continuation in
+          let process = Process()
+          process.executableURL = URL(filePath: "/bin/sh", directoryHint: .notDirectory)
+          process.arguments = ["-c", script]
+          process.currentDirectoryURL = cwd
+          process.environment = env
+          let out = Pipe()
+          process.standardOutput = out
+          process.standardError = FileHandle.nullDevice
+          process.terminationHandler = { proc in
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            continuation.resume(
+              returning: ShellOutput(
+                stdout: String(decoding: data, as: UTF8.self), stderr: "", exitCode: proc.terminationStatus))
+          }
+          do { try process.run() } catch { continuation.resume(throwing: error) }
+        }
+      }
+    }
+    let cwd = FileManager.default.temporaryDirectory
+
+    let set = await DroidSettingsEnvironmentProbe.resolve(
+      cwd: cwd, run: runShell(env: ["FACTORY_RUNTIME_SETTINGS_PATH": "/rc/factory.json", "PATH": "/usr/bin:/bin"]))
+    #expect(set == .value("/rc/factory.json"))
+
+    let unset = await DroidSettingsEnvironmentProbe.resolve(
+      cwd: cwd, run: runShell(env: ["PATH": "/usr/bin:/bin"]))
+    #expect(unset == .value(nil))
+
+    let blank = await DroidSettingsEnvironmentProbe.resolve(
+      cwd: cwd, run: runShell(env: ["FACTORY_RUNTIME_SETTINGS_PATH": "   ", "PATH": "/usr/bin:/bin"]))
+    #expect(blank == .value(nil))
+  }
+
+  @Test func droidBlankOverrideIsUnsetAndTildeSettingsExpandLikeTheRuntime() async throws {
+    let root = try makeTempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resources = try makeResources(in: root)
+
+    // A blank Profile override means unset, matching the runtime — hooks-only, not a degrade.
+    var blankPlan = makePlan(runtime: .droid, arguments: ["Prompt"])
+    blankPlan = blankPlan.withProfileEnvironmentOverrides(["FACTORY_RUNTIME_SETTINGS_PATH": "  "])
+    let blank = await AgentManagedHookPreparer.prepare(
+      plan: blankPlan, inheritedCWD: root, resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in
+        Issue.record("a blank override is unset; the probe must not run")
+        return .failed
+      })
+    #expect(blank.warning == nil)
+    let blankData = try #require(blank.pendingSettingsFile?.data)
+    #expect(try (JSONSerialization.jsonObject(with: blankData) as? [String: Any])?.keys.sorted() == ["hooks"])
+
+    // A `~/`-prefixed override is expanded to the user's home the way Droid reads it.
+    let homeSettings = URL(
+      filePath: NSString(string: "~/prowl-droid-tilde-\(UUID().uuidString).json").expandingTildeInPath)
+    try #"{"customModels": [{"apiKey": "sk-tilde"}]}"#.write(to: homeSettings, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: homeSettings) }
+    var tildePlan = makePlan(runtime: .droid, arguments: ["Prompt"])
+    tildePlan = tildePlan.withProfileEnvironmentOverrides([
+      "FACTORY_RUNTIME_SETTINGS_PATH": "~/" + homeSettings.lastPathComponent
+    ])
+    let tilde = await AgentManagedHookPreparer.prepare(
+      plan: tildePlan, inheritedCWD: root, resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in .failed })
+    #expect(tilde.warning == nil)
+    let tildeData = try #require(tilde.pendingSettingsFile?.data)
+    let object = try #require(try JSONSerialization.jsonObject(with: tildeData) as? [String: Any])
+    #expect(((object["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-tilde")
+  }
+
   private func makePlan(runtime: AgentProfileRuntime, arguments: [String]) -> AgentProfileLaunchPlan {
     AgentProfileLaunchPlan(
       profileID: UUID(),

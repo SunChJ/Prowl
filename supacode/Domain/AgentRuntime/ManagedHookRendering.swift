@@ -41,7 +41,10 @@ nonisolated enum ManagedHookSettings {
       data = Data(trimmed.utf8)
       guard data.count <= maximumBytes else { return nil }
     } else {
-      let sourceURL = URL(filePath: source, relativeTo: launchDirectory).standardizedFileURL
+      // A path-only source (Droid) is trimmed and tilde-expanded the way the runtime resolves it,
+      // so `~/settings.json` or a value with stray whitespace names the same file Droid would read.
+      let pathValue = allowInline ? source : (trimmed as NSString).expandingTildeInPath
+      let sourceURL = URL(filePath: pathValue, relativeTo: launchDirectory).standardizedFileURL
       switch readFile(sourceURL, maximumBytes) {
       case .stable(let value): data = value
       case .changed, .oversized, .unreadable: return nil
