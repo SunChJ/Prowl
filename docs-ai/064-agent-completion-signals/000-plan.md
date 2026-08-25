@@ -244,6 +244,14 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-25: planned S3b (Copilot/Droid/Qoder) and re-attested every tier-A runtime
+  locally. Measurement overturned the assumption that a Claude-shaped `PermissionRequest` means
+  "needs input": Copilot and Qoder also emit it when the permission service auto-approves and no
+  human is waiting, so both derive `needs-input` from `Notification` only. The same matrix
+  re-verified Claude 2.1.243 against six non-interactive scenarios and found no S3a regression.
+  Injection is additive for Copilot (`--plugin-dir`), last-wins for Droid (`--settings`, path
+  only), and first-wins for Qoder (`--settings`, which `--setting-sources` disables outright).
+  See [008-s3b-plan.md](008-s3b-plan.md).
 - Updated 2026-08-24: implemented S3a's shared trusted-hook foundation plus Claude/Codex
   adapters, resolver/forwarding boundary, launch transaction, hidden ingress, warnings, and
   focused/live contract coverage. See [007-s3a-action.md](007-s3a-action.md). S3 wave 1 remains

@@ -2,12 +2,16 @@
 
 ## Status
 
-Owner-approved plan; S3a implemented on `feat/agent-signal-hooks-s3a-implementation`.
-Implementation record: [007-s3a-action.md](007-s3a-action.md).
+Owner-approved plan; S3a merged in [#721](https://github.com/onevcat/Prowl/pull/721) (hardened
+in [#723](https://github.com/onevcat/Prowl/pull/723)). Implementation record:
+[007-s3a-action.md](007-s3a-action.md). S3b is planned in
+[008-s3b-plan.md](008-s3b-plan.md) on branch `feat/agent-signal-hooks-s3b`.
 
 - Planning branch: `feat/agent-signal-hooks-s3a`
 - Prerequisites: 063-A2, 064-S1, and 064-S2 are merged.
 - Runtime baseline rechecked 2026-08-23: Claude Code 2.1.241; Codex CLI 0.149.0.
+- Re-attested 2026-08-25 for S3b: Claude Code 2.1.243; Codex CLI 0.149.0; Copilot CLI 1.0.80;
+  Factory Droid 0.202.0; Qoder CLI 1.1.29.
 - S3 has no wave 2. Managed hooks are limited to runtimes that accept process-scoped
   flag/environment injection without global-config, dedicated-home, or project-file writes.
 
