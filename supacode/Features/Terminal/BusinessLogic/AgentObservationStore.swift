@@ -449,12 +449,17 @@ final class AgentObservationStore {
         managed.evidenceEpoch = record.evidenceEpoch
         managed.verified = false
         managed.pendingSignals.removeAll()
+        // The detector authoritatively moved to a different (exact/high) session, so the prior
+        // one is superseded: retire it so a delayed event for it cannot re-verify the channel.
+        // Only a fresh SessionStart may reactivate it (announcing runtimes) or a new session
+        // take over. Announcing runtimes keep `managed.sessionID` so a non-SessionStart event for
+        // the new session stays rejected until its SessionStart arrives; Codex clears it.
+        if let managedSessionID = managed.sessionID,
+          managedSessionID != acceptedSessionID
+        {
+          managed.retiredSessionIDs.insert(managedSessionID)
+        }
         if !managed.announcesSessionStarts {
-          if let managedSessionID = managed.sessionID,
-            managedSessionID != acceptedSessionID
-          {
-            managed.retiredSessionIDs.insert(managedSessionID)
-          }
           managed.sessionID = nil
         }
         record.managedHook = managed
