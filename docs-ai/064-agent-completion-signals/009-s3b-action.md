@@ -5,8 +5,9 @@
 Implemented on `feat/agent-signal-hooks-s3b`. Plan: [008-s3b-plan.md](008-s3b-plan.md).
 S3 wave 1 remains incomplete until S3c.
 
-Live acceptance is **partial**: Copilot and Qoder verified end to end; Droid does not reach a
-verified channel. See "Live acceptance" below — Droid is an open item, not a passed gate.
+Live acceptance is complete: Copilot, Droid, and Qoder are each verified end to end. Droid
+needed a fix outside S3b's own code — see "Droid: the launch process is the generation
+subject" below.
 
 ## Delivered behavior
 
@@ -75,41 +76,55 @@ trust entries written by the runtimes were removed afterward.
 | Bundled plugin loads read-only and resolves the CLI relatively | PASS (also verified with `chmod a-w`) |
 | Hook with no token fails open: runtime unaffected, exit 0 | PASS |
 | Droid Profile launch injects `--settings` with a `0600` merged file | PASS |
-| Droid reaches a verified channel | **FAIL — open item** |
+| Droid reaches `verified_live` with `source=hook_droid`, records `session-start` then `turn-ended` | PASS (after the launch-process fix below) |
 | Qoder injects inline `--settings` and reaches `verified_live` with `source=hook_qodercli` | PASS (folder must be trusted — see below) |
 
-Droid's hook demonstrably runs (its TUI reports `Hooks Stop … Exit code 0`) but no channel
-appears. A timeboxed follow-up narrowed this to the app's receiving end.
+### Droid: the launch process is the generation subject
 
-Ruled out by measurement:
+Droid's hook demonstrably ran (its TUI reports `Hooks Stop … Exit code 0`) and a stub-socket
+test proved the CLI transmitted a well-formed `agentsHook` frame, yet no channel appeared. The
+cause was on the app's receiving side, in code S3a and S3b share with every runtime:
 
-- **The whole outbound path works, driven by Droid itself.** With a real Droid run configured
-  to call the real bundled CLI against a stub Unix socket, the hook produced a well-formed
-  339-byte `agentsHook` frame carrying the correct runtime, event, cwd, and session id. Droid
-  also invokes a single-quoted command path containing a space correctly and passes a 570-byte
-  JSON payload on stdin. So Droid's own behavior, the command rendering, the stdin read, the
-  decoder, and the transport are all correct — the frame reaches the app.
-- Token presence, process ancestry (its hook's parent chain is identical to Copilot's),
-  environment propagation (a marker variable reaches the hook), payload shape, and cwd form
-  (the symlink fix above, which did not change the outcome).
+- Droid ≥ 0.202 is **two processes**. The interactive TUI is one `droid` process; once the
+  folder is trusted it forks a `droid exec --input-format stream-jsonrpc --output-format
+  stream-jsonrpc` engine in the same process group, and every hook is a child of that engine.
+  Copilot, Qoder, Claude, and Codex are single processes.
+- The process probe lists `proc_listpids` output newest-first, and both processes score 80 on
+  `argv0`, so the detector identified the TUI at the first scan and the engine as soon as it
+  existed (`processes=93538:droid,93296:droid` in the earlier logs was exactly this).
+- `AgentObservationStore.updateEvidenceEpoch` keyed the process generation on the identified
+  pid. The TUI→engine flip therefore read as a **replaced process**: the managed registration
+  was dropped, the private settings file retired, and every later hook rejected at the first
+  guard — the one branch whose diagnostic never surfaced because the app's `print` output was
+  block-buffered under redirection.
 
-That places the failure entirely on the app's receiving side, even though Copilot and Qoder
-traverse the same handler and store successfully. Two contributing gaps were found and fixed
-while narrowing this, though neither has been confirmed as *the* cause:
+The fix separates two concepts the single-process runtimes had let coincide. `ForegroundProcess`
+now carries its parent pid (already in the `proc_bsdinfo` the probe fetches, so no extra
+syscall), `ForegroundJob.launchProcessID(of:)` walks to the topmost job member above a pid, and
+`IdentifiedAgentProcess` / `PaneAgentState` record that `launchProcessID` beside the identified
+`agentProcessID`. State and sessions are still read from the identified process; the process
+generation — what a hook's caller ancestry is matched against and what a replacement is judged
+by — is the launch process. Hooks descend from both, so an engine child taking over
+identification, or being restarted, is no longer a relaunch. Covered by
+`AgentClassifierTests.launchProcessIs…` and the two `engineChildRebinding…` tests in
+`AgentObservationTests`, which fail on the previous generation subject. The detection diagnostic
+now prints `identified=<agent>:<pid> launch=<pid>` so this class of mismatch is visible.
+
+Live, the fixed build bound `launch=52843` at the first scan (engine not yet forked), accepted
+Droid's `SessionStart` from the engine child seven seconds later, and recorded `turn-ended`
+from `Stop` with `last_binding=current`. The isolated instance used `CFFIXED_USER_HOME` alone
+so Prowl's config stayed in a scratch home while the pane shell kept the real `HOME` for
+Droid's credentials; `script(1)` gave the app a pty so its debug log was line-buffered.
+
+Two gaps found while narrowing this were fixed along the way and stay in place, though neither
+was the cause:
 
 - Session takeover was restricted to Codex and Claude, so once a Copilot/Droid/Qoder channel
   bound a session id, no other session could ever be adopted — a fresh session in the same pane
   (Droid's `/new`) would disable the channel permanently. All Claude-shaped runtimes now adopt
   a new session on `SessionStart`.
 - The rejection diagnostics only covered the first guard. The generation, retired-session, and
-  session-change branches returned silently, which is why the logs stayed empty even when
-  capture worked. They now log a reason.
-
-The remaining candidate is the process-generation match: `callerAncestry.contains(generation)`
-compares `AgentProcessGeneration` by both `pid` **and** `startedAt`, so the generation the
-detector bound must be the exact process on the hook's ancestry chain. Note also that a
-`resolveCaller` failure returns `SOURCE_REQUIRED` before the store runs at all. The next step is
-a live run with the completed diagnostics visible.
+  session-change branches returned silently. They now log a reason.
 
 ### Qoder: resolved — its flag hooks are trust-gated
 
@@ -133,13 +148,9 @@ the user trusts the worktree, which they must do anyway before the agent can wor
 
 ## Open questions
 
-- Why Droid's hook never produces a channel despite the CLI transmitting a valid frame.
-  Instrument `resolveCaller` / `recordHook` (a `resolveCaller` miss returns `SOURCE_REQUIRED`
-  without reaching the store's diagnostics) and confirm whether the pane shell's process
-  generation is bound before the agent's.
-- Droid was retested with its launch directory explicitly pre-trusted, so unlike Qoder it is not
-  a folder-trust problem: its hook still runs (`Exit code 0`, no "blocked" message) and still
-  produces no channel.
+- The launch-process subject also keeps a managed hook alive when a launched agent runs another
+  agent CLI as a tool (the nested process is identified, but its launch root is unchanged).
+  That case has not been exercised live.
 - Deferred Profile surface creation fails intermittently in a long-lived isolated Debug
   instance while plain tabs keep working. It is not S3b's doing — `main` shows the same flaky
   test — but it repeatedly obstructed live acceptance and is worth understanding before S3c's
