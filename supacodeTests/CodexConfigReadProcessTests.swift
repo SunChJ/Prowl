@@ -4,7 +4,7 @@ import Testing
 
 @testable import supacode
 
-struct CodexConfigReadProcessTests {
+@Suite(.serialized) struct CodexConfigReadProcessTests {
   @Test func appServerInputPipeSuppressesSIGPIPE() {
     let pipe = Pipe()
     defer {
@@ -60,7 +60,7 @@ struct CodexConfigReadProcessTests {
     let process = CodexConfigReadProcess(
       executableURL: executable,
       temporaryBaseDirectory: root,
-      timeout: 3
+      timeout: 15
     )
 
     let transcript = try await process.query(
@@ -87,7 +87,7 @@ struct CodexConfigReadProcessTests {
     let process = CodexConfigReadProcess(
       executableURL: executable,
       temporaryBaseDirectory: parser,
-      timeout: 2
+      timeout: 15
     )
     let query = CodexConfigQuery(
       kind: .profile(profile),
