@@ -133,7 +133,10 @@ final class WorktreeTerminalManager {
         inheritedCWD: context.inheritedCWD,
         resources: resources,
         codexShellEnvironment: codexShellEnvironment,
-        codexConfigReadProcess: codexConfigReadProcess
+        codexConfigReadProcess: codexConfigReadProcess,
+        droidSettingsEnvironmentResolver: { cwd, pathOverride in
+          await DroidSettingsEnvironmentProbe.resolve(cwd: cwd, pathOverride: pathOverride)
+        }
       )
       guard !Task.isCancelled else { return .failure(.preparationCancelled) }
       guard terminalState.isAgentProfileLaunchContextValid(context) else {

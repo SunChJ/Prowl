@@ -291,6 +291,102 @@ struct AgentS3bHookRenderingTests {
     #expect(((object["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-flag")
   }
 
+  @Test func droidMergesShellResolvedFactorySettingsWhenNoFlagOrOverride() async throws {
+    // A `FACTORY_RUNTIME_SETTINGS_PATH` exported in an rc file (not a Profile override) must be
+    // resolved via the shell probe and merged, or the injected flag would silently drop it.
+    let root = try makeTempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resources = try makeResources(in: root)
+    let outcome = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .droid, arguments: ["Prompt"]),
+      inheritedCWD: root,
+      resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in .value("/rc/factory.json") },
+      settingsReadFile: { url, _ in
+        url.path(percentEncoded: false) == "/rc/factory.json"
+          ? .stable(Data(#"{"customModels": [{"apiKey": "sk-rc"}]}"#.utf8)) : .unreadable
+      }
+    )
+    #expect(outcome.warning == nil)
+    let data = try #require(outcome.pendingSettingsFile?.data)
+    let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(((object["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-rc")
+  }
+
+  @Test func droidDegradesWhenTheShellSettingsProbeCannotRun() async throws {
+    // If the shell cannot be consulted, the variable's presence is unknown, so injecting the flag
+    // risks overriding it — degrade instead.
+    let root = try makeTempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resources = try makeResources(in: root)
+    let outcome = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .droid, arguments: ["Prompt"]),
+      inheritedCWD: root,
+      resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in .failed }
+    )
+    #expect(outcome.pendingSettingsFile == nil)
+    #expect(outcome.warning?.code == .managedHookDegraded)
+  }
+
+  @Test func droidUnsetShellVariableFallsBackToHooksOnly() async throws {
+    let root = try makeTempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resources = try makeResources(in: root)
+    let outcome = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .droid, arguments: ["Prompt"]),
+      inheritedCWD: root,
+      resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in .value(nil) }
+    )
+    #expect(outcome.warning == nil)
+    let data = try #require(outcome.pendingSettingsFile?.data)
+    let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(object.keys.sorted() == ["hooks"])
+  }
+
+  @Test func droidSkipsTheShellProbeWhenAFlagOrProfileOverrideIsPresent() async throws {
+    let root = try makeTempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let resources = try makeResources(in: root)
+    try #"{"customModels": [{"apiKey": "sk-flag"}]}"#.write(
+      to: root.appending(path: "flag.json"), atomically: true, encoding: .utf8)
+
+    // A flag is present: the probe must not run and the flag file is the base.
+    let flagOutcome = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .droid, arguments: ["--settings", "flag.json"]),
+      inheritedCWD: root,
+      resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in
+        Issue.record("probe must not run when a --settings flag is present")
+        return .failed
+      }
+    )
+    let flagData = try #require(flagOutcome.pendingSettingsFile?.data)
+    let flagObject = try #require(try JSONSerialization.jsonObject(with: flagData) as? [String: Any])
+    #expect(((flagObject["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-flag")
+
+    // A Profile override is present: it wins over the shell, so the probe must not run.
+    var plan = makePlan(runtime: .droid, arguments: ["Prompt"])
+    plan = plan.withProfileEnvironmentOverrides(["FACTORY_RUNTIME_SETTINGS_PATH": "/override/f.json"])
+    let overrideOutcome = await AgentManagedHookPreparer.prepare(
+      plan: plan,
+      inheritedCWD: root,
+      resources: resources,
+      droidSettingsEnvironmentResolver: { _, _ in
+        Issue.record("probe must not run when a Profile override is present")
+        return .failed
+      },
+      settingsReadFile: { url, _ in
+        url.path(percentEncoded: false) == "/override/f.json"
+          ? .stable(Data(#"{"customModels": [{"apiKey": "sk-override"}]}"#.utf8)) : .unreadable
+      }
+    )
+    let overrideData = try #require(overrideOutcome.pendingSettingsFile?.data)
+    let overrideObject = try #require(try JSONSerialization.jsonObject(with: overrideData) as? [String: Any])
+    #expect(((overrideObject["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-override")
+  }
+
   @Test func droidWithoutUserSettingsMergesHooksOnly() throws {
     let outcome = DroidHookSettingsPreparer.mergedSettings(
       invocation: AgentInvocation(executable: "droid", arguments: ["Prompt"]),
@@ -518,6 +614,40 @@ struct AgentS3bHookRenderingTests {
       splitDirection: .right,
       surfaceEnvironment: [:],
       dedicatedHome: nil
+    )
+  }
+
+  private func makeTempDir() throws -> URL {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-s3b-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+  }
+
+  private func makeResources(in root: URL) throws -> AgentHookResources {
+    let cli = root.appending(path: "prowl", directoryHint: .notDirectory)
+    try "#!/bin/sh\nexit 0\n".write(to: cli, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cli.path)
+    return AgentHookResources(bundledCLIPath: cli.path(percentEncoded: false), socketPath: "/tmp/prowl.sock")
+  }
+}
+
+extension AgentProfileLaunchPlan {
+  fileprivate func withProfileEnvironmentOverrides(_ overrides: [String: String]) -> AgentProfileLaunchPlan {
+    AgentProfileLaunchPlan(
+      profileID: profileID,
+      profileName: profileName,
+      runtime: runtime,
+      invocation: invocation,
+      argumentCarriers: argumentCarriers,
+      hookRegistration: hookRegistration,
+      commandEnvironmentTokens: commandEnvironmentTokens,
+      placement: placement,
+      splitDirection: splitDirection,
+      surfaceEnvironment: surfaceEnvironment,
+      profileEnvironmentOverrides: overrides,
+      dedicatedHome: dedicatedHome,
+      sessionConfigRoot: sessionConfigRoot
     )
   }
 }

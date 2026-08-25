@@ -386,6 +386,7 @@ nonisolated enum DroidHookSettingsPreparer {
     promptArgumentIndex: Int?,
     hookCommands: [String: String],
     environmentSettingsPath: String? = nil,
+    environmentResolutionFailed: Bool = false,
     readFile: (URL, Int) -> ClaudeSettingsReadResult
   ) -> MergedSettings {
     func degraded() -> MergedSettings {
@@ -435,6 +436,10 @@ nonisolated enum DroidHookSettingsPreparer {
           )
         else { return degraded() }
         base = object
+      } else if environmentResolutionFailed {
+        // The shell could not be consulted, so `FACTORY_RUNTIME_SETTINGS_PATH` might point at a
+        // config the injected flag would override. Degrade rather than risk dropping it.
+        return degraded()
       } else {
         base = [:]
       }

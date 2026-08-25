@@ -29,12 +29,24 @@ nonisolated enum AgentManagedHookPreparer {
     let promptIndex: Int?
     let forwardingArgv: [String]?
   }
+
+  private struct SettingsRuntimeOptions {
+    let promptIndex: Int?
+    let droidSettingsEnvironmentResolver: DroidSettingsEnvironmentResolver?
+    let settingsReadFile: (@Sendable (URL, Int) -> ClaudeSettingsReadResult)?
+  }
+
+  typealias DroidSettingsEnvironmentResolver =
+    @Sendable (URL, String?) async -> DroidSettingsEnvironmentProbe.Resolution
+
   static func prepare(
     plan: AgentProfileLaunchPlan,
     inheritedCWD: URL,
     resources: AgentHookResources?,
     codexShellEnvironment: CodexShellLaunchEnvironment? = nil,
-    codexConfigReadProcess: CodexConfigReadProcess = CodexConfigReadProcess()
+    codexConfigReadProcess: CodexConfigReadProcess = CodexConfigReadProcess(),
+    droidSettingsEnvironmentResolver: DroidSettingsEnvironmentResolver? = nil,
+    settingsReadFile: (@Sendable (URL, Int) -> ClaudeSettingsReadResult)? = nil
   ) async -> AgentManagedHookPreparation {
     guard
       let capability = AgentRuntimeAdapterRegistry.profileAdapter(for: plan.runtime)?.signalHooks
@@ -97,7 +109,11 @@ nonisolated enum AgentManagedHookPreparer {
         capability: capability,
         inheritedCWD: inheritedCWD,
         resources: resources,
-        promptIndex: promptIndex
+        options: SettingsRuntimeOptions(
+          promptIndex: promptIndex,
+          droidSettingsEnvironmentResolver: droidSettingsEnvironmentResolver,
+          settingsReadFile: settingsReadFile
+        )
       )
     }
   }
@@ -154,6 +170,39 @@ nonisolated enum AgentManagedHookPreparer {
     )
   }
 
+  private struct DroidEnvironmentSettings {
+    var path: String?
+    var resolutionFailed = false
+  }
+
+  /// Resolve the effective `FACTORY_RUNTIME_SETTINGS_PATH` for Droid, whose managed `--settings`
+  /// flag outranks it: a Profile override wins outright; otherwise the login shell is probed so a
+  /// value exported in an rc file is still honored. The probe is skipped when a `--settings` flag
+  /// is present (it wins anyway) or an override already answers the question. A probe that cannot
+  /// run leaves the presence unknown, so the caller degrades rather than override.
+  private static func resolveDroidEnvironmentSettings(
+    plan: AgentProfileLaunchPlan,
+    inheritedCWD: URL,
+    promptIndex: Int?,
+    resolver: DroidSettingsEnvironmentResolver?
+  ) async -> DroidEnvironmentSettings {
+    if let override = plan.profileEnvironmentOverrides[DroidSettingsEnvironmentProbe.variableName] {
+      return DroidEnvironmentSettings(path: override)
+    }
+    let flagPresent =
+      ManagedHookSettings.scanSettings(
+        arguments: plan.invocation.arguments,
+        optionName: ManagedHookSettings.settingsOptionName,
+        precedence: .lastWins,
+        promptArgumentIndex: promptIndex
+      ) != .none
+    guard !flagPresent, let resolver else { return DroidEnvironmentSettings() }
+    switch await resolver(inheritedCWD, plan.profileEnvironmentOverrides["PATH"]) {
+    case .value(let path): return DroidEnvironmentSettings(path: path)
+    case .failed: return DroidEnvironmentSettings(resolutionFailed: true)
+    }
+  }
+
   /// Droid and Qoder both configure hooks through a settings object, but with opposite
   /// precedence, and only Qoder accepts it inline. Droid's merged object therefore has to be
   /// written to an owner-only file, which may hold user secrets.
@@ -162,11 +211,12 @@ nonisolated enum AgentManagedHookPreparer {
     capability: AgentSignalHookCapability,
     inheritedCWD: URL,
     resources: AgentHookResources,
-    promptIndex: Int?
+    options: SettingsRuntimeOptions
   ) async -> AgentManagedHookPreparation {
     let hookCommands = shellHookCommands(capability: capability, resources: resources)
     let invocation = plan.invocation
     let runtime = capability.runtime
+    let promptIndex = options.promptIndex
     // The hooks report the directory the runtime changes into; the settings path is still
     // relative to where it was launched (both measured on Droid 0.203 and Qoder 1.1.29).
     let workingDirectoryScan = ManagedHookWorkingDirectory.scan(
@@ -188,12 +238,17 @@ nonisolated enum AgentManagedHookPreparer {
         message: "The \(runtime.rawValue) working directory option could not be resolved."
       )
     }
-    let environmentSettingsPath = plan.profileEnvironmentOverrides["FACTORY_RUNTIME_SETTINGS_PATH"]
+    let environment =
+      runtime == .droid
+      ? await resolveDroidEnvironmentSettings(
+        plan: plan, inheritedCWD: inheritedCWD, promptIndex: promptIndex,
+        resolver: options.droidSettingsEnvironmentResolver)
+      : DroidEnvironmentSettings()
+    let settingsReadFile = options.settingsReadFile
 
     return await Task.detached(priority: .userInitiated) {
-      let readFile: (URL, Int) -> ClaudeSettingsReadResult = {
-        ClaudeSettingsStableReader.read($0, maximumBytes: $1)
-      }
+      let readFile: (URL, Int) -> ClaudeSettingsReadResult =
+        settingsReadFile ?? { ClaudeSettingsStableReader.read($0, maximumBytes: $1) }
       switch runtime {
       case .qoder:
         let outcome = QoderHookSettingsPreparer.prepare(
@@ -217,10 +272,10 @@ nonisolated enum AgentManagedHookPreparer {
           launchDirectory: inheritedCWD,
           promptArgumentIndex: promptIndex,
           hookCommands: hookCommands,
-          // A `FACTORY_RUNTIME_SETTINGS_PATH` set through the Profile's own environment overrides
-          // is a settings source the managed `--settings` flag would otherwise override. The
-          // shell-rc / globally exported case is not visible here without a shell probe.
-          environmentSettingsPath: environmentSettingsPath,
+          // `FACTORY_RUNTIME_SETTINGS_PATH` (Profile override or shell-resolved) is a settings
+          // source the managed `--settings` flag would otherwise override; merge it as the base.
+          environmentSettingsPath: environment.path,
+          environmentResolutionFailed: environment.resolutionFailed,
           readFile: readFile
         )
         return AgentManagedHookPreparation(
