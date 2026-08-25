@@ -23,9 +23,10 @@ the Claude permission matrix below against 2.1.243 and found no S3a regression.
 
 Droid also honors `FACTORY_RUNTIME_SETTINGS_PATH`, and an explicit `--settings` flag beats it.
 S3b injects through the flag, so when the user relies on that variable instead, the flag would
-override it. The preparer therefore reads the variable when it is set through the Profile's own
-environment overrides and merges its settings as the base; the shell-rc / globally exported case
-is not visible without a shell probe (a follow-up, like Codex's shell-environment probe). Qoder's
+override it. The preparer therefore reads the variable — from a Profile environment override, or
+from the login shell (rc sourced) via `DroidSettingsEnvironmentProbe`, reusing Codex's shell probe
+process — and merges its settings as the base (flag wins; a probe that cannot run degrades rather
+than override). Qoder's
 `--setting-sources` (any value) suppresses flag-supplied hooks entirely — verified by hooks
 never firing — so its presence forces degradation instead of a silently dead channel.
 

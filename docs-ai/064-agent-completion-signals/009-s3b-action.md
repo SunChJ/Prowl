@@ -184,6 +184,28 @@ capped at the owner-only private-file limit so an oversize merge degrades with t
 instead of failing opaquely at write time. The symlink cwd-comparison test deleted during the
 session-takeover change was restored.
 
+### Static-review round 2 (2026-08-26)
+
+A second review pass found two remaining P1s; both are now pinned by tests and fixed:
+
+- **Shell-rc `FACTORY_RUNTIME_SETTINGS_PATH` was still overridable.** Round 1 only read the
+  variable from a Profile environment override, so a value exported in the user's shell rc was
+  invisible and the injected `--settings` flag silently dropped it. `DroidSettingsEnvironmentProbe`
+  now resolves it from the login shell (rc sourced), reusing `CodexShellProbeProcess`. Precedence
+  is Profile override > shell-resolved; the probe is skipped when a `--settings` flag is present
+  (it wins) or an override already answers the question, and a probe that cannot run degrades
+  rather than override. Covered by preparer-level tests with an injected resolver
+  (`droidMergesShellResolvedFactorySettingsWhenNoFlagOrOverride`,
+  `droidDegradesWhenTheShellSettingsProbeCannotRun`, `droidSkipsTheShellProbeWhenAFlagOrProfileOverrideIsPresent`).
+  Consistent with Codex, the probe adds a login-shell spawn per Droid launch that has no flag or
+  override, and a probe failure degrades that launch's managed hooks.
+- **A resumed session could not re-verify.** Retiring the superseded session on rotation (the
+  round-1 fix for the stale-detector rollback) made Claude's `/resume` — which re-announces an old
+  session id with a fresh SessionStart — hit the retired-session guard and get rejected, killing
+  every event of the resumed session. An announcing runtime's SessionStart now reactivates a
+  retired id (un-retire it, retire the current one, rotate); Codex, with no SessionStart, stays
+  strict. Covered by `announcedSessionStartCanResumeARetiredSession` (S1 → S2 → S1).
+
 ### Upgrade re-verification (2026-08-25)
 
 All five managed-hook runtimes were updated to their latest release and re-run through the same
