@@ -5,9 +5,8 @@
 Implemented on `feat/agent-signal-hooks-s3b`. Plan: [008-s3b-plan.md](008-s3b-plan.md).
 S3 wave 1 remains incomplete until S3c.
 
-Live acceptance is **partial**: Copilot verified end to end, Droid and Qoder did not reach a
-verified channel in the isolated Debug instance. See "Live acceptance" below — this is an open
-item, not a passed gate.
+Live acceptance is **partial**: Copilot and Qoder verified end to end; Droid does not reach a
+verified channel. See "Live acceptance" below — Droid is an open item, not a passed gate.
 
 ## Delivered behavior
 
@@ -77,7 +76,7 @@ trust entries written by the runtimes were removed afterward.
 | Hook with no token fails open: runtime unaffected, exit 0 | PASS |
 | Droid Profile launch injects `--settings` with a `0600` merged file | PASS |
 | Droid reaches a verified channel | **FAIL — open item** |
-| Qoder Profile launch and channel | **NOT VERIFIED** |
+| Qoder injects inline `--settings` and reaches `verified_live` with `source=hook_qodercli` | PASS (folder must be trusted — see below) |
 
 Droid's hook demonstrably runs (its TUI reports `Hooks Stop … Exit code 0`) but no channel
 appears. A timeboxed follow-up narrowed this to the app's receiving end.
@@ -99,10 +98,25 @@ would stay silent in exactly that case — consistent with the empty logs observ
 step is to inspect the app's response to a real Droid hook (the CLI discards it) or to log the
 `resolveCaller` outcome, with the app started so its stdout is genuinely captured.
 
-Qoder could not be exercised because deferred Profile surface creation began failing for every
-runtime in that instance while plain tabs kept succeeding — the same symptom as the pre-existing
-`deferredProfileAppliesFontSizeAdjustmentAfterSurfaceCreation` failure, which also failed on
-`main` at the time and passed again once the isolated instances were shut down.
+### Qoder: resolved — its flag hooks are trust-gated
+
+An earlier reading blamed Qoder's failure on Profile surface creation. That was wrong, and the
+correction matters for expectations:
+
+- Profile surface creation is **not** broken for Qoder. On `main` the same Profile launched
+  three times in a row, and on this branch seven consecutive Profile surfaces succeeded. The
+  intermittent `CREATE_FAILED` seen earlier affects every runtime in a long-lived isolated
+  instance, is not caused by S3b, and matches the flaky
+  `deferredProfileAppliesFontSizeAdjustmentAfterSurfaceCreation` test.
+- The real cause is that Qoder refuses flag-supplied hooks in a folder it has not been told to
+  trust, logging `Security: Blocked execution of hook (system) in untrusted folder`. With the
+  launch directory trusted, the identical launch reaches `verified_live` with
+  `source=hook_qodercli` and records `turn-ended`.
+
+`research-agent-completion-signals.md` claimed Qoder's flag hooks were "not trust-gated". That
+entry has been corrected: the original probe ran in a directory that had already been trusted
+interactively, which hid the gate. Practical consequence: Qoder gains exact coverage only after
+the user trusts the worktree, which they must do anyway before the agent can work there.
 
 ## Open questions
 
@@ -110,10 +124,13 @@ runtime in that instance while plain tabs kept succeeding — the same symptom a
   Instrument `resolveCaller` / `recordHook` (a `resolveCaller` miss returns `SOURCE_REQUIRED`
   without reaching the store's diagnostics) and confirm whether the pane shell's process
   generation is bound before the agent's.
-- Qoder's end-to-end path is unverified. Its rendering, merging, and store handling are covered
-  by tests, but no live launch has confirmed a channel.
-- Deferred Profile surface creation is fragile in this environment. It is not S3b's doing, but
-  it blocks live acceptance and is worth understanding before S3c's tier-A gate.
+- Droid was retested with its launch directory explicitly pre-trusted, so unlike Qoder it is not
+  a folder-trust problem: its hook still runs (`Exit code 0`, no "blocked" message) and still
+  produces no channel.
+- Deferred Profile surface creation fails intermittently in a long-lived isolated Debug
+  instance while plain tabs keep working. It is not S3b's doing — `main` shows the same flaky
+  test — but it repeatedly obstructed live acceptance and is worth understanding before S3c's
+  tier-A gate.
 
 ## Refs
 
