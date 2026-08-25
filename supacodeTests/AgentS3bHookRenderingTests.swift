@@ -234,6 +234,63 @@ struct AgentS3bHookRenderingTests {
     #expect(commands.contains(hookCommands["Stop"]!))
   }
 
+  @Test func droidMergesFactoryRuntimeSettingsPathFromTheProfileEnvironmentWhenNoFlagIsGiven() throws {
+    // Droid's `--settings` flag wins over `FACTORY_RUNTIME_SETTINGS_PATH`, so injecting the flag
+    // without merging the env-pointed settings would drop the user's custom models, keys, and
+    // hooks. With no flag, Prowl reads that file and merges into it.
+    let envSource = Data(#"{"customModels": [{"apiKey": "sk-env"}]}"#.utf8)
+    let outcome = DroidHookSettingsPreparer.mergedSettings(
+      invocation: AgentInvocation(executable: "droid", arguments: ["Prompt"]),
+      launchDirectory: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      promptArgumentIndex: 0,
+      hookCommands: hookCommands,
+      environmentSettingsPath: "/home/user/.factory/env.json",
+      readFile: { url, _ in
+        #expect(url.path(percentEncoded: false) == "/home/user/.factory/env.json")
+        return .stable(envSource)
+      }
+    )
+    let data = try #require(outcome.data)
+    #expect(outcome.warning == nil)
+    let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(((object["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-env")
+    #expect((object["hooks"] as? [String: Any]) != nil)
+  }
+
+  @Test func droidDegradesRatherThanOverrideAnUnreadableEnvironmentSettings() {
+    // If the env-pointed settings exist but cannot be read, overriding them would silently drop
+    // the user's config, so the launch degrades instead.
+    let outcome = DroidHookSettingsPreparer.mergedSettings(
+      invocation: AgentInvocation(executable: "droid", arguments: ["Prompt"]),
+      launchDirectory: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      promptArgumentIndex: 0,
+      hookCommands: hookCommands,
+      environmentSettingsPath: "/home/user/.factory/env.json",
+      readFile: { _, _ in .unreadable }
+    )
+    #expect(outcome.data == nil)
+    #expect(outcome.warning?.code == .managedHookDegraded)
+  }
+
+  @Test func droidPrefersTheExplicitFlagOverTheEnvironmentSettingsPath() throws {
+    // The flag wins (measured), so a flag source is merged and the env path is never read.
+    let flagSource = Data(#"{"customModels": [{"apiKey": "sk-flag"}]}"#.utf8)
+    let outcome = DroidHookSettingsPreparer.mergedSettings(
+      invocation: AgentInvocation(executable: "droid", arguments: ["--settings", "flag.json"]),
+      launchDirectory: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      promptArgumentIndex: nil,
+      hookCommands: hookCommands,
+      environmentSettingsPath: "/home/user/.factory/env.json",
+      readFile: { url, _ in
+        #expect(url.path(percentEncoded: false) == "/tmp/project/flag.json")
+        return .stable(flagSource)
+      }
+    )
+    let data = try #require(outcome.data)
+    let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(((object["customModels"] as? [[String: Any]])?.first?["apiKey"] as? String) == "sk-flag")
+  }
+
   @Test func droidWithoutUserSettingsMergesHooksOnly() throws {
     let outcome = DroidHookSettingsPreparer.mergedSettings(
       invocation: AgentInvocation(executable: "droid", arguments: ["Prompt"]),
@@ -256,6 +313,46 @@ struct AgentS3bHookRenderingTests {
       promptArgumentIndex: 0
     )
     #expect(prepared.invocation.arguments == ["--settings", "", "Prompt"])
+  }
+
+  @Test func droidTreatsASettingsValueAsAPathNeverInlineJSON() {
+    // Droid's `--settings` is path-only (it `fs.stat`s the value), so a `{`-prefixed value is a
+    // path that does not exist, not inline JSON to merge. Injecting a "fixed" file would run a
+    // config the user's own Droid launch would have rejected.
+    var readPath: String?
+    let outcome = DroidHookSettingsPreparer.mergedSettings(
+      invocation: AgentInvocation(executable: "droid", arguments: ["--settings", #"{"hooks":{}}"#]),
+      launchDirectory: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      promptArgumentIndex: nil,
+      hookCommands: hookCommands,
+      readFile: { url, _ in
+        readPath = url.path(percentEncoded: false)
+        return .unreadable  // the "path" does not exist, exactly as Droid's own fs.stat would find
+      }
+    )
+    // The value was resolved as a path (read attempted), not parsed as inline JSON.
+    #expect(readPath == #"/tmp/project/{"hooks":{}}"#)
+    #expect(outcome.data == nil)
+    #expect(outcome.warning?.code == .managedHookDegraded)
+    #expect(outcome.warning?.runtime == "droid")
+  }
+
+  @Test func droidDegradesWhenTheMergedSettingsExceedThePrivateFileLimit() {
+    // The merge cap (256 KiB) is larger than the owner-only private-file store cap, so a merge
+    // between the two would serialize but fail to write. Degrade at merge time with the Droid
+    // reason instead of a confusing "file could not be created" at a threshold users can't see.
+    let big = String(repeating: "a", count: CodexForwardingRecordReader.maximumRecordBytes)
+    let source = Data(#"{"note": "\#(big)"}"#.utf8)
+    let outcome = DroidHookSettingsPreparer.mergedSettings(
+      invocation: AgentInvocation(executable: "droid", arguments: ["--settings", "s.json"]),
+      launchDirectory: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      promptArgumentIndex: nil,
+      hookCommands: hookCommands,
+      readFile: { _, _ in .stable(source) }
+    )
+    #expect(outcome.data == nil)
+    #expect(outcome.warning?.code == .managedHookDegraded)
+    #expect(outcome.warning?.runtime == "droid")
   }
 
   @Test func droidDegradesWhenTheUserSourceIsUnusable() {
@@ -283,5 +380,144 @@ struct AgentS3bHookRenderingTests {
     )
     #expect(prepared.invocation.arguments == ["--settings", ""])
     #expect(prepared.argumentValues == [1: "/private/prowl/hooks/abc.json"])
+  }
+
+  // MARK: - Working directory
+
+  /// Measured 2026-08-25: Droid `--cwd` and Copilot `-C` take the last occurrence, Qoder
+  /// `-w`/`--cwd` the first; `--cwd=dir` and `-Cdir` are accepted; the hooks then report the
+  /// changed directory as `cwd`.
+  @Test func workingDirectoryScanFollowsEachRuntimesMeasuredPrecedence() {
+    typealias Scan = ManagedHookWorkingDirectory.Scan
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: ["--cwd", "b", "--cwd", "c", "Prompt"],
+        optionNames: ["--cwd"], precedence: .lastWins, promptArgumentIndex: 4
+      ) == Scan.changed("c"))
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: ["--cwd=c"], optionNames: ["--cwd"], precedence: .lastWins, promptArgumentIndex: nil
+      ) == Scan.changed("c"))
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: ["-w", "b", "--cwd", "c"],
+        optionNames: ["-w", "--cwd"], precedence: .firstWins, promptArgumentIndex: nil
+      ) == Scan.changed("b"))
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: ["-C", "b", "-Cc", "--", "-C", "d"],
+        optionNames: ["-C"], precedence: .lastWins, promptArgumentIndex: nil
+      ) == Scan.changed("c"))
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: [], optionNames: ["-C"], precedence: .lastWins, promptArgumentIndex: nil
+      ) == Scan.inherited)
+    // A dangling option, or one whose only value would be the prompt, cannot be trusted.
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: ["--cwd"], optionNames: ["--cwd"], precedence: .lastWins, promptArgumentIndex: nil
+      ) == Scan.malformed)
+    #expect(
+      ManagedHookWorkingDirectory.scan(
+        arguments: ["--cwd", "Prompt"], optionNames: ["--cwd"], precedence: .lastWins, promptArgumentIndex: 1
+      ) == Scan.malformed)
+  }
+
+  @Test func effectiveWorkingDirectoryResolvesRelativeValuesAgainstTheInheritedDirectory() {
+    let inherited = URL(filePath: "/tmp/project", directoryHint: .isDirectory)
+    #expect(
+      ManagedHookWorkingDirectory.effective(inherited: inherited, scan: .changed("sub/dir"))?
+        .path(percentEncoded: false) == "/tmp/project/sub/dir/")
+    #expect(
+      ManagedHookWorkingDirectory.effective(inherited: inherited, scan: .changed("/elsewhere"))?
+        .path(percentEncoded: false) == "/elsewhere/")
+    #expect(
+      ManagedHookWorkingDirectory.effective(inherited: inherited, scan: .inherited)?
+        .path(percentEncoded: false) == "/tmp/project/")
+    #expect(ManagedHookWorkingDirectory.effective(inherited: inherited, scan: .malformed) == nil)
+  }
+
+  /// The registration must carry the directory the hooks will report, while a relative
+  /// settings path is still read from the launch directory.
+  @Test func runtimesRegisterTheChangedWorkingDirectoryButReadSettingsFromTheInheritedOne() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "prowl-s3b-cwd-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let inherited = root.appending(path: "project", directoryHint: .isDirectory)
+    let elsewhere = root.appending(path: "elsewhere", directoryHint: .isDirectory)
+    let plugin = root.appending(path: "plugin", directoryHint: .isDirectory)
+    for directory in [inherited, elsewhere, plugin] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cli = root.appending(path: "prowl", directoryHint: .notDirectory)
+    try "#!/bin/sh\nexit 0\n".write(to: cli, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cli.path)
+    try "{}".write(to: plugin.appending(path: "hooks.json"), atomically: true, encoding: .utf8)
+    try #"{"marker": "inherited"}"#.write(
+      to: inherited.appending(path: "s.json"), atomically: true, encoding: .utf8)
+    try #"{"marker": "target"}"#.write(
+      to: elsewhere.appending(path: "s.json"), atomically: true, encoding: .utf8)
+    let resources = AgentHookResources(
+      bundledCLIPath: cli.path(percentEncoded: false),
+      socketPath: "/tmp/prowl.sock",
+      copilotPluginPath: plugin.path(percentEncoded: false)
+    )
+    let target = elsewhere.path(percentEncoded: false)
+    func trimmed(_ url: URL) -> String {
+      url.standardizedFileURL.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+    let expected = trimmed(elsewhere)
+
+    let droid = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .droid, arguments: ["--cwd", target, "--settings", "s.json"]),
+      inheritedCWD: inherited,
+      resources: resources
+    )
+    #expect(droid.warning == nil)
+    #expect(trimmed(droid.launchCWD) == expected)
+    let merged = try #require(droid.pendingSettingsFile?.data)
+    let object = try #require(try JSONSerialization.jsonObject(with: merged) as? [String: Any])
+    #expect(object["marker"] as? String == "inherited")
+
+    let qoder = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .qoder, arguments: ["-w", target]),
+      inheritedCWD: inherited,
+      resources: resources
+    )
+    #expect(qoder.warning == nil)
+    #expect(qoder.preparedInvocation != nil)
+    #expect(trimmed(qoder.launchCWD) == expected)
+
+    let copilot = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .copilot, arguments: ["-C", target]),
+      inheritedCWD: inherited,
+      resources: resources
+    )
+    #expect(copilot.warning == nil)
+    #expect(copilot.preparedInvocation != nil)
+    #expect(trimmed(copilot.launchCWD) == expected)
+
+    let malformed = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(runtime: .droid, arguments: ["--cwd"]),
+      inheritedCWD: inherited,
+      resources: resources
+    )
+    #expect(malformed.warning?.code == .managedHookDegraded)
+    #expect(malformed.pendingSettingsFile == nil)
+    #expect(trimmed(malformed.launchCWD) == trimmed(inherited))
+  }
+
+  private func makePlan(runtime: AgentProfileRuntime, arguments: [String]) -> AgentProfileLaunchPlan {
+    AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: "Test",
+      runtime: runtime,
+      invocation: AgentInvocation(executable: runtime.agent.iconLookupToken, arguments: arguments),
+      commandEnvironmentTokens: [],
+      placement: .tab,
+      splitDirection: .right,
+      surfaceEnvironment: [:],
+      dedicatedHome: nil
+    )
   }
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned. Branch `feat/agent-signal-hooks-s3b`, extending the S3a foundation delivered in
+Delivered (see [009-s3b-action.md](009-s3b-action.md)). Branch `feat/agent-signal-hooks-s3b`, extending the S3a foundation delivered in
 [#721](https://github.com/onevcat/Prowl/pull/721) and hardened in
 [#723](https://github.com/onevcat/Prowl/pull/723). Slice definition lives in
 [006-s3-wave1-plan.md](006-s3-wave1-plan.md); S3 wave 1 completes only after S3c.
@@ -21,8 +21,11 @@ runtimes to feed the existing S1/S2 bus through the S3a registration boundary.
 Claude Code is now 2.1.243 (S3a attested 2.1.241) and Codex CLI remains 0.149.0; S3b re-ran
 the Claude permission matrix below against 2.1.243 and found no S3a regression.
 
-Droid also honors `FACTORY_RUNTIME_SETTINGS_PATH`, but an explicit `--settings` flag beats it,
-so S3b injects through the flag and treats the environment variable as unused. Qoder's
+Droid also honors `FACTORY_RUNTIME_SETTINGS_PATH`, and an explicit `--settings` flag beats it.
+S3b injects through the flag, so when the user relies on that variable instead, the flag would
+override it. The preparer therefore reads the variable when it is set through the Profile's own
+environment overrides and merges its settings as the base; the shell-rc / globally exported case
+is not visible without a shell probe (a follow-up, like Codex's shell-environment probe). Qoder's
 `--setting-sources` (any value) suppresses flag-supplied hooks entirely — verified by hooks
 never firing — so its presence forces degradation instead of a silently dead channel.
 

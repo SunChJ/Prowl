@@ -32,11 +32,12 @@ nonisolated enum ManagedHookSettings {
   static func object(
     from source: String,
     launchDirectory: URL,
+    allowInline: Bool = true,
     readFile: (URL, Int) -> ClaudeSettingsReadResult
   ) -> [String: Any]? {
     let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
     let data: Data
-    if trimmed.hasPrefix("{") {
+    if allowInline, trimmed.hasPrefix("{") {
       data = Data(trimmed.utf8)
       guard data.count <= maximumBytes else { return nil }
     } else {
@@ -193,6 +194,7 @@ nonisolated extension ManagedHookSettings {
     precedence: Precedence,
     promptArgumentIndex: Int?,
     launchDirectory: URL,
+    allowInline: Bool = true,
     readFile: (URL, Int) -> ClaudeSettingsReadResult
   ) -> EffectiveSettings {
     switch scanSettings(
@@ -206,9 +208,76 @@ nonisolated extension ManagedHookSettings {
     case .malformed:
       return .unusable
     case .source(let value):
-      guard let object = object(from: value, launchDirectory: launchDirectory, readFile: readFile)
+      guard
+        let object = object(
+          from: value, launchDirectory: launchDirectory, allowInline: allowInline, readFile: readFile)
       else { return .unusable }
       return .object(object)
+    }
+  }
+}
+
+/// The working directory a runtime will actually report in its hook payloads. Copilot (`-C`,
+/// last wins), Droid (`--cwd`, last wins), and Qoder (`-w`/`--cwd`, first wins) all change
+/// directory before their hooks run, while a relative `--settings` path is still resolved
+/// against the directory they were launched from — both measured, so the two must stay apart.
+nonisolated enum ManagedHookWorkingDirectory {
+  enum Scan: Equatable, Sendable {
+    case inherited
+    case changed(String)
+    case malformed
+  }
+
+  /// `--option value` and `--option=value` are recognized for long options, `-X value` and
+  /// `-Xvalue` for single-letter ones. The prompt argument is never read as a value.
+  static func scan(
+    arguments: [String],
+    optionNames: [String],
+    precedence: ManagedHookSettings.Precedence,
+    promptArgumentIndex: Int?
+  ) -> Scan {
+    var found: String?
+    var index = 0
+    func record(_ value: String) {
+      if found == nil || precedence == .lastWins { found = value }
+    }
+    while index < arguments.count {
+      if index == promptArgumentIndex {
+        index += 1
+        continue
+      }
+      let argument = arguments[index]
+      if argument == "--" { break }
+      if optionNames.contains(argument) {
+        guard arguments.indices.contains(index + 1), index + 1 != promptArgumentIndex else {
+          return .malformed
+        }
+        record(arguments[index + 1])
+        index += 2
+        continue
+      }
+      for name in optionNames {
+        let isLong = name.hasPrefix("--")
+        let joinedPrefix = isLong ? "\(name)=" : name
+        guard argument.hasPrefix(joinedPrefix), argument.count > joinedPrefix.count else { continue }
+        record(String(argument.dropFirst(joinedPrefix.count)))
+        break
+      }
+      index += 1
+    }
+    return found.map(Scan.changed) ?? .inherited
+  }
+
+  /// Resolve a scan against the launch directory; `nil` means the option could not be read,
+  /// so the launch must degrade rather than register a directory the hooks will never report.
+  static func effective(inherited: URL, scan: Scan) -> URL? {
+    switch scan {
+    case .inherited:
+      return inherited
+    case .changed(let value):
+      return URL(filePath: value, directoryHint: .isDirectory, relativeTo: inherited).standardizedFileURL
+    case .malformed:
+      return nil
     }
   }
 }
@@ -316,20 +385,11 @@ nonisolated enum DroidHookSettingsPreparer {
     launchDirectory: URL,
     promptArgumentIndex: Int?,
     hookCommands: [String: String],
+    environmentSettingsPath: String? = nil,
     readFile: (URL, Int) -> ClaudeSettingsReadResult
   ) -> MergedSettings {
-    guard
-      case .object(let base) = ManagedHookSettings.effectiveObject(
-        arguments: invocation.arguments,
-        precedence: .lastWins,
-        promptArgumentIndex: promptArgumentIndex,
-        launchDirectory: launchDirectory,
-        readFile: readFile
-      ),
-      let merged = ManagedHookSettings.merged(base, hookCommands: hookCommands),
-      let data = ManagedHookSettings.serializedData(merged)
-    else {
-      return MergedSettings(
+    func degraded() -> MergedSettings {
+      MergedSettings(
         data: nil,
         warning: LifecycleCommandWarning(
           code: .managedHookDegraded,
@@ -337,6 +397,58 @@ nonisolated enum DroidHookSettingsPreparer {
           message: "Managed Droid hooks could not be prepared; launching with the original settings."
         )
       )
+    }
+
+    // The `--settings` flag wins over `FACTORY_RUNTIME_SETTINGS_PATH` (measured), so resolve the
+    // base the runtime would load: the flag if present, otherwise the env-pointed file. Injecting
+    // the managed flag without merging the env file would silently drop the user's config, so an
+    // unreadable env source degrades rather than overrides. Droid's `--settings` is path-only, so
+    // a `{`-prefixed value is a missing path, never inline JSON to synthesize.
+    let base: [String: Any]
+    switch ManagedHookSettings.effectiveObject(
+      arguments: invocation.arguments,
+      precedence: .lastWins,
+      promptArgumentIndex: promptArgumentIndex,
+      launchDirectory: launchDirectory,
+      allowInline: false,
+      readFile: readFile
+    ) {
+    case .unusable:
+      return degraded()
+    case .object(let flagBase) where !flagBase.isEmpty:
+      base = flagBase
+    case .object:
+      if ManagedHookSettings.scanSettings(
+        arguments: invocation.arguments,
+        optionName: ManagedHookSettings.settingsOptionName,
+        precedence: .lastWins,
+        promptArgumentIndex: promptArgumentIndex
+      ) != .none {
+        base = [:]  // an explicit empty `{}` flag object: honor it as-is
+      } else if let environmentSettingsPath {
+        guard
+          let object = ManagedHookSettings.object(
+            from: environmentSettingsPath,
+            launchDirectory: launchDirectory,
+            allowInline: false,
+            readFile: readFile
+          )
+        else { return degraded() }
+        base = object
+      } else {
+        base = [:]
+      }
+    }
+
+    guard
+      let merged = ManagedHookSettings.merged(base, hookCommands: hookCommands),
+      let data = ManagedHookSettings.serializedData(merged),
+      // The merged object is written to the owner-only private-file store, whose cap is smaller
+      // than the generic merge cap. Degrade here, with the Droid reason, rather than serialize
+      // successfully and fail opaquely at write time.
+      data.count <= CodexForwardingRecordReader.maximumRecordBytes
+    else {
+      return degraded()
     }
     return MergedSettings(data: data, warning: nil)
   }

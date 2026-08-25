@@ -122,6 +122,24 @@ nonisolated enum AgentManagedHookPreparer {
         message: "The bundled Copilot hook plugin is unavailable."
       )
     }
+    guard
+      let launchCWD = ManagedHookWorkingDirectory.effective(
+        inherited: inheritedCWD,
+        scan: ManagedHookWorkingDirectory.scan(
+          arguments: plan.invocation.arguments,
+          optionNames: ["-C"],
+          precedence: .lastWins,
+          promptArgumentIndex: promptIndex
+        )
+      )
+    else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The Copilot working directory option could not be resolved."
+      )
+    }
     return AgentManagedHookPreparation(
       preparedInvocation: CopilotHookPluginRenderer.prepare(
         invocation: plan.invocation,
@@ -129,7 +147,7 @@ nonisolated enum AgentManagedHookPreparer {
         promptArgumentIndex: promptIndex
       ),
       capability: capability,
-      launchCWD: inheritedCWD,
+      launchCWD: launchCWD,
       forwardingArgv: nil,
       pendingSettingsFile: nil,
       warning: nil
@@ -149,6 +167,28 @@ nonisolated enum AgentManagedHookPreparer {
     let hookCommands = shellHookCommands(capability: capability, resources: resources)
     let invocation = plan.invocation
     let runtime = capability.runtime
+    // The hooks report the directory the runtime changes into; the settings path is still
+    // relative to where it was launched (both measured on Droid 0.203 and Qoder 1.1.29).
+    let workingDirectoryScan = ManagedHookWorkingDirectory.scan(
+      arguments: invocation.arguments,
+      optionNames: runtime == .qoder ? ["-w", "--cwd"] : ["--cwd"],
+      precedence: runtime == .qoder ? .firstWins : .lastWins,
+      promptArgumentIndex: promptIndex
+    )
+    guard
+      let launchCWD = ManagedHookWorkingDirectory.effective(
+        inherited: inheritedCWD,
+        scan: workingDirectoryScan
+      )
+    else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The \(runtime.rawValue) working directory option could not be resolved."
+      )
+    }
+    let environmentSettingsPath = plan.profileEnvironmentOverrides["FACTORY_RUNTIME_SETTINGS_PATH"]
 
     return await Task.detached(priority: .userInitiated) {
       let readFile: (URL, Int) -> ClaudeSettingsReadResult = {
@@ -166,7 +206,7 @@ nonisolated enum AgentManagedHookPreparer {
         return AgentManagedHookPreparation(
           preparedInvocation: outcome.prepared,
           capability: capability,
-          launchCWD: inheritedCWD,
+          launchCWD: launchCWD,
           forwardingArgv: nil,
           pendingSettingsFile: nil,
           warning: outcome.warning
@@ -177,12 +217,16 @@ nonisolated enum AgentManagedHookPreparer {
           launchDirectory: inheritedCWD,
           promptArgumentIndex: promptIndex,
           hookCommands: hookCommands,
+          // A `FACTORY_RUNTIME_SETTINGS_PATH` set through the Profile's own environment overrides
+          // is a settings source the managed `--settings` flag would otherwise override. The
+          // shell-rc / globally exported case is not visible here without a shell probe.
+          environmentSettingsPath: environmentSettingsPath,
           readFile: readFile
         )
         return AgentManagedHookPreparation(
           preparedInvocation: nil,
           capability: capability,
-          launchCWD: inheritedCWD,
+          launchCWD: launchCWD,
           forwardingArgv: nil,
           pendingSettingsFile: merged.data.map {
             PendingManagedHookSettingsFile(
@@ -197,7 +241,7 @@ nonisolated enum AgentManagedHookPreparer {
         return AgentManagedHookPreparation(
           preparedInvocation: nil,
           capability: capability,
-          launchCWD: inheritedCWD,
+          launchCWD: launchCWD,
           forwardingArgv: nil,
           pendingSettingsFile: nil,
           warning: LifecycleCommandWarning(
