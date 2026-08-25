@@ -1,5 +1,7 @@
 import Foundation
 
+private let observationLogger = SupaLogger("AgentObservation")
+
 private struct AgentSignalChannelRecord {
   var state: AgentSignalChannelState
   var confidence: AgentSignal.Confidence
@@ -275,6 +277,7 @@ final class AgentObservationStore {
       managed.launch.nativeEvents[input.signal.nativeEvent] == input.signal.event,
       normalizedPath(managed.launch.launchCWD) == normalizedPath(input.signal.cwd)
     else {
+      logManagedHookRejection(input, surfaceID: surfaceID)
       return .rejected
     }
     guard let generation = managed.processGeneration ?? record.processGeneration else {
@@ -525,14 +528,43 @@ final class AgentObservationStore {
     }
   }
 
+  /// A rejected native hook is silent by design, which makes a misconfigured runtime very
+  /// hard to diagnose. Name the first failing precondition in debug builds only.
+  private func logManagedHookRejection(_ input: AgentNativeHookInput, surfaceID: UUID) {
+    let event = "runtime=\(input.runtime.rawValue) event=\(input.signal.nativeEvent)"
+    guard let managed = records[surfaceID]?.managedHook else {
+      observationLogger.debug("managed hook rejected \(event) reason=no-registration")
+      return
+    }
+    let reason: String
+    if managed.launch.token != input.token {
+      reason = "token-mismatch"
+    } else if managed.launch.runtime != input.runtime {
+      reason = "runtime-mismatch expected=\(managed.launch.runtime.rawValue)"
+    } else if managed.launch.nativeEvents[input.signal.nativeEvent] != input.signal.event {
+      reason = "event-not-declared declared=\(managed.launch.nativeEvents.keys.sorted().joined(separator: ","))"
+    } else if normalizedPath(managed.launch.launchCWD) != normalizedPath(input.signal.cwd) {
+      reason =
+        "cwd-mismatch launch=\(normalizedPath(managed.launch.launchCWD)) hook=\(normalizedPath(input.signal.cwd))"
+    } else {
+      reason = "invalid-input"
+    }
+    observationLogger.debug("managed hook rejected \(event) reason=\(reason)")
+  }
+
   private func normalizedPath(_ url: URL) -> String {
     normalizedPath(url.path(percentEncoded: false))
   }
 
+  /// Runtimes disagree on how they report their working directory: some echo the shell's
+  /// logical path (`/tmp/...`) while others report `getcwd()`, which the kernel already
+  /// resolved (`/private/tmp/...`). Both name the same directory, so symlinks are resolved
+  /// before comparison — otherwise a correctly launched agent's hooks are silently rejected.
   private func normalizedPath(_ path: String) -> String {
-    let value = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL.path(
-      percentEncoded: false
-    )
+    let value = URL(filePath: path, directoryHint: .isDirectory)
+      .standardizedFileURL
+      .resolvingSymlinksInPath()
+      .path(percentEncoded: false)
     return value.count > 1 && value.hasSuffix("/") ? String(value.dropLast()) : value
   }
 

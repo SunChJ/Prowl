@@ -195,4 +195,153 @@ struct AgentS3bHookPayloadTests {
     #expect(AgentNativeHookRuntime.qoder.rawValue == "qodercli")
     #expect(AgentProfileRuntime.qoder.rawValue == "qodercli")
   }
+
+  /// The observation store must accept a real launch/registration cycle for each S3b runtime,
+  /// not just Claude and Codex. This is the deterministic counterpart to the live gate.
+  @Test func eachS3bRuntimeVerifiesItsChannelThroughTheObservationStore() throws {
+    let now = Date(timeIntervalSince1970: 100)
+    let formatter = ISO8601DateFormatter()
+
+    for profileRuntime in [AgentProfileRuntime.copilot, .droid, .qoder] {
+      let capability = try #require(
+        AgentRuntimeAdapterRegistry.profileAdapter(for: profileRuntime)?.signalHooks
+      )
+      let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+      let surfaceID = UUID()
+      let registration = AgentHookLaunchRegistration(
+        token: "token-\(capability.runtime.rawValue)",
+        runtime: capability.runtime,
+        launchCWD: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+        nativeEvents: capability.nativeEvents,
+        coveredEvents: capability.coveredEvents,
+        forwardingRecord: nil
+      )
+      _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+      let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+      _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+      func send(_ nativeEvent: String, _ event: AgentSignalEvent) -> ManagedHookRecordResult {
+        store.recordManagedHook(
+          AgentNativeHookInput(
+            runtime: capability.runtime,
+            token: registration.token,
+            signal: AgentNativeHookSignal(
+              event: event,
+              nativeEvent: nativeEvent,
+              cwd: "/tmp/project",
+              sessionID: "session-1"
+            )
+          ),
+          callerAncestry: [generation],
+          surfaceID: surfaceID
+        )
+      }
+
+      guard case .accepted = send("SessionStart", .sessionStart) else {
+        Issue.record("\(capability.runtime.rawValue) did not accept SessionStart")
+        continue
+      }
+      guard case .accepted(let stop, _) = send("Stop", .turnEnded) else {
+        Issue.record("\(capability.runtime.rawValue) did not accept Stop")
+        continue
+      }
+      #expect(stop.source == .hook(runtime: profileRuntime, event: "Stop"))
+      #expect(stop.source.payloadName == "hook_\(profileRuntime.rawValue)")
+
+      let channel = try #require(
+        store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true)
+          .channels.first
+      )
+      #expect(channel.state == .verifiedLive)
+      #expect(channel.events == [.needsInput, .sessionEnd, .sessionStart, .turnEnded])
+
+      // A different session may only take over through SessionStart, matching Claude.
+      let otherSession = store.recordManagedHook(
+        AgentNativeHookInput(
+          runtime: capability.runtime,
+          token: registration.token,
+          signal: AgentNativeHookSignal(
+            event: .turnEnded,
+            nativeEvent: "Stop",
+            cwd: "/tmp/project",
+            sessionID: "session-2"
+          )
+        ),
+        callerAncestry: [generation],
+        surfaceID: surfaceID
+      )
+      #expect(otherSession == .rejected)
+    }
+  }
+
+  /// Runtimes disagree on how they report cwd: Copilot echoes the shell's logical `/tmp/...`
+  /// path while Droid reports `process.cwd()`, which the kernel resolves to `/private/tmp/...`.
+  /// Both name the same directory, so hook validation must compare resolved paths or Droid's
+  /// events are silently rejected (measured against Droid 0.202.0).
+  @Test func hookCWDComparisonResolvesSymlinkedTemporaryPaths() throws {
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let capability = try #require(AgentRuntimeAdapterRegistry.profileAdapter(for: .droid)?.signalHooks)
+
+    // Resolution only applies to paths that exist, which a real launch directory always does.
+    let name = "prowl-cwd-probe-\(UUID().uuidString)"
+    let logical = "/tmp/\(name)"
+    let resolved = "/private/tmp/\(name)"
+    try FileManager.default.createDirectory(
+      atPath: logical,
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(atPath: logical) }
+
+    let registration = AgentHookLaunchRegistration(
+      token: "token-droid",
+      runtime: capability.runtime,
+      // The launch registers the logical path Prowl tracks for the worktree.
+      launchCWD: URL(filePath: logical, directoryHint: .isDirectory),
+      nativeEvents: capability.nativeEvents,
+      coveredEvents: capability.coveredEvents,
+      forwardingRecord: nil
+    )
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    // The hook reports the same directory through its resolved path.
+    let result = store.recordManagedHook(
+      AgentNativeHookInput(
+        runtime: .droid,
+        token: registration.token,
+        signal: AgentNativeHookSignal(
+          event: .turnEnded,
+          nativeEvent: "Stop",
+          cwd: resolved,
+          sessionID: "session-1"
+        )
+      ),
+      callerAncestry: [generation],
+      surfaceID: surfaceID
+    )
+    guard case .accepted = result else {
+      Issue.record("resolved-equivalent cwd must be accepted, got \(result)")
+      return
+    }
+
+    // A genuinely different directory still fails closed.
+    let elsewhere = store.recordManagedHook(
+      AgentNativeHookInput(
+        runtime: .droid,
+        token: registration.token,
+        signal: AgentNativeHookSignal(
+          event: .turnEnded,
+          nativeEvent: "Stop",
+          cwd: "/private/tmp/prowl-definitely-not-the-launch-directory",
+          sessionID: "session-1"
+        )
+      ),
+      callerAncestry: [generation],
+      surfaceID: surfaceID
+    )
+    #expect(elsewhere == .rejected)
+  }
 }
