@@ -5,7 +5,8 @@
 Owner-approved plan; S3a merged in [#721](https://github.com/onevcat/Prowl/pull/721) (hardened
 in [#723](https://github.com/onevcat/Prowl/pull/723)). Implementation record:
 [007-s3a-action.md](007-s3a-action.md). S3b is planned in
-[008-s3b-plan.md](008-s3b-plan.md) on branch `feat/agent-signal-hooks-s3b`.
+[008-s3b-plan.md](008-s3b-plan.md) and implemented on `feat/agent-signal-hooks-s3b`; its
+record, including the partial live acceptance, is [009-s3b-action.md](009-s3b-action.md).
 
 - Planning branch: `feat/agent-signal-hooks-s3a`
 - Prerequisites: 063-A2, 064-S1, and 064-S2 are merged.
