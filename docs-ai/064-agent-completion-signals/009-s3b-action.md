@@ -184,6 +184,22 @@ capped at the owner-only private-file limit so an oversize merge degrades with t
 instead of failing opaquely at write time. The symlink cwd-comparison test deleted during the
 session-takeover change was restored.
 
+### Static-review round 4 (2026-08-26)
+
+- **A transient detector session no longer permanently kills a live session.** Round 3 retired the
+  hook session on *any* detector-driven session change, using the permanent `retiredSessionIDs`
+  set. A detector false positive (S2) therefore killed the real S1 session forever — even after the
+  detector corrected back to S1, `acceptedManagedSessionID` discarded S1 and `Stop(S1)` stayed
+  rejected. Detector-driven supersession is now a distinct, reversible marker
+  (`detectorSupersededSessionID`) separate from hook-authoritative retirement: it still blocks a
+  delayed hook edge for the superseded session (round 3), but the detector can self-correct by
+  reporting the session again, which clears it. A SessionStart is the final arbiter — it clears the
+  supersession and records the conflicting detector candidate in `suppressedDetectorSessionID` so a
+  detector that keeps repeating the same false positive cannot re-supersede the affirmed session.
+  Covered by `detectorSessionFalsePositiveThenCorrectionRecoversTheLiveSession` and
+  `sessionStartSuppressesARepeatingConflictingDetectorCandidate`; the round-1, round-3, and resume
+  tests still hold.
+
 ### Static-review round 3 (2026-08-26)
 
 - **Delayed event for a detector-superseded session.** Round 1 retired a session only when the
