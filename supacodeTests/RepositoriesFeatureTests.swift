@@ -6479,6 +6479,7 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: makeState(repositories: [repository])) {
       RepositoriesFeature()
     } withDependencies: {
+      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { false }
       $0.gitClient.remoteInfo = { _ in
         Issue.record("remoteInfo should not be requested when GitHub integration is unavailable")
@@ -6614,6 +6615,8 @@ struct RepositoriesFeatureTests {
       )
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
+    } withDependencies: {
+      $0.continuousClock = TestClock()
     }
 
     await store.send(.githubIntegration(.githubIntegrationAvailabilityUpdated(false))) {
