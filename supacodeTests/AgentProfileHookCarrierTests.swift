@@ -43,6 +43,62 @@ struct AgentProfileHookCarrierTests {
     #expect(!prepared.terminalInput.contains("Prompt"))
   }
 
+  /// OpenCode's plugin rides `OPENCODE_CONFIG_CONTENT`; the JSON reaches only the launched
+  /// child through a carrier the typed command references by name, and the carrier itself is
+  /// removed from that child like every other one.
+  @Test func managedHookEnvironmentValuesUseChildOnlyCarriers() throws {
+    let base = makePlan(
+      invocation: AgentInvocation(executable: "opencode", arguments: ["--prompt", "Prompt"]),
+      prompt: "Prompt"
+    )
+    let content =
+      #"{"plugin":["file:///Applications/Prowl.app/Contents/Resources/agent-hooks/opencode/prowl-hooks.ts"]}"#
+    let prepared = base.applyingManagedHook(
+      AgentHookPreparedInvocation(
+        invocation: base.invocation,
+        argumentValues: [:],
+        environmentValues: ["OPENCODE_CONFIG_CONTENT": content]
+      ),
+      resources: AgentHookResources(bundledCLIPath: "/bundle/prowl", socketPath: "/tmp/prowl.sock"),
+      launchCWD: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      token: "opaque-token",
+      coveredEvents: [.needsInput, .turnEnded]
+    )
+
+    #expect(prepared.environmentCarriers == ["PROWL_LAUNCH_HOOK_ENV_0"])
+    #expect(prepared.surfaceEnvironment["PROWL_LAUNCH_HOOK_ENV_0"] == content)
+    #expect(prepared.terminalInput.contains("OPENCODE_CONFIG_CONTENT=\"$PROWL_LAUNCH_HOOK_ENV_0\""))
+    #expect(prepared.terminalInput.contains("-u PROWL_LAUNCH_HOOK_ENV_0"))
+    #expect(!prepared.terminalInput.contains("prowl-hooks.ts"))
+    #expect(prepared.invocation.arguments == ["--prompt", "Prompt"])
+    // A Profile's own override of the same variable is typed first, so `env(1)` lets the
+    // merged content win.
+    let overridden = AgentProfileLaunchPlan(
+      profileID: base.profileID,
+      profileName: base.profileName,
+      runtime: base.runtime,
+      invocation: base.invocation,
+      commandEnvironmentTokens: ["OPENCODE_CONFIG_CONTENT=\"$PROWL_ENV_OPENCODE_CONFIG_CONTENT\""],
+      placement: base.placement,
+      splitDirection: base.splitDirection,
+      surfaceEnvironment: base.surfaceEnvironment.merging(
+        ["PROWL_ENV_OPENCODE_CONFIG_CONTENT": "{}"], uniquingKeysWith: { $1 }),
+      dedicatedHome: nil
+    ).applyingManagedHook(
+      AgentHookPreparedInvocation(
+        invocation: base.invocation, argumentValues: [:], environmentValues: ["OPENCODE_CONFIG_CONTENT": content]),
+      resources: AgentHookResources(bundledCLIPath: "/bundle/prowl", socketPath: "/tmp/prowl.sock"),
+      launchCWD: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      token: "opaque-token",
+      coveredEvents: [.turnEnded]
+    )
+    let tokens = overridden.commandEnvironmentTokens
+    let overrideIndex = try #require(
+      tokens.firstIndex(of: "OPENCODE_CONFIG_CONTENT=\"$PROWL_ENV_OPENCODE_CONFIG_CONTENT\""))
+    let managedIndex = try #require(tokens.firstIndex(of: "OPENCODE_CONFIG_CONTENT=\"$PROWL_LAUNCH_HOOK_ENV_0\""))
+    #expect(overrideIndex < managedIndex)
+  }
+
   @Test func forwardingLocatorIsAChildOnlyCarrierAndRecordContentsStayOutOfEnvironment() {
     let base = makePlan(invocation: AgentInvocation(executable: "codex", arguments: []))
     let record = CodexForwardingRecord(

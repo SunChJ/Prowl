@@ -38,7 +38,7 @@ struct AgentS3bHookRenderingTests {
       #expect(capability.nativeEvents["SubagentStop"] == nil)
     }
 
-    let hookedRuntimes: Set<AgentProfileRuntime> = [.claude, .codex, .copilot, .droid, .qoder]
+    let hookedRuntimes: Set<AgentProfileRuntime> = [.claude, .codex, .copilot, .droid, .qoder, .pi, .omp, .opencode]
     for runtime in AgentProfileRuntime.allCases where !hookedRuntimes.contains(runtime) {
       #expect(AgentRuntimeAdapterRegistry.profileAdapter(for: runtime)?.signalHooks == nil)
     }

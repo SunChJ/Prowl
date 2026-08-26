@@ -472,6 +472,128 @@ struct AgentObservationTests {
     #expect(channel.state == .verifiedLive)
   }
 
+  /// Oh My Pi rotates through `session_switch` (no `session_start`); a repeated `session_start`
+  /// for the current id (Pi `reload`) is idempotent (docs-ai 064.010).
+  @Test func ompSessionSwitchRotatesTheManagedSessionAndDelayedStopsAreRejected() throws {
+    let fixture = makeFixture()
+    let table = AgentNativeHookDecoder.nativeEvents(for: .omp)
+    let caller = try registerRelayedRuntime(.omp, table: table, fixture: fixture)
+    func hook(_ nativeEvent: String, session: String) -> AgentNativeHookInput {
+      AgentNativeHookInput(
+        runtime: .omp,
+        token: "token-relayed",
+        signal: AgentNativeHookSignal(
+          event: table[nativeEvent]!,
+          nativeEvent: nativeEvent,
+          cwd: "/tmp/agent-observation",
+          sessionID: session
+        )
+      )
+    }
+
+    #expect(fixture.manager.recordAgentNativeHook(hook("session_start", session: "S1"), caller: caller))
+    #expect(fixture.manager.recordAgentNativeHook(hook("session_stop", session: "S1"), caller: caller))
+    var channel = try #require(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).channels.first)
+    #expect(channel.source == "hook_omp")
+    #expect(channel.state == .verifiedLive)
+    #expect(channel.sessionID == "S1")
+    #expect(channel.events.contains(.turnEnded))
+
+    // `/new`: a single `session_switch` carries the new id.
+    #expect(fixture.manager.recordAgentNativeHook(hook("session_switch", session: "S2"), caller: caller))
+    channel = try #require(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).channels.first)
+    #expect(channel.sessionID == "S2")
+    #expect(channel.state == .verifiedLive)
+    #expect(!fixture.manager.recordAgentNativeHook(hook("session_stop", session: "S1"), caller: caller))
+    #expect(fixture.manager.recordAgentNativeHook(hook("session_stop", session: "S2"), caller: caller))
+
+    // Re-announcing the current id is idempotent, never a rotation.
+    #expect(fixture.manager.recordAgentNativeHook(hook("session_start", session: "S2"), caller: caller))
+    channel = try #require(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).channels.first)
+    #expect(channel.sessionID == "S2")
+    #expect(channel.state == .verifiedLive)
+  }
+
+  /// OpenCode declares no SessionStart (its session is created lazily and `/new` / resume emit
+  /// nothing), so like Codex the first ordinary event verifies and a new id rotates.
+  @Test func opencodeIsNonAnnouncingSoTheFirstIdleVerifiesAndANewSessionRotates() throws {
+    let fixture = makeFixture()
+    let table = AgentNativeHookDecoder.nativeEvents(for: .opencode)
+    let caller = try registerRelayedRuntime(.opencode, table: table, fixture: fixture)
+    func hook(_ nativeEvent: String, session: String) -> AgentNativeHookInput {
+      AgentNativeHookInput(
+        runtime: .opencode,
+        token: "token-relayed",
+        signal: AgentNativeHookSignal(
+          event: table[nativeEvent]!,
+          nativeEvent: nativeEvent,
+          cwd: "/tmp/agent-observation",
+          sessionID: session
+        )
+      )
+    }
+
+    #expect(fixture.manager.recordAgentNativeHook(hook("session.idle", session: "ses_1"), caller: caller))
+    var channel = try #require(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).channels.first)
+    #expect(channel.source == "hook_opencode")
+    #expect(channel.state == .verifiedLive)
+    #expect(channel.sessionID == "ses_1")
+    #expect(!channel.events.contains(.sessionStart))
+    #expect(fixture.manager.recordAgentNativeHook(hook("permission.asked", session: "ses_1"), caller: caller))
+
+    #expect(fixture.manager.recordAgentNativeHook(hook("session.idle", session: "ses_2"), caller: caller))
+    channel = try #require(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).channels.first)
+    #expect(channel.sessionID == "ses_2")
+    #expect(channel.state == .verifiedLive)
+    #expect(!fixture.manager.recordAgentNativeHook(hook("session.idle", session: "ses_1"), caller: caller))
+  }
+
+  /// Register a single-process relayed runtime (Pi family, OpenCode TUI) on the fixture's pane
+  /// and return the exact caller the bridge would present.
+  private func registerRelayedRuntime(
+    _ runtime: AgentProfileRuntime,
+    table: [String: AgentSignalEvent],
+    fixture: Fixture
+  ) throws -> CallerPane {
+    let launchPID = getpid()
+    let launchStartedAt = try #require(ProcessDetection.processStartDate(pid: launchPID))
+    let hookRuntime = try #require(AgentNativeHookRuntime(rawValue: runtime.rawValue))
+    let registration = AgentHookLaunchRegistration(
+      token: "token-relayed",
+      runtime: hookRuntime,
+      launchCWD: URL(filePath: "/tmp/agent-observation", directoryHint: .isDirectory),
+      nativeEvents: table,
+      coveredEvents: Array(Set(table.values)).sorted { $0.rawValue < $1.rawValue },
+      forwardingRecord: nil
+    )
+    let plan = AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: runtime.rawValue,
+      runtime: runtime,
+      invocation: AgentInvocation(executable: runtime.rawValue, arguments: []),
+      hookRegistration: registration,
+      commandEnvironmentTokens: [],
+      placement: .tab,
+      splitDirection: .right,
+      surfaceEnvironment: [:],
+      dedicatedHome: nil
+    )
+    #expect(fixture.state.onAgentProfileSurfacePrepared?(fixture.surfaceID, plan) == true)
+    let paneState = PaneAgentState(
+      detectedAgent: runtime.agent,
+      agentProcessID: launchPID,
+      launchProcessID: launchPID,
+      state: .working
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = paneState
+    fixture.state.emitAgentEntry(surfaceID: fixture.surfaceID, tabId: fixture.tabID, state: paneState)
+    return CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: [AgentProcessGeneration(pid: launchPID, startedAt: launchStartedAt)]
+    )
+  }
+
   private struct Fixture {
     let manager: WorktreeTerminalManager
     let state: WorktreeTerminalState
