@@ -1752,8 +1752,6 @@ struct RepositoriesFeatureTests {
     initialState.workspaceCreationPrompt?.isCreating = true
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
-    } withDependencies: {
-      $0.continuousClock = TestClock()
     }
     store.exhaustivity = .off
 
@@ -1822,7 +1820,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: initialState) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.date.now = Date(timeIntervalSince1970: 1_700_000_000)
       $0.shellClient.runLoginImpl = { _, _, _, _ in ShellOutput(stdout: "", stderr: "", exitCode: 0) }
       $0.repositoryPersistence.loadRepositoryEntries = { [] }
@@ -5970,7 +5967,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in upstreamRemoteInfo }
       $0.githubCLI.mergePullRequest = { _, _, number, _, _ in
@@ -6025,7 +6021,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in upstreamRemoteInfo }
       $0.githubCLI.mergePullRequest = { _, _, _, strategy, _ in
@@ -6070,7 +6065,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.gitClient.remoteInfo = { root in
         #expect(root == URL(fileURLWithPath: repoRoot))
@@ -6106,7 +6100,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: fixture.state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.gitClient.remoteInfo = { _ in
         Issue.record("git remoteInfo should not run when PR URL resolves")
@@ -6140,7 +6133,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: fixture.state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.gitClient.remoteInfo = { _ in
         Issue.record("git remoteInfo should not run when PR URL resolves")
@@ -6174,7 +6166,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: fixture.state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.gitClient.remoteInfo = { _ in
         Issue.record("git remoteInfo should not run when PR URL resolves")
@@ -6281,7 +6272,6 @@ struct RepositoriesFeatureTests {
     let store = TestStore(initialState: state) {
       RepositoriesFeature()
     } withDependencies: {
-      $0.continuousClock = TestClock()
       $0.githubIntegration.isAvailable = { true }
       $0.githubCLI.resolveRemoteInfo = { _ in upstreamRemoteInfo }
       $0.githubCLI.closePullRequest = { _, _, number, _ in
