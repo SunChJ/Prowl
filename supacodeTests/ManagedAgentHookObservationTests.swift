@@ -268,6 +268,81 @@ struct ManagedAgentHookObservationTests {
     #expect(channel.sessionID == "S2")
   }
 
+  @Test func detectorSessionFalsePositiveThenCorrectionRecoversTheLiveSession() throws {
+    // A transient detector false-positive (S2) must not permanently kill the real S1 session: when
+    // the detector corrects back to S1, S1's events are accepted again without a new SessionStart.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func input(_ event: AgentSignalEvent, _ native: String, _ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: native, event: event,
+        cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+
+    // Detector false-positive to S2: the channel is superseded and a delayed Stop(S1) is blocked.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+    #expect(
+      store.recordManagedHook(input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID)
+        == .rejected)
+
+    // Detector corrects back to S1: the supersession clears and S1's events are live again.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S1")
+    #expect(
+      store.recordManagedHook(input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID)
+        .isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.sessionID == "S1")
+  }
+
+  @Test func sessionStartSuppressesARepeatingConflictingDetectorCandidate() throws {
+    // SessionStart is the final arbiter: after the hook re-affirms S1, a detector that keeps
+    // reporting the same false-positive S2 must not repeatedly re-supersede the live session.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func input(_ event: AgentSignalEvent, _ native: String, _ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: native, event: event,
+        cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+
+    // The hook re-affirms S1 authoritatively, suppressing the conflicting detector candidate S2.
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+
+    // The detector repeats the same false-positive S2: it is suppressed, not re-applied.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+    #expect(
+      store.recordManagedHook(input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID)
+        .isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.sessionID == "S1")
+  }
+
   @Test func announcedSessionStartCanResumeARetiredSession() throws {
     // Claude's /resume re-announces an old session id with a fresh authoritative SessionStart.
     // The retired-session guard must not reject that, or every event of the resumed session dies.

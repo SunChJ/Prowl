@@ -27,7 +27,17 @@ private struct ManagedHookRegistrationRecord {
   var evidenceEpoch: UUID
   var processGeneration: AgentProcessGeneration?
   var sessionID: String?
+  /// Sessions the hook itself rotated away from (an authoritative SessionStart moved on). These
+  /// are permanent until a fresh SessionStart resumes one; a lagging detector read of one is
+  /// ignored, never resurrected.
   var retiredSessionIDs: Set<String> = []
+  /// The hook session the detector currently reports having moved away from. Unlike a retired
+  /// session this is reversible: it blocks a delayed hook event for that session, but the detector
+  /// can self-correct by reporting the session again, and a SessionStart clears it.
+  var detectorSupersededSessionID: String?
+  /// A detector session a SessionStart has overridden as the arbiter, so a detector that keeps
+  /// reporting the same conflicting candidate cannot repeatedly re-supersede the live session.
+  var suppressedDetectorSessionID: String?
   var verified = false
   var pendingSignals: [PendingManagedHookSignal] = []
 }
@@ -321,6 +331,16 @@ final class AgentObservationStore {
     if resumesRetiredSession {
       managed.retiredSessionIDs.remove(input.signal.sessionID)
     }
+    // A session the detector reports having moved away from blocks a delayed hook event for it,
+    // but only a SessionStart may arbitrate (re-affirm or rotate) — anything else is a stale edge.
+    if managed.detectorSupersededSessionID == input.signal.sessionID,
+      input.signal.event != .sessionStart
+    {
+      observationLogger.debug(
+        "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=detector-superseded"
+      )
+      return .rejected
+    }
 
     if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
@@ -344,6 +364,14 @@ final class AgentObservationStore {
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       managed.evidenceEpoch = record.evidenceEpoch
       managed.verified = false
+    }
+    // A SessionStart is the final arbiter: it clears any detector supersession and suppresses the
+    // conflicting detector candidate (the session the detector currently reports) so a repeating
+    // false positive cannot re-supersede the session the hook just affirmed.
+    if input.signal.event == .sessionStart {
+      managed.detectorSupersededSessionID = nil
+      managed.suppressedDetectorSessionID =
+        record.sessionID != input.signal.sessionID ? record.sessionID : nil
     }
     record.sessionID = input.signal.sessionID
     managed.sessionID = input.signal.sessionID
@@ -446,22 +474,8 @@ final class AgentObservationStore {
         }
         record.managedHook = nil
       } else if sessionChanged, var managed = record.managedHook {
-        managed.evidenceEpoch = record.evidenceEpoch
-        managed.verified = false
-        managed.pendingSignals.removeAll()
-        // The detector authoritatively moved to a different (exact/high) session, so the prior
-        // one is superseded: retire it so a delayed event for it cannot re-verify the channel.
-        // Only a fresh SessionStart may reactivate it (announcing runtimes) or a new session
-        // take over. Announcing runtimes keep `managed.sessionID` so a non-SessionStart event for
-        // the new session stays rejected until its SessionStart arrives; Codex clears it.
-        if let managedSessionID = managed.sessionID,
-          managedSessionID != acceptedSessionID
-        {
-          managed.retiredSessionIDs.insert(managedSessionID)
-        }
-        if !managed.announcesSessionStarts {
-          managed.sessionID = nil
-        }
+        Self.reconcileManagedSessionOnDetectorChange(
+          &managed, evidenceEpoch: record.evidenceEpoch, acceptedSessionID: acceptedSessionID)
         record.managedHook = managed
       }
     }
@@ -494,19 +508,49 @@ final class AgentObservationStore {
     return update
   }
 
+  /// Reconcile a managed hook's session bookkeeping when the detector reports a different session.
+  /// Codex (no SessionStart) retires the superseded session permanently; an announcing runtime
+  /// marks it reversibly so a delayed edge is blocked but the detector can self-correct.
+  private static func reconcileManagedSessionOnDetectorChange(
+    _ managed: inout ManagedHookRegistrationRecord,
+    evidenceEpoch: UUID,
+    acceptedSessionID: String?
+  ) {
+    managed.evidenceEpoch = evidenceEpoch
+    managed.verified = false
+    managed.pendingSignals.removeAll()
+    guard managed.announcesSessionStarts else {
+      if let managedSessionID = managed.sessionID, managedSessionID != acceptedSessionID {
+        managed.retiredSessionIDs.insert(managedSessionID)
+      }
+      managed.sessionID = nil
+      return
+    }
+    if acceptedSessionID == managed.sessionID {
+      // The detector returned to the hook session: clear the reversible supersession.
+      managed.detectorSupersededSessionID = nil
+    } else {
+      // The detector moved to a new, non-suppressed candidate: supersede the hook session
+      // reversibly (block its delayed edges, allow a later correction) and drop any prior
+      // SessionStart suppression, which this genuinely new candidate invalidates.
+      managed.detectorSupersededSessionID = managed.sessionID
+      managed.suppressedDetectorSessionID = nil
+    }
+  }
+
   private func acceptedManagedSessionID(
     _ sessionID: String?,
     record: SurfaceRecord
   ) -> String? {
-    // A session the hook has already superseded must never drive rotation: a detector that lags
-    // and reports the previous session would otherwise revoke the freshly verified new one and
-    // roll `record.sessionID` backwards. A genuinely new session the hook has not yet announced
-    // is still honored, so the channel is distrusted until the hook re-announces.
-    guard let sessionID,
-      let managed = record.managedHook,
-      managed.retiredSessionIDs.contains(sessionID)
-    else { return sessionID }
-    return nil
+    // A session the hook rotated away from (retired), or one a SessionStart has already overridden
+    // as the arbiter (suppressed), must not drive rotation: a lagging or repeating detector read of
+    // it would otherwise revoke the freshly verified session and roll `record.sessionID` backwards.
+    // A genuinely new session the hook has not yet announced is still honored, so the channel is
+    // distrusted until the hook re-announces.
+    guard let sessionID, let managed = record.managedHook else { return sessionID }
+    if managed.retiredSessionIDs.contains(sessionID) { return nil }
+    if managed.suppressedDetectorSessionID == sessionID { return nil }
+    return sessionID
   }
 
   func bindingForSignal(
