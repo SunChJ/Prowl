@@ -2,8 +2,9 @@
 
 ## Status
 
-Implemented on `feat/agent-signal-hooks-s3c`. Plan: [010-s3c-plan.md](010-s3c-plan.md). With this
-PR merged, S3 wave 1 — launch-scoped hooks for all eight tier-A runtimes — is complete.
+Implemented in [#728](https://github.com/onevcat/Prowl/pull/728) from `feat/agent-signal-hooks-s3c`.
+Plan: [010-s3c-plan.md](010-s3c-plan.md). With this PR merged, S3 wave 1 — launch-scoped hooks for
+all eight tier-A runtimes — is complete.
 
 ## Delivered behavior
 

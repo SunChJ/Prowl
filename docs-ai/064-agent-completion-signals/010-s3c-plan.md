@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feat/agent-signal-hooks-s3c` (record: [011-s3c-action.md](011-s3c-action.md)),
+Implemented in [#728](https://github.com/onevcat/Prowl/pull/728) (record: [011-s3c-action.md](011-s3c-action.md)),
 closing S3 wave 1 on top of the S3a foundation
 ([#721](https://github.com/onevcat/Prowl/pull/721), [#723](https://github.com/onevcat/Prowl/pull/723))
 and the S3b adapters ([#725](https://github.com/onevcat/Prowl/pull/725)). Slice definition lives

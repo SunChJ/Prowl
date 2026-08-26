@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | In progress — S1 #715, S2 #718, S3a #721/#723, S3b #725 merged; S3c (Pi/OMP/OpenCode) in progress |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); #718 (S2); #721, #723 (S3a); #725 (S3b); S3c TBD |
+| **Primary PRs** | #715 (S1); #718 (S2); #721, #723 (S3a); #725 (S3b); #728 (S3c) |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
