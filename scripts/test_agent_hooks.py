@@ -49,12 +49,24 @@ PI_FAMILY_HARNESS = textwrap.dedent(
       }
     }
     const [extensionPath, scriptPath] = process.argv.slice(2);
-    const module = await import(pathToFileURL(extensionPath));
-    const handlers = new Map();
-    module.default({ on(name, handler) { handlers.set(name, handler); } });
     const steps = JSON.parse(await import("node:fs").then((fs) => fs.promises.readFile(scriptPath, "utf8")));
+    // A step may name an `instance`: the runtime loads a fresh module instance on `/reload` and
+    // for every sub-agent session, which a cache-busting query reproduces here.
+    const instances = new Map();
+    async function handlersFor(instance) {
+      const key = instance ?? 0;
+      if (!instances.has(key)) {
+        const url = pathToFileURL(extensionPath);
+        url.searchParams.set("instance", String(key));
+        const module = await import(url.href);
+        const handlers = new Map();
+        module.default({ on(name, handler) { handlers.set(name, handler); } });
+        instances.set(key, handlers);
+      }
+      return instances.get(key);
+    }
     for (const step of steps) {
-      const handler = handlers.get(step.event);
+      const handler = (await handlersFor(step.instance)).get(step.event);
       if (!handler) continue;
       const ctx = {
         hasUI: step.hasUI,
@@ -227,6 +239,41 @@ class AgentHookExtensionTests(unittest.TestCase):
             [(payload["hook_event_name"], payload["session_id"]) for _, payload in forwarded],
             [(step["event"], step["session"]) for step in steps],
         )
+
+    def test_pi_reload_swaps_instances_without_ending_or_reannouncing_the_session(self):
+        # `/reload` fires `session_shutdown{reload}` on the old instance and, milliseconds later,
+        # `session_start{reload}` on a fresh instance with the same id; the session continues.
+        forwarded = self.pi_family(
+            "pi",
+            [
+                {"event": "session_start", "hasUI": True, "session": "main-1", "file": self.MAIN_1, "instance": 1},
+                {"event": "agent_settled", "hasUI": True, "session": "main-1", "file": self.MAIN_1, "instance": 1},
+                {"event": "session_shutdown", "hasUI": True, "session": "main-1", "file": self.MAIN_1, "instance": 1, "payload": {"type": "session_shutdown", "reason": "reload"}},
+                {"event": "session_start", "hasUI": True, "session": "main-1", "file": self.MAIN_1, "instance": 2, "payload": {"type": "session_start", "reason": "reload"}},
+                {"event": "agent_settled", "hasUI": True, "session": "main-1", "file": self.MAIN_1, "instance": 2},
+                {"event": "session_shutdown", "hasUI": True, "session": "main-1", "file": self.MAIN_1, "instance": 2, "payload": {"type": "session_shutdown", "reason": "quit"}},
+            ],
+        )
+        self.assertEqual(
+            [(payload["hook_event_name"], payload["session_id"], payload.get("reason")) for _, payload in forwarded],
+            [("session_start", "main-1", None), ("agent_settled", "main-1", None), ("agent_settled", "main-1", None), ("session_shutdown", "main-1", "quit")],
+        )
+
+    def test_deliveries_stay_ordered_across_extension_instances(self):
+        # Instances loaded for sub-agent sessions (and by `/reload`) share one delivery order.
+        steps = []
+        for index in range(10):
+            main = f"main-{index}"
+            main_file = f"/s/2026-08-26T10-00-00-{index:03d}Z_{main}.jsonl"
+            sub_file = f"/s/2026-08-26T10-00-00-{index:03d}Z_{main}/Worker.jsonl"
+            steps.append({"event": "session_start", "hasUI": True, "session": main, "file": main_file, "instance": 1})
+            steps.append({"event": "tool_approval_requested", "hasUI": False, "session": f"sub-{index}", "file": sub_file, "instance": 2, "payload": {"type": "tool_approval_requested", "toolName": "write"}})
+            steps.append({"event": "session_stop", "hasUI": True, "session": main, "file": main_file, "instance": 1})
+        forwarded = self.pi_family("omp", steps)
+        expected = []
+        for index in range(10):
+            expected += [("session_start", f"main-{index}"), ("tool_approval_requested", f"main-{index}"), ("session_stop", f"main-{index}")]
+        self.assertEqual([(payload["hook_event_name"], payload["session_id"]) for _, payload in forwarded], expected)
 
     def test_pi_without_a_launch_token_spawns_nothing(self):
         forwarded = self.pi_family("pi", [{"event": "session_start", "hasUI": True, "session": "main-1", "file": self.MAIN_1}], token=None)

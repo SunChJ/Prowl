@@ -43,13 +43,16 @@ function parentSessionId(ctx: any): string | undefined {
   return undefined;
 }
 
-// Deliveries are serialized per extension instance: adjacent lifecycle events (Pi's
-// `agent_settled` and `session_shutdown` are milliseconds apart at exit) would otherwise race
-// as independent processes and could reach Prowl out of order, where a late session start
-// clears the terminal evidence a wait relies on. The runtime callback never waits on the queue,
-// and a bridge that hangs is killed after a bound so later events keep flowing.
+// Deliveries are serialized process-wide: adjacent lifecycle events (Pi's `agent_settled` and
+// `session_shutdown` are milliseconds apart at exit) would otherwise race as independent
+// processes and could reach Prowl out of order, where a late session start clears the terminal
+// evidence a wait relies on. The queue lives on `globalThis` because the runtime loads a fresh
+// module instance on `/reload` and for every sub-agent session (measured), and those instances
+// must share one order. The runtime callback never waits on the queue, and a bridge that hangs
+// is killed after a bound so later events keep flowing.
 const DELIVERY_TIMEOUT_MS = 5000;
-let deliveries: Promise<void> = Promise.resolve();
+const QUEUE_KEY = "__prowlHookDeliveries";
+const shared = globalThis as unknown as Record<string, Promise<void> | undefined>;
 
 function deliver(name: string, payload: Record<string, unknown>): Promise<void> {
   return new Promise((resolve) => {
@@ -84,12 +87,18 @@ function deliver(name: string, payload: Record<string, unknown>): Promise<void> 
 }
 
 function enqueue(name: string, payload: Record<string, unknown>): void {
-  deliveries = deliveries.then(() => deliver(name, payload)).catch(() => {});
+  const previous = shared[QUEUE_KEY] ?? Promise.resolve();
+  shared[QUEUE_KEY] = previous.then(() => deliver(name, payload)).catch(() => {});
 }
 
 function relay(name: string, event: any, ctx: any): void {
   try {
     if (!process.env[TOKEN_VARIABLE]) return;
+    // `/reload` swaps the extension instances: the old one reports `session_shutdown` and the
+    // new one `session_start`, both with reason "reload" and the same session id. The session
+    // neither ends nor changes, so neither is forwarded — a late shutdown would otherwise read
+    // as the live session ending.
+    if (event?.reason === "reload") return;
     let sessionId = ctx?.sessionManager?.getSessionId?.();
     if (typeof sessionId !== "string" || sessionId.length === 0) return;
     const parent = parentSessionId(ctx);

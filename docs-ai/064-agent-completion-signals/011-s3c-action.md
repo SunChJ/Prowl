@@ -131,6 +131,16 @@ approval reported `needs-input` on the pane's session and the wait resolved on t
   never waits on it, and a bridge that hangs is killed after 5 s so later events keep flowing.
   The Node harness fires every step back to back and asserts strict order, including a 36-event
   burst. `make test-scripts` now runs in CI alongside the other test tasks.
+- A per-instance queue still raced across instances: Pi's `/reload` has the old instance report
+  `session_shutdown{reason:"reload"}` and, 4 ms later, a fresh instance report
+  `session_start{reason:"reload"}` for the same session id (measured), so a late shutdown could
+  become the live session's exact `session-end` and complete `agents wait --until exit` while
+  the runtime is alive. Two changes: reload-reason lifecycle events are not forwarded at all (the
+  session neither ends nor changes; OMP has no `/reload` — the text is treated as input), and the
+  delivery queue now lives on `globalThis`, which every module instance in the process shares
+  (measured), so sub-agent instances and reloads keep one order. The harness loads extra
+  instances through a cache-busting import and pins both the reload sequence and cross-instance
+  ordering; both tests fail against the previous relay.
 
 ### Display sleep is the CREATE_FAILED behind the "intermittent" Profile launches
 

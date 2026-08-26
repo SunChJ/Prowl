@@ -15,13 +15,16 @@ const FORWARDED_EVENTS = new Set(["session.idle", "permission.asked", "question.
 const TOKEN_VARIABLE = "PROWL_AGENT_HOOK_TOKEN";
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prowl-cli", "prowl");
 
-// Deliveries are serialized per extension instance: adjacent lifecycle events (Pi's
-// `agent_settled` and `session_shutdown` are milliseconds apart at exit) would otherwise race
-// as independent processes and could reach Prowl out of order, where a late session start
-// clears the terminal evidence a wait relies on. The runtime callback never waits on the queue,
-// and a bridge that hangs is killed after a bound so later events keep flowing.
+// Deliveries are serialized process-wide: adjacent lifecycle events (Pi's `agent_settled` and
+// `session_shutdown` are milliseconds apart at exit) would otherwise race as independent
+// processes and could reach Prowl out of order, where a late session start clears the terminal
+// evidence a wait relies on. The queue lives on `globalThis` because the runtime loads a fresh
+// module instance on `/reload` and for every sub-agent session (measured), and those instances
+// must share one order. The runtime callback never waits on the queue, and a bridge that hangs
+// is killed after a bound so later events keep flowing.
 const DELIVERY_TIMEOUT_MS = 5000;
-let deliveries: Promise<void> = Promise.resolve();
+const QUEUE_KEY = "__prowlHookDeliveries";
+const shared = globalThis as unknown as Record<string, Promise<void> | undefined>;
 
 function deliver(name: string, payload: Record<string, unknown>): Promise<void> {
   return new Promise((resolve) => {
@@ -56,7 +59,8 @@ function deliver(name: string, payload: Record<string, unknown>): Promise<void> 
 }
 
 function enqueue(name: string, payload: Record<string, unknown>): void {
-  deliveries = deliveries.then(() => deliver(name, payload)).catch(() => {});
+  const previous = shared[QUEUE_KEY] ?? Promise.resolve();
+  shared[QUEUE_KEY] = previous.then(() => deliver(name, payload)).catch(() => {});
 }
 
 export const ProwlHooks = async ({ directory }: any) => {

@@ -180,9 +180,12 @@ Sub-agent protection for OpenCode (two layers, both required — measured above)
 Fail-open rules for the extension code: every handler is wrapped, the spawn uses
 `stdio: ["pipe","ignore","ignore"]`, nothing is awaited on the runtime's path, no output is
 written to the runtime's UI, and any failure to spawn is swallowed. A hook that cannot reach
-Prowl changes nothing for the agent. Deliveries are serialized per extension instance (the next
-bridge process starts only after the previous one closed, with a 5 s kill bound) so adjacent
-events keep their order the way a runtime running hook commands sequentially would.
+Prowl changes nothing for the agent. Deliveries are serialized process-wide through a queue on
+`globalThis` (the next bridge process starts only after the previous one closed, with a 5 s kill
+bound) so adjacent events keep their order the way a runtime running hook commands sequentially
+would — including across the fresh module instances Pi loads on `/reload` and the Pi family
+loads per sub-agent session. Reload-reason `session_shutdown` / `session_start` are not
+forwarded: the session continues under the same id.
 
 ## Docs and closure
 
