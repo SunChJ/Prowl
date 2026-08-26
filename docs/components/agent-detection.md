@@ -177,8 +177,9 @@ bridges without writing user, dedicated-home, or project configuration:
   as `turn-ended` (its `agent_end` fires once per in-process `task` sub-agent and is ignored),
   `tool_approval_requested` as `needs-input` (the built-in approval prompt under
   `--approval-mode always-ask`), and `session_shutdown`. Its in-process `task` sub-agents run
-  under their own session ids; the extension recognises them by their nested session file and
-  forwards only their approval prompts, attributed to the pane's session. OpenCode reports `session.idle` as
+  under their own session ids with their session files nested inside the pane session's
+  directory; the extension recognises them by that nesting and forwards only their approval
+  prompts, attributed to the pane's session. OpenCode reports `session.idle` as
   `turn-ended` and `permission.asked` / `question.asked` as `needs-input`, only for the
   session the pane is talking to — sub-agent sessions are filtered out by their `parentID`.
   OpenCode announces no session start: its session exists only after the first prompt and

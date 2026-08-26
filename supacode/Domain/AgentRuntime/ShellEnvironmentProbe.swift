@@ -35,10 +35,7 @@ nonisolated enum ShellEnvironmentProbe {
     run: (@Sendable (URL, String) async throws -> ShellOutput)? = nil
   ) async -> Resolution {
     guard !variables.isEmpty, variables.allSatisfy(isShellIdentifier) else { return .failed }
-    let execute =
-      run ?? { cwd, script in
-        try await CodexShellProbeProcess().run(cwd: cwd, script: script)
-      }
+    let execute = run ?? defaultRunner()
     var effectiveScript = script(for: variables)
     if let pathOverride {
       effectiveScript = "PATH=\(AgentInvocation.shellQuote(pathOverride)); export PATH\n" + effectiveScript
@@ -50,6 +47,21 @@ nonisolated enum ShellEnvironmentProbe {
       let values = parse(output.stdout, variables: variables)
     else { return .failed }
     return .values(values)
+  }
+
+  /// The production runner: the login-shell probe Codex uses, with this probe's output bound.
+  /// The Codex config probe defaults to 16 KiB; an exported `OPENCODE_CONFIG_CONTENT` can
+  /// legitimately be larger. `environment` is for tests that must not mutate the host's.
+  static func defaultRunner(
+    timeout: TimeInterval = 1,
+    environment: [String: String]? = nil
+  ) -> @Sendable (URL, String) async throws -> ShellOutput {
+    let process = CodexShellProbeProcess(
+      timeout: timeout,
+      maximumOutputBytes: maximumOutputBytes,
+      environment: environment
+    )
+    return { cwd, script in try await process.run(cwd: cwd, script: script) }
   }
 
   private static func isShellIdentifier(_ name: String) -> Bool {

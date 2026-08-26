@@ -94,12 +94,34 @@ matches. In fact each in-process `task` sub-agent starts its own session (file n
 parent's session directory and named after the agent, `<ts>_<parent>/PongResponder.jsonl`,
 even `PongResponder.ExactPong.jsonl` one level deeper) and fires its own `session_start`, so the
 relay announced a rotation, the store retired the main session, and the parent's real
-`session_stop` was rejected. The extension now classifies a session by its file name: anything
-other than `<timestamp>_<uuid>.jsonl` is a sub-agent, whose `session_start` /
+`session_stop` was rejected. Two attempts preceded the final rule. A file-name test
+(`<timestamp>_<uuid>.jsonl` = main) dropped every event of a Pi session started with a custom
+`--session-id`, which review caught. A stateful rule ("the first announcer, or a UI context's
+re-announcement, is the main session") passed its harness and failed live: the runtime loads a
+**fresh extension instance for every sub-agent session** (measured — distinct module instances
+sharing one `globalThis`), so the sub-agent's instance saw its own `session_start` as the first.
+The final rule is stateless and structural: a sub-agent's session file is nested inside the
+parent's session directory (`<timestamp>_<parent>/<Agent>.jsonl`, deeper for nested sub-agents),
+so a session whose file has a session-directory ancestor is a sub-agent and that directory names
+the pane's session id — the id itself is never interpreted. Its `session_start` /
 `session_shutdown` are dropped while its `tool_approval_requested` — which still blocks the user
-— is forwarded under the main session id last announced. Pi carries the same guard. Re-verified
-live: the approval reported `needs-input` on the main session and the wait resolved on the
-parent's `session_stop`.
+— is forwarded under the pane's session. Pi carries the same guard, and
+`scripts/test_agent_hooks.py` runs the real extensions through Node against a capture CLI
+(custom ids, nested and doubly nested files, ephemeral sessions, `/new`, OMP `session_switch`,
+sub-agent approvals, OpenCode `parentID` filtering, no-token silence). Re-verified live: the
+approval reported `needs-input` on the pane's session and the wait resolved on the parent's
+`session_stop`.
+
+### Review fixes
+
+- OpenCode's TUI `--replay-limit <N>` was missing from the value-option table, so `7` would
+  have been registered as the project directory and every hook rejected on the cwd guard with
+  no warning. The table now matches the 1.18.23 `--help`, and — because OpenCode refuses to
+  start in a directory that does not exist — a positional that is not an existing directory is
+  treated as the value of an unknown option and the launch directory stays inherited.
+- `ShellEnvironmentProbe` declared a 256 KiB bound but ran the Codex probe process at its 16 KiB
+  default, so a ~20 KiB exported `OPENCODE_CONFIG_CONTENT` degraded the launch. The process
+  bound now follows the probe's; covered at the process level and through the production runner.
 
 ### Display sleep is the CREATE_FAILED behind the "intermittent" Profile launches
 

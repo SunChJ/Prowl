@@ -223,6 +223,20 @@ struct AgentS3cHookRenderingTests {
       OpenCodeLaunchDirectory.scan(arguments: ["--prompt", "Review this"], promptArgumentIndex: 1)
         == Scan.inherited)
     #expect(OpenCodeLaunchDirectory.scan(arguments: ["--auto", "--", "x"], promptArgumentIndex: nil) == Scan.inherited)
+    // Every OpenCode 1.18.23 TUI option that takes a value must be known, or its value would be
+    // read as the project (`--replay-limit 7` would register `<cwd>/7`).
+    #expect(
+      OpenCodeLaunchDirectory.scan(
+        arguments: ["--mini", "--no-replay", "--replay-limit", "7", "--prompt", "Review this"], promptArgumentIndex: 5)
+        == Scan.inherited)
+    #expect(
+      OpenCodeLaunchDirectory.scan(
+        arguments: [
+          "--log-level", "DEBUG", "--port", "4096", "--hostname", "127.0.0.1", "--mdns", "--mdns-domain", "x.local",
+          "--cors", "a.example", "-s", "ses_1", "--fork", "--agent", "plan", "--variant", "high",
+        ],
+        promptArgumentIndex: nil)
+        == Scan.inherited)
     #expect(OpenCodeLaunchDirectory.scan(arguments: ["a", "b"], promptArgumentIndex: nil) == Scan.malformed)
     #expect(
       OpenCodeLaunchDirectory.scan(
@@ -338,12 +352,26 @@ struct AgentS3cHookRenderingTests {
     #expect(ambiguous.preparedInvocation == nil)
     #expect(ambiguous.warning?.message.contains("project directory") == true)
 
+    try FileManager.default.createDirectory(at: root.appending(path: "nested"), withIntermediateDirectories: true)
     let project = await AgentManagedHookPreparer.prepare(
-      plan: makePlan(runtime: .opencode, arguments: ["nested", "--prompt", "Review this"]),
+      plan: makePlan(runtime: .opencode, arguments: ["nested", "--prompt", "Review this"], prompt: "Review this"),
       inheritedCWD: root, resources: resources,
       openCodeEnvironmentResolver: { _, _ in .values(["OPENCODE_CONFIG_CONTENT": nil, "OPENCODE_PURE": nil]) }
     )
     #expect(trimmed(project.launchCWD) == trimmed(root.appending(path: "nested")))
+
+    // OpenCode refuses to start in a directory that does not exist, so a positional that is not
+    // an existing directory can only be the value of an option the scanner does not know: the
+    // launch directory stays inherited instead of registering a path the hooks would never report.
+    let unknownValue = await AgentManagedHookPreparer.prepare(
+      plan: makePlan(
+        runtime: .opencode, arguments: ["--future-option", "7", "--prompt", "Review this"], prompt: "Review this"),
+      inheritedCWD: root, resources: resources,
+      openCodeEnvironmentResolver: { _, _ in .values(["OPENCODE_CONFIG_CONTENT": nil, "OPENCODE_PURE": nil]) }
+    )
+    #expect(unknownValue.warning == nil)
+    #expect(unknownValue.launchCWD == root)
+    #expect(unknownValue.preparedInvocation != nil)
 
     resources.opencodePluginPath = nil
     let missing = await AgentManagedHookPreparer.prepare(
@@ -376,6 +404,21 @@ struct AgentS3cHookRenderingTests {
       run: Self.runShell(env: ["PATH": "/usr/bin:/bin"])
     )
     #expect(withPath == .values(["PATH": "/custom/bin:/usr/bin:/bin"]))
+  }
+
+  /// The production runner is the login-shell probe Codex uses, whose own default output bound
+  /// is 16 KiB; a 20 KiB exported content must still come back whole. Only the deadline is
+  /// relaxed, because the parallel suite can starve a real login shell past one second.
+  @Test func shellEnvironmentProbeCarriesA20KiBValueThroughTheProductionRunner() async {
+    let name = "PROWL_S3C_PROBE_LARGE_VALUE"
+    let value = String(repeating: "x", count: 20 * 1_024)
+    let environment = ProcessInfo.processInfo.environment.merging([name: value]) { $1 }
+    let resolution = await ShellEnvironmentProbe.resolve(
+      variables: [name],
+      cwd: FileManager.default.temporaryDirectory,
+      run: ShellEnvironmentProbe.defaultRunner(timeout: 15, environment: environment)
+    )
+    #expect(resolution == .values([name: value]))
   }
 
   @Test func shellEnvironmentProbeFailsClosedOnBadNamesOrIncompleteOutput() async {

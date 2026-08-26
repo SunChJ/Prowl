@@ -896,11 +896,13 @@ nonisolated enum OpenCodeHookPluginPreparer {
 /// `opencode run` (a repeated `--dir` crashes the runtime, so the last one is taken as its
 /// intent); neither form has an environment equivalent.
 nonisolated enum OpenCodeLaunchDirectory {
-  /// Options that consume the next argument, so a value is never mistaken for the project.
+  /// Options that consume the next argument (OpenCode 1.18.23 `--help`, TUI and `run`), so a
+  /// value is never mistaken for the project. The preparer additionally requires a project
+  /// positional to be an existing directory, which catches a value option added later.
   private static let valueOptions: Set<String> = [
     "-m", "--model", "--agent", "--prompt", "--variant", "-s", "--session", "--port", "--hostname",
-    "--mdns-domain", "--cors", "--log-level", "--dir", "--command", "-f", "--file", "--title",
-    "--attach", "-p", "--password", "-u", "--username", "--format",
+    "--mdns-domain", "--cors", "--log-level", "--replay-limit", "--dir", "--command", "-f", "--file",
+    "--title", "--attach", "-p", "--password", "-u", "--username", "--format",
   ]
 
   static func scan(arguments: [String], promptArgumentIndex: Int?) -> ManagedHookWorkingDirectory.Scan {

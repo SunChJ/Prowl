@@ -129,10 +129,19 @@ id, so it is the announcing edge the store's rotation rule needs. Pi's
 `session_start{reason:"reload"}` re-announces the current id, which is idempotent; `/resume`
 re-announces a retired id, which S3b's resume rule reactivates.
 
-Sub-agent protection for the Pi family lives in the extension: a session whose file name is not
-`<timestamp>_<uuid>.jsonl` (i.e. nested under a session directory) is a sub-agent. Its
-`session_start` / `session_shutdown` are dropped; its `tool_approval_requested` — which still
-blocks the user — is forwarded under the main session id the extension last saw announced.
+Sub-agent protection for the Pi family lives in the extension and must be **stateless**: the
+runtime loads a fresh extension instance for every sub-agent session (measured — distinct
+module instances sharing one `globalThis`), so nothing learned from the main session's events is
+visible where a sub-agent's events arrive. The structural fact that survives this is the file
+layout: a main session file sits directly in its session directory as `<timestamp>_<id>.jsonl`
+(the id is opaque — `--session-id` accepts any name), while a sub-agent's file is nested inside
+the parent's session directory (`<timestamp>_<parent>/<Agent>.jsonl`, deeper again for a
+sub-agent's sub-agent). A session whose file has a session-directory ancestor is a sub-agent,
+and that directory names the pane's session id. A sub-agent's `session_start` /
+`session_shutdown` are dropped; its `tool_approval_requested` — which still blocks the user —
+is forwarded under the pane's session id. A session without a file (ephemeral) is treated as the
+pane's. `scripts/test_agent_hooks.py` drives the real extensions through Node against a capture
+CLI to pin these decisions.
 
 Sub-agent protection for OpenCode (two layers, both required — measured above):
 

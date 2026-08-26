@@ -21,18 +21,26 @@ const FORWARDED_EVENTS = [
 const TOKEN_VARIABLE = "PROWL_AGENT_HOOK_TOKEN";
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prowl-cli", "prowl");
 
-// A main session's file is `<bucket>/<timestamp>_<uuid>.jsonl`; an in-process sub-agent (Oh My
-// Pi's `task` tool) runs under its own session id whose file is nested inside the parent's
-// session directory and named after the agent (`PongResponder.jsonl`). Its lifecycle events must
-// not rotate the pane's session, but an approval it asks for still blocks the user.
-const MAIN_SESSION_FILE = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z_[0-9a-f-]{36}\.jsonl$/i;
-let mainSessionId: string | undefined;
+// Session files live directly in the session directory as `<timestamp>_<id>.jsonl`, where the id
+// is opaque (`--session-id` accepts any name). An in-process sub-agent (Oh My Pi's `task` tool)
+// runs under its own session id and stores its file *inside* the parent's session directory
+// (`<timestamp>_<parent>/<Agent>.jsonl`, nested again for a sub-agent's sub-agent). The runtime
+// loads a fresh extension instance for each of those sessions, so the classification must be
+// stateless: a session is a sub-agent when any ancestor directory of its file is a session
+// directory, and the pane's session id is that directory's id. Sub-agent lifecycle events must
+// not rotate the pane's session, while an approval a sub-agent asks for still blocks the user
+// and is reported under the pane's session.
+const SESSION_DIRECTORY = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z_(.+)$/;
 
-function isSubAgentSession(ctx: any): boolean {
+function parentSessionId(ctx: any): string | undefined {
   const file = ctx?.sessionManager?.getSessionFile?.();
-  if (typeof file !== "string" || file.length === 0) return false;
-  const name = file.slice(file.lastIndexOf("/") + 1);
-  return !MAIN_SESSION_FILE.test(name);
+  if (typeof file !== "string" || file.length === 0) return undefined;
+  const components = file.split("/");
+  for (const directory of components.slice(0, -1)) {
+    const match = SESSION_DIRECTORY.exec(directory);
+    if (match) return match[1];
+  }
+  return undefined;
 }
 
 function relay(name: string, event: any, ctx: any): void {
@@ -40,11 +48,10 @@ function relay(name: string, event: any, ctx: any): void {
     if (!process.env[TOKEN_VARIABLE]) return;
     let sessionId = ctx?.sessionManager?.getSessionId?.();
     if (typeof sessionId !== "string" || sessionId.length === 0) return;
-    if (isSubAgentSession(ctx)) {
-      if (name !== "tool_approval_requested" || !mainSessionId) return;
-      sessionId = mainSessionId;
-    } else if (name === "session_start" || name === "session_switch") {
-      mainSessionId = sessionId;
+    const parent = parentSessionId(ctx);
+    if (parent !== undefined) {
+      if (name !== "tool_approval_requested") return;
+      sessionId = parent;
     }
     const reason = typeof event?.reason === "string" ? event.reason : event?.toolName;
     const payload = {

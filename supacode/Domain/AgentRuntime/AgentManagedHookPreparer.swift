@@ -229,7 +229,7 @@ nonisolated enum AgentManagedHookPreparer {
     }
     let arguments = plan.invocation.arguments
     guard
-      let launchCWD = ManagedHookWorkingDirectory.effective(
+      var launchCWD = ManagedHookWorkingDirectory.effective(
         inherited: inheritedCWD,
         scan: OpenCodeLaunchDirectory.scan(arguments: arguments, promptArgumentIndex: promptIndex)
       )
@@ -240,6 +240,15 @@ nonisolated enum AgentManagedHookPreparer {
         launchCWD: inheritedCWD,
         message: "The OpenCode project directory could not be resolved."
       )
+    }
+    // OpenCode refuses to start in a directory that does not exist, so a candidate that is not
+    // one can only be the value of an option the scanner does not know; the hooks will report
+    // the launch directory in that case.
+    var isDirectory: ObjCBool = false
+    if !FileManager.default.fileExists(atPath: launchCWD.path(percentEncoded: false), isDirectory: &isDirectory)
+      || !isDirectory.boolValue
+    {
+      launchCWD = inheritedCWD
     }
     let overrides = plan.profileEnvironmentOverrides
     var content = overrides[OpenCodeHookPluginPreparer.contentVariableName]
