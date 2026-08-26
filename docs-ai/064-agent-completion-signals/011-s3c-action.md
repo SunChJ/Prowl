@@ -122,6 +122,15 @@ approval reported `needs-input` on the pane's session and the wait resolved on t
 - `ShellEnvironmentProbe` declared a 256 KiB bound but ran the Codex probe process at its 16 KiB
   default, so a ~20 KiB exported `OPENCODE_CONFIG_CONTENT` degraded the launch. The process
   bound now follows the probe's; covered at the process level and through the production runner.
+- The relays spawned one bridge process per event without waiting, so adjacent lifecycle events
+  (Pi's `agent_settled` and `session_shutdown` are milliseconds apart at exit; a `/new` is a
+  `session_shutdown` immediately followed by a `session_start`) could reach Prowl out of order,
+  where a late session start clears the terminal evidence a wait relies on. The native-hook
+  runtimes run their hook commands sequentially; the extensions now do the same per instance —
+  a promise queue starts the next bridge only after the previous one closed, the runtime callback
+  never waits on it, and a bridge that hangs is killed after 5 s so later events keep flowing.
+  The Node harness fires every step back to back and asserts strict order, including a 36-event
+  burst. `make test-scripts` now runs in CI alongside the other test tasks.
 
 ### Display sleep is the CREATE_FAILED behind the "intermittent" Profile launches
 

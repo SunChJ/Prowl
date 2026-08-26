@@ -35,11 +35,17 @@ PI_FAMILY_HARNESS = textwrap.dedent(
     async function captureCount() {
       try { return (await fs.readFile(capturePath, "utf8")).split("\\n").filter(Boolean).length; } catch { return 0; }
     }
-    async function settle(before) {
-      const deadline = Date.now() + 700;
+    // Handlers are fired back to back, the way a runtime emits adjacent lifecycle events; the
+    // relay must serialize its own deliveries, so the capture order is asserted strictly.
+    async function quiesce() {
+      let last = -1;
+      let stableSince = Date.now();
+      const deadline = Date.now() + 8000;
       while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        if ((await captureCount()) > before) { await new Promise((resolve) => setTimeout(resolve, 50)); return; }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const count = await captureCount();
+        if (count !== last) { last = count; stableSince = Date.now(); }
+        else if (Date.now() - stableSince > 500) return;
       }
     }
     const [extensionPath, scriptPath] = process.argv.slice(2);
@@ -59,12 +65,9 @@ PI_FAMILY_HARNESS = textwrap.dedent(
           getSessionFile: () => step.file,
         },
       };
-      const before = await captureCount();
       await handler(step.payload ?? { type: step.event }, ctx);
-      // The relay spawns the CLI without awaiting it; wait for a capture to land (or for a
-      // dropped event's grace period to pass) so the forwarding order stays observable.
-      await settle(before);
     }
+    await quiesce();
     """
 )
 
@@ -76,11 +79,17 @@ OPENCODE_HARNESS = textwrap.dedent(
     async function captureCount() {
       try { return (await fs.readFile(capturePath, "utf8")).split("\\n").filter(Boolean).length; } catch { return 0; }
     }
-    async function settle(before) {
-      const deadline = Date.now() + 700;
+    // Handlers are fired back to back, the way a runtime emits adjacent lifecycle events; the
+    // relay must serialize its own deliveries, so the capture order is asserted strictly.
+    async function quiesce() {
+      let last = -1;
+      let stableSince = Date.now();
+      const deadline = Date.now() + 8000;
       while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        if ((await captureCount()) > before) { await new Promise((resolve) => setTimeout(resolve, 50)); return; }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const count = await captureCount();
+        if (count !== last) { last = count; stableSince = Date.now(); }
+        else if (Date.now() - stableSince > 500) return;
       }
     }
     const [pluginPath, scriptPath] = process.argv.slice(2);
@@ -88,10 +97,9 @@ OPENCODE_HARNESS = textwrap.dedent(
     const hooks = await module.ProwlHooks({ directory: "/tmp/project", worktree: "/tmp/project", project: {}, client: {}, $: null });
     const events = JSON.parse(await import("node:fs").then((fs) => fs.promises.readFile(scriptPath, "utf8")));
     for (const event of events) {
-      const before = await captureCount();
       await hooks.event({ event });
-      await settle(before);
     }
+    await quiesce();
     """
 )
 
@@ -202,6 +210,22 @@ class AgentHookExtensionTests(unittest.TestCase):
         self.assertEqual(
             [(payload["hook_event_name"], payload["session_id"]) for _, payload in forwarded],
             [("session_start", "main-1"), ("session_shutdown", "main-1"), ("session_start", "main-2"), ("agent_settled", "main-2")],
+        )
+
+    def test_pi_keeps_lifecycle_order_across_a_burst_of_adjacent_events(self):
+        # Pi emits `agent_settled` and `session_shutdown` milliseconds apart at exit, and a
+        # `/new` rotation is a `session_shutdown` immediately followed by a `session_start`.
+        steps = []
+        for index in range(12):
+            session = f"main-{index}"
+            file = f"/s/2026-08-26T10-00-00-{index:03d}Z_{session}.jsonl"
+            steps.append({"event": "session_start", "hasUI": True, "session": session, "file": file})
+            steps.append({"event": "agent_settled", "hasUI": True, "session": session, "file": file})
+            steps.append({"event": "session_shutdown", "hasUI": True, "session": session, "file": file})
+        forwarded = self.pi_family("pi", steps)
+        self.assertEqual(
+            [(payload["hook_event_name"], payload["session_id"]) for _, payload in forwarded],
+            [(step["event"], step["session"]) for step in steps],
         )
 
     def test_pi_without_a_launch_token_spawns_nothing(self):

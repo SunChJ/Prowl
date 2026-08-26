@@ -180,7 +180,9 @@ Sub-agent protection for OpenCode (two layers, both required — measured above)
 Fail-open rules for the extension code: every handler is wrapped, the spawn uses
 `stdio: ["pipe","ignore","ignore"]`, nothing is awaited on the runtime's path, no output is
 written to the runtime's UI, and any failure to spawn is swallowed. A hook that cannot reach
-Prowl changes nothing for the agent.
+Prowl changes nothing for the agent. Deliveries are serialized per extension instance (the next
+bridge process starts only after the previous one closed, with a 5 s kill bound) so adjacent
+events keep their order the way a runtime running hook commands sequentially would.
 
 ## Docs and closure
 
