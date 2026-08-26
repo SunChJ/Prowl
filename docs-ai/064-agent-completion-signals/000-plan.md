@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 #715 and S2 #718 merged; S3a Claude/Codex implementation is ready for review |
+| **Status** | In progress — S1 #715, S2 #718, S3a #721/#723, S3b #725 merged; S3c (Pi/OMP/OpenCode) in progress |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); #718 (S2); #721 (S3a); S3b–S3c TBD |
+| **Primary PRs** | #715 (S1); #718 (S2); #721, #723 (S3a); #725 (S3b); S3c TBD |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -141,8 +141,9 @@ When a Prowl-launched runtime declares a `sessionStart` hook, the launch boundar
 the corresponding signal within a grace window; if it never arrives the pane is marked
 `signals: none` (hooks did not load) instead of silently pretending. `prowl agents`
 JSON gains `signals: {channels: [...], last: {...}}` per pane, where channels describe only
-current-epoch observed or verified-live evidence rather than theoretical runtime support. The
-Active Agents panel shows a small "exact" badge for panes with a live deterministic channel.
+current-epoch observed or verified-live evidence rather than theoretical runtime support. An
+Active Agents "exact" badge was considered for S3c and dropped on 2026-08-26 without
+commitment; `prowl agents --json` is the surface for exact coverage.
 
 ### Judging heuristic results (skill, not code)
 
@@ -244,6 +245,10 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-26: S3b merged (#725); planned S3c for Pi, Oh My Pi, and OpenCode after a
+  live re-attestation (Pi 0.84.3, OMP 18.0.6, OpenCode 1.18.23) — extensions relay native event
+  names in the Claude-shaped envelope, OMP maps `session_stop`, OpenCode is non-announcing with a
+  sub-agent filter, and the exact badge was dropped. See [010-s3c-plan.md](010-s3c-plan.md).
 - Updated 2026-08-25: implemented S3b for Copilot, Droid, and Qoder, and corrected an S3a-era
   defect it exposed — hook cwd validation compared unresolved paths, so a runtime reporting
   `process.cwd()` (already symlink-resolved) was silently rejected. Copilot is verified live;

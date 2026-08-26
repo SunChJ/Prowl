@@ -2,8 +2,9 @@
 
 ## Status
 
-Implemented on `feat/agent-signal-hooks-s3b`. Plan: [008-s3b-plan.md](008-s3b-plan.md).
-S3 wave 1 remains incomplete until S3c.
+Merged in [#725](https://github.com/onevcat/Prowl/pull/725) from `feat/agent-signal-hooks-s3b`.
+Plan: [008-s3b-plan.md](008-s3b-plan.md). S3 wave 1 remains incomplete until S3c
+([010-s3c-plan.md](010-s3c-plan.md)).
 
 Live acceptance is complete: Copilot, Droid, and Qoder are each verified end to end. Droid
 needed a fix outside S3b's own code — see "Droid: the launch process is the generation
