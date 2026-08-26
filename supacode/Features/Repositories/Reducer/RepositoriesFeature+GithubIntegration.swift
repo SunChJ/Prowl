@@ -71,7 +71,7 @@ extension RepositoriesFeature {
       let repositoryRootURL = worktree.repositoryRootURL
       let worktreeIDs = repository.worktrees.map(\.id)
       return .run { send in
-        try? await ContinuousClock().sleep(for: .seconds(2))
+        try? await clock.sleep(for: .seconds(2))
         await send(
           .worktreeInfoEvent(
             .repositoryPullRequestRefresh(
@@ -181,7 +181,7 @@ extension RepositoriesFeature {
         clearAllPullRequestRefreshTracking(state: &state)
         return .run { send in
           while !Task.isCancelled {
-            try? await ContinuousClock().sleep(for: githubIntegrationRecoveryInterval)
+            try? await clock.sleep(for: githubIntegrationRecoveryInterval)
             guard !Task.isCancelled else {
               return
             }

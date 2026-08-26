@@ -902,7 +902,7 @@ extension RepositoriesFeature {
         return .cancel(id: CancelID.toastAutoDismiss)
       case .success, .warning:
         return .run { send in
-          try? await ContinuousClock().sleep(for: .seconds(3))
+          try? await clock.sleep(for: .seconds(3))
           await send(.dismissToast)
         }
         .cancellable(id: CancelID.toastAutoDismiss, cancelInFlight: true)
