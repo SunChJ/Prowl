@@ -15,48 +15,24 @@ nonisolated enum DroidSettingsEnvironmentProbe {
     case failed
   }
 
-  private static let startMarker = "__PROWL_DROID_SETTINGS__"
-  private static let endMarker = "__PROWL_DROID_END__"
-  private static let script = """
-    printf '%s%s\\n' '\(startMarker)' "${\(variableName)-}"
-    printf '%s\\n' '\(endMarker)'
-    """
-
   static func resolve(
     cwd: URL,
     pathOverride: String? = nil,
     run: (@Sendable (URL, String) async throws -> ShellOutput)? = nil
   ) async -> Resolution {
-    let execute =
-      run ?? { cwd, script in
-        try await CodexShellProbeProcess().run(cwd: cwd, script: script)
-      }
-    let effectiveScript: String
-    if let pathOverride {
-      effectiveScript = "PATH=\(AgentInvocation.shellQuote(pathOverride)); export PATH\n" + script
-    } else {
-      effectiveScript = script
+    switch await ShellEnvironmentProbe.resolve(
+      variables: [variableName],
+      cwd: cwd,
+      pathOverride: pathOverride,
+      run: run
+    ) {
+    case .failed:
+      return .failed
+    case .values(let values):
+      guard let entry = values[variableName] else { return .failed }
+      // Droid treats a blank value as unset; trim so trailing shell whitespace does not become a path.
+      let trimmed = (entry ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      return .value(trimmed.isEmpty ? nil : trimmed)
     }
-    guard
-      let output = try? await execute(cwd, effectiveScript),
-      output.exitCode == 0,
-      output.stdout.utf8.count <= 16 * 1_024,
-      let value = parse(output.stdout)
-    else { return .failed }
-    // Droid treats a blank value as unset; trim so trailing shell whitespace does not become a path.
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return .value(trimmed.isEmpty ? nil : trimmed)
-  }
-
-  private static func parse(_ output: String) -> String? {
-    let lines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    guard
-      lines.count(where: { $0.hasPrefix(startMarker) }) == 1,
-      lines.count(where: { $0 == endMarker }) == 1,
-      let startIndex = lines.firstIndex(where: { $0.hasPrefix(startMarker) }),
-      lines.indices.contains(startIndex + 1),
-      lines[startIndex + 1] == endMarker
-    else { return nil }
-    return String(lines[startIndex].dropFirst(startMarker.count))
   }
 }

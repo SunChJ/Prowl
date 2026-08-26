@@ -30,6 +30,11 @@ nonisolated enum AgentManagedHookPreparer {
     let forwardingArgv: [String]?
   }
 
+  private struct OpenCodePreparationOptions {
+    let promptIndex: Int?
+    let environmentResolver: OpenCodeEnvironmentResolver?
+  }
+
   private struct SettingsRuntimeOptions {
     let promptIndex: Int?
     let droidSettingsEnvironmentResolver: DroidSettingsEnvironmentResolver?
@@ -38,6 +43,8 @@ nonisolated enum AgentManagedHookPreparer {
 
   typealias DroidSettingsEnvironmentResolver =
     @Sendable (URL, String?) async -> DroidSettingsEnvironmentProbe.Resolution
+  typealias OpenCodeEnvironmentResolver =
+    @Sendable (URL, String?) async -> ShellEnvironmentProbe.Resolution
 
   static func prepare(
     plan: AgentProfileLaunchPlan,
@@ -46,7 +53,8 @@ nonisolated enum AgentManagedHookPreparer {
     codexShellEnvironment: CodexShellLaunchEnvironment? = nil,
     codexConfigReadProcess: CodexConfigReadProcess = CodexConfigReadProcess(),
     droidSettingsEnvironmentResolver: DroidSettingsEnvironmentResolver? = nil,
-    settingsReadFile: (@Sendable (URL, Int) -> ClaudeSettingsReadResult)? = nil
+    settingsReadFile: (@Sendable (URL, Int) -> ClaudeSettingsReadResult)? = nil,
+    openCodeEnvironmentResolver: OpenCodeEnvironmentResolver? = nil
   ) async -> AgentManagedHookPreparation {
     guard
       let capability = AgentRuntimeAdapterRegistry.profileAdapter(for: plan.runtime)?.signalHooks
@@ -115,7 +123,180 @@ nonisolated enum AgentManagedHookPreparer {
           settingsReadFile: settingsReadFile
         )
       )
+    case .pi, .omp:
+      return prepareExtensionRuntime(
+        plan: plan,
+        capability: capability,
+        inheritedCWD: inheritedCWD,
+        resources: resources,
+        promptIndex: promptIndex
+      )
+    case .opencode:
+      return await prepareOpenCode(
+        plan: plan,
+        capability: capability,
+        inheritedCWD: inheritedCWD,
+        resources: resources,
+        options: OpenCodePreparationOptions(
+          promptIndex: promptIndex,
+          environmentResolver: openCodeEnvironmentResolver
+        )
+      )
     }
+  }
+
+  /// Pi and Oh My Pi load Prowl's bundled extension through an additive flag; nothing is
+  /// merged. Pi refuses to start when an `-e` path is missing, so a missing bundled file
+  /// degrades before launch for both.
+  private static func prepareExtensionRuntime(
+    plan: AgentProfileLaunchPlan,
+    capability: AgentSignalHookCapability,
+    inheritedCWD: URL,
+    resources: AgentHookResources,
+    promptIndex: Int?
+  ) -> AgentManagedHookPreparation {
+    let isPi = capability.runtime == .pi
+    let displayName = isPi ? "Pi" : "Oh My Pi"
+    guard let extensionPath = isPi ? resources.piExtensionPath : resources.ompExtensionPath,
+      extensionPath.hasPrefix("/"),
+      FileManager.default.isReadableFile(atPath: extensionPath)
+    else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The bundled \(displayName) hook extension is unavailable."
+      )
+    }
+    // Oh My Pi's `--cwd` (last wins) changes the directory its extensions report; Pi has no
+    // such option.
+    let scan: ManagedHookWorkingDirectory.Scan =
+      isPi
+      ? .inherited
+      : ManagedHookWorkingDirectory.scan(
+        arguments: plan.invocation.arguments,
+        optionNames: ["--cwd"],
+        precedence: .lastWins,
+        promptArgumentIndex: promptIndex
+      )
+    guard let launchCWD = ManagedHookWorkingDirectory.effective(inherited: inheritedCWD, scan: scan) else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The \(displayName) working directory option could not be resolved."
+      )
+    }
+    return AgentManagedHookPreparation(
+      preparedInvocation: ExtensionFlagHookRenderer.prepare(
+        invocation: plan.invocation,
+        option: isPi ? "-e" : "--hook",
+        extensionPath: extensionPath,
+        promptArgumentIndex: promptIndex
+      ),
+      capability: capability,
+      launchCWD: launchCWD,
+      forwardingArgv: nil,
+      pendingSettingsFile: nil,
+      warning: nil
+    )
+  }
+
+  /// OpenCode's plugin rides `OPENCODE_CONFIG_CONTENT`, which the launch may already carry from
+  /// a Profile override or the user's shell rc. A Profile override wins; otherwise the login
+  /// shell is probed for both that variable and `OPENCODE_PURE`, and a probe that cannot run
+  /// degrades rather than override. `--auto` auto-replies `permission.asked` in the same
+  /// millisecond (measured), so that event leaves the registered table for such launches.
+  private static func prepareOpenCode(
+    plan: AgentProfileLaunchPlan,
+    capability: AgentSignalHookCapability,
+    inheritedCWD: URL,
+    resources: AgentHookResources,
+    options: OpenCodePreparationOptions
+  ) async -> AgentManagedHookPreparation {
+    let promptIndex = options.promptIndex
+    let environmentResolver = options.environmentResolver
+    guard let pluginPath = resources.opencodePluginPath,
+      pluginPath.hasPrefix("/"),
+      FileManager.default.isReadableFile(atPath: pluginPath)
+    else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The bundled OpenCode hook plugin is unavailable."
+      )
+    }
+    let arguments = plan.invocation.arguments
+    guard
+      let launchCWD = ManagedHookWorkingDirectory.effective(
+        inherited: inheritedCWD,
+        scan: OpenCodeLaunchDirectory.scan(arguments: arguments, promptArgumentIndex: promptIndex)
+      )
+    else {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: inheritedCWD,
+        message: "The OpenCode project directory could not be resolved."
+      )
+    }
+    let overrides = plan.profileEnvironmentOverrides
+    var content = overrides[OpenCodeHookPluginPreparer.contentVariableName]
+    var pure = overrides[OpenCodeHookPluginPreparer.pureVariableName]
+    if content == nil || pure == nil, let environmentResolver {
+      switch await environmentResolver(inheritedCWD, overrides["PATH"]) {
+      case .failed:
+        return degraded(
+          plan: plan,
+          capability: capability,
+          launchCWD: launchCWD,
+          message: "The OpenCode launch environment could not be resolved; launching unchanged."
+        )
+      case .values(let values):
+        if content == nil { content = values[OpenCodeHookPluginPreparer.contentVariableName] ?? nil }
+        if pure == nil { pure = values[OpenCodeHookPluginPreparer.pureVariableName] ?? nil }
+      }
+    }
+    if OpenCodeHookPluginPreparer.isPure(environmentValue: pure) {
+      return degraded(
+        plan: plan,
+        capability: capability,
+        launchCWD: launchCWD,
+        message: "Managed OpenCode hooks are unavailable when OPENCODE_PURE is set; launching unchanged."
+      )
+    }
+    let outcome = OpenCodeHookPluginPreparer.prepare(
+      invocation: plan.invocation,
+      pluginPath: pluginPath,
+      existingContent: content,
+      promptArgumentIndex: promptIndex
+    )
+    guard let prepared = outcome.prepared else {
+      return AgentManagedHookPreparation(
+        preparedInvocation: nil,
+        capability: capability,
+        launchCWD: launchCWD,
+        forwardingArgv: nil,
+        pendingSettingsFile: nil,
+        warning: outcome.warning
+      )
+    }
+    var effectiveCapability = capability
+    if OpenCodeHookPluginPreparer.containsAutoFlag(arguments, promptArgumentIndex: promptIndex) {
+      effectiveCapability = AgentSignalHookCapability(
+        runtime: capability.runtime,
+        nativeEvents: capability.nativeEvents.filter { $0.key != "permission.asked" }
+      )
+    }
+    return AgentManagedHookPreparation(
+      preparedInvocation: prepared,
+      capability: effectiveCapability,
+      launchCWD: launchCWD,
+      forwardingArgv: nil,
+      pendingSettingsFile: nil,
+      warning: nil
+    )
   }
 
   /// Copilot needs no merge: every `--plugin-dir` loads additively, so Prowl appends its
@@ -301,7 +482,7 @@ nonisolated enum AgentManagedHookPreparer {
           },
           warning: merged.warning
         )
-      case .claude, .codex, .copilot:
+      case .claude, .codex, .copilot, .pi, .omp, .opencode:
         return AgentManagedHookPreparation(
           preparedInvocation: nil,
           capability: capability,

@@ -334,7 +334,7 @@ nonisolated private struct CodexRuntimeAdapter: AgentRuntimeAdapter {
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(environmentVariable: "CODEX_HOME")
   let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
     runtime: .codex,
-    nativeEvents: ["agent-turn-complete": .turnEnded]
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .codex)
   )
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
@@ -376,15 +376,7 @@ nonisolated private struct ClaudeCodeRuntimeAdapter: AgentRuntimeAdapter {
   )
   let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
     runtime: .claude,
-    nativeEvents: [
-      "Elicitation": .needsInput,
-      "Notification": .needsInput,
-      "PermissionRequest": .needsInput,
-      "SessionEnd": .sessionEnd,
-      "SessionStart": .sessionStart,
-      "Stop": .turnEnded,
-      "StopFailure": .turnEnded,
-    ]
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .claude)
   )
   let reasoningEffortSuggestions = ["low", "medium", "high", "xhigh", "max"]
   let modelSuggestions = [
@@ -539,6 +531,14 @@ nonisolated private struct OpenCodeRuntimeAdapter: AgentRuntimeAdapter {
   let supportsModelSelection = true
   let supportsReasoningEffort = true
   let executionModeOptions = AgentExecutionMode.allCases
+  /// Relayed by the bundled `agent-hooks/opencode/prowl-hooks.ts` plugin. OpenCode creates its
+  /// session lazily at the first prompt and emits nothing on `/new` or resume, so the runtime is
+  /// non-announcing like Codex: the first `session.idle` verifies the channel. `permission.asked`
+  /// is dropped per launch under `--auto`, where OpenCode auto-replies in the same millisecond.
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .opencode,
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .opencode)
+  )
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
     AgentLaunchObservation(
@@ -576,12 +576,7 @@ nonisolated private struct CopilotRuntimeAdapter: AgentRuntimeAdapter {
   /// `subagentStop` is excluded because a subagent finishing is not the main turn ending.
   let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
     runtime: .copilot,
-    nativeEvents: [
-      "Notification": .needsInput,
-      "SessionEnd": .sessionEnd,
-      "SessionStart": .sessionStart,
-      "Stop": .turnEnded,
-    ]
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .copilot)
   )
   let reasoningEffortSuggestions = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
@@ -639,12 +634,7 @@ nonisolated private struct DroidRuntimeAdapter: AgentRuntimeAdapter {
   /// Droid has no `PermissionRequest` event; attention arrives through `Notification`.
   let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
     runtime: .droid,
-    nativeEvents: [
-      "Notification": .needsInput,
-      "SessionEnd": .sessionEnd,
-      "SessionStart": .sessionStart,
-      "Stop": .turnEnded,
-    ]
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .droid)
   )
 
   func observe(arguments _: [String]) -> AgentLaunchObservation { .init() }
@@ -695,13 +685,7 @@ nonisolated private struct QoderRuntimeAdapter: AgentRuntimeAdapter {
   /// waiting. `StopFailure` is included because Qoder reports a failed turn that way.
   let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
     runtime: .qoder,
-    nativeEvents: [
-      "Notification": .needsInput,
-      "SessionEnd": .sessionEnd,
-      "SessionStart": .sessionStart,
-      "Stop": .turnEnded,
-      "StopFailure": .turnEnded,
-    ]
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .qoder)
   )
   let reasoningEffortSuggestions = ["low", "medium", "high"]
 
@@ -814,6 +798,12 @@ nonisolated private struct PiRuntimeAdapter: AgentRuntimeAdapter {
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "PI_CODING_AGENT_DIR"
   )
+  /// Relayed by the bundled `agent-hooks/pi/prowl-hooks.ts` extension (`-e`). `agent_settled`
+  /// is Pi's documented idle point (`agent_end` precedes it); Pi has no permission system.
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .pi,
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .pi)
+  )
   let reasoningEffortSuggestions = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
 
   func observe(arguments: [String]) -> AgentLaunchObservation {
@@ -845,6 +835,13 @@ nonisolated private struct OMPRuntimeAdapter: AgentRuntimeAdapter {
   let executionModeOptions = AgentExecutionMode.allCases
   let accountIsolation: AgentProfileHomeRelocation? = AgentProfileHomeRelocation(
     environmentVariable: "PI_CODING_AGENT_DIR"
+  )
+  /// Relayed by the bundled `agent-hooks/omp/prowl-hooks.ts` extension (`--hook`).
+  /// `session_stop` is documented main-session only, whereas `agent_end` was measured firing
+  /// once per in-process `task` sub-agent; `/new` rotates through `session_switch`.
+  let signalHooks: AgentSignalHookCapability? = AgentSignalHookCapability(
+    runtime: .omp,
+    nativeEvents: AgentNativeHookDecoder.nativeEvents(for: .omp)
   )
   let reasoningEffortSuggestions = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
 
