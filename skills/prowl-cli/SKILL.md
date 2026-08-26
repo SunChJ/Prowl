@@ -169,8 +169,9 @@ Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `
 ## Reading Agent Output
 
 - For Codex/Claude Code, `prowl agents read` beats scraping: check `.data.agent.status`, inspect `.data.blocker.text` before answering a prompt with `send`/`key` (read and write are not atomic), and only trust `.data.result.text` when `state == "complete"`. `--result-only` prints the raw trusted result and fails otherwise; it cannot combine with `--json`.
-- Prowl-launched Claude Code and Codex Profiles may expose `verified_live` channels with
-  `source=hook_claude|hook_codex`; manually typing those runtimes does not. A managed hook
+- Prowl-launched Claude Code, Codex, Copilot, Droid, and Qoder Profiles may expose
+  `verified_live` channels with `source=hook_<runtime>`; manually typing those runtimes does
+  not. A managed hook
   `turn-ended` proves only a runtime turn edge, never assigned-task completion. If Profile
   creation returns `managed_hook_degraded`, keep the successful pane but expect honest
   heuristic/cooperative fallback for that session.

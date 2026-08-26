@@ -126,9 +126,12 @@ does not create or overwrite a detected-agent entry. `turn-ended` means one inte
 ended, not that a workflow step completed; only `prowl workflow done` will advance a
 workflow, and only a matching `agents dispatch-complete` can complete an exact dispatch.
 
-Signal eligibility is generation-aware. Prowl binds evidence to the detected process's PID
-**and process start time**, plus its current session only when that attribution is exact or
-high confidence. A dispatch launch accepts its first process generation only when the process
+Signal eligibility is generation-aware. Prowl binds evidence to the agent's launch process —
+the topmost member of the pane's foreground job above the detected process — by PID **and
+process start time**, plus its current session only when that attribution is exact or high
+confidence. Reading state from a forked engine child (Droid runs its TUI and a `droid exec`
+engine as two processes) therefore never counts as a replacement: hooks descend from both, and
+only a new launch changes the generation. A dispatch launch accepts its first process generation only when the process
 started within ten seconds of launch binding; a later-started process is a replacement even if
 the original runtime exited before detection. A medium-confidence session guess remains
 diagnostic and never rotates an evidence epoch. Evidence from a reused PID, a replaced session,
@@ -151,17 +154,34 @@ lose lifecycle or signal evidence.
 
 ## Managed native completion signals
 
-Prowl Agent Profile launches of **Claude Code** and **Codex** also attach process-scoped
-native event bridges without writing user, dedicated-home, or project configuration:
+Prowl Agent Profile launches of **Claude Code**, **Codex**, **GitHub Copilot**, **Droid**,
+and **Qoder** also attach process-scoped native event bridges without writing user,
+dedicated-home, or project configuration:
 
 - Claude `SessionStart` verifies launch coverage; `Stop` / `StopFailure` report
   `turn-ended`; `PermissionRequest` and supported elicitation notifications report
   `needs-input`; `SessionEnd` reports `session-end`.
 - Codex's native `agent-turn-complete` notifier reports `turn-ended`. Prowl never passes
   Codex's hook-trust bypass flag.
+- Copilot, Droid, and Qoder report `SessionStart`, `Stop` (plus Qoder's `StopFailure`), and
+  `SessionEnd` the same way. Their `needs-input` comes only from a `Notification` whose type
+  is `permission_prompt` or `elicitation_dialog`. Their `PermissionRequest` event is
+  deliberately ignored: Copilot and Qoder both emit it while the permission service
+  auto-approves a tool and no one is waiting, so it does not mean the agent is blocked. That
+  also makes their `needs-input` arrive slightly later than Claude's.
+
+Each runtime is enabled the way it supports per-launch injection, and none of them changes
+what the user already configured: Copilot loads an extra read-only plugin directory shipped
+inside Prowl (a user's own `--plugin-dir` and `~/.copilot/hooks/*.json` keep working and are
+never merged or rewritten), while Droid and Qoder receive a settings object that merges
+Prowl's handlers into whatever settings the Profile already passes. Because Droid accepts
+only a settings *path*, its merged copy is written to an owner-only file that is deleted with
+the pane. Qoder additionally cannot use flag-supplied hooks at all when `--setting-sources`
+is set, so that launch runs unchanged with no exact coverage.
 
 Only an app-issued token plus exact caller-process ancestry and matching pane/runtime/cwd can
-produce `hook_claude` / `hook_codex` evidence. The channel is not advertised as
+produce `hook_claude` / `hook_codex` / `hook_copilot` / `hook_droid` / `hook_qodercli`
+evidence. The channel is not advertised as
 `verified_live` until a valid native event completes that end-to-end check. Early Claude
 `SessionStart` payloads wait for the first matching process generation instead of being lost.
 That first generation may attach after the detector's acquisition window; once attached, a
@@ -175,8 +195,9 @@ existing notifier is preserved through an owner-only ephemeral forwarding record
 or record preparation is uncertain, Prowl launches the original argv unchanged, exposes no
 exact coverage, and reports one non-blocking launch warning.
 
-Managed hooks apply only to Profile launches. Typing `claude`, `codex`, or any other runtime
-manually keeps the existing cooperative/transcript/process/screen evidence. A hook
+Managed hooks apply only to Profile launches. Typing `claude`, `codex`, `copilot`, `droid`,
+`qodercli`, or any other runtime manually keeps the existing
+cooperative/transcript/process/screen evidence. A hook
 `turn-ended` still does not prove assigned-task completion: dispatch receipts and workflow
 completion remain separate protocols.
 

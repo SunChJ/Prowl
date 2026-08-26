@@ -62,6 +62,17 @@ final class CodexForwardingRecordStore {
     else {
       throw CodexForwardingRecordError.invalidRecord
     }
+    return try createPrivateFile(data)
+  }
+
+  /// Owner-only storage for any managed-hook payload that must live on disk for the lifetime
+  /// of one launch. Besides Codex forwarding argv, S3b writes Droid's merged settings here:
+  /// that file can contain user secrets such as `customModels[].apiKey`, so it needs the same
+  /// `0700`/`0600` guarantees, cross-instance session lock, and orphan sweep.
+  func createPrivateFile(_ data: Data) throws -> CodexForwardingRecord {
+    guard data.count <= CodexForwardingRecordReader.maximumRecordBytes else {
+      throw CodexForwardingRecordError.invalidRecord
+    }
     let locator = sessionDirectory.appending(
       path: "record-\(UUID().uuidString).json",
       directoryHint: .notDirectory

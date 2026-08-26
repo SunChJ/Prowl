@@ -23,9 +23,8 @@ struct AgentHookRenderingTests {
     #expect(codex.coveredEvents == [.turnEnded])
     #expect(codex.nativeEvents == ["agent-turn-complete": .turnEnded])
 
-    for runtime in AgentProfileRuntime.allCases where runtime != .claude && runtime != .codex {
-      #expect(AgentRuntimeAdapterRegistry.profileAdapter(for: runtime)?.signalHooks == nil)
-    }
+    // S3b's Copilot/Droid/Qoder capabilities are asserted in AgentS3bHookRenderingTests,
+    // which also proves every remaining runtime still declares no managed hook.
   }
 
   @Test func claudeSettingsMergePreservesUnknownFieldsAndEveryExistingHandler() throws {

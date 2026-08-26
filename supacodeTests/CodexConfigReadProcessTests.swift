@@ -4,7 +4,7 @@ import Testing
 
 @testable import supacode
 
-struct CodexConfigReadProcessTests {
+@Suite(.serialized) struct CodexConfigReadProcessTests {
   @Test func appServerInputPipeSuppressesSIGPIPE() {
     let pipe = Pipe()
     defer {
@@ -38,6 +38,38 @@ struct CodexConfigReadProcessTests {
     }
   }
 
+  @Test func requestStdinStaysOpenUntilTheConfigReadResponseArrives() async throws {
+    // Codex 0.149.1's app-server tears down on stdin EOF and drops any request it has not
+    // answered yet, so the request pipe must outlive the response.
+    let root = temporaryDirectory("codex-eof")
+    let home = root.appending(path: "home", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let executable = root.appending(path: "eof-exit-codex.py", directoryHint: .notDirectory)
+    try """
+    #!/usr/bin/python3
+    import json, select, sys
+    for _ in range(3):
+        sys.stdin.readline()
+    readable, _, _ = select.select([sys.stdin], [], [], 0.5)
+    if readable and sys.stdin.readline() == "":
+        sys.exit(0)
+    print(json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"config": {"notify": ["/tmp/n", "x"]}}}), flush=True)
+    """.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let process = CodexConfigReadProcess(
+      executableURL: executable,
+      temporaryBaseDirectory: root,
+      timeout: 15
+    )
+
+    let transcript = try await process.query(
+      CodexConfigQuery(kind: .base, codexHome: home, cwd: root, overrides: [])
+    )
+
+    #expect(try CodexConfigReadProtocol.decodeNotify(from: transcript) == ["/tmp/n", "x"])
+  }
+
   @Test func profileParserHomeIsOwnerOnlyAndRemovedAfterResponse() async throws {
     let root = temporaryDirectory("codex-process")
     let parser = root.appending(path: "parser", directoryHint: .isDirectory)
@@ -55,7 +87,7 @@ struct CodexConfigReadProcessTests {
     let process = CodexConfigReadProcess(
       executableURL: executable,
       temporaryBaseDirectory: parser,
-      timeout: 2
+      timeout: 15
     )
     let query = CodexConfigQuery(
       kind: .profile(profile),

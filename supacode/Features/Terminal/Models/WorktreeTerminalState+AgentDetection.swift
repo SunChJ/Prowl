@@ -142,6 +142,7 @@ extension WorktreeTerminalState {
       // Presence holds keep the last known pid so a probe gap does not flap
       // the session to nil and back (the resolver re-binds on the next hit).
       agentProcessID: identified?.process.pid ?? previous.agentProcessID,
+      launchProcessID: resolvedLaunchProcessID(identified: identified, previous: previous),
       launchObservation: launchObservation,
       session: session,
       iconLookupToken: iconLookupToken,
@@ -227,6 +228,35 @@ extension WorktreeTerminalState {
       return false
     }
     return previous.seen
+  }
+
+  private func resolvedLaunchProcessID(
+    identified: IdentifiedAgentProcess?,
+    previous: PaneAgentState
+  ) -> pid_t? {
+    PaneAgentState.retainedLaunchProcessID(
+      identifiedLaunchProcessID: identified?.launchProcessID,
+      identifiedProcessID: identified?.process.pid,
+      previous: previous,
+      isLiveAncestor: Self.processIsLiveAncestor
+    )
+  }
+
+  /// Walk the live process tree upward from `descendant` (bounded), reporting whether it still
+  /// passes through `ancestor`. Used only when the identified launch root changed, so the cost
+  /// is a short `proc_pidinfo` chain on a rare transition, never on the steady-state poll.
+  nonisolated static func processIsLiveAncestor(_ ancestor: pid_t, of descendant: pid_t) -> Bool {
+    var pid = descendant
+    var hops = 0
+    while pid > 1, hops < 32 {
+      if pid == ancestor { return true }
+      guard let info = ProcessDetection.processBSDInfo(pid: pid) else { return false }
+      let parent = pid_t(info.pbi_ppid)
+      if parent == pid { return false }
+      pid = parent
+      hops += 1
+    }
+    return pid == ancestor
   }
 
   private func resolvedLaunchObservation(

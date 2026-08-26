@@ -1,8 +1,13 @@
 import Foundation
 
+/// Raw values must match `AgentProfileRuntime`'s: `AgentObservationStore` converts between
+/// the two by raw value, and the public CLI source is rendered as `hook_<rawValue>`.
 nonisolated public enum AgentNativeHookRuntime: String, Codable, CaseIterable, Sendable {
   case claude
   case codex
+  case copilot
+  case droid
+  case qoder = "qodercli"
 }
 
 nonisolated public struct AgentNativeHookSignal: Codable, Equatable, Sendable {
@@ -77,6 +82,31 @@ nonisolated public enum AgentNativeHookDecoder {
     "permission_prompt",
   ]
 
+  /// S3b runtimes report attention through `Notification` only. `idle_prompt` means the agent
+  /// is waiting rather than blocked on a person, and `auth_success` / background-task types are
+  /// informational, so neither may resolve a wait as `needs-input` (docs-ai 064.008).
+  private static let acceptedBlockingNotifications: Set<String> = [
+    "elicitation_dialog",
+    "permission_prompt",
+  ]
+
+  /// Copilot, Droid, and Qoder all emit Claude-shaped lifecycle payloads. Their
+  /// `PermissionRequest` is deliberately absent: Copilot and Qoder were measured emitting it
+  /// while the permission service auto-approved and nobody was waiting. Copilot's
+  /// `subagentStop` is absent because a subagent finishing is not the main turn ending.
+  private static func claudeShapedEvents(
+    for runtime: AgentNativeHookRuntime
+  ) -> [String: AgentSignalEvent] {
+    var events: [String: AgentSignalEvent] = [
+      "Notification": .needsInput,
+      "SessionEnd": .sessionEnd,
+      "SessionStart": .sessionStart,
+      "Stop": .turnEnded,
+    ]
+    if runtime == .qoder { events["StopFailure"] = .turnEnded }
+    return events
+  }
+
   public static func decode(
     runtime: AgentNativeHookRuntime,
     nativeEvent: String,
@@ -93,7 +123,46 @@ nonisolated public enum AgentNativeHookDecoder {
       try decodeClaude(nativeEvent: nativeEvent, object: object)
     case .codex:
       try decodeCodex(nativeEvent: nativeEvent, object: object)
+    case .copilot, .droid, .qoder:
+      try decodeClaudeShaped(runtime: runtime, nativeEvent: nativeEvent, object: object)
     }
+  }
+
+  private static func decodeClaudeShaped(
+    runtime: AgentNativeHookRuntime,
+    nativeEvent: String,
+    object: [String: Any]
+  ) throws -> AgentNativeHookSignal {
+    guard let payloadEvent = object["hook_event_name"] as? String else {
+      throw AgentNativeHookDecodeError.malformedPayload
+    }
+    guard payloadEvent == nativeEvent else { throw AgentNativeHookDecodeError.eventMismatch }
+    guard let event = claudeShapedEvents(for: runtime)[nativeEvent] else {
+      throw AgentNativeHookDecodeError.unsupportedEvent
+    }
+
+    let detail: String?
+    if nativeEvent == "Notification" {
+      guard let type = object["notification_type"] as? String,
+        acceptedBlockingNotifications.contains(type)
+      else {
+        throw AgentNativeHookDecodeError.unsupportedEvent
+      }
+      detail = type
+    } else {
+      detail = boundedOptionalString(object["reason"] ?? object["error_type"])
+    }
+
+    // Copilot's `Notification` is the one mixed-case payload: `hook_event_name` with a
+    // camelCase `sessionId`. Accepting both spellings keeps its only needs-input source
+    // working without betting on one field name per runtime.
+    return try makeSignal(
+      event: event,
+      nativeEvent: nativeEvent,
+      cwd: object["cwd"],
+      sessionID: object["session_id"] ?? object["sessionId"],
+      detail: detail
+    )
   }
 
   private static func decodeClaude(

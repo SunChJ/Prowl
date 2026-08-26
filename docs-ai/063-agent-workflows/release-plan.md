@@ -24,7 +24,7 @@ that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launc
 PRs merge to `main` one at a time (each keeps `main` shippable); engine PRs without a
 user-facing surface may merge before "their" release and stay dormant. Three releases:
 
-### Current R1 status (2026-08-23)
+### Current R1 status (2026-08-25)
 
 | Slice(s) | State | PR / next action |
 | --- | --- | --- |
@@ -34,12 +34,12 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A2 | Merged | #714 |
 | S1 | Merged | #715: bus, multicast observer, `agents signal` |
 | S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
-| S3 wave 1 | S3a PR #721 | S3a foundation implemented; S3b/S3c remain sequential before the slice is complete |
+| S3 wave 1 | S3a merged (#721, #723); S3b in progress | S3b planned in [064.008](../064-agent-completion-signals/008-s3b-plan.md) on `feat/agent-signal-hooks-s3b`; S3c still to come before the slice is complete |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 
-A2 completes 063's R1 implementation work, and S1/S2 are on `main`. The next orchestration
-critical-path slice is S3 wave 1; 065-S0/K1 may proceed independently in parallel.
+A2 completes 063's R1 implementation work, and S1/S2/S3a are on `main`. The next orchestration
+critical-path slice is S3b, then S3c; 065-S0/K1 may proceed independently in parallel.
 
 #### S3 wave 1 PR breakdown
 
@@ -122,6 +122,11 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-25 — S3a merged (#721 plus post-merge hardening #723) and S3b started on
+  `feat/agent-signal-hooks-s3b`. A local re-attestation of all tier-A runtimes showed that
+  Copilot and Qoder emit `PermissionRequest` even when the permission service auto-approves,
+  so those two derive `needs-input` from `Notification` only; the same matrix confirmed Claude
+  2.1.243 does not, leaving S3a correct as shipped. Plan: [064.008](../064-agent-completion-signals/008-s3b-plan.md).
 - 2026-08-24 — S3a implemented the trusted launch registration/epoch boundary, hidden native
   ingress, Claude settings merge, Codex effective-notifier preservation, degradation warnings,
   and focused/live contract coverage. S3 wave 1 remains incomplete pending S3b/S3c.

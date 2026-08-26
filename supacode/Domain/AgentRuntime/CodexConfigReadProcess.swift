@@ -179,9 +179,11 @@ nonisolated struct CodexConfigReadProcess: Sendable {
     let request = CodexConfigReadProtocol.requestData(
       cwd: query.cwd.path(percentEncoded: false)
     )
+    // The request pipe stays open until the response has arrived: Codex ≥ 0.149.1's
+    // app-server shuts down on stdin EOF and drops any request it has not answered yet.
+    // The deferred `stop` ends the server and closes the pipe once the read loop returns.
     do {
       try input.fileHandleForWriting.write(contentsOf: request)
-      try input.fileHandleForWriting.close()
     } catch {
       throw CodexConfigReadProcessError.processFailed
     }

@@ -246,6 +246,24 @@ immediately in an isolated two-test run. Static format/lint checks, the CLI buil
 the Debug app build also passed. A final read-only adversarial review found no P0/P1 defects; its sole P2 corrected
 user documentation that still described the first managed generation as subject to the old acquisition deadline.
 
+## Follow-up: Codex 0.149.1 drops queued requests on stdin EOF (2026-08-25)
+
+Upgrading Codex from 0.149.0 to 0.149.1 turned every Codex Profile launch into
+`managed_hook_degraded` ("The effective Codex notifier could not be resolved"). Measured by hand
+against the new binary: `codex app-server` answers `initialize`, then exits as soon as stdin
+reaches EOF, and a `config/read` still queued at that moment is never answered — with stdin held
+open for one more second the same three messages get the full reply. `CodexConfigReadProcess`
+closed the request pipe immediately after writing, which 0.149.0 tolerated and 0.149.1 does not.
+
+The pipe now stays open until the read loop has the `config/read` response (or the deadline);
+the deferred `stop` then terminates the server and closes it. Covered by
+`requestStdinStaysOpenUntilTheConfigReadResponseArrives()`, whose stub exits on EOF exactly like
+0.149.1, and re-attested with `CodexConfigReadLiveContractTests` against the real 0.149.1
+(`TEST_RUNNER_PROWL_RUN_LIVE_CODEX_CONTRACT=1` — the `TEST_RUNNER_` prefix is what carries the
+variable into the test host). Live: a Codex Profile launch reaches `verified_live` with
+`source=hook_codex` again, and the user's effective notifier (Codex's bundled computer-use client)
+is preserved through the forwarding record.
+
 ## Deferred scope
 
 S3b owns Copilot/Droid/Qoder adapters. S3c owns Pi/OMP/OpenCode adapters and the Active Agents exact

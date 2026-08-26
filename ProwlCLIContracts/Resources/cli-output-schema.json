@@ -1212,7 +1212,10 @@
               "enum": [
                 "cooperative_cli",
                 "hook_claude",
-                "hook_codex"
+                "hook_codex",
+                "hook_copilot",
+                "hook_droid",
+                "hook_qodercli"
               ]
             },
             "confidence": {

@@ -46,6 +46,17 @@ nonisolated enum SupacodePaths {
     )
   }
 
+  /// Copilot loads hooks only from a plugin directory on disk, so Prowl ships a static one
+  /// inside the bundle (`Prowl.app/Contents/Resources/agent-hooks/copilot`). Its `hooks.json`
+  /// resolves the CLI relative to `$COPILOT_PLUGIN_ROOT`, so the directory stays read-only and
+  /// needs no per-launch materialization.
+  static var bundledCopilotHookPluginURL: URL? {
+    Bundle.main.resourceURL?.appending(
+      path: "agent-hooks/copilot",
+      directoryHint: .isDirectory
+    )
+  }
+
   static var agentHookForwardingDirectory: URL {
     cacheDirectory.appending(path: "agent-hook-forwarding", directoryHint: .isDirectory)
   }

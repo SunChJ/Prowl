@@ -365,6 +365,113 @@ struct AgentObservationTests {
     #expect(snapshot.latestSignal == signal)
   }
 
+  @Test func engineChildRebindingKeepsTheLaunchGenerationCurrent() throws {
+    let fixture = makeFixture()
+    let engine = try makeEngineChild()
+    defer { engine.terminate() }
+    let launchPID = getpid()
+    let launchStartedAt = try #require(ProcessDetection.processStartDate(pid: launchPID))
+    let engineStartedAt = try #require(ProcessDetection.processStartDate(pid: engine.processIdentifier))
+    let launchOnly = PaneAgentState(
+      detectedAgent: .droid,
+      agentProcessID: launchPID,
+      launchProcessID: launchPID,
+      state: .idle
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = launchOnly
+    fixture.state.emitAgentEntry(surfaceID: fixture.surfaceID, tabId: fixture.tabID, state: launchOnly)
+    let signal = makeSignal()
+    let caller = CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: [
+        AgentProcessGeneration(pid: engine.processIdentifier, startedAt: engineStartedAt),
+        AgentProcessGeneration(pid: launchPID, startedAt: launchStartedAt),
+      ]
+    )
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
+
+    // The runtime forks an engine child that the classifier now identifies
+    // instead of the launcher (Droid's `droid exec`). Same launch, same
+    // generation: the evidence must survive.
+    let engineBound = PaneAgentState(
+      detectedAgent: .droid,
+      agentProcessID: engine.processIdentifier,
+      launchProcessID: launchPID,
+      state: .idle
+    )
+    fixture.state.surfaceAgentStates[fixture.surfaceID] = engineBound
+    fixture.state.emitAgentEntry(surfaceID: fixture.surfaceID, tabId: fixture.tabID, state: engineBound)
+
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
+    #expect(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).lastBinding == .current)
+  }
+
+  @Test func engineChildRebindingKeepsTheManagedHookVerifiable() throws {
+    let fixture = makeFixture()
+    let engine = try makeEngineChild()
+    defer { engine.terminate() }
+    let launchPID = getpid()
+    let launchStartedAt = try #require(ProcessDetection.processStartDate(pid: launchPID))
+    let engineStartedAt = try #require(ProcessDetection.processStartDate(pid: engine.processIdentifier))
+    let registration = AgentHookLaunchRegistration(
+      token: "token-123",
+      runtime: .droid,
+      launchCWD: URL(filePath: "/tmp/agent-observation", directoryHint: .isDirectory),
+      nativeEvents: ["SessionStart": .sessionStart, "Stop": .turnEnded],
+      coveredEvents: [.sessionStart, .turnEnded],
+      forwardingRecord: nil
+    )
+    let plan = AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: "Droid",
+      runtime: .droid,
+      invocation: AgentInvocation(executable: "droid", arguments: []),
+      hookRegistration: registration,
+      commandEnvironmentTokens: [],
+      placement: .tab,
+      splitDirection: .right,
+      surfaceEnvironment: [:],
+      dedicatedHome: nil
+    )
+    #expect(fixture.state.onAgentProfileSurfacePrepared?(fixture.surfaceID, plan) == true)
+
+    for (identified, state) in [(launchPID, AgentRawState.idle), (engine.processIdentifier, .working)] {
+      let paneState = PaneAgentState(
+        detectedAgent: .droid,
+        agentProcessID: identified,
+        launchProcessID: launchPID,
+        state: state
+      )
+      fixture.state.surfaceAgentStates[fixture.surfaceID] = paneState
+      fixture.state.emitAgentEntry(surfaceID: fixture.surfaceID, tabId: fixture.tabID, state: paneState)
+    }
+
+    let input = AgentNativeHookInput(
+      runtime: .droid,
+      token: "token-123",
+      signal: AgentNativeHookSignal(
+        event: .turnEnded,
+        nativeEvent: "Stop",
+        cwd: "/tmp/agent-observation",
+        sessionID: "session-1"
+      )
+    )
+    let caller = CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: [
+        AgentProcessGeneration(pid: engine.processIdentifier, startedAt: engineStartedAt),
+        AgentProcessGeneration(pid: launchPID, startedAt: launchStartedAt),
+      ]
+    )
+    #expect(fixture.manager.recordAgentNativeHook(input, caller: caller))
+    let channel = try #require(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).channels.first)
+    #expect(channel.source == "hook_droid")
+    #expect(channel.state == .verifiedLive)
+  }
+
   private struct Fixture {
     let manager: WorktreeTerminalManager
     let state: WorktreeTerminalState
@@ -400,5 +507,15 @@ struct AgentObservationTests {
       detail: detail,
       claimedOrigin: nil
     )
+  }
+
+  /// A live child of the test host standing in for an engine process the
+  /// launched agent forked; generation checks need real start dates.
+  private func makeEngineChild() throws -> Process {
+    let process = Process()
+    process.executableURL = URL(filePath: "/bin/sleep")
+    process.arguments = ["30"]
+    try process.run()
+    return process
   }
 }

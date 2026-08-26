@@ -183,6 +183,202 @@ struct ManagedAgentHookObservationTests {
     #expect(channel.sessionID == "session-2")
   }
 
+  @Test func staleDetectorSessionDoesNotRollBackAHookAnnouncedNewSession() throws {
+    // Claude/Droid/Qoder announce their own sessions, so the detector's screen-derived
+    // session must never rotate the channel: a lagging read of the previous session would
+    // otherwise revoke the just-verified new one and roll `record.sessionID` backwards.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func sessionStart(_ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: "SessionStart",
+        event: .sessionStart, cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(store.recordManagedHook(sessionStart("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    #expect(store.recordManagedHook(sessionStart("S2"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    let epochAfterS2 = try #require(store.currentEvidenceEpoch(surfaceID: surfaceID))
+
+    // The detector resolver lags and still reports the previous session S1.
+    let update = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S1")
+    #expect(update.revokedForwardingRecords.isEmpty)
+    #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) == epochAfterS2)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.state == .verifiedLive)
+    #expect(channel.sessionID == "S2")
+
+    // A later Stop for the current session S2 is still accepted without a rotation.
+    #expect(
+      store.recordManagedHook(
+        makeInput(
+          runtime: .claude, token: registration.token, nativeEvent: "Stop", event: .turnEnded,
+          cwd: "/tmp/project", sessionID: "S2"),
+        callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+    #expect(store.currentEvidenceEpoch(surfaceID: surfaceID) == epochAfterS2)
+  }
+
+  @Test func detectorDrivenSessionChangeRetiresTheOldSessionAgainstDelayedEvents() throws {
+    // The detector authoritatively moves to S2 while the hook's last session is still S1. A
+    // delayed Stop(S1) must not resurrect S1: only a fresh SessionStart may re-verify. The old
+    // test only checked Stop(S2) rejection; this covers the delayed same-session event.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func input(_ event: AgentSignalEvent, _ native: String, _ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: native, event: event,
+        cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+
+    // The detector reports an exact new session S2, unverifying the channel.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+
+    // A delayed Stop for the superseded S1 must be rejected, not accepted back.
+    #expect(
+      store.recordManagedHook(
+        input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ) == .rejected)
+    #expect(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true)
+        .channels.isEmpty)
+
+    // Only a fresh SessionStart(S2) re-verifies, now on the detector's session.
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S2"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.sessionID == "S2")
+  }
+
+  @Test func detectorSessionFalsePositiveThenCorrectionRecoversTheLiveSession() throws {
+    // A transient detector false-positive (S2) must not permanently kill the real S1 session: when
+    // the detector corrects back to S1, S1's events are accepted again without a new SessionStart.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func input(_ event: AgentSignalEvent, _ native: String, _ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: native, event: event,
+        cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+
+    // Detector false-positive to S2: the channel is superseded and a delayed Stop(S1) is blocked.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+    #expect(
+      store.recordManagedHook(input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID)
+        == .rejected)
+
+    // Detector corrects back to S1: the supersession clears and S1's events are live again.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S1")
+    #expect(
+      store.recordManagedHook(input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID)
+        .isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.sessionID == "S1")
+  }
+
+  @Test func sessionStartSuppressesARepeatingConflictingDetectorCandidate() throws {
+    // SessionStart is the final arbiter: after the hook re-affirms S1, a detector that keeps
+    // reporting the same false-positive S2 must not repeatedly re-supersede the live session.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func input(_ event: AgentSignalEvent, _ native: String, _ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: native, event: event,
+        cwd: "/tmp/project", sessionID: session)
+    }
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+
+    // The hook re-affirms S1 authoritatively, suppressing the conflicting detector candidate S2.
+    #expect(
+      store.recordManagedHook(
+        input(.sessionStart, "SessionStart", "S1"), callerAncestry: [generation], surfaceID: surfaceID
+      ).isAccepted)
+
+    // The detector repeats the same false-positive S2: it is suppressed, not re-applied.
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: "S2")
+    #expect(
+      store.recordManagedHook(input(.turnEnded, "Stop", "S1"), callerAncestry: [generation], surfaceID: surfaceID)
+        .isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.sessionID == "S1")
+  }
+
+  @Test func announcedSessionStartCanResumeARetiredSession() throws {
+    // Claude's /resume re-announces an old session id with a fresh authoritative SessionStart.
+    // The retired-session guard must not reject that, or every event of the resumed session dies.
+    let now = Date(timeIntervalSince1970: 100)
+    let store = AgentObservationStore(bufferCapacity: 8, now: { now })
+    let surfaceID = UUID()
+    let generation = AgentProcessGeneration(pid: 900, startedAt: now)
+    let registration = makeRegistration(runtime: .claude, cwd: "/tmp/project")
+    _ = store.registerManagedHook(registration, surfaceID: surfaceID)
+    _ = store.updateEvidenceEpoch(surfaceID: surfaceID, processGeneration: generation, sessionID: nil)
+
+    func sessionStart(_ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: "SessionStart",
+        event: .sessionStart, cwd: "/tmp/project", sessionID: session)
+    }
+    func stop(_ session: String) -> AgentNativeHookInput {
+      makeInput(
+        runtime: .claude, token: registration.token, nativeEvent: "Stop",
+        event: .turnEnded, cwd: "/tmp/project", sessionID: session)
+    }
+
+    #expect(store.recordManagedHook(sessionStart("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    #expect(store.recordManagedHook(sessionStart("S2"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    // User runs /resume back to S1: the retired id is reactivated by its own SessionStart.
+    #expect(store.recordManagedHook(sessionStart("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    let channel = try #require(
+      store.signalsPayload(surfaceID: surfaceID, formatter: formatter, includeDiagnosticLast: true).channels.first)
+    #expect(channel.state == .verifiedLive)
+    #expect(channel.sessionID == "S1")
+
+    // Events of the resumed session are now accepted; the superseded S2 is the retired one.
+    #expect(store.recordManagedHook(stop("S1"), callerAncestry: [generation], surfaceID: surfaceID).isAccepted)
+    #expect(store.recordManagedHook(stop("S2"), callerAncestry: [generation], surfaceID: surfaceID) == .rejected)
+  }
+
   @Test func processReplacementRevokesTrustAndReturnsForwardRecordForRetirement() {
     let now = Date(timeIntervalSince1970: 100)
     let store = AgentObservationStore(bufferCapacity: 8, now: { now })

@@ -1,5 +1,7 @@
 import Foundation
 
+private let observationLogger = SupaLogger("AgentObservation")
+
 private struct AgentSignalChannelRecord {
   var state: AgentSignalChannelState
   var confidence: AgentSignal.Confidence
@@ -15,10 +17,27 @@ private struct PendingManagedHookSignal {
 
 private struct ManagedHookRegistrationRecord {
   let launch: AgentHookLaunchRegistration
+  /// Whether the runtime announces a new session with its own start event.
+  ///
+  /// Such a runtime hands the channel over only on that event, so a late event from a
+  /// superseded session is simply rejected. A runtime without a start event (Codex, whose
+  /// only native event is a turn edge) can rotate on ordinary events, so its superseded
+  /// sessions must be retired explicitly or a late one would silently take the channel back.
+  var announcesSessionStarts: Bool { launch.coveredEvents.contains(.sessionStart) }
   var evidenceEpoch: UUID
   var processGeneration: AgentProcessGeneration?
   var sessionID: String?
+  /// Sessions the hook itself rotated away from (an authoritative SessionStart moved on). These
+  /// are permanent until a fresh SessionStart resumes one; a lagging detector read of one is
+  /// ignored, never resurrected.
   var retiredSessionIDs: Set<String> = []
+  /// The hook session the detector currently reports having moved away from. Unlike a retired
+  /// session this is reversible: it blocks a delayed hook event for that session, but the detector
+  /// can self-correct by reporting the session again, and a SessionStart clears it.
+  var detectorSupersededSessionID: String?
+  /// A detector session a SessionStart has overridden as the arbiter, so a detector that keeps
+  /// reporting the same conflicting candidate cannot repeatedly re-supersede the live session.
+  var suppressedDetectorSessionID: String?
   var verified = false
   var pendingSignals: [PendingManagedHookSignal] = []
 }
@@ -275,6 +294,7 @@ final class AgentObservationStore {
       managed.launch.nativeEvents[input.signal.nativeEvent] == input.signal.event,
       normalizedPath(managed.launch.launchCWD) == normalizedPath(input.signal.cwd)
     else {
+      logManagedHookRejection(input, surfaceID: surfaceID)
       return .rejected
     }
     guard let generation = managed.processGeneration ?? record.processGeneration else {
@@ -289,20 +309,54 @@ final class AgentObservationStore {
       return .pending
     }
     guard callerAncestry.contains(generation), managed.processGeneration == generation else {
+      observationLogger.debug(
+        "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=generation-mismatch"
+      )
       return .rejected
     }
-    if managed.retiredSessionIDs.contains(input.signal.sessionID) { return .rejected }
+    // A retired session is normally dead, but an announcing runtime can legitimately resume one:
+    // Claude's /resume re-announces the old id with a fresh authoritative SessionStart. Let that
+    // reactivate it (rotation below retires the current session and re-verifies); every other
+    // retired-session event, and Codex (no SessionStart), stays rejected.
+    let resumesRetiredSession =
+      managed.announcesSessionStarts
+      && input.signal.event == .sessionStart
+      && managed.retiredSessionIDs.contains(input.signal.sessionID)
+    if managed.retiredSessionIDs.contains(input.signal.sessionID), !resumesRetiredSession {
+      observationLogger.debug(
+        "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=retired-session"
+      )
+      return .rejected
+    }
+    if resumesRetiredSession {
+      managed.retiredSessionIDs.remove(input.signal.sessionID)
+    }
+    // A session the detector reports having moved away from blocks a delayed hook event for it,
+    // but only a SessionStart may arbitrate (re-affirm or rotate) — anything else is a stale edge.
+    if managed.detectorSupersededSessionID == input.signal.sessionID,
+      input.signal.event != .sessionStart
+    {
+      observationLogger.debug(
+        "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=detector-superseded"
+      )
+      return .rejected
+    }
 
     if let currentSession = managed.sessionID,
       currentSession != input.signal.sessionID
     {
       let mayRotateSession =
-        input.runtime == .codex
-        || (input.runtime == .claude && input.signal.event == .sessionStart)
-      guard mayRotateSession else { return .rejected }
-      if input.runtime == .codex {
-        managed.retiredSessionIDs.insert(currentSession)
+        !managed.announcesSessionStarts || input.signal.event == .sessionStart
+      guard mayRotateSession else {
+        observationLogger.debug(
+          "managed hook rejected \(input.runtime.rawValue)/\(input.signal.nativeEvent) reason=session-changed"
+        )
+        return .rejected
       }
+      // Retire the superseded session for every runtime so a lagging detector read of it is
+      // ignored rather than rolling the channel back to it (announcing runtimes rotate here on
+      // their own SessionStart; Codex rotates on ordinary events).
+      managed.retiredSessionIDs.insert(currentSession)
       record.evidenceEpoch = UUID()
       record.channels.removeAll()
       record.latestCurrentSignal = nil
@@ -310,6 +364,14 @@ final class AgentObservationStore {
       if record.latestSignal != nil { record.latestSignalBinding = .stale }
       managed.evidenceEpoch = record.evidenceEpoch
       managed.verified = false
+    }
+    // A SessionStart is the final arbiter: it clears any detector supersession and suppresses the
+    // conflicting detector candidate (the session the detector currently reports) so a repeating
+    // false positive cannot re-supersede the session the hook just affirmed.
+    if input.signal.event == .sessionStart {
+      managed.detectorSupersededSessionID = nil
+      managed.suppressedDetectorSessionID =
+        record.sessionID != input.signal.sessionID ? record.sessionID : nil
     }
     record.sessionID = input.signal.sessionID
     managed.sessionID = input.signal.sessionID
@@ -412,17 +474,8 @@ final class AgentObservationStore {
         }
         record.managedHook = nil
       } else if sessionChanged, var managed = record.managedHook {
-        managed.evidenceEpoch = record.evidenceEpoch
-        managed.verified = false
-        managed.pendingSignals.removeAll()
-        if managed.launch.runtime == .codex {
-          if let managedSessionID = managed.sessionID,
-            managedSessionID != acceptedSessionID
-          {
-            managed.retiredSessionIDs.insert(managedSessionID)
-          }
-          managed.sessionID = nil
-        }
+        Self.reconcileManagedSessionOnDetectorChange(
+          &managed, evidenceEpoch: record.evidenceEpoch, acceptedSessionID: acceptedSessionID)
         record.managedHook = managed
       }
     }
@@ -455,16 +508,49 @@ final class AgentObservationStore {
     return update
   }
 
+  /// Reconcile a managed hook's session bookkeeping when the detector reports a different session.
+  /// Codex (no SessionStart) retires the superseded session permanently; an announcing runtime
+  /// marks it reversibly so a delayed edge is blocked but the detector can self-correct.
+  private static func reconcileManagedSessionOnDetectorChange(
+    _ managed: inout ManagedHookRegistrationRecord,
+    evidenceEpoch: UUID,
+    acceptedSessionID: String?
+  ) {
+    managed.evidenceEpoch = evidenceEpoch
+    managed.verified = false
+    managed.pendingSignals.removeAll()
+    guard managed.announcesSessionStarts else {
+      if let managedSessionID = managed.sessionID, managedSessionID != acceptedSessionID {
+        managed.retiredSessionIDs.insert(managedSessionID)
+      }
+      managed.sessionID = nil
+      return
+    }
+    if acceptedSessionID == managed.sessionID {
+      // The detector returned to the hook session: clear the reversible supersession.
+      managed.detectorSupersededSessionID = nil
+    } else {
+      // The detector moved to a new, non-suppressed candidate: supersede the hook session
+      // reversibly (block its delayed edges, allow a later correction) and drop any prior
+      // SessionStart suppression, which this genuinely new candidate invalidates.
+      managed.detectorSupersededSessionID = managed.sessionID
+      managed.suppressedDetectorSessionID = nil
+    }
+  }
+
   private func acceptedManagedSessionID(
     _ sessionID: String?,
     record: SurfaceRecord
   ) -> String? {
-    guard let sessionID,
-      let managed = record.managedHook,
-      managed.launch.runtime == .codex,
-      managed.retiredSessionIDs.contains(sessionID)
-    else { return sessionID }
-    return nil
+    // A session the hook rotated away from (retired), or one a SessionStart has already overridden
+    // as the arbiter (suppressed), must not drive rotation: a lagging or repeating detector read of
+    // it would otherwise revoke the freshly verified session and roll `record.sessionID` backwards.
+    // A genuinely new session the hook has not yet announced is still honored, so the channel is
+    // distrusted until the hook re-announces.
+    guard let sessionID, let managed = record.managedHook else { return sessionID }
+    if managed.retiredSessionIDs.contains(sessionID) { return nil }
+    if managed.suppressedDetectorSessionID == sessionID { return nil }
+    return sessionID
   }
 
   func bindingForSignal(
@@ -525,14 +611,43 @@ final class AgentObservationStore {
     }
   }
 
+  /// A rejected native hook is silent by design, which makes a misconfigured runtime very
+  /// hard to diagnose. Name the first failing precondition in debug builds only.
+  private func logManagedHookRejection(_ input: AgentNativeHookInput, surfaceID: UUID) {
+    let event = "runtime=\(input.runtime.rawValue) event=\(input.signal.nativeEvent)"
+    guard let managed = records[surfaceID]?.managedHook else {
+      observationLogger.debug("managed hook rejected \(event) reason=no-registration")
+      return
+    }
+    let reason: String
+    if managed.launch.token != input.token {
+      reason = "token-mismatch"
+    } else if managed.launch.runtime != input.runtime {
+      reason = "runtime-mismatch expected=\(managed.launch.runtime.rawValue)"
+    } else if managed.launch.nativeEvents[input.signal.nativeEvent] != input.signal.event {
+      reason = "event-not-declared declared=\(managed.launch.nativeEvents.keys.sorted().joined(separator: ","))"
+    } else if normalizedPath(managed.launch.launchCWD) != normalizedPath(input.signal.cwd) {
+      reason =
+        "cwd-mismatch launch=\(normalizedPath(managed.launch.launchCWD)) hook=\(normalizedPath(input.signal.cwd))"
+    } else {
+      reason = "invalid-input"
+    }
+    observationLogger.debug("managed hook rejected \(event) reason=\(reason)")
+  }
+
   private func normalizedPath(_ url: URL) -> String {
     normalizedPath(url.path(percentEncoded: false))
   }
 
+  /// Runtimes disagree on how they report their working directory: some echo the shell's
+  /// logical path (`/tmp/...`) while others report `getcwd()`, which the kernel already
+  /// resolved (`/private/tmp/...`). Both name the same directory, so symlinks are resolved
+  /// before comparison — otherwise a correctly launched agent's hooks are silently rejected.
   private func normalizedPath(_ path: String) -> String {
-    let value = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL.path(
-      percentEncoded: false
-    )
+    let value = URL(filePath: path, directoryHint: .isDirectory)
+      .standardizedFileURL
+      .resolvingSymlinksInPath()
+      .path(percentEncoded: false)
     return value.count > 1 && value.hasSuffix("/") ? String(value.dropLast()) : value
   }
 
