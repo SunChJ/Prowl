@@ -155,8 +155,8 @@ lose lifecycle or signal evidence.
 ## Managed native completion signals
 
 Prowl Agent Profile launches of **Claude Code**, **Codex**, **GitHub Copilot**, **Droid**,
-and **Qoder** also attach process-scoped native event bridges without writing user,
-dedicated-home, or project configuration:
+**Qoder**, **Pi**, **Oh My Pi**, and **OpenCode** also attach process-scoped native event
+bridges without writing user, dedicated-home, or project configuration:
 
 - Claude `SessionStart` verifies launch coverage; `Stop` / `StopFailure` report
   `turn-ended`; `PermissionRequest` and supported elicitation notifications report
@@ -169,6 +169,21 @@ dedicated-home, or project configuration:
   deliberately ignored: Copilot and Qoder both emit it while the permission service
   auto-approves a tool and no one is waiting, so it does not mean the agent is blocked. That
   also makes their `needs-input` arrive slightly later than Claude's.
+- Pi, Oh My Pi, and OpenCode have no stdin hooks; Prowl ships a small extension for each that
+  relays the runtime's own event names through the same bridge. Pi reports `session_start`,
+  `agent_settled` (`turn-ended`; `agent_end` fires earlier and is ignored), and
+  `session_shutdown`; Pi has no permission system, so it never reports `needs-input`. Oh My
+  Pi reports `session_start` and `session_switch` (`/new`) as session starts, `session_stop`
+  as `turn-ended` (its `agent_end` fires once per in-process `task` sub-agent and is ignored),
+  `tool_approval_requested` as `needs-input` (the built-in approval prompt under
+  `--approval-mode always-ask`), and `session_shutdown`. Its in-process `task` sub-agents run
+  under their own session ids; the extension recognises them by their nested session file and
+  forwards only their approval prompts, attributed to the pane's session. OpenCode reports `session.idle` as
+  `turn-ended` and `permission.asked` / `question.asked` as `needs-input`, only for the
+  session the pane is talking to — sub-agent sessions are filtered out by their `parentID`.
+  OpenCode announces no session start: its session exists only after the first prompt and
+  `/new` / resume emit nothing, so, like Codex, the first `session.idle` verifies the channel
+  and an ordinary event with a new session id rotates it.
 
 Each runtime is enabled the way it supports per-launch injection, and none of them changes
 what the user already configured: Copilot loads an extra read-only plugin directory shipped
@@ -177,11 +192,19 @@ never merged or rewritten), while Droid and Qoder receive a settings object that
 Prowl's handlers into whatever settings the Profile already passes. Because Droid accepts
 only a settings *path*, its merged copy is written to an owner-only file that is deleted with
 the pane. Qoder additionally cannot use flag-supplied hooks at all when `--setting-sources`
-is set, so that launch runs unchanged with no exact coverage.
+is set, so that launch runs unchanged with no exact coverage. Pi (`-e`) and Oh My Pi
+(`--hook`) receive the bundled extension file through an additive flag inserted before the
+prompt; a user's own extensions and `--no-extensions` keep working. OpenCode receives the
+bundled plugin through a launch-scoped `OPENCODE_CONFIG_CONTENT` whose `plugin` list is
+appended to whatever content the Profile or the user's shell already exports (config layers
+concatenate plugin lists, so global and project plugins are unaffected). `--pure` or
+`OPENCODE_PURE` disables every external plugin, so those launches run unchanged with one
+warning; under `--auto`, OpenCode auto-replies `permission.asked` in the same millisecond, so
+that event is not registered for such launches.
 
 Only an app-issued token plus exact caller-process ancestry and matching pane/runtime/cwd can
-produce `hook_claude` / `hook_codex` / `hook_copilot` / `hook_droid` / `hook_qodercli`
-evidence. The channel is not advertised as
+produce `hook_claude` / `hook_codex` / `hook_copilot` / `hook_droid` / `hook_qodercli` /
+`hook_pi` / `hook_omp` / `hook_opencode` evidence. The channel is not advertised as
 `verified_live` until a valid native event completes that end-to-end check. Early Claude
 `SessionStart` payloads wait for the first matching process generation instead of being lost.
 That first generation may attach after the detector's acquisition window; once attached, a
@@ -196,7 +219,7 @@ or record preparation is uncertain, Prowl launches the original argv unchanged, 
 exact coverage, and reports one non-blocking launch warning.
 
 Managed hooks apply only to Profile launches. Typing `claude`, `codex`, `copilot`, `droid`,
-`qodercli`, or any other runtime manually keeps the existing
+`qodercli`, `pi`, `omp`, `opencode`, or any other runtime manually keeps the existing
 cooperative/transcript/process/screen evidence. A hook
 `turn-ended` still does not prove assigned-task completion: dispatch receipts and workflow
 completion remain separate protocols.
