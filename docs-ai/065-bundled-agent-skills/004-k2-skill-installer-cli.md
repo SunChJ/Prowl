@@ -99,6 +99,9 @@ xcodebuild's exit code, so its "pass" was wrong — and that the schema accepted
 `destination` required for `broken`, optional for `installed_different_source`, forbidden
 otherwise, with negative fixtures for each invalid combination.
 
+Round 4 re-verified every earlier fix and reported no findings at any level; the review loop
+closed there.
+
 ## Verification
 
 - TDD RED: 116 missing-symbol errors across the five new CLI test files before the shared
@@ -106,17 +109,19 @@ otherwise, with negative fixtures for each invalid combination.
   of `/` yields `/..`), fixed by stopping at the filesystem root.
 - `make build-cli` and `make test-cli-smoke` pass; the smoke target now also runs
   `skills list --json` against a temporary skills root and home with the socket unavailable.
-  `make test-cli-unit` passed 120 tests and `make test-cli-integration` passed 102. New
-  coverage: 13 installer, 6 target, 18 executor, 5 parser, 3 schema, and 5 integration tests (review round 1 added 5 boundary/explicit-path tests);
+  After the review rounds, `make test-cli-unit` passed 128 tests and `make test-cli-integration`
+  passed 102. New coverage: 14 installer, 7 target, 22 executor, 5 parser, 4 schema, and 5
+  integration tests;
   the integration tests run the real binary with an unavailable `PROWL_CLI_SOCKET`, a temporary
   `PROWL_SKILLS_DIR`, a temporary `HOME`, and a throwaway Git repository, and validate every
   JSON envelope against the schema bundle.
 - App: `CLIInstallClientTests` (existing cases plus dangling-link status, live install repair,
   and live uninstall of a dangling link) and `SettingsFeatureCLIInstallTests` passed (18 tests
-  in the focused run). `make test` verified 2,624 main app tests plus 2 isolated tests with zero
-  failures; `make check` passed (strict formatting, SwiftLint, 44 script tests); `make build-app`
-  passed and the Debug app contains `Contents/Resources/skills/prowl-cli/SKILL.md`, identical
-  to the source file.
+  in the focused run, re-run after the round-3 fix). `make test` on the fixed tree verified
+  2,624 main app tests plus 2 isolated tests with zero failures; `make check` passed (strict
+  formatting, SwiftLint, 44 script tests); `make build-app` passed and the Debug app contains
+  `Contents/Resources/skills/prowl-cli/SKILL.md`, identical to the source file, and its bundled
+  `prowl-cli/prowl` resolves the skills beside itself.
 - Manual: a temporary `Prowl.app/Contents/Resources` layout with the CLI symlinked from a
   temporary `bin/` on `PATH`; bare-name invocation resolved to the real executable
   (`BUNDLE_NOT_FOUND` names the resolved path); list → bare install (detected only) →
@@ -131,5 +136,5 @@ otherwise, with negative fixtures for each invalid combination.
 
 - Slice: 065-K2
 - Branch: `feat/bundled-skills-k2`
-- PR: pending
+- PR: #730
 - Depends on: [003-k1-bundle-registry.md](003-k1-bundle-registry.md)
