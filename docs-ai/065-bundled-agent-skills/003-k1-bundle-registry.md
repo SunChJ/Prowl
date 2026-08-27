@@ -83,5 +83,5 @@ installing or modifying any skill in a user or project directory.
 
 - Slice: 065-K1
 - Branch: `feat/bundled-skills-k1`
-- PR: pending
+- PR: #729
 - Depends on: [002-s0-skill-targets.md](002-s0-skill-targets.md)
