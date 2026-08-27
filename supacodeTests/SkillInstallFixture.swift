@@ -11,7 +11,8 @@ struct SkillInstallFixture {
   let client: SkillInstallClient
 
   init() throws {
-    root = FileManager.default.temporaryDirectory
+    root =
+      FileManager.default.temporaryDirectory
       .appending(path: "prowl-skill-install-\(UUID().uuidString)", directoryHint: .isDirectory)
       .standardizedFileURL
     home = root.appending(path: "home", directoryHint: .isDirectory)

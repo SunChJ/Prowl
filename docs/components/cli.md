@@ -387,6 +387,9 @@ and `targets[]` (`id`, `detected`, `path`, `status`, optional `destination`); `i
 `.data.scope`, `.data.root`, `.data.results[]` (`skill`, `target`, `path`, `before`,
 `after`) and, for project scope, `.data.note`; `path` → `.data.skill.{id,name,audience,path}`.
 `PROWL_SKILLS_DIR` points the command at a different skills root for development.
+Settings › Agents › Command Line Tool › **Agent Skills** offers the same user-scope actions
+from the GUI (Install / Remove / Repair / Replace per skill × detected target) and shows
+the same status as `prowl skills list` — see [settings](settings.md#agent-skills).
 
 ### `prowl read [target]`
 Read a pane's content.

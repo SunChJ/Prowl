@@ -184,7 +184,8 @@ struct AgentSkillsSectionView: View {
     switch status {
     case .installed: "Installed"
     case .notInstalled: "Not installed"
-    case .installedDifferentSource(_, let destination): destination == nil ? "Real file or directory" : "Linked elsewhere"
+    case .installedDifferentSource(_, let destination):
+      destination == nil ? "Real file or directory" : "Linked elsewhere"
     case .broken: "Broken link"
     }
   }

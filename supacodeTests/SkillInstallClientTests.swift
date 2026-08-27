@@ -109,9 +109,11 @@ struct SkillInstallClientTests {
 
     for target in [".claude", ".agents"] {
       let linkPath = fixture.linkPath(target: target, skill: "prowl-cli")
-      #expect(try FileManager.default.destinationOfSymbolicLink(atPath: linkPath) == fixture.skillDirectory("prowl-cli"))
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: linkPath) == fixture.skillDirectory("prowl-cli"))
     }
-    #expect(FileManager.default.fileExists(atPath: other.path(percentEncoded: false)), "The other source is never removed")
+    #expect(
+      FileManager.default.fileExists(atPath: other.path(percentEncoded: false)), "The other source is never removed")
   }
 
   @Test func installRefusesARealDirectoryWithoutTouchingIt() async throws {
@@ -145,8 +147,12 @@ struct SkillInstallClientTests {
     try await fixture.client.uninstall(skill, try fixture.target("claude"))
     try await fixture.client.uninstall(skill, try fixture.target("agents"))
 
-    #expect((try? FileManager.default.attributesOfItem(atPath: fixture.linkPath(target: ".claude", skill: "prowl-cli"))) == nil)
-    #expect((try? FileManager.default.attributesOfItem(atPath: fixture.linkPath(target: ".agents", skill: "prowl-cli"))) == nil)
+    #expect(
+      (try? FileManager.default.attributesOfItem(atPath: fixture.linkPath(target: ".claude", skill: "prowl-cli")))
+        == nil)
+    #expect(
+      (try? FileManager.default.attributesOfItem(atPath: fixture.linkPath(target: ".agents", skill: "prowl-cli")))
+        == nil)
     #expect(FileManager.default.fileExists(atPath: fixture.skillDirectory("prowl-cli")), "The bundled skill stays")
 
     do {
