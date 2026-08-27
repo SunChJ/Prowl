@@ -1215,7 +1215,10 @@
                 "hook_codex",
                 "hook_copilot",
                 "hook_droid",
-                "hook_qodercli"
+                "hook_qodercli",
+                "hook_pi",
+                "hook_omp",
+                "hook_opencode"
               ]
             },
             "confidence": {

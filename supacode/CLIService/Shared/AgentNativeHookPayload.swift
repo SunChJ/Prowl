@@ -8,6 +8,10 @@ nonisolated public enum AgentNativeHookRuntime: String, Codable, CaseIterable, S
   case copilot
   case droid
   case qoder = "qodercli"
+  // swiftlint:disable:next identifier_name
+  case pi
+  case omp
+  case opencode
 }
 
 nonisolated public struct AgentNativeHookSignal: Codable, Equatable, Sendable {
@@ -94,18 +98,60 @@ nonisolated public enum AgentNativeHookDecoder {
   /// `PermissionRequest` is deliberately absent: Copilot and Qoder were measured emitting it
   /// while the permission service auto-approved and nobody was waiting. Copilot's
   /// `subagentStop` is absent because a subagent finishing is not the main turn ending.
-  private static func claudeShapedEvents(
-    for runtime: AgentNativeHookRuntime
-  ) -> [String: AgentSignalEvent] {
-    var events: [String: AgentSignalEvent] = [
-      "Notification": .needsInput,
-      "SessionEnd": .sessionEnd,
-      "SessionStart": .sessionStart,
-      "Stop": .turnEnded,
-    ]
-    if runtime == .qoder { events["StopFailure"] = .turnEnded }
-    return events
+  ///
+  /// Pi, Oh My Pi, and OpenCode are relayed by Prowl's own bundled extensions, which forward
+  /// the runtime's native event names inside the same envelope (docs-ai 064.010). The tables
+  /// are the single source for both decoding and the adapters' declared capabilities.
+  public static func nativeEvents(for runtime: AgentNativeHookRuntime) -> [String: AgentSignalEvent] {
+    switch runtime {
+    case .claude:
+      var events = claudeLifecycleEvents
+      events["Elicitation"] = .needsInput
+      events["PermissionRequest"] = .needsInput
+      events["StopFailure"] = .turnEnded
+      return events
+    case .codex:
+      return ["agent-turn-complete": .turnEnded]
+    case .copilot, .droid:
+      return claudeLifecycleEvents
+    case .qoder:
+      var events = claudeLifecycleEvents
+      events["StopFailure"] = .turnEnded
+      return events
+    case .pi:
+      // `agent_end` precedes `agent_settled`, Pi's documented idle point; Pi has no permission system.
+      return [
+        "agent_settled": .turnEnded,
+        "session_shutdown": .sessionEnd,
+        "session_start": .sessionStart,
+      ]
+    case .omp:
+      // `agent_end` fires once per in-process `task` sub-agent; `session_stop` is documented as
+      // main-session only. `/new` rotates through `session_switch` without a `session_start`.
+      return [
+        "session_shutdown": .sessionEnd,
+        "session_start": .sessionStart,
+        "session_stop": .turnEnded,
+        "session_switch": .sessionStart,
+        "tool_approval_requested": .needsInput,
+      ]
+    case .opencode:
+      // Non-announcing like Codex: the session is created lazily at the first prompt and
+      // `/new` / resume emit nothing, so the first `session.idle` verifies and delivers.
+      return [
+        "permission.asked": .needsInput,
+        "question.asked": .needsInput,
+        "session.idle": .turnEnded,
+      ]
+    }
   }
+
+  private static let claudeLifecycleEvents: [String: AgentSignalEvent] = [
+    "Notification": .needsInput,
+    "SessionEnd": .sessionEnd,
+    "SessionStart": .sessionStart,
+    "Stop": .turnEnded,
+  ]
 
   public static func decode(
     runtime: AgentNativeHookRuntime,
@@ -123,7 +169,7 @@ nonisolated public enum AgentNativeHookDecoder {
       try decodeClaude(nativeEvent: nativeEvent, object: object)
     case .codex:
       try decodeCodex(nativeEvent: nativeEvent, object: object)
-    case .copilot, .droid, .qoder:
+    case .copilot, .droid, .qoder, .pi, .omp, .opencode:
       try decodeClaudeShaped(runtime: runtime, nativeEvent: nativeEvent, object: object)
     }
   }
@@ -137,7 +183,7 @@ nonisolated public enum AgentNativeHookDecoder {
       throw AgentNativeHookDecodeError.malformedPayload
     }
     guard payloadEvent == nativeEvent else { throw AgentNativeHookDecodeError.eventMismatch }
-    guard let event = claudeShapedEvents(for: runtime)[nativeEvent] else {
+    guard let event = nativeEvents(for: runtime)[nativeEvent] else {
       throw AgentNativeHookDecodeError.unsupportedEvent
     }
 

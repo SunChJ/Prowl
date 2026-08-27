@@ -92,6 +92,33 @@ final class AgentsCommandParsingTests: XCTestCase {
     )
   }
 
+  func testRelayedRuntimesReadNativeEventPayloadsFromStdin() throws {
+    let cases: [(String, String, AgentNativeHookRuntime, AgentSignalEvent)] = [
+      ("pi", "agent_settled", .pi, .turnEnded),
+      ("omp", "session_switch", .omp, .sessionStart),
+      ("opencode", "permission.asked", .opencode, .needsInput),
+    ]
+    for (runtimeName, nativeEvent, runtime, event) in cases {
+      let command = try AgentsHookCommand.parse([runtimeName, nativeEvent])
+      let input = try command.makeInput(
+        environment: [AgentNativeHookInput.tokenEnvironmentKey: "token-1"],
+        stdin: Data(
+          #"{"hook_event_name":"\#(nativeEvent)","session_id":"s-1","cwd":"/tmp/project","reason":"edit"}"#.utf8
+        )
+      )
+      XCTAssertEqual(input.runtime, runtime)
+      XCTAssertEqual(input.signal.event, event)
+      XCTAssertEqual(input.signal.nativeEvent, nativeEvent)
+      XCTAssertEqual(input.signal.sessionID, "s-1")
+      XCTAssertThrowsError(
+        try AgentsHookCommand.parse([runtimeName, nativeEvent, "{}"]).makeInput(
+          environment: [AgentNativeHookInput.tokenEnvironmentKey: "token-1"],
+          stdin: Data()
+        )
+      )
+    }
+  }
+
   func testNativeHookCommandIsHiddenAndBuildsBoundedRuntimeInput() throws {
     XCTAssertFalse(AgentsCommand.helpMessage().contains("_hook"))
     let command = try AgentsHookCommand.parse([

@@ -486,6 +486,19 @@ nonisolated struct AgentHookPreparedInvocation: Equatable, Sendable {
   /// Actual argv values carried through owner-controlled surface environment.
   /// Keys are indexes in `invocation.arguments`.
   let argumentValues: [Int: String]
+  /// Launch-scoped environment variables (name -> value) that ride owner-controlled carriers
+  /// exactly like `argumentValues`: the typed command names the carrier, never the value.
+  let environmentValues: [String: String]
+
+  init(
+    invocation: AgentInvocation,
+    argumentValues: [Int: String],
+    environmentValues: [String: String] = [:]
+  ) {
+    self.invocation = invocation
+    self.argumentValues = argumentValues
+    self.environmentValues = environmentValues
+  }
 }
 
 nonisolated struct AgentHookPreparationOutcome: Equatable, Sendable {
@@ -756,5 +769,166 @@ nonisolated enum CodexManagedNotifyRenderer {
       invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),
       argumentValues: [insertionIndex + 1: "notify=\(notifyJSON)"]
     )
+  }
+}
+
+/// Pi (`-e`) and Oh My Pi (`--hook`) load every extension flag additively and keep explicit
+/// paths even under `--no-extensions`, so Prowl appends its bundled extension file ahead of the
+/// prompt positional and never inspects discovered or user-supplied extensions.
+nonisolated enum ExtensionFlagHookRenderer {
+  static func prepare(
+    invocation: AgentInvocation,
+    option: String,
+    extensionPath: String,
+    promptArgumentIndex: Int?
+  ) -> AgentHookPreparedInvocation {
+    var arguments = invocation.arguments
+    let insertionIndex = ManagedHookSettings.insertionIndex(
+      promptArgumentIndex: promptArgumentIndex,
+      arguments: arguments
+    )
+    arguments.insert(contentsOf: [option, ""], at: insertionIndex)
+    return AgentHookPreparedInvocation(
+      invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),
+      argumentValues: [insertionIndex + 1: extensionPath]
+    )
+  }
+}
+
+/// OpenCode loads plugins from `OPENCODE_CONFIG_CONTENT`, one more config layer whose
+/// `plugin[]` concatenates with the global and project lists (measured on 1.18.23), so Prowl
+/// only appends its bundled plugin to whatever content the launch already carries and never
+/// touches a config file. `--pure` and `OPENCODE_PURE` drop every external plugin, so those
+/// launches degrade instead of registering a channel that can never fire.
+nonisolated enum OpenCodeHookPluginPreparer {
+  static let contentVariableName = "OPENCODE_CONFIG_CONTENT"
+  static let pureVariableName = "OPENCODE_PURE"
+  static let environmentVariableNames = [contentVariableName, pureVariableName]
+
+  /// OpenCode treats the variable as set unless it is `0` or `false`; an empty value still
+  /// counts (measured on 1.18.23).
+  static func isPure(environmentValue: String?) -> Bool {
+    guard let environmentValue else { return false }
+    let normalized = environmentValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return !["0", "false"].contains(normalized)
+  }
+
+  static func containsPureFlag(_ arguments: [String], promptArgumentIndex: Int?) -> Bool {
+    for (index, argument) in arguments.enumerated() where index != promptArgumentIndex {
+      if argument == "--" { return false }
+      if argument == "--pure" || argument == "--pure=true" { return true }
+    }
+    return false
+  }
+
+  static func containsAutoFlag(_ arguments: [String], promptArgumentIndex: Int?) -> Bool {
+    for (index, argument) in arguments.enumerated() where index != promptArgumentIndex {
+      if argument == "--" { return false }
+      if argument == "--auto" || argument == "--auto=true" { return true }
+    }
+    return false
+  }
+
+  static func prepare(
+    invocation: AgentInvocation,
+    pluginPath: String,
+    existingContent: String?,
+    promptArgumentIndex: Int?
+  ) -> AgentHookPreparationOutcome {
+    if containsPureFlag(invocation.arguments, promptArgumentIndex: promptArgumentIndex) {
+      return ManagedHookSettings.degraded(
+        invocation,
+        runtime: .opencode,
+        message: "Managed OpenCode hooks are unavailable when --pure is set; launching unchanged."
+      )
+    }
+    var object: [String: Any] = [:]
+    // OpenCode ignores an empty variable, so only a non-blank value is an existing layer.
+    if let existingContent, !existingContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let data = Data(existingContent.utf8)
+      guard data.count <= ManagedHookSettings.maximumBytes,
+        let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      else {
+        return ManagedHookSettings.degraded(
+          invocation,
+          runtime: .opencode,
+          message: "The existing OPENCODE_CONFIG_CONTENT is not a JSON object; launching unchanged."
+        )
+      }
+      object = parsed
+    }
+    var plugins: [Any] = []
+    if let existing = object["plugin"] {
+      guard let list = existing as? [Any] else {
+        return ManagedHookSettings.degraded(
+          invocation,
+          runtime: .opencode,
+          message: "The existing OPENCODE_CONFIG_CONTENT plugin list is not an array; launching unchanged."
+        )
+      }
+      plugins = list
+    }
+    let pluginURL = URL(filePath: pluginPath, directoryHint: .notDirectory).absoluteString
+    if !plugins.contains(where: { ($0 as? String) == pluginURL }) {
+      plugins.append(pluginURL)
+    }
+    object["plugin"] = plugins
+    guard let content = ManagedHookSettings.serialized(object) else {
+      return ManagedHookSettings.degraded(
+        invocation,
+        runtime: .opencode,
+        message: "The merged OPENCODE_CONFIG_CONTENT could not be serialized; launching unchanged."
+      )
+    }
+    return AgentHookPreparationOutcome(
+      originalInvocation: invocation,
+      prepared: AgentHookPreparedInvocation(
+        invocation: invocation,
+        argumentValues: [:],
+        environmentValues: [contentVariableName: content]
+      ),
+      warning: nil
+    )
+  }
+}
+
+/// OpenCode's working directory is a positional `[project]` for the TUI and `--dir` for
+/// `opencode run` (a repeated `--dir` crashes the runtime, so the last one is taken as its
+/// intent); neither form has an environment equivalent.
+nonisolated enum OpenCodeLaunchDirectory {
+  /// Options that consume the next argument (OpenCode 1.18.23 `--help`, TUI and `run`), so a
+  /// value is never mistaken for the project. The preparer additionally requires a project
+  /// positional to be an existing directory, which catches a value option added later.
+  private static let valueOptions: Set<String> = [
+    "-m", "--model", "--agent", "--prompt", "--variant", "-s", "--session", "--port", "--hostname",
+    "--mdns-domain", "--cors", "--log-level", "--replay-limit", "--dir", "--command", "-f", "--file",
+    "--title", "--attach", "-p", "--password", "-u", "--username", "--format",
+  ]
+
+  static func scan(arguments: [String], promptArgumentIndex: Int?) -> ManagedHookWorkingDirectory.Scan {
+    if arguments.first == "run" {
+      return ManagedHookWorkingDirectory.scan(
+        arguments: arguments,
+        optionNames: ["--dir"],
+        precedence: .lastWins,
+        promptArgumentIndex: promptArgumentIndex
+      )
+    }
+    var project: String?
+    var index = 0
+    while index < arguments.count {
+      let current = index
+      index += 1
+      if current == promptArgumentIndex { continue }
+      let argument = arguments[current]
+      if argument == "--" { break }
+      if argument.hasPrefix("-") {
+        if valueOptions.contains(argument) { index += 1 }
+        continue
+      }
+      guard project == nil else { return .malformed }
+      project = argument
+    }
+    return project.map(ManagedHookWorkingDirectory.Scan.changed) ?? .inherited
   }
 }

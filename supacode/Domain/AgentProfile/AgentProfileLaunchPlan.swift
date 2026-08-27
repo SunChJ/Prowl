@@ -6,6 +6,11 @@ nonisolated struct AgentHookResources: Equatable, Sendable {
   /// Absolute path to the bundled Copilot hook plugin directory. `nil` outside a real app
   /// bundle, which degrades Copilot's managed hooks without affecting the other runtimes.
   var copilotPluginPath: String?
+  /// Absolute paths to the bundled extension files relayed by Pi (`-e`), Oh My Pi (`--hook`),
+  /// and OpenCode (an `OPENCODE_CONFIG_CONTENT` plugin). Each degrades only its own runtime.
+  var piExtensionPath: String?
+  var ompExtensionPath: String?
+  var opencodePluginPath: String?
 }
 
 nonisolated struct AgentHookLaunchRegistration: Equatable, Sendable {
@@ -28,6 +33,10 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
   /// Argv index -> owner-controlled surface carrier. This generalizes the
   /// prompted-start carrier to large native hook settings/config arguments.
   let argumentCarriers: [Int: String]
+  /// Carriers behind launch-scoped hook environment variables (OpenCode's
+  /// `OPENCODE_CONFIG_CONTENT`): referenced by a `commandEnvironmentTokens`
+  /// assignment and removed from the child like every other carrier.
+  let environmentCarriers: [String]
   /// Present only on the execution copy immediately before surface creation.
   let hookRegistration: AgentHookLaunchRegistration?
   /// `env(1)` assignment tokens typed ahead of the invocation. The whole
@@ -60,6 +69,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     runtime: AgentProfileRuntime,
     invocation: AgentInvocation,
     argumentCarriers: [Int: String] = [:],
+    environmentCarriers: [String] = [],
     hookRegistration: AgentHookLaunchRegistration? = nil,
     commandEnvironmentTokens: [String],
     placement: AgentProfilePlacement,
@@ -74,6 +84,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     self.runtime = runtime
     self.invocation = invocation
     self.argumentCarriers = argumentCarriers
+    self.environmentCarriers = environmentCarriers
     self.hookRegistration = hookRegistration
     self.commandEnvironmentTokens = commandEnvironmentTokens
     self.placement = placement
@@ -110,7 +121,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
       surfaceEnvironment[AgentProfileLaunchPlanner.hookForwardCarrierName] == nil
         ? nil : AgentProfileLaunchPlanner.hookForwardCarrierName,
     ].compactMap { $0 }
-    let carrierNames = Set(knownCarriers + Array(argumentCarriers.values)).sorted()
+    let carrierNames = Set(knownCarriers + Array(argumentCarriers.values) + environmentCarriers).sorted()
     for carrier in carrierNames.reversed() {
       environmentTokens.insert(contentsOf: ["-u", carrier], at: 0)
     }
@@ -144,6 +155,15 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
         "\(AgentNativeHookInput.tokenEnvironmentKey)=\"$\(AgentProfileLaunchPlanner.hookTokenCarrierName)\"",
         "\(ProwlSocket.environmentKey)=\"$\(AgentProfileLaunchPlanner.hookSocketCarrierName)\"",
       ]
+    // Hook environment variables ride the same way as hook argv values: the child sees the real
+    // variable, the typed command only ever names the carrier.
+    var environmentCarriers: [String] = []
+    for (offset, entry) in prepared.environmentValues.sorted(by: { $0.key < $1.key }).enumerated() {
+      let carrier = "PROWL_LAUNCH_HOOK_ENV_\(offset)"
+      environmentCarriers.append(carrier)
+      environment[carrier] = entry.value
+      commandTokens.append("\(entry.key)=\"$\(carrier)\"")
+    }
     // Only Codex's bridge reads a private file out of the environment; Droid's settings file
     // is named directly in its own argv, so its locator must not reach the child process.
     if let forwardingRecord, runtime == .codex {
@@ -160,6 +180,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
       runtime: self.runtime,
       invocation: prepared.invocation,
       argumentCarriers: carriers,
+      environmentCarriers: environmentCarriers,
       hookRegistration: AgentHookLaunchRegistration(
         token: token,
         runtime: runtime,
@@ -201,6 +222,7 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
       runtime: runtime,
       invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),
       argumentCarriers: argumentCarriers,
+      environmentCarriers: environmentCarriers,
       hookRegistration: hookRegistration,
       commandEnvironmentTokens: commandTokens,
       placement: placement,

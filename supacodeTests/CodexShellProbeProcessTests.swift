@@ -104,6 +104,40 @@ struct CodexShellProbeProcessTests {
     }
   }
 
+  /// A shell-exported `OPENCODE_CONFIG_CONTENT` can legitimately be tens of kilobytes, so the
+  /// environment probe must be able to raise the bound the Codex config probe defaults to.
+  @Test func outputBoundIsConfigurableForLargeEnvironmentValues() async throws {
+    let root = temporaryDirectory("shell-large-output")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let shell = try executableScript(
+      in: root,
+      name: "large.sh",
+      contents: """
+        #!/bin/sh
+        head -c 20480 /dev/zero | tr '\\0' a
+        """
+    )
+    let defaultBound = CodexShellProbeProcess(
+      timeout: 2,
+      shellOverride: URL(filePath: "/bin/sh"),
+      shellOverrideArguments: [shell.path(percentEncoded: false)]
+    )
+    await #expect(throws: CodexShellProbeProcessError.outputTooLarge) {
+      try await defaultBound.run(cwd: root, script: "ignored")
+    }
+
+    let raised = CodexShellProbeProcess(
+      timeout: 2,
+      maximumOutputBytes: ShellEnvironmentProbe.maximumOutputBytes,
+      shellOverride: URL(filePath: "/bin/sh"),
+      shellOverrideArguments: [shell.path(percentEncoded: false)]
+    )
+    let output = try await raised.run(cwd: root, script: "ignored")
+    #expect(output.stdout.utf8.count == 20_480)
+    #expect(output.exitCode == 0)
+  }
+
   private func executableScript(in root: URL, name: String, contents: String) throws -> URL {
     let url = root.appending(path: name, directoryHint: .notDirectory)
     try contents.write(to: url, atomically: true, encoding: .utf8)

@@ -19,6 +19,7 @@ nonisolated struct CodexShellProbeProcess: Sendable {
     let maximumOutputBytes: Int
     let shellOverride: URL?
     let shellOverrideArguments: [String]
+    let environment: [String: String]?
   }
 
   private struct OutputDescriptor {
@@ -45,17 +46,21 @@ nonisolated struct CodexShellProbeProcess: Sendable {
   let maximumOutputBytes: Int
   let shellOverride: URL?
   let shellOverrideArguments: [String]
+  /// The child's environment; `nil` inherits the app's, which is what every launch probe wants.
+  let environment: [String: String]?
 
   init(
     timeout: TimeInterval = 1,
     maximumOutputBytes: Int = 16 * 1_024,
     shellOverride: URL? = nil,
-    shellOverrideArguments: [String] = []
+    shellOverrideArguments: [String] = [],
+    environment: [String: String]? = nil
   ) {
     self.timeout = max(0.05, timeout)
     self.maximumOutputBytes = max(1, maximumOutputBytes)
     self.shellOverride = shellOverride
     self.shellOverrideArguments = shellOverrideArguments
+    self.environment = environment
   }
 
   func run(cwd: URL, script: String) async throws -> ShellOutput {
@@ -68,7 +73,8 @@ nonisolated struct CodexShellProbeProcess: Sendable {
           timeout: timeout,
           maximumOutputBytes: maximumOutputBytes,
           shellOverride: shellOverride,
-          shellOverrideArguments: shellOverrideArguments
+          shellOverrideArguments: shellOverrideArguments,
+          environment: environment
         ),
         processBox: processBox
       )
@@ -100,6 +106,7 @@ nonisolated struct CodexShellProbeProcess: Sendable {
       ]
     }
     process.currentDirectoryURL = cwd
+    if let environment = options.environment { process.environment = environment }
     process.standardInput = FileHandle.nullDevice
     let output = Pipe()
     let errors = Pipe()

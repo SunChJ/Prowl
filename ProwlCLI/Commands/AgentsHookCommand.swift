@@ -44,7 +44,7 @@ struct AgentsHookCommand: ParsableCommand {
     }
     let nativePayload: Data
     switch runtime {
-    case .claude, .copilot, .droid, .qoder:
+    case .claude, .copilot, .droid, .qoder, .pi, .omp, .opencode:
       guard payload == nil else { throw ValidationError("This runtime's hooks read JSON from stdin.") }
       nativePayload = stdin
     case .codex:

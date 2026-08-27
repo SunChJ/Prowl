@@ -55,7 +55,10 @@ final class WorktreeTerminalManager {
       return AgentHookResources(
         bundledCLIPath: url.path(percentEncoded: false),
         socketPath: ProwlSocket.defaultPath,
-        copilotPluginPath: SupacodePaths.bundledCopilotHookPluginURL?.path(percentEncoded: false)
+        copilotPluginPath: SupacodePaths.bundledCopilotHookPluginURL?.path(percentEncoded: false),
+        piExtensionPath: SupacodePaths.bundledPiHookExtensionURL?.path(percentEncoded: false),
+        ompExtensionPath: SupacodePaths.bundledOMPHookExtensionURL?.path(percentEncoded: false),
+        opencodePluginPath: SupacodePaths.bundledOpenCodeHookPluginURL?.path(percentEncoded: false)
       )
     },
     forwardingRecordBaseDirectory: URL = SupacodePaths.agentHookForwardingDirectory,
@@ -136,6 +139,13 @@ final class WorktreeTerminalManager {
         codexConfigReadProcess: codexConfigReadProcess,
         droidSettingsEnvironmentResolver: { cwd, pathOverride in
           await DroidSettingsEnvironmentProbe.resolve(cwd: cwd, pathOverride: pathOverride)
+        },
+        openCodeEnvironmentResolver: { cwd, pathOverride in
+          await ShellEnvironmentProbe.resolve(
+            variables: OpenCodeHookPluginPreparer.environmentVariableNames,
+            cwd: cwd,
+            pathOverride: pathOverride
+          )
         }
       )
       guard !Task.isCancelled else { return .failure(.preparationCancelled) }

@@ -57,6 +57,15 @@ nonisolated enum SupacodePaths {
     )
   }
 
+  /// Extension files relayed by the Pi-family and OpenCode managed hooks (docs-ai 064.010).
+  static var bundledPiHookExtensionURL: URL? { bundledAgentHookFileURL("pi/prowl-hooks.ts") }
+  static var bundledOMPHookExtensionURL: URL? { bundledAgentHookFileURL("omp/prowl-hooks.ts") }
+  static var bundledOpenCodeHookPluginURL: URL? { bundledAgentHookFileURL("opencode/prowl-hooks.ts") }
+
+  private static func bundledAgentHookFileURL(_ relativePath: String) -> URL? {
+    Bundle.main.resourceURL?.appending(path: "agent-hooks/\(relativePath)", directoryHint: .notDirectory)
+  }
+
   static var agentHookForwardingDirectory: URL {
     cacheDirectory.appending(path: "agent-hook-forwarding", directoryHint: .isDirectory)
   }

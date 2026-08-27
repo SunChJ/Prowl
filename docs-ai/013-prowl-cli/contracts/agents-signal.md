@@ -35,16 +35,19 @@ cannot upgrade source/confidence or satisfy a native-hook capability check.
 ## Bundled native-hook ingress
 
 The bundled CLI also contains a hidden `agents _hook` bridge for Prowl-managed Claude Code,
-Codex, Copilot, Droid, and Qoder Profile launches. It is intentionally absent from help and
-shell completion and is not a targetable public API. Codex appends one bounded JSON argv;
-every other supported runtime writes its payload to bounded stdin. The bridge ignores unknown fields, never forwards `last_assistant_message`, stays
+Codex, Copilot, Droid, Qoder, Pi, Oh My Pi, and OpenCode Profile launches. It is intentionally
+absent from help and shell completion and is not a targetable public API. Codex appends one
+bounded JSON argv; every other supported runtime writes its payload to bounded stdin (Pi, Oh My
+Pi, and OpenCode through Prowl's bundled extensions, which forward the runtime's own event
+names such as `agent_settled`, `session_switch`, or `session.idle` in the same envelope). The bridge ignores unknown fields, never forwards `last_assistant_message`, stays
 silent, uses a bounded socket attempt, and exits successfully when Prowl rejects or cannot
 receive evidence.
 
 The app accepts a hook only when an in-memory launch token, runtime/native event, normalized
 launch cwd, exact caller pane, and current or pending process generation all match. A valid
-receipt uses `source: hook_claude`, `hook_codex`, `hook_copilot`, `hook_droid`, or
-`hook_qodercli`; neither the token nor forwarding metadata appears in the response. Public `agents signal` cannot supply hook context and always remains
+receipt uses `source: hook_claude`, `hook_codex`, `hook_copilot`, `hook_droid`,
+`hook_qodercli`, `hook_pi`, `hook_omp`, or `hook_opencode`; neither the token nor forwarding
+metadata appears in the response. Public `agents signal` cannot supply hook context and always remains
 `cooperative_cli`.
 
 Hook `turn-ended` is runtime evidence only. It never completes an assigned dispatch or

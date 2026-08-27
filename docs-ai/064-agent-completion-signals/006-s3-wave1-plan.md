@@ -4,15 +4,17 @@
 
 Owner-approved plan; S3a merged in [#721](https://github.com/onevcat/Prowl/pull/721) (hardened
 in [#723](https://github.com/onevcat/Prowl/pull/723)). Implementation record:
-[007-s3a-action.md](007-s3a-action.md). S3b is planned in
-[008-s3b-plan.md](008-s3b-plan.md) and implemented on `feat/agent-signal-hooks-s3b`; its
-record, including the partial live acceptance, is [009-s3b-action.md](009-s3b-action.md).
+[007-s3a-action.md](007-s3a-action.md). S3b merged in [#725](https://github.com/onevcat/Prowl/pull/725) (plan
+[008-s3b-plan.md](008-s3b-plan.md), record [009-s3b-action.md](009-s3b-action.md)). S3c is
+implemented in [#728](https://github.com/onevcat/Prowl/pull/728) (plan
+[010-s3c-plan.md](010-s3c-plan.md), record [011-s3c-action.md](011-s3c-action.md)).
 
 - Planning branch: `feat/agent-signal-hooks-s3a`
 - Prerequisites: 063-A2, 064-S1, and 064-S2 are merged.
 - Runtime baseline rechecked 2026-08-23: Claude Code 2.1.241; Codex CLI 0.149.0.
 - Re-attested 2026-08-25 for S3b: Claude Code 2.1.243; Codex CLI 0.149.0; Copilot CLI 1.0.80;
   Factory Droid 0.202.0; Qoder CLI 1.1.29.
+- Re-attested 2026-08-26 for S3c: Pi 0.84.3; Oh My Pi 18.0.6; OpenCode 1.18.23.
 - S3 has no wave 2. Managed hooks are limited to runtimes that accept process-scoped
   flag/environment injection without global-config, dedicated-home, or project-file writes.
 
@@ -25,7 +27,7 @@ slice is not complete until S3c passes its complete tier-A gate.
 | --- | --- | --- | --- |
 | **S3a** | Claude Code, Codex | Trusted launch-channel registration, native-hook ingress and payload normalization, self-check/channel lifecycle, launch-epoch integration, bundled CLI/resource locator | S2 |
 | **S3b** | Copilot, Droid, Qoder | Plugin/settings adapters and fixtures on the S3a foundation | S3a |
-| **S3c** | Pi, OMP, OpenCode | Extension/plugin adapters, Active Agents exact-channel badge, complete docs and tier-A live verification | S3b |
+| **S3c** | Pi, OMP, OpenCode | Extension/plugin adapters, complete docs and tier-A live verification (the exact-channel badge was dropped on 2026-08-26) | S3b |
 
 Every PR keeps `main` shippable. Partial runtime support may exist on `main` between these PRs,
 but release documentation must not call S3 wave 1 complete before S3c.
@@ -54,7 +56,7 @@ A hook `turn-ended` never completes a dispatch or workflow step. S2 receipt prio
 
 - No Copilot, Droid, Qoder, Pi, OMP, or OpenCode adapters (S3b/S3c).
 - No Gemini, Qwen, Grok, Cline, Kimi, Cursor, or Amp managed hooks.
-- No Active Agents exact badge (S3c).
+- No Active Agents exact badge (later dropped from S3c without commitment).
 - No transcript/OSC producers, workflow watchdog changes, result capture, or full
   `last_assistant_message` storage.
 - No public configured/degraded channel state, token persistence, cryptographic trust model,
