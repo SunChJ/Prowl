@@ -64,6 +64,67 @@ final class ProwlSkillsTests: XCTestCase {
     }
   }
 
+  func testBundledParsesOptionalSummaryMetadata() throws {
+    try withTemporaryDirectory { root in
+      let resources = root.appending(path: "Resources", directoryHint: .isDirectory)
+      _ = try writeSkill(
+        id: "summarized",
+        frontmatter: """
+          ---
+          name: Summarized
+          description: The long agent-facing description with every trigger phrase.
+          metadata:
+            prowl-summary: Short display text: what it does and how to use it.
+            prowl-install: user
+          ---
+          """,
+        resourcesURL: resources
+      )
+      _ = try writeSkill(
+        id: "plain",
+        frontmatter: """
+          ---
+          name: Plain
+          description: No summary here.
+          ---
+          """,
+        resourcesURL: resources
+      )
+
+      let skills = try ProwlSkills.bundled(resourcesURL: resources)
+
+      XCTAssertEqual(skills.map(\.summary), [nil, "Short display text: what it does and how to use it."])
+      XCTAssertEqual(skills.map(\.audience), [.user, .user])
+    }
+  }
+
+  func testBundledRejectsEmptyOrDuplicateSummaryMetadata() throws {
+    for metadata in ["  prowl-summary:", "  prowl-summary: One\n  prowl-summary: Two"] {
+      try withTemporaryDirectory { root in
+        let resources = root.appending(path: "Resources", directoryHint: .isDirectory)
+        _ = try writeSkill(
+          id: "bad",
+          frontmatter: """
+            ---
+            name: Bad
+            description: Valid description.
+            metadata:
+            \(metadata)
+            ---
+            """,
+          resourcesURL: resources
+        )
+
+        XCTAssertThrowsError(try ProwlSkills.bundled(resourcesURL: resources)) { error in
+          guard case ProwlSkillsError.invalidFrontmatter(_, let reason) = error else {
+            return XCTFail("Expected invalidFrontmatter, got \(error)")
+          }
+          XCTAssertTrue(reason.contains("prowl-summary"), reason)
+        }
+      }
+    }
+  }
+
   func testBundledParsesExplicitUserAndWorkflowAudiences() throws {
     try withTemporaryDirectory { root in
       let resources = root.appending(path: "Resources", directoryHint: .isDirectory)

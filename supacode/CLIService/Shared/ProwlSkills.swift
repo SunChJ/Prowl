@@ -8,7 +8,10 @@ nonisolated public enum ProwlSkillAudience: String, Codable, Equatable, Sendable
 nonisolated public struct BundledSkill: Equatable, Sendable {
   public let id: String
   public let name: String
+  /// The agent-facing description from the frontmatter, including trigger phrasing.
   public let description: String
+  /// `metadata.prowl-summary`: a short human-facing summary for UI surfaces; nil when absent.
+  public let summary: String?
   public let audience: ProwlSkillAudience
   public let directoryURL: URL
 
@@ -17,11 +20,13 @@ nonisolated public struct BundledSkill: Equatable, Sendable {
     name: String,
     description: String,
     audience: ProwlSkillAudience,
-    directoryURL: URL
+    directoryURL: URL,
+    summary: String? = nil
   ) {
     self.id = id
     self.name = name
     self.description = description
+    self.summary = summary
     self.audience = audience
     self.directoryURL = directoryURL
   }
@@ -160,7 +165,8 @@ nonisolated public enum ProwlSkills {
       name: frontmatter.name,
       description: frontmatter.description,
       audience: frontmatter.audience,
-      directoryURL: directoryURL
+      directoryURL: directoryURL,
+      summary: frontmatter.summary
     )
   }
 
@@ -180,8 +186,7 @@ nonisolated public enum ProwlSkills {
     let frontmatterLines = Array(lines[1..<closingIndex])
     var name: String?
     var description: String?
-    var audience = ProwlSkillAudience.user
-    var audienceWasSet = false
+    var metadata = ParsedMetadata()
     var index = 0
 
     while index < frontmatterLines.count {
@@ -232,16 +237,12 @@ nonisolated public enum ProwlSkills {
         guard value.isEmpty else {
           throw invalidFrontmatter(path: path, reason: "metadata must be a map")
         }
-        let result = try audienceMetadata(
+        index = try parseMetadata(
           lines: frontmatterLines,
           startIndex: index + 1,
-          currentAudience: audience,
-          audienceWasSet: audienceWasSet,
+          into: &metadata,
           path: path
         )
-        audience = result.audience
-        audienceWasSet = result.wasSet
-        index = result.nextIndex
 
       default:
         index += 1
@@ -254,7 +255,12 @@ nonisolated public enum ProwlSkills {
     guard let description else {
       throw invalidFrontmatter(path: path, reason: "description is missing")
     }
-    return ParsedFrontmatter(name: name, description: description, audience: audience)
+    return ParsedFrontmatter(
+      name: name,
+      description: description,
+      audience: metadata.audience,
+      summary: metadata.summary
+    )
   }
 
   private static func foldedDescription(
@@ -303,15 +309,15 @@ nonisolated public enum ProwlSkills {
     return (value, index)
   }
 
-  private static func audienceMetadata(
+  /// Parses the `metadata:` map's direct children into `state` and returns the index of the first
+  /// line after the map. A second `metadata:` block continues the same state, so duplicates are
+  /// still rejected.
+  private static func parseMetadata(
     lines: [String],
     startIndex: Int,
-    currentAudience: ProwlSkillAudience,
-    audienceWasSet: Bool,
+    into state: inout ParsedMetadata,
     path: String
-  ) throws -> ParsedAudienceMetadata {
-    var audience = currentAudience
-    var wasSet = audienceWasSet
+  ) throws -> Int {
     var directFieldIndent: Int?
     var index = startIndex
 
@@ -339,18 +345,27 @@ nonisolated public enum ProwlSkills {
       guard let (key, value) = keyValue(in: line), !key.isEmpty else {
         throw invalidFrontmatter(path: path, reason: "metadata contains a malformed field")
       }
-      if key == "prowl-install" {
-        guard !wasSet, let parsedAudience = ProwlSkillAudience(rawValue: value) else {
+      switch key {
+      case "prowl-install":
+        guard !state.audienceWasSet, let parsedAudience = ProwlSkillAudience(rawValue: value) else {
           throw invalidFrontmatter(
             path: path, reason: "metadata.prowl-install must be user or workflow")
         }
-        audience = parsedAudience
-        wasSet = true
+        state.audience = parsedAudience
+        state.audienceWasSet = true
+      case "prowl-summary":
+        guard state.summary == nil, !value.isEmpty else {
+          throw invalidFrontmatter(
+            path: path, reason: "metadata.prowl-summary must be a single non-empty scalar")
+        }
+        state.summary = value
+      default:
+        break
       }
       index += 1
     }
 
-    return ParsedAudienceMetadata(audience: audience, wasSet: wasSet, nextIndex: index)
+    return index
   }
 
   private static func validateTopLevelKey(_ key: String, path: String) throws {
@@ -395,10 +410,11 @@ nonisolated private struct ParsedFrontmatter {
   let name: String
   let description: String
   let audience: ProwlSkillAudience
+  let summary: String?
 }
 
-nonisolated private struct ParsedAudienceMetadata {
-  let audience: ProwlSkillAudience
-  let wasSet: Bool
-  let nextIndex: Int
+nonisolated private struct ParsedMetadata {
+  var audience = ProwlSkillAudience.user
+  var audienceWasSet = false
+  var summary: String?
 }
