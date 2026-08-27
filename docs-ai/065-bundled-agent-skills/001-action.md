@@ -61,9 +61,10 @@
 - Settings reports a successful link with a toast only (the chip changes state); the plan's
   "mirroring the CLI install row" did not decide this, and a modal per link would be noise.
 - `agentSkills` is created and cleared by `SettingsFeature.setSelection`, not by
-  `AppFeature.setSelection` as the plan's `agentProfiles` analogy implied: a grandparent
-  mutation happens after the child `ifLet` has run, so it cannot cancel in-flight link effects
-  (K3 review round 1).
+  `AppFeature.setSelection` as the plan's `agentProfiles` analogy implied: the grandparent's
+  `Reduce` runs before the `Scope` into `SettingsFeature`, so its mutation lies outside the
+  child `ifLet`'s transition boundary and cannot cancel in-flight link effects (K3 review
+  round 1, wording corrected in round 2).
 - The section shows detected targets only, as planned, but the "no target detected" state adds an
   explicit pointer to `prowl skills install --target …` since Settings never creates folders.
 

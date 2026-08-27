@@ -61,15 +61,21 @@ shared installer so both surfaces always report the same status.
 
 Adversarial review round 1 (sibling reviewer, brief and findings kept outside the repository)
 found no P0/P1 and one P2: the child state was created and cleared by `AppFeature.setSelection`,
-the grandparent, which mutates `settings.agentSkills` *after* `SettingsFeature`'s `ifLet` has
-already run for that action — so the `ifLet` never observed a non-nil → nil transition and an
-in-flight install/uninstall effect survived the section switch; its delayed completion then hit
+the grandparent, whose core `Reduce` runs before the `Scope` into `SettingsFeature` — so the
+nested optional was already nil when `SettingsFeature`'s `ifLet` ran, the `ifLet` never observed
+a non-nil → nil transition of its own, and an in-flight install/uninstall effect survived the
+section switch; its delayed completion then hit
 nil child state (a TCA runtime warning in Debug) and was dropped without the promised refresh,
 toast, or failure alert. The reviewer reproduced it with a suspended-install probe. The lifecycle
 now lives in `SettingsFeature.setSelection` (create on `.commandLineTool` when absent, clear
 otherwise), so `ifLet` cancels the child's effects with the state; `AppFeature` no longer touches
 `agentSkills`. Pinned by an `AppFeature` test that suspends install/uninstall on a `TestClock`,
 switches to General, and requires every effect to be gone.
+
+Round 2 re-verified the fix (including re-selecting the same row, reopening Settings mid-action,
+and creating a replacement child) and found no P0/P1/P2; its one P3 was that this record and the
+action log had described the reducer order backwards ("after the `ifLet` had run"), corrected
+above. The review loop closed there.
 
 ## Verification
 
