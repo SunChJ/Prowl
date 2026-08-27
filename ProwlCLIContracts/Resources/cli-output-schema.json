@@ -32,6 +32,9 @@
       "$ref": "#/$defs/profilesResponse"
     },
     {
+      "$ref": "#/$defs/skillsResponse"
+    },
+    {
       "$ref": "#/$defs/focusResponse"
     },
     {
@@ -2711,6 +2714,284 @@
             },
             "schema_version": {
               "const": "prowl.cli.profiles.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "skillStatus": {
+      "enum": [
+        "not_installed",
+        "installed",
+        "installed_different_source",
+        "broken"
+      ]
+    },
+    "skillAudience": {
+      "enum": [
+        "user",
+        "workflow"
+      ]
+    },
+    "skillTargetStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "detected",
+        "path",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "claude",
+            "codex",
+            "agents"
+          ]
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/skillStatus"
+        }
+      }
+    },
+    "skillsListSkill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "audience",
+        "path",
+        "targets"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audience": {
+          "$ref": "#/$defs/skillAudience"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillTargetStatus"
+          }
+        }
+      }
+    },
+    "skillsListData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "skills"
+      ],
+      "properties": {
+        "action": {
+          "const": "list"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillsListSkill"
+          }
+        }
+      }
+    },
+    "skillsChangeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "skill",
+        "target",
+        "path",
+        "before",
+        "after"
+      ],
+      "properties": {
+        "skill": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "enum": [
+            "claude",
+            "codex",
+            "agents"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "before": {
+          "$ref": "#/$defs/skillStatus"
+        },
+        "after": {
+          "$ref": "#/$defs/skillStatus"
+        }
+      }
+    },
+    "skillsChangeData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "scope",
+        "root",
+        "results"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "install",
+            "uninstall"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "user",
+            "project"
+          ]
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillsChangeResult"
+          }
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "skillsPathData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "skill"
+      ],
+      "properties": {
+        "action": {
+          "const": "path"
+        },
+        "skill": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name",
+            "audience",
+            "path"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "audience": {
+              "$ref": "#/$defs/skillAudience"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "skillsData": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/skillsListData"
+        },
+        {
+          "$ref": "#/$defs/skillsChangeData"
+        },
+        {
+          "$ref": "#/$defs/skillsPathData"
+        }
+      ]
+    },
+    "skillsResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "skills"
+            },
+            "schema_version": {
+              "const": "prowl.cli.skills.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/skillsData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "skills"
+            },
+            "schema_version": {
+              "const": "prowl.cli.skills.v1"
             },
             "error": {
               "$ref": "#/$defs/error"

@@ -17,6 +17,8 @@ ls "$prowl_docs/components/"   # cli.md, agent-detection.md, handoff.md, …
 
 Other `docs/components/*.md` references below live in that same folder.
 
+This skill ships inside the app: `prowl skills install prowl-cli` links it into `~/.claude/skills`, `~/.codex/skills`, and `~/.agents/skills` so it stays current across app updates (`prowl skills list` shows the status; the command is local and needs no running app).
+
 ## Who You Are
 
 Every Prowl pane exports its own identity to the processes inside it:
@@ -249,4 +251,4 @@ Required sections are `## Objective`, `## Current State`, and `## Next Steps`; o
 
 ## Command Set
 
-`list`, `agents`, `agents read`, `agents signal`, `agents dispatch-complete`, `agents dispatch-abandon`, `agents wait`, `profiles list`, `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.
+`list`, `agents`, `agents read`, `agents signal`, `agents dispatch-complete`, `agents dispatch-abandon`, `agents wait`, `profiles list`, `skills list|install|uninstall|path` (local-only), `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.

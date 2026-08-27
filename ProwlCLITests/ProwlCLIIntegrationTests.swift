@@ -41,6 +41,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(help.stdout.contains("USAGE:"))
     XCTAssertTrue(help.stdout.contains("create"))
     XCTAssertTrue(help.stdout.contains("close"))
+    XCTAssertTrue(help.stdout.contains("skills"))
   }
 
   func testNativeHookBridgeIsHiddenSilentAndFailOpenWithoutListener() throws {
@@ -1061,6 +1062,247 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(result.exitCode, 0)
     XCTAssertTrue(result.stdout.contains("Reviewer  claude  disabled  unknown"), result.stdout)
     XCTAssertTrue(result.stdout.contains("Availability check has not completed"), result.stdout)
+  }
+
+  // MARK: - skills (local-only)
+
+  func testSkillsListIsLocalOnlyAndValidatesAgainstSchema() throws {
+    try withSkillsFixture { fixture in
+      let result = try runProwl(args: ["skills", "list", "--json"], environment: fixture.environment)
+
+      XCTAssertEqual(result.exitCode, 0, result.stderr)
+      XCTAssertEqual(result.stderr, "")
+      try assertResponseMatchesSchema(Data(result.stdout.utf8))
+      let output = try jsonObject(from: result.stdout)
+      XCTAssertEqual(output["command"] as? String, "skills")
+      XCTAssertEqual(output["schema_version"] as? String, "prowl.cli.skills.v1")
+      let data = try XCTUnwrap(output["data"] as? [String: Any])
+      XCTAssertEqual(data["action"] as? String, "list")
+      let skills = try XCTUnwrap(data["skills"] as? [[String: Any]])
+      XCTAssertEqual(skills.map { $0["id"] as? String }, ["prowl-cli", "reviewer"])
+      XCTAssertEqual(skills.map { $0["audience"] as? String }, ["user", "workflow"])
+      let targets = try XCTUnwrap(skills[0]["targets"] as? [[String: Any]])
+      XCTAssertEqual(targets.map { $0["id"] as? String }, ["claude", "codex", "agents"])
+      XCTAssertEqual(targets.map { $0["detected"] as? Bool }, [true, false, true])
+      XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.socketPath), "The command never touches the socket")
+
+      let text = try runProwl(args: ["skills", "list", "--no-color"], environment: fixture.environment)
+      XCTAssertEqual(text.exitCode, 0, text.stderr)
+      XCTAssertTrue(text.stdout.contains("prowl-cli"))
+      XCTAssertTrue(text.stdout.contains("workflow"))
+      XCTAssertTrue(text.stdout.contains("not installed"))
+    }
+  }
+
+  func testSkillsInstallStatusUninstallRoundTripAcrossAllTargets() throws {
+    try withSkillsFixture { fixture in
+      let install = try runProwl(
+        args: [
+          "skills", "install", "prowl-cli", "--target", "claude", "--target", "codex", "--target", "agents", "--json",
+        ],
+        environment: fixture.environment
+      )
+      XCTAssertEqual(install.exitCode, 0, install.stderr)
+      XCTAssertEqual(install.stderr, "")
+      try assertResponseMatchesSchema(Data(install.stdout.utf8))
+      let installData = try XCTUnwrap(try jsonObject(from: install.stdout)["data"] as? [String: Any])
+      XCTAssertEqual(installData["action"] as? String, "install")
+      XCTAssertEqual(installData["scope"] as? String, "user")
+      XCTAssertEqual(installData["root"] as? String, fixture.home.path(percentEncoded: false))
+      XCTAssertNil(installData["note"])
+      let installResults = try XCTUnwrap(installData["results"] as? [[String: Any]])
+      XCTAssertEqual(installResults.map { $0["target"] as? String }, ["claude", "codex", "agents"])
+      XCTAssertEqual(installResults.map { $0["before"] as? String }, ["not_installed", "not_installed", "not_installed"])
+      XCTAssertEqual(installResults.map { $0["after"] as? String }, ["installed", "installed", "installed"])
+      for target in [".claude", ".codex", ".agents"] {
+        let link = fixture.home.appending(path: "\(target)/skills/prowl-cli").path(percentEncoded: false)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link), fixture.skillPath("prowl-cli"))
+      }
+
+      let list = try runProwl(args: ["skills", "list", "--json"], environment: fixture.environment)
+      XCTAssertEqual(list.exitCode, 0, list.stderr)
+      let listData = try XCTUnwrap(try jsonObject(from: list.stdout)["data"] as? [String: Any])
+      let listed = try XCTUnwrap(listData["skills"] as? [[String: Any]])
+      let statuses = try XCTUnwrap(listed[0]["targets"] as? [[String: Any]]).map { $0["status"] as? String }
+      XCTAssertEqual(statuses, ["installed", "installed", "installed"])
+
+      let uninstall = try runProwl(args: ["skills", "uninstall", "--json"], environment: fixture.environment)
+      XCTAssertEqual(uninstall.exitCode, 0, uninstall.stderr)
+      try assertResponseMatchesSchema(Data(uninstall.stdout.utf8))
+      let uninstallData = try XCTUnwrap(try jsonObject(from: uninstall.stdout)["data"] as? [String: Any])
+      XCTAssertEqual(uninstallData["action"] as? String, "uninstall")
+      let uninstallResults = try XCTUnwrap(uninstallData["results"] as? [[String: Any]])
+      XCTAssertEqual(uninstallResults.map { $0["target"] as? String }, ["claude", "codex", "agents"])
+      XCTAssertEqual(uninstallResults.map { $0["after"] as? String }, ["not_installed", "not_installed", "not_installed"])
+      for target in [".claude", ".codex", ".agents"] {
+        let link = fixture.home.appending(path: "\(target)/skills/prowl-cli").path(percentEncoded: false)
+        XCTAssertNil(try? FileManager.default.attributesOfItem(atPath: link))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.home.appending(path: "\(target)/skills").path()))
+      }
+      XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.skillPath("prowl-cli") + "/SKILL.md"))
+    }
+  }
+
+  func testSkillsInstallRefusesWorkflowSkillsAndRealDirectoriesInBothOutputModes() throws {
+    try withSkillsFixture { fixture in
+      let workflow = try runProwl(args: ["skills", "install", "reviewer", "--json"], environment: fixture.environment)
+      XCTAssertNotEqual(workflow.exitCode, 0)
+      try assertResponseMatchesSchema(Data(workflow.stdout.utf8))
+      let workflowError = try XCTUnwrap(try jsonObject(from: workflow.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(workflowError["code"] as? String, "SKILL_NOT_INSTALLABLE")
+
+      let workflowText = try runProwl(args: ["skills", "install", "reviewer"], environment: fixture.environment)
+      XCTAssertNotEqual(workflowText.exitCode, 0)
+      XCTAssertEqual(workflowText.stdout, "")
+      XCTAssertTrue(workflowText.stderr.contains("error [SKILL_NOT_INSTALLABLE]"))
+
+      let realDirectory = fixture.home.appending(path: ".claude/skills/prowl-cli")
+      try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+      try Data("keep".utf8).write(to: realDirectory.appending(path: "SKILL.md"))
+      let conflict = try runProwl(
+        args: ["skills", "install", "prowl-cli", "--target", "claude", "--json"],
+        environment: fixture.environment
+      )
+      XCTAssertNotEqual(conflict.exitCode, 0)
+      try assertResponseMatchesSchema(Data(conflict.stdout.utf8))
+      let conflictError = try XCTUnwrap(try jsonObject(from: conflict.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(conflictError["code"] as? String, "INSTALL_CONFLICT")
+      XCTAssertEqual(try Data(contentsOf: realDirectory.appending(path: "SKILL.md")), Data("keep".utf8))
+      XCTAssertNil(try? FileManager.default.destinationOfSymbolicLink(atPath: realDirectory.path(percentEncoded: false)))
+
+      let unknownTarget = try runProwl(
+        args: ["skills", "install", "--target", "cursor", "--json"], environment: fixture.environment)
+      XCTAssertNotEqual(unknownTarget.exitCode, 0)
+      let unknownTargetError = try XCTUnwrap(try jsonObject(from: unknownTarget.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(unknownTargetError["code"] as? String, "TARGET_NOT_FOUND")
+
+      let unknownSkill = try runProwl(args: ["skills", "path", "missing", "--json"], environment: fixture.environment)
+      XCTAssertNotEqual(unknownSkill.exitCode, 0)
+      let unknownSkillError = try XCTUnwrap(try jsonObject(from: unknownSkill.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(unknownSkillError["code"] as? String, "SKILL_NOT_FOUND")
+    }
+  }
+
+  func testSkillsProjectScopePrintsHygieneNoteOnceAndNeverTouchesGit() throws {
+    try withSkillsFixture { fixture in
+      let repo = fixture.root.appending(path: "repo", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: repo.appending(path: ".git/info"), withIntermediateDirectories: true)
+      try Data("ref: refs/heads/main\n".utf8).write(to: repo.appending(path: ".git/HEAD"))
+      try FileManager.default.createDirectory(at: repo.appending(path: ".claude"), withIntermediateDirectories: true)
+      let gitBefore = try gitEntries(repo)
+
+      let text = try runProwl(
+        args: ["skills", "install", "--scope", "project", "--path", repo.path(percentEncoded: false), "--no-color"],
+        environment: fixture.environment
+      )
+      XCTAssertEqual(text.exitCode, 0, text.stderr)
+      XCTAssertEqual(text.stderr.components(separatedBy: ".git/info/exclude").count - 1, 1, text.stderr)
+      XCTAssertFalse(text.stdout.contains(".git/info/exclude"))
+      XCTAssertTrue(text.stdout.contains("claude"))
+      let link = repo.appending(path: ".claude/skills/prowl-cli").path(percentEncoded: false)
+      XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link), fixture.skillPath("prowl-cli"))
+
+      let json = try runProwl(
+        args: ["skills", "uninstall", "--scope", "project", "--path", repo.path(percentEncoded: false), "--json"],
+        environment: fixture.environment
+      )
+      XCTAssertEqual(json.exitCode, 0, json.stderr)
+      XCTAssertEqual(json.stderr, "")
+      try assertResponseMatchesSchema(Data(json.stdout.utf8))
+      let data = try XCTUnwrap(try jsonObject(from: json.stdout)["data"] as? [String: Any])
+      XCTAssertEqual(data["scope"] as? String, "project")
+      XCTAssertEqual(data["root"] as? String, repo.path(percentEncoded: false).trimmingTrailingPathSeparator())
+      let note = try XCTUnwrap(data["note"] as? String)
+      XCTAssertEqual(note.components(separatedBy: ".git/info/exclude").count - 1, 1)
+      XCTAssertNil(try? FileManager.default.attributesOfItem(atPath: link))
+      XCTAssertEqual(try gitEntries(repo), gitBefore)
+    }
+  }
+
+  func testSkillsPathPrintsBundledDirectoryAndFailsClosedWithoutBundle() throws {
+    try withSkillsFixture { fixture in
+      let path = try runProwl(args: ["skills", "path", "reviewer"], environment: fixture.environment)
+      XCTAssertEqual(path.exitCode, 0, path.stderr)
+      XCTAssertEqual(path.stdout, fixture.skillPath("reviewer") + "\n")
+      XCTAssertEqual(path.stderr, "")
+
+      let pathJSON = try runProwl(args: ["skills", "path", "reviewer", "--json"], environment: fixture.environment)
+      XCTAssertEqual(pathJSON.exitCode, 0, pathJSON.stderr)
+      try assertResponseMatchesSchema(Data(pathJSON.stdout.utf8))
+      let data = try XCTUnwrap(try jsonObject(from: pathJSON.stdout)["data"] as? [String: Any])
+      let skill = try XCTUnwrap(data["skill"] as? [String: Any])
+      XCTAssertEqual(skill["path"] as? String, fixture.skillPath("reviewer"))
+      XCTAssertEqual(skill["audience"] as? String, "workflow")
+
+      var brokenEnvironment = fixture.environment
+      brokenEnvironment["PROWL_SKILLS_DIR"] = fixture.root.appending(path: "missing-skills").path(percentEncoded: false)
+      let missing = try runProwl(args: ["skills", "list", "--json"], environment: brokenEnvironment)
+      XCTAssertNotEqual(missing.exitCode, 0)
+      try assertResponseMatchesSchema(Data(missing.stdout.utf8))
+      let error = try XCTUnwrap(try jsonObject(from: missing.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(error["code"] as? String, "BUNDLE_NOT_FOUND")
+
+      let missingText = try runProwl(args: ["skills", "list"], environment: brokenEnvironment)
+      XCTAssertNotEqual(missingText.exitCode, 0)
+      XCTAssertEqual(missingText.stdout, "")
+      XCTAssertTrue(missingText.stderr.contains("error [BUNDLE_NOT_FOUND]"))
+    }
+  }
+
+  private struct SkillsFixture {
+    let root: URL
+    let home: URL
+    let skillsRoot: URL
+    let socketPath: String
+
+    var environment: [String: String] {
+      [
+        ProwlSocket.environmentKey: socketPath,
+        "PROWL_SKILLS_DIR": skillsRoot.path(percentEncoded: false),
+        "HOME": home.path(percentEncoded: false),
+      ]
+    }
+
+    func skillPath(_ id: String) -> String {
+      skillsRoot.appending(path: id, directoryHint: .notDirectory).path(percentEncoded: false)
+    }
+  }
+
+  private func withSkillsFixture(_ body: (SkillsFixture) throws -> Void) throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-skills-cli-\(UUID().uuidString)", directoryHint: .isDirectory)
+      .standardizedFileURL
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let home = root.appending(path: "home", directoryHint: .notDirectory)
+    try FileManager.default.createDirectory(at: home.appending(path: ".claude"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: home.appending(path: ".agents"), withIntermediateDirectories: true)
+
+    let skillsRoot = root.appending(path: "skills", directoryHint: .isDirectory)
+    for (id, extra) in [("prowl-cli", ""), ("reviewer", "metadata:\n  prowl-install: workflow\n")] {
+      let directory = skillsRoot.appending(path: id, directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try Data("---\nname: \(id)\ndescription: \(id) description.\n\(extra)---\n".utf8)
+        .write(to: directory.appending(path: "SKILL.md"))
+    }
+
+    let fixture = SkillsFixture(
+      root: root,
+      home: home,
+      skillsRoot: skillsRoot,
+      socketPath: root.appending(path: "missing.sock").path(percentEncoded: false)
+    )
+    try body(fixture)
+  }
+
+  private func gitEntries(_ repo: URL) throws -> [String] {
+    let enumerator = FileManager.default.enumerator(atPath: repo.appending(path: ".git").path(percentEncoded: false))
+    var entries: [String] = []
+    while let entry = enumerator?.nextObject() as? String {
+      entries.append(entry)
+    }
+    return entries.sorted()
   }
 
   func testCreatePaneCommandRendersAnchorAndDirection() throws {

@@ -17,6 +17,7 @@ The bundle has one versioned success-or-error response schema for every wire com
 | `agents.read` | `#/$defs/agentsReadResponse` |
 | `agents.signal` | `#/$defs/agentsSignalResponse` |
 | `profiles` | `#/$defs/profilesResponse` |
+| `skills` (local-only) | `#/$defs/skillsResponse` |
 | `focus` | `#/$defs/focusResponse` |
 | `send` | `#/$defs/sendResponse` |
 | `key` | `#/$defs/keyResponse` |
@@ -28,15 +29,18 @@ The bundle has one versioned success-or-error response schema for every wire com
 | `handoff` | `#/$defs/handoffResponse` |
 
 The bundle root is a `oneOf` across these responses and is valid for any complete
-socket response.
+socket response. `skills` never crosses the socket; its responses are produced locally by
+the CLI on the same envelope and are validated from real command runs.
 
 ## Executable verification
 
 `ProwlCLITests/ProwlCLIIntegrationTests.swift` loads the bundle through the
 `ProwlCLIContracts` SwiftPM target and validates every mock socket response that
 contains a command payload or error with the Draft 2020-12 `JSONSchema` validator.
-Those are raw socket bytes, not decoded model assertions. `make test-cli-integration`
-is therefore the contract verification command.
+Those are raw socket bytes, not decoded model assertions. The same suite runs `prowl skills`
+against a temporary `PROWL_SKILLS_DIR`, home, and Git repository with an unavailable socket
+and validates its stdout envelopes the same way. `make test-cli-integration` is therefore the
+contract verification command.
 
 A public wire command is incomplete until its versioned response definition,
 socket fixture, parser/handler test, user manual, and command contract change in the

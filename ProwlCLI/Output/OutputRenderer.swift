@@ -116,6 +116,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "skills",
+         let data = response.data,
+         let payload = try? data.decode(as: SkillsCommandPayload.self)
+      {
+        renderSkills(payload)
+        return
+      }
+
       if response.command == "focus",
          let data = response.data,
          let payload = try? data.decode(as: FocusCommandPayload.self)
@@ -397,6 +405,78 @@ enum OutputRenderer {
       let reason = profile.availability.reason.map { "  \($0.dim)" } ?? ""
       return "\(profile.name.bold)  \(profile.runtime)  \(enabled)  \(availability)  \(profile.id.dim)\(reason)"
     }.joined(separator: "\n")
+  }
+
+  private static func renderSkills(_ payload: SkillsCommandPayload) {
+    switch payload {
+    case .list(let list):
+      print(skillsListText(list))
+    case .install(let change):
+      print(skillsChangeText(change, removing: false))
+      renderSkillsNote(change)
+    case .uninstall(let change):
+      print(skillsChangeText(change, removing: true))
+      renderSkillsNote(change)
+    case .path(let path):
+      print(path.skill.path)
+    }
+  }
+
+  static func skillsListText(_ payload: SkillsListPayload) -> String {
+    guard !payload.skills.isEmpty else { return "No bundled skills found." }
+    return payload.skills.map { skill in
+      let audience =
+        skill.audience == .workflow
+        ? "[workflow — not installable]".yellow
+        : "[user]".dim
+      var lines = ["\(skill.id.bold)  \(skill.name)  \(audience)"]
+      for target in skill.targets {
+        let detected = target.detected ? "" : "  \("(target not detected)".dim)"
+        lines.append(
+          "  \(target.id.padding(toLength: 7, withPad: " ", startingAt: 0))  "
+            + "\(skillsStatusLabel(target.status))  "
+            + "\(target.path.dim)\(detected)"
+        )
+      }
+      return lines.joined(separator: "\n")
+    }.joined(separator: "\n\n")
+  }
+
+  static func skillsChangeText(_ payload: SkillsChangePayload, removing: Bool) -> String {
+    guard !payload.results.isEmpty else {
+      return removing ? "Nothing to remove." : "Nothing to install."
+    }
+    return payload.results.map { result in
+      let verb: String
+      switch (removing, result.before) {
+      case (true, .notInstalled): verb = skillsColumn("not installed").dim
+      case (true, _): verb = skillsColumn("removed").green
+      case (false, .installed): verb = skillsColumn("unchanged").dim
+      case (false, .broken): verb = skillsColumn("repaired").green
+      case (false, .installedDifferentSource): verb = skillsColumn("replaced").green
+      case (false, .notInstalled): verb = skillsColumn("installed").green
+      }
+      return "\(verb)  \(result.skill.bold) → \(result.target)  \(result.path.dim)"
+    }.joined(separator: "\n")
+  }
+
+  private static func renderSkillsNote(_ payload: SkillsChangePayload) {
+    guard let note = payload.note else { return }
+    FileHandle.standardError.write(Data("note: \(note)\n".utf8))
+  }
+
+  private static func skillsStatusLabel(_ status: SkillsCommandStatus) -> String {
+    switch status {
+    case .installed: skillsColumn("installed").green
+    case .notInstalled: skillsColumn("not installed").dim
+    case .installedDifferentSource: skillsColumn("installed (different source)").yellow
+    case .broken: skillsColumn("broken link").red
+    }
+  }
+
+  /// Pads before coloring so ANSI escapes do not skew column alignment.
+  private static func skillsColumn(_ text: String) -> String {
+    text.padding(toLength: 28, withPad: " ", startingAt: 0)
   }
 
   private static func renderAgentsRead(_ payload: AgentReadCommandPayload) {

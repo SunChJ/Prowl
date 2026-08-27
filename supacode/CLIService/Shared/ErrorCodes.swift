@@ -45,6 +45,13 @@ public enum CLIErrorCode {
   // Profiles
   public static let profilesFailed = "PROFILES_FAILED"
 
+  // Skills
+  public static let skillsFailed = "SKILLS_FAILED"
+  public static let skillNotFound = "SKILL_NOT_FOUND"
+  public static let skillNotInstallable = "SKILL_NOT_INSTALLABLE"
+  public static let installConflict = "INSTALL_CONFLICT"
+  public static let bundleNotFound = "BUNDLE_NOT_FOUND"
+
   // Focus
   public static let focusFailed = "FOCUS_FAILED"
 
