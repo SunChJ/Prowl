@@ -83,6 +83,11 @@ skills directory when it is missing, detected or not. `uninstall` never creates 
   `INSTALL_CONFLICT` and no change.
 - `uninstall` removes only symlinks, dangling ones included, regardless of where they point.
   A `not_installed` slot is reported unchanged.
+- Each slot is re-read immediately before it is acted on. Targets whose skills directories
+  alias the same folder (for example `~/.claude/skills` and `~/.codex/skills` both symlinked to
+  one synced directory) therefore share one link: the first pair installs or removes it and the
+  later pair reports `before == after` (`installed` / `not_installed`) instead of failing or
+  relinking. `before` in each result is that per-slot reading, not the pre-command listing.
 - An unexpected filesystem failure after the conflict check fails with `SKILLS_FAILED`; slots
   processed before the failure keep their new state, so re-run the command after fixing the
   cause.

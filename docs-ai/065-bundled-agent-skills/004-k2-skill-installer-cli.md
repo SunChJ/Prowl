@@ -102,6 +102,16 @@ otherwise, with negative fixtures for each invalid combination.
 Round 4 re-verified every earlier fix and reported no findings at any level; the review loop
 closed there.
 
+Real-environment verification on onevcat's Mac (owner-authorized, restored afterwards) found a
+setup-specific defect the temp-directory tests had not modelled: `~/.claude/skills` and
+`~/.codex/skills` are both symlinks to one synced folder, so the `claude` and `codex` targets
+alias the same link. `uninstall` removed it for `claude`, then hit `notInstalled` for `codex`
+and aborted with `SKILLS_FAILED`, leaving the `agents` link behind; `install` had relinked the
+shared slot and reported `installed` twice. The executor now re-reads each slot right before
+acting on it — an already-installed slot is left alone and an already-empty slot is skipped —
+and the contract documents aliased targets. Pinned by an executor test with two targets
+symlinked to one folder.
+
 ## Verification
 
 - TDD RED: 116 missing-symbol errors across the five new CLI test files before the shared
@@ -122,6 +132,13 @@ closed there.
   formatting, SwiftLint, 44 script tests); `make build-app` passed and the Debug app contains
   `Contents/Resources/skills/prowl-cli/SKILL.md`, identical to the source file, and its bundled
   `prowl-cli/prowl` resolves the skills beside itself.
+- Real environment (owner-authorized): with the Debug app's bundled `prowl-cli/prowl` and no
+  overrides, `skills install prowl-cli` linked the skill into the synced `~/.claude/skills` /
+  `~/.codex/skills` folder and a new `~/.agents/skills`; Codex 0.149.1 `skills/list` returned
+  `prowl-cli` with the bundle path and `errors: []`, and Claude Code 2.1.247 `--debug` reported
+  `user: 29` skills versus `user: 28` after removal — the differential proof that the linked
+  skill was loaded. Everything was uninstalled and the folders restored to their baseline (the
+  synced repository's working tree stayed clean).
 - Manual: a temporary `Prowl.app/Contents/Resources` layout with the CLI symlinked from a
   temporary `bin/` on `PATH`; bare-name invocation resolved to the real executable
   (`BUNDLE_NOT_FOUND` names the resolved path); list → bare install (detected only) →

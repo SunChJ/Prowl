@@ -197,6 +197,41 @@ final class SkillsCommandExecutorTests: XCTestCase {
     }
   }
 
+  func testAliasedTargetsShareOneSlotWithoutFailingOrDoubleLinking() throws {
+    try withFixture { fixture in
+      // Synced dotfiles: ~/.claude/skills and ~/.codex/skills are symlinks to one shared folder.
+      let shared = fixture.root.appending(path: "skills-shared", directoryHint: .isDirectory)
+      try fixture.makeDirectory(shared)
+      try fixture.makeDirectory(fixture.home.appending(path: ".codex"))
+      for target in [".claude", ".codex"] {
+        try FileManager.default.createSymbolicLink(
+          at: fixture.home.appending(path: "\(target)/skills"), withDestinationURL: shared)
+      }
+
+      let install = try fixture.executor.install(SkillsChangeRequest(skillIDs: ["prowl-cli"]))
+      guard case .install(let installed) = install else { return XCTFail("Expected install payload") }
+      XCTAssertEqual(installed.results.map(\.target), ["claude", "codex", "agents"])
+      XCTAssertEqual(installed.results.map(\.before), [.notInstalled, .installed, .notInstalled])
+      XCTAssertEqual(installed.results.map(\.after), [.installed, .installed, .installed])
+      XCTAssertEqual(
+        try FileManager.default.destinationOfSymbolicLink(atPath: shared.appending(path: "prowl-cli").path()),
+        fixture.skillDirectory("prowl-cli")
+      )
+
+      let uninstall = try fixture.executor.uninstall(SkillsChangeRequest(skillIDs: ["prowl-cli"]))
+      guard case .uninstall(let removed) = uninstall else { return XCTFail("Expected uninstall payload") }
+      XCTAssertEqual(removed.results.map(\.target), ["claude", "codex", "agents"])
+      XCTAssertEqual(removed.results.map(\.before), [.installed, .notInstalled, .installed])
+      XCTAssertEqual(removed.results.map(\.after), [.notInstalled, .notInstalled, .notInstalled])
+      XCTAssertNil(try? FileManager.default.attributesOfItem(atPath: shared.appending(path: "prowl-cli").path()))
+      XCTAssertNil(
+        try? FileManager.default.attributesOfItem(
+          atPath: fixture.home.appending(path: ".agents/skills/prowl-cli").path()),
+        "Every slot is removed even though two of them alias the same link"
+      )
+    }
+  }
+
   // MARK: - uninstall
 
   func testUninstallRemovesLinksAndSkipsAbsentOnes() throws {

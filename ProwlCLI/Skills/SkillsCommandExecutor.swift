@@ -72,21 +72,29 @@ struct SkillsCommandExecutor {
     let pairs = try prepare(skills: selectedSkills, targets: targets, scope: request.scope, root: root)
 
     let results = try pairs.map { pair in
-      let after: SkillTargetStatus
-      do {
-        after = try ProwlSkillInstaller.install(
-          skill: pair.skill, target: pair.target, scope: request.scope, root: root)
-      } catch {
-        throw ExitError(
-          code: CLIErrorCode.skillsFailed,
-          message: "Failed to link \(pair.skill.id) into \(pair.before.linkPath): \(error.localizedDescription)"
-        )
+      // Re-read the slot right before acting: targets whose skills directories alias the same
+      // folder (synced ~/.claude/skills and ~/.codex/skills) share one link, so an earlier pair
+      // may already have installed it.
+      let before = ProwlSkillInstaller.status(skill: pair.skill, target: pair.target, scope: request.scope, root: root)
+      var after = before
+      if case .installed = before.status {
+        // Already linked to this bundle; relinking would only churn the shared slot.
+      } else {
+        do {
+          after = try ProwlSkillInstaller.install(
+            skill: pair.skill, target: pair.target, scope: request.scope, root: root)
+        } catch {
+          throw ExitError(
+            code: CLIErrorCode.skillsFailed,
+            message: "Failed to link \(pair.skill.id) into \(before.linkPath): \(error.localizedDescription)"
+          )
+        }
       }
       return SkillsCommandResult(
         skill: pair.skill.id,
         target: pair.target.id,
-        path: pair.before.linkPath,
-        before: SkillsCommandStatus(pair.before.status),
+        path: before.linkPath,
+        before: SkillsCommandStatus(before.status),
         after: SkillsCommandStatus(after.status)
       )
     }
@@ -100,23 +108,25 @@ struct SkillsCommandExecutor {
     let pairs = try prepare(skills: selectedSkills, targets: targets, scope: request.scope, root: root)
 
     let results = try pairs.map { pair in
-      var after = pair.before
-      if pair.before.status != .notInstalled {
+      // Re-read the slot right before acting; an aliased target may already be empty.
+      let before = ProwlSkillInstaller.status(skill: pair.skill, target: pair.target, scope: request.scope, root: root)
+      var after = before
+      if before.status != .notInstalled {
         do {
           after = try ProwlSkillInstaller.uninstall(
             skill: pair.skill, target: pair.target, scope: request.scope, root: root)
         } catch {
           throw ExitError(
             code: CLIErrorCode.skillsFailed,
-            message: "Failed to remove \(pair.before.linkPath): \(error.localizedDescription)"
+            message: "Failed to remove \(before.linkPath): \(error.localizedDescription)"
           )
         }
       }
       return SkillsCommandResult(
         skill: pair.skill.id,
         target: pair.target.id,
-        path: pair.before.linkPath,
-        before: SkillsCommandStatus(pair.before.status),
+        path: before.linkPath,
+        before: SkillsCommandStatus(before.status),
         after: SkillsCommandStatus(after.status)
       )
     }
