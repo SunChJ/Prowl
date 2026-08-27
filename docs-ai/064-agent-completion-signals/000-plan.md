@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 #715, S2 #718, S3a #721/#723, S3b #725 merged; S3c (Pi/OMP/OpenCode) in progress |
+| **Status** | In progress — S1 #715, S2 #718, and S3 wave 1 #721/#723/#725/#728 merged; S4/S5 planned |
 | **Anchor date** | 2026-08-22 |
 | **Primary PRs** | #715 (S1); #718 (S2); #721, #723 (S3a); #725 (S3b); #728 (S3c) |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
@@ -245,6 +245,8 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-27: S3c merged (#728), completing S3 wave 1 across
+  #721/#723/#725/#728. S4 and S5 remain planned.
 - Updated 2026-08-26: S3b merged (#725); planned S3c for Pi, Oh My Pi, and OpenCode after a
   live re-attestation (Pi 0.84.3, OMP 18.0.6, OpenCode 1.18.23) — extensions relay native event
   names in the Claude-shaped envelope, OMP maps `session_stop`, OpenCode is non-announcing with a

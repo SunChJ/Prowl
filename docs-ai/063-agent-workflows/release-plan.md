@@ -24,7 +24,7 @@ that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launc
 PRs merge to `main` one at a time (each keeps `main` shippable); engine PRs without a
 user-facing surface may merge before "their" release and stay dormant. Three releases:
 
-### Current R1 status (2026-08-26)
+### Current R1 status (2026-08-27)
 
 | Slice(s) | State | PR / next action |
 | --- | --- | --- |
@@ -34,17 +34,17 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | A2 | Merged | #714 |
 | S1 | Merged | #715: bus, multicast observer, `agents signal` |
 | S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
-| S3 wave 1 | S3a merged (#721, #723); S3b merged (#725); S3c in review | S3c = #728 ([064.010](../064-agent-completion-signals/010-s3c-plan.md), record [064.011](../064-agent-completion-signals/011-s3c-action.md)); the slice is complete when #728 merges |
+| S3 wave 1 | Complete | Merged in #721/#723/#725/#728; S3c plan [064.010](../064-agent-completion-signals/010-s3c-plan.md), record [064.011](../064-agent-completion-signals/011-s3c-action.md) |
 | 065-S0/K1 | Planned, parallel | Skill-target spike + bundled-skill registry |
 | 065-K2/K3 | Planned | Follow S0/K1 inside R1 |
 
-A2 completes 063's R1 implementation work, and S1/S2/S3a/S3b are on `main`. The last orchestration
-critical-path slice is S3c; 065-S0/K1 may proceed independently in parallel.
+A2 completes 063's R1 implementation work, and S1/S2/S3 wave 1 are on `main`. The remaining
+R1 work is 065 bundled skill distribution: S0 is complete, followed by K1–K3.
 
 #### S3 wave 1 PR breakdown
 
-S3 wave 1 remains one R1 release slice but lands as three sequential, independently
-reviewable PRs. The slice is complete only after S3c:
+S3 wave 1 is one complete R1 release slice that landed as three sequential, independently
+reviewable PR scopes:
 
 | PR | Runtime scope | Foundation / closure scope | Depends |
 | --- | --- | --- | --- |
@@ -122,6 +122,8 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-27 — S3c merged (#728), completing S3 wave 1 across #721/#723/#725/#728.
+  The remaining R1 work is 065 bundled skill distribution.
 - 2026-08-26 — S3b merged (#725). S3c started on `feat/agent-signal-hooks-s3c` after a
   live re-attestation of Pi 0.84.3, Oh My Pi 18.0.6, and OpenCode 1.18.23; the Active Agents
   exact-channel badge was removed from S3c without commitment. Plan:
