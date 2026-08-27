@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented — S0, K1 (#729), K2 (#730), and K3 complete; see [001-action.md](001-action.md) |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #712 (plan); #729 (K1); #730 (K2); K3 to fill in |
+| **Primary PRs** | #712 (plan); #729 (K1); #730 (K2); #731 (K3) |
 | **Related** | [063-agent-workflows](../063-agent-workflows/000-plan.md) (D1 `skill:` materialization, D1–D3 new skills), [060-prowl-cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md) (four-layer CLI rule), [013-prowl-cli](../013-prowl-cli/000-plan.md), `docs/components/cli.md`, `skills/prowl-cli/SKILL.md` |
 
 ## Background

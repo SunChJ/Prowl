@@ -37,7 +37,7 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | S3 wave 1 | Complete | Merged in #721/#723/#725/#728; S3c plan [064.010](../064-agent-completion-signals/010-s3c-plan.md), record [064.011](../064-agent-completion-signals/011-s3c-action.md) |
 | 065-S0/K1 | Merged | #729; [065.003](../065-bundled-agent-skills/003-k1-bundle-registry.md) |
 | 065-K2 | Merged | #730; [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md) |
-| 065-K3 | In review | PR to fill in; [065.005](../065-bundled-agent-skills/005-k3-settings-agent-skills.md); closes 065 |
+| 065-K3 | In review | #731; [065.005](../065-bundled-agent-skills/005-k3-settings-agent-skills.md); closes 065 |
 
 A2 completes 063's R1 implementation work, and S1/S2/S3 wave 1 are on `main`. The remaining
 R1 work is 065 bundled skill distribution: S0, K1 (#729), and K2 (#730) are merged; K3, the
@@ -125,7 +125,7 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
-- 2026-08-28 — 065-K3 implemented on `feat/bundled-skills-k3` and opened for review: the Agent
+- 2026-08-28 — 065-K3 implemented on `feat/bundled-skills-k3` and opened as #731: the Agent
   Skills section on Settings › Agents › Command Line Tool; 065's action log
   ([065.001](../065-bundled-agent-skills/001-action.md)) summarizes K1–K3. Record:
   [065.005](../065-bundled-agent-skills/005-k3-settings-agent-skills.md).

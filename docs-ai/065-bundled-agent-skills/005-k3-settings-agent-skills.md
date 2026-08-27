@@ -73,8 +73,8 @@ shared installer so both surfaces always report the same status.
 - `make test`: 2,643 main app tests passed; one deferred-Ghostty-surface test
   (`WorktreeTerminalStateAgentProfileTests/deferredProfileAppliesFontSizeAdjustmentAfterSurfaceCreation`)
   failed with `.surfaceCreationFailed` while the display was asleep (`pmset -g log`) and passed
-  when re-run with the display awake; the suite was re-run under `caffeinate` (see the PR for
-  the final count).
+  when re-run with the display awake; a full re-run under `caffeinate` passed 2,644 main app
+  tests plus the 2 isolated shell-cancellation tests with zero failures.
 - Visual: a copy of the Debug app launched with `CFFIXED_USER_HOME` (Foundation ignores a bare
   `HOME` override) and a dedicated `PROWL_CLI_SOCKET`, so its settings, home, and skill folders
   lived in a temporary directory. Screenshots of Settings › Agents › Command Line Tool show the
@@ -90,5 +90,5 @@ shared installer so both surfaces always report the same status.
 
 - Slice: 065-K3
 - Branch: `feat/bundled-skills-k3`
-- PR: to fill in
+- PR: #731
 - Depends on: [004-k2-skill-installer-cli.md](004-k2-skill-installer-cli.md)
