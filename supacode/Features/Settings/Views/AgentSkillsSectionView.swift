@@ -2,8 +2,8 @@ import ComposableArchitecture
 import SwiftUI
 
 /// Settings → Agents → Command Line Tool → Agent Skills: one row per bundled `user`
-/// skill with a status chip and one action per detected target. Link behavior stays
-/// in `AgentSkillsFeature`; this view only presents it.
+/// skill, with one full-width line per detected target (status, link folder, action).
+/// Link behavior stays in `AgentSkillsFeature`; this view only presents it.
 struct AgentSkillsSectionView: View {
   @Bindable var store: StoreOf<AgentSkillsFeature>
 
@@ -65,7 +65,7 @@ struct AgentSkillsSectionView: View {
   }
 
   private func skillRow(_ row: AgentSkillsFeature.SkillRow) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 10) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Text(row.skill.name)
           .font(.headline)
@@ -82,43 +82,57 @@ struct AgentSkillsSectionView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
       }
-      Text(row.skill.description)
+      // The frontmatter description carries agent trigger phrasing; the summary is the
+      // human-facing text, so it wins whenever the skill provides one.
+      Text(row.skill.summary ?? row.skill.description)
         .foregroundStyle(.secondary)
         .font(.callout)
-        .lineLimit(3)
-        .help(row.skill.description)
-      ForEach(row.links) { link in
-        linkRow(skill: row.skill, link: link)
+        .fixedSize(horizontal: false, vertical: true)
+      if !row.links.isEmpty {
+        linkTable(row)
       }
     }
   }
 
-  private func linkRow(skill: BundledSkill, link: AgentSkillsFeature.SkillLink) -> some View {
-    HStack(spacing: 8) {
+  /// One line per detected target. A grid keeps the target, folder, status, and action columns
+  /// aligned across lines, so every line spans the row instead of sizing to its own text.
+  private func linkTable(_ row: AgentSkillsFeature.SkillRow) -> some View {
+    Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 8) {
+      ForEach(row.links) { link in
+        if link.id != row.links.first?.id {
+          Divider()
+        }
+        linkLine(skill: row.skill, link: link)
+      }
+    }
+    .font(.callout)
+  }
+
+  private func linkLine(skill: BundledSkill, link: AgentSkillsFeature.SkillLink) -> some View {
+    GridRow {
       HStack(spacing: 6) {
         statusIcon(link.status)
         Text(link.target.displayName)
-        Text(statusText(link.status))
-          .foregroundStyle(.secondary)
       }
-      .font(.callout)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 4)
-      .background(.quaternary, in: Capsule())
-      .help(link.linkPath)
-
-      if let destination = link.status.destination {
-        Text("→ \(destination)")
-          .font(.callout.monospaced())
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-          .help(destination)
+      VStack(alignment: .leading, spacing: 2) {
+        pathText(abbreviated(link.linkPath))
+        if let detail = detail(for: link.status) {
+          if detail.isPath {
+            pathText(detail.text)
+          } else {
+            Text(detail.text)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
       }
-
-      Spacer()
-
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .help(link.status.destination.map { "\(link.linkPath) → \($0)" } ?? link.linkPath)
+      Text(statusText(link.status))
+        .foregroundStyle(.secondary)
+        .gridColumnAlignment(.trailing)
       actionButton(skill: skill, link: link)
+        .gridColumnAlignment(.trailing)
     }
   }
 
@@ -154,10 +168,6 @@ struct AgentSkillsSectionView: View {
         .help("Replace the link to another Prowl build at \(link.linkPath) with this app's bundled \(skill.id) skill")
         .buttonStyle(.bordered)
         .controlSize(.small)
-      } else {
-        Text("Prowl never deletes it; remove it manually to link here.")
-          .foregroundStyle(.secondary)
-          .font(.callout)
       }
     }
   }
@@ -188,5 +198,31 @@ struct AgentSkillsSectionView: View {
       destination == nil ? "Real file or directory" : "Linked elsewhere"
     case .broken: "Broken link"
     }
+  }
+
+  /// The second folder line: where a foreign or dangling link points, or why a real file or
+  /// directory gets no action.
+  private func detail(for status: SymlinkInstallStatus) -> (text: String, isPath: Bool)? {
+    switch status {
+    case .installed, .notInstalled:
+      nil
+    case .installedDifferentSource(_, let destination):
+      destination.map { ("→ \(abbreviated($0))", true) }
+        ?? ("Not a symlink — Prowl never deletes it. Remove it manually to link here.", false)
+    case .broken(_, let destination):
+      ("→ \(abbreviated(destination))", true)
+    }
+  }
+
+  /// Paths keep one line and truncate in the middle so the skill folder name stays visible.
+  private func pathText(_ path: String) -> some View {
+    Text(path)
+      .font(.callout.monospaced())
+      .lineLimit(1)
+      .truncationMode(.middle)
+  }
+
+  private func abbreviated(_ path: String) -> String {
+    (path as NSString).abbreviatingWithTildeInPath
   }
 }

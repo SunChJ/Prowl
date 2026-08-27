@@ -19,7 +19,8 @@
   `metadata.prowl-install`.
 - **Registry.** `ProwlSkills` (`supacode/CLIService/Shared/ProwlSkills.swift`, part of
   `ProwlCLIShared` and compiled into the app) parses `name`, plain or `>-` `description`, and the
-  strictly nested `metadata.prowl-install` audience; `bundled(resourcesURL:)` serves the app,
+  strictly nested `metadata.prowl-install` audience and optional `metadata.prowl-summary`
+  display text; `bundled(resourcesURL:)` serves the app,
   `bundledForCLI(executableURL:environment:)` resolves the CLI's own bundle or `PROWL_SKILLS_DIR`,
   and `skill(id:)` is the locator 063 uses.
 - **Installer.** `SymlinkInstaller` (`SymlinkInstaller.swift`) owns one link slot with the

@@ -61,16 +61,19 @@ your agents' skill folders so every agent reads the version that matches the ins
 app. It is the GUI for [`prowl skills`](cli.md#prowl-skills) in user scope and shows the
 same status as `prowl skills list`.
 
-- **Rows** — one per bundled `user` skill: name, description, and **Reveal** (shows the
-  bundled skill folder in Finder). Workflow-only skills are not listed.
-- **Chips** — one per *detected* target: `Claude Code` (`~/.claude/skills`), `Codex`
-  (`~/.codex/skills`), and `Shared agents directory` (`~/.agents/skills`). A target is
-  detected when its parent folder (`~/.claude`, `~/.codex`, `~/.agents`) exists; hovering
-  a chip shows the link path. With no detected target the section says so and points at
+- **Rows** — one per bundled `user` skill: name, a short summary (the skill's
+  `metadata.prowl-summary`; the agent-facing `description` is shown only when a skill has no
+  summary), and **Reveal** (shows the bundled skill folder in Finder). Workflow-only skills are
+  not listed.
+- **Target lines** — one per *detected* target under each skill: `Claude Code`
+  (`~/.claude/skills`), `Codex` (`~/.codex/skills`), and `Shared agents directory`
+  (`~/.agents/skills`), each showing the link's folder (`~/.claude/skills/prowl-cli`), its
+  status, and one action. A target is detected when its parent folder (`~/.claude`, `~/.codex`,
+  `~/.agents`) exists. With no detected target the section says so and points at
   `prowl skills install --target <claude|codex|agents>`, which creates the folder.
 - **Statuses and actions** — one explicit action per skill × target link:
 
-  | Chip | Meaning | Button |
+  | Status | Meaning | Button |
   |---|---|---|
   | Installed | Symlink → this app's bundled skill | **Remove** (deletes the link only) |
   | Not installed | Nothing in the slot | **Install** (creates the skills folder if needed) |
@@ -79,7 +82,7 @@ same status as `prowl skills list`.
   | Real file or directory | Something that is not a symlink occupies the slot | none — Prowl never deletes it; remove it manually |
 
 - **Aliased targets** — if `~/.claude/skills` and `~/.codex/skills` are symlinks to one
-  synced folder, both chips describe the same link: installing or removing through one
+  synced folder, both lines describe the same link: installing or removing through one
   updates the other immediately.
 - Results show as a toast; a failure (for example a real directory in the way) also shows
   an alert. Nothing is auto-linked after an update: a newly bundled skill simply appears

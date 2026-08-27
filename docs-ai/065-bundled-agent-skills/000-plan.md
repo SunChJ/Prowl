@@ -214,6 +214,11 @@ Decisions below were taken in the 2026-08-22 plan review (#712):
 
 ## Amendments
 
+- Updated 2026-08-28 (K3 review follow-up): `BundledSkill` gained an optional `summary`
+  (`metadata.prowl-summary`) so Settings can show human-facing text while the agent-facing
+  `description` keeps its trigger phrasing; the Settings target chips became an aligned
+  full-width table showing each link's folder — see
+  [005-k3-settings-agent-skills.md](005-k3-settings-agent-skills.md).
 - Updated 2026-08-28: Implemented and verified K3: the Command Line Tool page gained the Agent
   Skills section over a `SkillInstallClient` dependency and an `AgentSkillsFeature` child; every
   action recomputes all chips so aliased targets stay consistent; success is a toast, failure an

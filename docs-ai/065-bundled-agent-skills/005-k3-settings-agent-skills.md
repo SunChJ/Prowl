@@ -30,21 +30,27 @@ shared installer so both surfaces always report the same status.
   warning toast; a success delegates a success toast (`AppFeature` maps
   `agentSkills(.delegate(.linkChanged))` to `repositories.showToast`).
 - `AgentSkillsSectionView` renders under Installation and Connection: one row per skill (name,
-  id when it differs, description limited to three lines with the full text as a tooltip,
-  Reveal), and one chip per detected target with the status wording of `prowl skills list`
-  (Installed / Not installed / Linked elsewhere `→ destination` / Real file or directory / Broken
-  link `→ destination`) and one action button (Remove / Install / Replace / — / Repair). A real
-  file or directory shows only "Prowl never deletes it; remove it manually to link here." Empty
-  states: the bundle could not be read (message from `ProwlSkillsError`), no installable skills,
-  and no detected target (points at `prowl skills install --target claude|codex|agents`). Every
-  button carries a tooltip; chips show their link path on hover.
+  id when it differs, the skill's `metadata.prowl-summary` — falling back to the agent-facing
+  `description` — and Reveal), then one full-width line per detected target laid out as a
+  `Grid` so the four columns align: status icon + target name, the link folder
+  (`~`-abbreviated, monospaced, middle-truncated; a second line carries `→ destination` for a
+  foreign or dangling link, or the "not a symlink" explanation), the status wording of
+  `prowl skills list` (Installed / Not installed / Linked elsewhere / Real file or directory /
+  Broken link), and one action button (Remove / Install / Replace / — / Repair). Empty states:
+  the bundle could not be read (message from `ProwlSkillsError`), no installable skills, and no
+  detected target (points at `prowl skills install --target claude|codex|agents`). Every button
+  carries a tooltip; the folder cell's tooltip holds the full paths.
+- `ProwlSkills` gained the optional `metadata.prowl-summary` field (`BundledSkill.summary`):
+  a skill's `description` is agent-facing trigger text (`prowl-cli`'s runs to a paragraph of
+  colloquial phrasings), so Settings shows the summary instead. Absent → nil; empty or duplicated
+  → `INVALID_SKILL_FRONTMATTER`. The CLI payload and contract are unchanged.
 - Docs: `docs/components/settings.md` gains an Agent Skills section (statuses, actions, aliased
   targets, empty states) and `docs/components/cli.md` notes that Settings offers the same
   user-scope actions with the same status as `prowl skills list`.
 
 ## Decisions and boundaries
 
-- Success feedback is a toast plus the chip's own state change; only failures raise a modal
+- Success feedback is a toast plus the line's own state change; only failures raise a modal
   alert. The CLI-install row alerts on success as well, but a per-link modal for up to three
   chips per skill would be noise, and the toast path is the same `AppFeature` mechanism.
 - Detection and status come from the client's `SkillTargetStatus`, so the reducer never reads
@@ -76,6 +82,13 @@ Round 2 re-verified the fix (including re-selecting the same row, reopening Sett
 and creating a replacement child) and found no P0/P1/P2; its one P3 was that this record and the
 action log had described the reducer order backwards ("after the `ifLet` had run"), corrected
 above. The review loop closed there.
+
+Owner feedback after the loop (2026-08-28): the agent-facing description was far too long for
+the row and its hover tooltip misbehaved, and the content-sized capsules had unequal widths with
+an empty gap before the buttons. The row now shows `prowl-summary`, and the per-target lines
+became an aligned full-width `Grid` that also shows each link's folder (impeccable layout pass:
+three equivalent targets are a table, not floating chips; no nested containers inside the
+grouped Form card).
 
 ## Verification
 
