@@ -17,7 +17,7 @@ ls "$prowl_docs/components/"   # cli.md, agent-detection.md, handoff.md, …
 
 Other `docs/components/*.md` references below live in that same folder.
 
-This skill ships inside the app: `prowl skills install prowl-cli` links it into `~/.claude/skills`, `~/.codex/skills`, and `~/.agents/skills` so it stays current across app updates (`prowl skills list` shows the status; the command is local and needs no running app).
+This skill ships inside the app: `prowl skills install prowl-cli` links it into every detected agent skill folder (`~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills` — whichever parent directories exist; add `--target <claude|codex|agents>` to pick or create specific ones) so it stays current across app updates. `prowl skills list` shows per-target status; the command is local and needs no running app.
 
 ## Who You Are
 

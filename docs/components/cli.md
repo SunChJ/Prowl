@@ -364,10 +364,12 @@ directory exists:
   the app moved; `install` repairs it). Existing links are replaced; a real file or
   directory is never touched and fails the whole command with `INSTALL_CONFLICT` before
   anything changes. `uninstall` removes links only.
-- `--scope project` uses `--path <repo>` or the Git root of the current directory
-  (worktrees included) and prints one note: the links are absolute, Mac-specific paths and
-  Prowl never edits Git state — use `.git/info/exclude` yourself if they should stay out of
-  version control.
+- `--scope project` acts on a repository: the Git root containing `--path <dir>` (or the
+  current directory; worktrees included). Links never leave the repository — a target folder
+  such as `.agents` that is a symlink to somewhere outside it fails with `INSTALL_CONFLICT`.
+  The command prints one note: the links are absolute, Mac-specific paths and Prowl never
+  edits Git state — use `.git/info/exclude` yourself if they should stay out of version
+  control.
 
 ```bash
 prowl skills list
@@ -671,15 +673,16 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `SESSION_UNRESOLVED` / `RESULT_NOT_FOUND` / `RESULT_INCOMPLETE` / `RESULT_TOO_LARGE` | `agents read --result-only` could not provide one trustworthy complete result. Drop `--result-only` to retain the live snapshot and inspect `.data.result`. |
 | `SKILL_NOT_FOUND` / `TARGET_NOT_FOUND` (`skills`) | No bundled skill or supported target with that id — re-run `prowl skills list`. A bare `skills install` also reports `TARGET_NOT_FOUND` when no target directory is detected; pass `--target`. |
 | `SKILL_NOT_INSTALLABLE` | The skill is a workflow skill; it is materialized by workflow runs, not installed. Use `prowl skills path`. |
-| `INSTALL_CONFLICT` | A real file or directory occupies a skill link slot; nothing was changed. Remove it manually or choose other targets. |
+| `INSTALL_CONFLICT` | A real file or directory occupies a skill link slot, or a project-scope target folder is a symlink leading outside the repository; nothing was changed. Remove or fix it manually, or choose other targets. |
 | `BUNDLE_NOT_FOUND` | The `prowl` binary is not inside a Prowl app bundle and `PROWL_SKILLS_DIR` is unset or invalid — run the installed `prowl` or set the override. |
+| `INVALID_SKILL_FRONTMATTER` | A bundled (or `PROWL_SKILLS_DIR`) skill's `SKILL.md` frontmatter is malformed — fix the override skill, or reinstall Prowl if the bundle itself is damaged. |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |
 | `EMPTY_INPUT` | `send` got neither argv nor stdin (or both). |
 | `INVALID_ARGUMENT` | Bad flag/combo (e.g. `--capture --no-wait`) or out-of-range value. |
 | `CAPTURE_UNSUPPORTED` | Target lacks OSC 133 — drop `--capture`, use `read --wait-stable`. |
 | `WAIT_TIMEOUT` | Command didn't finish in time — raise `--timeout` or use `--no-wait`. |
 | `UNSUPPORTED_KEY` / `INVALID_REPEAT` | Check `prowl key --help`. |
-| `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path, or the `skills --scope project` root (`--path`, or run inside a Git repository). |
+| `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path, or the `skills --scope project` start point (`--path` and the current directory must lie inside a Git repository). |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
 | `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
 | `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `PROFILES_FAILED`, `SKILLS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |

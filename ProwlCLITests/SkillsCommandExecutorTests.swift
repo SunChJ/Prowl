@@ -308,6 +308,97 @@ final class SkillsCommandExecutorTests: XCTestCase {
     }
   }
 
+  func testExplicitProjectPathResolvesToTheContainingGitRoot() throws {
+    try withFixture { fixture in
+      let repo = try fixture.makeRepository(name: "repo")
+      let nested = repo.appending(path: "src/deep", directoryHint: .isDirectory)
+      try fixture.makeDirectory(nested)
+
+      let payload = try fixture.executor.install(
+        SkillsChangeRequest(
+          skillIDs: ["prowl-cli"], targetIDs: ["codex"], scope: .project,
+          projectPath: nested.path(percentEncoded: false)))
+      guard case .install(let change) = payload else { return XCTFail("Expected install payload") }
+
+      XCTAssertEqual(change.root, repo.path(percentEncoded: false).trimmingTrailingPathSeparator())
+      XCTAssertEqual(
+        change.results.map(\.path),
+        [repo.appending(path: ".codex/skills/prowl-cli").path(percentEncoded: false)]
+      )
+      XCTAssertFalse(FileManager.default.fileExists(atPath: nested.appending(path: ".codex").path()))
+    }
+  }
+
+  func testProjectScopeRefusesTargetParentsThatEscapeTheRepository() throws {
+    try withFixture { fixture in
+      let repo = try fixture.makeRepository(name: "repo")
+      let external = fixture.root.appending(path: "external", directoryHint: .isDirectory)
+      try fixture.makeDirectory(external)
+      try FileManager.default.createSymbolicLink(at: repo.appending(path: ".agents"), withDestinationURL: external)
+      try fixture.makeDirectory(repo.appending(path: ".claude"))
+
+      assertExitError(code: CLIErrorCode.installConflict) {
+        try fixture.executor.install(
+          SkillsChangeRequest(scope: .project, projectPath: repo.path(percentEncoded: false)))
+      }
+
+      XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: external.path(percentEncoded: false)), [])
+      XCTAssertFalse(
+        FileManager.default.fileExists(atPath: repo.appending(path: ".claude/skills/prowl-cli").path()),
+        "A boundary violation on one target leaves the others untouched"
+      )
+    }
+  }
+
+  func testProjectScopeRefusesSkillsDirectoriesThatEscapeTheRepositoryOnInstallAndUninstall() throws {
+    try withFixture { fixture in
+      let repo = try fixture.makeRepository(name: "repo")
+      let external = fixture.root.appending(path: "external", directoryHint: .isDirectory)
+      try fixture.makeDirectory(external)
+      try fixture.makeDirectory(repo.appending(path: ".codex"))
+      try FileManager.default.createSymbolicLink(
+        at: repo.appending(path: ".codex/skills"), withDestinationURL: external)
+      try FileManager.default.createSymbolicLink(
+        atPath: external.appending(path: "prowl-cli").path(percentEncoded: false),
+        withDestinationPath: fixture.skillDirectory("prowl-cli")
+      )
+      let request = SkillsChangeRequest(
+        skillIDs: ["prowl-cli"], targetIDs: ["codex"], scope: .project,
+        projectPath: repo.path(percentEncoded: false))
+
+      assertExitError(code: CLIErrorCode.installConflict) { try fixture.executor.install(request) }
+      assertExitError(code: CLIErrorCode.installConflict) { try fixture.executor.uninstall(request) }
+
+      XCTAssertEqual(
+        try FileManager.default.destinationOfSymbolicLink(atPath: external.appending(path: "prowl-cli").path()),
+        fixture.skillDirectory("prowl-cli"),
+        "The external link is never replaced or removed"
+      )
+    }
+  }
+
+  func testProjectScopeAcceptsSymlinksThatStayInsideTheRepository() throws {
+    try withFixture { fixture in
+      let repo = try fixture.makeRepository(name: "repo")
+      try fixture.makeDirectory(repo.appending(path: ".claude"))
+      try FileManager.default.createSymbolicLink(
+        atPath: repo.appending(path: ".agents").path(percentEncoded: false), withDestinationPath: ".claude")
+
+      let payload = try fixture.executor.install(
+        SkillsChangeRequest(
+          skillIDs: ["prowl-cli"], targetIDs: ["agents"], scope: .project,
+          projectPath: repo.path(percentEncoded: false)))
+      guard case .install(let change) = payload else { return XCTFail("Expected install payload") }
+
+      XCTAssertEqual(change.results.map(\.after), [.installed])
+      XCTAssertEqual(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: repo.appending(path: ".claude/skills/prowl-cli").path(percentEncoded: false)),
+        fixture.skillDirectory("prowl-cli")
+      )
+    }
+  }
+
   func testProjectScopeWithoutAGitRootOrWithABadPathFails() throws {
     try withFixture { fixture in
       let plain = fixture.root.appending(path: "plain", directoryHint: .isDirectory)
@@ -316,6 +407,11 @@ final class SkillsCommandExecutorTests: XCTestCase {
       assertExitError(code: CLIErrorCode.pathNotFound) {
         try fixture.executor(currentDirectory: plain).install(SkillsChangeRequest(scope: .project))
       }
+      assertExitError(code: CLIErrorCode.pathNotFound) {
+        try fixture.executor.install(
+          SkillsChangeRequest(scope: .project, projectPath: plain.path(percentEncoded: false)))
+      }
+      XCTAssertFalse(FileManager.default.fileExists(atPath: plain.appending(path: ".claude").path()))
       assertExitError(code: CLIErrorCode.pathNotFound) {
         try fixture.executor.install(
           SkillsChangeRequest(scope: .project, projectPath: fixture.root.appending(path: "missing").path()))

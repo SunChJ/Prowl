@@ -118,6 +118,40 @@ final class SkillInstallTargetTests: XCTestCase {
     }
   }
 
+  func testInstallerRefusesProjectTargetsThatResolveOutsideTheRoot() throws {
+    try withTemporaryDirectory { root in
+      let repo = root.appending(path: "repo", directoryHint: .isDirectory)
+      let external = root.appending(path: "external", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+      try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+      try FileManager.default.createSymbolicLink(at: repo.appending(path: ".codex"), withDestinationURL: external)
+      let skill = try makeSkill(root: root, id: "prowl-cli")
+      let target = try XCTUnwrap(SkillInstallTarget.target(id: "codex"))
+      let escapingPath = repo.appending(path: ".codex", directoryHint: .notDirectory).path(percentEncoded: false)
+
+      XCTAssertEqual(
+        ProwlSkillInstaller.projectBoundaryViolation(target: target, root: repo),
+        escapingPath
+      )
+      XCTAssertNil(
+        ProwlSkillInstaller.projectBoundaryViolation(
+          target: try XCTUnwrap(SkillInstallTarget.target(id: "claude")), root: repo)
+      )
+      XCTAssertThrowsError(
+        try ProwlSkillInstaller.install(skill: skill, target: target, scope: .project, root: repo)
+      ) { error in
+        XCTAssertEqual(error as? SymlinkInstallError, .conflict(path: escapingPath))
+      }
+      XCTAssertThrowsError(
+        try ProwlSkillInstaller.uninstall(skill: skill, target: target, scope: .project, root: repo)
+      ) { error in
+        XCTAssertEqual(error as? SymlinkInstallError, .conflict(path: escapingPath))
+      }
+      XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: external.path(percentEncoded: false)), [])
+      XCTAssertNoThrow(try ProwlSkillInstaller.install(skill: skill, target: target, scope: .user, root: repo))
+    }
+  }
+
   // MARK: - Helpers
 
   private func withTemporaryDirectory(_ operation: (URL) throws -> Void) throws {

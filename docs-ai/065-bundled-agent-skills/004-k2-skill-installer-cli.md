@@ -67,6 +67,24 @@ with its contract, schema, manual, and skill line. Settings UI stays in K3.
 - Not in K2: Settings Agent Skills section, `AgentSkillsFeature`, `SkillInstallClient`, copy
   mode, third-party skills, auto-install after updates, Git mutations, new targets.
 
+## Review hardening
+
+Adversarial review round 1 (sibling Pi agent, brief and findings kept outside the repository):
+
+- Project-scope commands followed repository-controlled symlinks: a committed `.agents ->
+  /elsewhere` link let `--scope project` write into (or remove links from) a folder outside the
+  repository while reporting an in-repository path. `ProwlSkillInstaller.projectBoundaryViolation`
+  now refuses a target whose parent or skills directory resolves outside the canonical root, the
+  executor pre-checks every selected target before any change (`INSTALL_CONFLICT`), and the
+  shared `install`/`uninstall` enforce the same rule so K3 cannot bypass it. User scope still
+  follows symlinks on purpose. Symlinks that resolve inside the repository remain accepted.
+- An explicit `--path` accepted any directory, including a non-repository or a nested folder
+  that runtimes never read. Both spellings now resolve to the Git root containing the start
+  point, and a start point outside a repository is `PATH_NOT_FOUND`.
+- The `prowl-cli` skill line implied that all three user targets are always linked; it now says
+  detected targets and points at `--target`. `INVALID_SKILL_FRONTMATTER` joined the manual's
+  error table.
+
 ## Verification
 
 - TDD RED: 116 missing-symbol errors across the five new CLI test files before the shared
@@ -75,7 +93,7 @@ with its contract, schema, manual, and skill line. Settings UI stays in K3.
 - `make build-cli` and `make test-cli-smoke` pass; the smoke target now also runs
   `skills list --json` against a temporary skills root and home with the socket unavailable.
   `make test-cli-unit` passed 120 tests and `make test-cli-integration` passed 102. New
-  coverage: 13 installer, 6 target, 18 executor, 5 parser, 3 schema, and 5 integration tests;
+  coverage: 13 installer, 6 target, 18 executor, 5 parser, 3 schema, and 5 integration tests (review round 1 added 5 boundary/explicit-path tests);
   the integration tests run the real binary with an unavailable `PROWL_CLI_SOCKET`, a temporary
   `PROWL_SKILLS_DIR`, a temporary `HOME`, and a throwaway Git repository, and validate every
   JSON envelope against the schema bundle.

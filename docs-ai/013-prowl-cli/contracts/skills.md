@@ -48,11 +48,17 @@ skills directory when it is missing, detected or not. `uninstall` never creates 
 
 - `--scope` defaults to `user`. The user root is `$HOME` (an explicit `HOME` override is
   honored so verification can use a temporary home).
-- `--scope project` uses `--path <dir>` as the project root, or the nearest ancestor of the
-  current directory (including itself) that contains a `.git` entry — a directory or, for a
-  worktree, a file. `--path` requires `--scope project` (`INVALID_ARGUMENT`); a missing path
-  is `PATH_NOT_FOUND`, a non-directory is `PATH_NOT_DIRECTORY`, and a current directory
-  outside any Git repository is `PATH_NOT_FOUND`. Prowl never reads or edits Git state.
+- `--scope project` acts on a repository. The root is the nearest ancestor (including the
+  start itself) that contains a `.git` entry — a directory or, for a worktree, a file — of
+  `--path <dir>` when given, otherwise of the current directory. `--path` requires
+  `--scope project` (`INVALID_ARGUMENT`); a missing path is `PATH_NOT_FOUND`, a non-directory
+  is `PATH_NOT_DIRECTORY`, and a start point outside any Git repository is `PATH_NOT_FOUND`.
+  Prowl never reads or edits Git state.
+- Project-scope links stay inside the repository. If a target's parent directory
+  (`<root>/.codex`) or skills directory (`<root>/.codex/skills`) exists and resolves outside
+  the canonical root — for example a committed symlink to a shared folder — every command that
+  would use it fails with `INSTALL_CONFLICT` before any change. User scope deliberately follows
+  such symlinks because synced `~/.claude/skills`-style setups are supported.
 - `list` reports user scope only.
 
 ### Selection and defaults

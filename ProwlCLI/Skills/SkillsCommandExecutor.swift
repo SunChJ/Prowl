@@ -161,6 +161,17 @@ struct SkillsCommandExecutor {
         )
       }
     }
+    if scope == .project {
+      let escaping = targets.compactMap { ProwlSkillInstaller.projectBoundaryViolation(target: $0, root: root) }
+      guard escaping.isEmpty else {
+        throw ExitError(
+          code: CLIErrorCode.installConflict,
+          message: "Refusing to follow a symlinked target directory outside the project: "
+            + escaping.joined(separator: ", ")
+            + ". Project-scope links stay inside the repository; nothing was changed."
+        )
+      }
+    }
     let conflicts = pairs.filter { SymlinkInstaller.hasConflict(linkPath: $0.before.linkPath) }
     guard conflicts.isEmpty else {
       throw ExitError(
@@ -232,6 +243,7 @@ struct SkillsCommandExecutor {
     case .user:
       return userRoot
     case .project:
+      let start: URL
       if let projectPath = request.projectPath {
         let url = URL(filePath: projectPath, directoryHint: .isDirectory, relativeTo: currentDirectory)
           .standardizedFileURL
@@ -244,12 +256,17 @@ struct SkillsCommandExecutor {
           throw ExitError(
             code: CLIErrorCode.pathNotDirectory, message: "Project path is not a directory: \(displayPath(url))")
         }
-        return url
+        start = url
+      } else {
+        start = currentDirectory
       }
-      guard let root = GitRootLocator.root(containing: currentDirectory) else {
+      // Both spellings name a repository: an explicit path inside a repository resolves to its
+      // root, exactly like the current directory does, so links land where runtimes look.
+      guard let root = GitRootLocator.root(containing: start) else {
         throw ExitError(
           code: CLIErrorCode.pathNotFound,
-          message: "No Git repository contains \(displayPath(currentDirectory)); pass --path <repo>."
+          message: "No Git repository contains \(displayPath(start)); project scope needs a repository "
+            + "(pass --path <repo> or run inside one)."
         )
       }
       return root

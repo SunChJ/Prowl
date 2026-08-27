@@ -89,12 +89,14 @@ nonisolated public enum ProwlSkillInstaller {
   }
 
   /// Creates the target directory when missing and links the bundled skill directory.
+  /// In project scope, a target directory that resolves outside the project root is refused.
   public static func install(
     skill: BundledSkill,
     target: SkillInstallTarget,
     scope: ProwlSkillScope,
     root: URL
   ) throws -> SkillTargetStatus {
+    try enforceProjectBoundary(target: target, scope: scope, root: root)
     try SymlinkInstaller.install(
       source: sourcePath(skill),
       linkPath: linkPath(skill: skill, target: target, scope: scope, root: root)
@@ -108,8 +110,40 @@ nonisolated public enum ProwlSkillInstaller {
     scope: ProwlSkillScope,
     root: URL
   ) throws -> SkillTargetStatus {
+    try enforceProjectBoundary(target: target, scope: scope, root: root)
     try SymlinkInstaller.uninstall(linkPath: linkPath(skill: skill, target: target, scope: scope, root: root))
     return status(skill: skill, target: target, scope: scope, root: root)
+  }
+
+  /// The first target path component (`<root>/.codex` or `<root>/.codex/skills`) that exists but
+  /// resolves outside the canonical project root, or `nil` when the slot stays inside the project.
+  /// A repository-controlled symlink must not redirect a project-scoped link into another folder;
+  /// user scope deliberately follows symlinks because synced skill folders are an approved setup.
+  public static func projectBoundaryViolation(target: SkillInstallTarget, root: URL) -> String? {
+    let canonicalRoot = realPath(root)
+    let skillsDirectory = target.skillsDirectoryURL(scope: .project, root: root)
+    for candidate in [skillsDirectory.deletingLastPathComponent(), skillsDirectory] {
+      let path = candidate.path(percentEncoded: false).trimmingTrailingPathSeparator()
+      guard (try? FileManager.default.attributesOfItem(atPath: path)) != nil else { continue }
+      let resolved = realPath(candidate)
+      if resolved != canonicalRoot, !resolved.hasPrefix(canonicalRoot + "/") {
+        return path
+      }
+    }
+    return nil
+  }
+
+  private static func enforceProjectBoundary(
+    target: SkillInstallTarget,
+    scope: ProwlSkillScope,
+    root: URL
+  ) throws {
+    guard scope == .project, let path = projectBoundaryViolation(target: target, root: root) else { return }
+    throw SymlinkInstallError.conflict(path: path)
+  }
+
+  private static func realPath(_ url: URL) -> String {
+    url.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false).trimmingTrailingPathSeparator()
   }
 
   public static func sourcePath(_ skill: BundledSkill) -> String {
