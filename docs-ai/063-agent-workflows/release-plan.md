@@ -24,7 +24,7 @@ that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launc
 PRs merge to `main` one at a time (each keeps `main` shippable); engine PRs without a
 user-facing surface may merge before "their" release and stay dormant. Three releases:
 
-### Current R1 status (2026-08-27)
+### Current R1 status (2026-08-28)
 
 | Slice(s) | State | PR / next action |
 | --- | --- | --- |
@@ -36,12 +36,12 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
 | S3 wave 1 | Complete | Merged in #721/#723/#725/#728; S3c plan [064.010](../064-agent-completion-signals/010-s3c-plan.md), record [064.011](../064-agent-completion-signals/011-s3c-action.md) |
 | 065-S0/K1 | Merged | #729; [065.003](../065-bundled-agent-skills/003-k1-bundle-registry.md) |
-| 065-K2 | In review | #730; [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md) |
-| 065-K3 | Planned | Follows K2 inside R1 |
+| 065-K2 | Merged | #730; [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md) |
+| 065-K3 | In progress | `feat/bundled-skills-k3`; Agent Skills section on Settings › Command Line Tool; closes 065 |
 
 A2 completes 063's R1 implementation work, and S1/S2/S3 wave 1 are on `main`. The remaining
-R1 work is 065 bundled skill distribution: S0 and K1 are merged (#729), K2 is implemented and
-awaiting review, and K3 follows.
+R1 work is 065 bundled skill distribution: S0, K1 (#729), and K2 (#730) are merged; K3, the
+Settings section, is in progress and closes 065.
 
 #### S3 wave 1 PR breakdown
 
@@ -124,6 +124,9 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-28 — 065-K2 merged in #730 after four review rounds and a real-environment check.
+  K3 (Agent Skills section on Settings › Command Line Tool) started on
+  `feat/bundled-skills-k3`; it is the last 065 slice and the last open R1 item.
 - 2026-08-27 — 065-K1 merged in #729. K2 (shared `SymlinkInstaller` + `prowl skills`) was
   implemented on `feat/bundled-skills-k2` and opened as #730; K3 remains planned inside R1.
   Record: [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md).

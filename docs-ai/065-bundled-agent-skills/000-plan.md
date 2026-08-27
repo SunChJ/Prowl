@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S0, K1, and K2 complete; K3 planned |
+| **Status** | In progress — S0, K1, and K2 complete (#729, #730 merged); K3 in progress |
 | **Anchor date** | 2026-08-22 |
 | **Primary PRs** | #712 (plan); #729 (K1); #730 (K2); K3 to fill in |
 | **Related** | [063-agent-workflows](../063-agent-workflows/000-plan.md) (D1 `skill:` materialization, D1–D3 new skills), [060-prowl-cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md) (four-layer CLI rule), [013-prowl-cli](../013-prowl-cli/000-plan.md), `docs/components/cli.md`, `skills/prowl-cli/SKILL.md` |
@@ -138,7 +138,7 @@ depends on it); K2 and K3 follow inside R1 so the R1 user can `prowl skills inst
 | --- | --- | --- |
 | **S0** spike | **Complete** — verified Codex per-directory links and `.codex/skills`, mapped installed `.agents/skills` readers, and confirmed dangling links do not block discovery. Copy mode stays out of K2. See [002-s0-skill-targets.md](002-s0-skill-targets.md). | — |
 | **K1** | **Complete (#729)** — `embed-skills`, `Resources/skills` folder reference, Foundation-only `ProwlSkills` registry + typed errors and frontmatter parser, CLI bundle resolution, tests. See [003-k1-bundle-registry.md](003-k1-bundle-registry.md). | — |
-| **K2** | **Complete** — shared `SymlinkInstaller` extracted from `CLIInstallClient`, declarative targets, `prowl skills list\|install\|uninstall\|path`, contract, schema, `cli.md`, `prowl-cli` skill line, unit + integration tests (temp dirs, `PROWL_SKILLS_DIR`). See [004-k2-skill-installer-cli.md](004-k2-skill-installer-cli.md). | S0, K1 |
+| **K2** | **Complete (#730)** — shared `SymlinkInstaller` extracted from `CLIInstallClient`, declarative targets, `prowl skills list\|install\|uninstall\|path`, contract, schema, `cli.md`, `prowl-cli` skill line, unit + integration tests (temp dirs, `PROWL_SKILLS_DIR`). See [004-k2-skill-installer-cli.md](004-k2-skill-installer-cli.md). | S0, K1 |
 | **K3** | Agent Skills section on the Command Line Tool page, `AgentSkillsFeature` + `SkillInstallClient`, reducer tests, `docs/components/settings.md`. | K2 |
 
 ## Alternatives & decisions
