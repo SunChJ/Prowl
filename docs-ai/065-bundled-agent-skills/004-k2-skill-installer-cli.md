@@ -43,7 +43,8 @@ with its contract, schema, manual, and skill line. Settings UI stays in K3.
   `cli-output-schema.json`, `docs-ai/013-prowl-cli/contracts/skills.md`, `input.md` and
   `schema.md` rows, a `prowl skills` section and error rows in `docs/components/cli.md`, and one
   line in `skills/prowl-cli/SKILL.md` telling an agent that `prowl skills install prowl-cli`
-  keeps it current.
+  keeps it current. The root `prowl --help` discussion also points at `prowl skills install`
+  so a user or an agent discovers the bundled skills before any Settings UI exists.
 
 ## Decisions and boundaries
 
