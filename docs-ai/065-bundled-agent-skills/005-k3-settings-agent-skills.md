@@ -18,8 +18,9 @@ shared installer so both surfaces always report the same status.
   inert stub. `SymlinkInstallError` maps to `SkillInstallError.message` the way `CLIInstallError`
   does: a real file or directory is reported as occupying the slot and never deleted.
 - `AgentSkillsFeature` (`supacode/Features/Settings/Reducer/`) is a child of `SettingsFeature`
-  (`agentSkills: State?`), created by `AppFeature.setSelection(.commandLineTool)` and cleared
-  on every other section, exactly like `agentProfiles` for `.profiles`. `.task` loads the
+  (`agentSkills: State?`), created when `SettingsFeature.setSelection` resolves to
+  `.commandLineTool` and cleared on every other section (unlike `agentProfiles`, which
+  `AppFeature` manages — see Review hardening for why). `.task` loads the
   `user`-audience skills and one `SkillLink` per **detected** target (`SkillTargetStatus.detected`);
   `installLink` covers Install, Repair, and Replace (all replace the slot with a link to this
   bundle), `removeLink` removes a symlink only, `revealSkillButtonTapped` opens the bundled
@@ -55,6 +56,20 @@ shared installer so both surfaces always report the same status.
   install/uninstall run as effects.
 - Not in K3: project scope, copy mode, third-party skills, auto-linking after updates, new
   targets, changes to the shared installer or the CLI contract. `ProwlCLIShared` is untouched.
+
+## Review hardening
+
+Adversarial review round 1 (sibling reviewer, brief and findings kept outside the repository)
+found no P0/P1 and one P2: the child state was created and cleared by `AppFeature.setSelection`,
+the grandparent, which mutates `settings.agentSkills` *after* `SettingsFeature`'s `ifLet` has
+already run for that action — so the `ifLet` never observed a non-nil → nil transition and an
+in-flight install/uninstall effect survived the section switch; its delayed completion then hit
+nil child state (a TCA runtime warning in Debug) and was dropped without the promised refresh,
+toast, or failure alert. The reviewer reproduced it with a suspended-install probe. The lifecycle
+now lives in `SettingsFeature.setSelection` (create on `.commandLineTool` when absent, clear
+otherwise), so `ifLet` cancels the child's effects with the state; `AppFeature` no longer touches
+`agentSkills`. Pinned by an `AppFeature` test that suspends install/uninstall on a `TestClock`,
+switches to General, and requires every effect to be gone.
 
 ## Verification
 

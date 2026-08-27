@@ -452,7 +452,17 @@ struct SettingsFeature {
         return .none
 
       case .setSelection(let selection):
-        state.selection = selection ?? .general
+        let resolvedSelection = selection ?? .general
+        state.selection = resolvedSelection
+        // Owned here rather than in AppFeature so `ifLet` observes the removal and cancels an
+        // in-flight link effect instead of letting its completion land on nil child state.
+        if resolvedSelection == .commandLineTool {
+          if state.agentSkills == nil {
+            state.agentSkills = .init()
+          }
+        } else {
+          state.agentSkills = nil
+        }
         return .none
 
       case .alert(.presented(.openSystemNotificationSettings)):

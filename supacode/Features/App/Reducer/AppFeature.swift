@@ -380,17 +380,10 @@ struct AppFeature {
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = .init()
           state.settings.agentProfiles = nil
-          state.settings.agentSkills = nil
         case .profiles:
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = .init()
-          state.settings.agentSkills = nil
-        case .commandLineTool:
-          state.settings.repositorySettings = nil
-          state.settings.globalCustomCommands = nil
-          state.settings.agentProfiles = nil
-          state.settings.agentSkills = .init()
         case .repository(let repositoryID):
           guard let repository = state.repositories.repositories[id: repositoryID] else {
             state.settings.repositorySettings = nil
@@ -414,12 +407,11 @@ struct AppFeature {
           state.settings.repositorySettings = repoSettingsState
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
-          state.settings.agentSkills = nil
-        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github:
+        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github, .commandLineTool:
+          // `settings.agentSkills` is owned by SettingsFeature.setSelection.
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
-          state.settings.agentSkills = nil
         }
         return .none
 

@@ -35,9 +35,10 @@
   `docs/components/cli.md`, one line in `skills/prowl-cli/SKILL.md`).
 - **Settings.** `SkillInstallClient` (`supacode/Clients/SkillInstall/`), `AgentSkillsFeature`
   (`supacode/Features/Settings/Reducer/`), and `AgentSkillsSectionView` (`.../Views/`) add the
-  Agent Skills section to `CommandLineToolSettingsView`. `AppFeature.setSelection(.commandLineTool)`
-  creates the child state; every action recomputes all chips; results surface as toasts and
-  failures as an alert. `docs/components/settings.md` documents the section.
+  Agent Skills section to `CommandLineToolSettingsView`. `SettingsFeature.setSelection` creates
+  the child state for `.commandLineTool` and clears it otherwise (so `ifLet` cancels in-flight
+  link effects); every action recomputes all chips; results surface as toasts and failures as an
+  alert. `docs/components/settings.md` documents the section.
 - **Tests.** Registry, installer, target, executor, parser, schema, and integration tests under
   `ProwlCLITests/` (temporary roots, `PROWL_SKILLS_DIR`, temporary `HOME`); `CLIInstallClientTests`,
   `SkillInstallClientTests`, `AgentSkillsFeatureTests`, `AppFeatureSettingsSelectionTests`, and
@@ -59,6 +60,10 @@
   `install` with no detected target fails with `TARGET_NOT_FOUND` — all K2 review additions.
 - Settings reports a successful link with a toast only (the chip changes state); the plan's
   "mirroring the CLI install row" did not decide this, and a modal per link would be noise.
+- `agentSkills` is created and cleared by `SettingsFeature.setSelection`, not by
+  `AppFeature.setSelection` as the plan's `agentProfiles` analogy implied: a grandparent
+  mutation happens after the child `ifLet` has run, so it cannot cancel in-flight link effects
+  (K3 review round 1).
 - The section shows detected targets only, as planned, but the "no target detected" state adds an
   explicit pointer to `prowl skills install --target …` since Settings never creates folders.
 
