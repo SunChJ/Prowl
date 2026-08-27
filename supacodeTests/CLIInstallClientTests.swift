@@ -42,17 +42,10 @@ struct CLIInstallClientTests {
     let client = CLIInstallClient(
       bundledCLIURL: { fakeBundledBinary },
       installationStatus: { path in
-        let fileManager = FileManager.default
-        let filePath = path.path(percentEncoded: false)
-        guard fileManager.fileExists(atPath: filePath) else { return .notInstalled }
-        guard let attrs = try? fileManager.attributesOfItem(atPath: filePath),
-          attrs[.type] as? FileAttributeType == .typeSymbolicLink,
-          let destination = try? fileManager.destinationOfSymbolicLink(atPath: filePath)
-        else { return .installedDifferentSource(path: filePath) }
-        if destination == fakeBundledBinary.path(percentEncoded: false) {
-          return .installed(path: filePath)
-        }
-        return .installedDifferentSource(path: filePath)
+        SymlinkInstaller.status(
+          linkPath: path.path(percentEncoded: false),
+          source: fakeBundledBinary.path(percentEncoded: false)
+        )
       },
       install: { _ in },
       uninstall: { _ in }
