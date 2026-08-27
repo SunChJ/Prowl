@@ -201,6 +201,38 @@ struct AppFeatureSettingsSelectionTests {
     await store.send(.settings(.setSelection(section))) {
       $0.settings.selection = section
       $0.settings.agentProfiles = nil
+      if section == .commandLineTool {
+        $0.settings.agentSkills = .init()
+      }
+    }
+  }
+
+  @Test func selectingCommandLineToolInitialisesAgentSkillsState() async {
+    let store = TestStore(initialState: AppFeature.State(settings: SettingsFeature.State())) {
+      AppFeature()
+    }
+
+    await store.send(.settings(.setSelection(.commandLineTool))) {
+      $0.settings.selection = .commandLineTool
+      $0.settings.agentSkills = .init()
+    }
+  }
+
+  @Test(arguments: [SettingsSection.general, .profiles])
+  func selectingAnotherSectionClearsAgentSkillsState(section: SettingsSection) async {
+    var state = AppFeature.State(settings: SettingsFeature.State())
+    state.settings.selection = .commandLineTool
+    state.settings.agentSkills = .init()
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    }
+
+    await store.send(.settings(.setSelection(section))) {
+      $0.settings.selection = section
+      $0.settings.agentSkills = nil
+      if section == .profiles {
+        $0.settings.agentProfiles = .init()
+      }
     }
   }
 }

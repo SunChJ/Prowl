@@ -63,6 +63,7 @@ struct SettingsFeature {
     var repositorySettings: RepositorySettingsFeature.State?
     var globalCustomCommands: GlobalCustomCommandsFeature.State?
     var agentProfiles: AgentProfilesFeature.State?
+    var agentSkills: AgentSkillsFeature.State?
     @Presents var alert: AlertState<Alert>?
 
     init(settings: GlobalSettings = .default) {
@@ -186,6 +187,7 @@ struct SettingsFeature {
     case repositorySettings(RepositorySettingsFeature.Action)
     case globalCustomCommands(GlobalCustomCommandsFeature.Action)
     case agentProfiles(AgentProfilesFeature.Action)
+    case agentSkills(AgentSkillsFeature.Action)
     case alert(PresentationAction<Alert>)
     case delegate(Delegate)
     case binding(BindingAction<State>)
@@ -470,6 +472,9 @@ struct SettingsFeature {
       case .agentProfiles:
         return .none
 
+      case .agentSkills:
+        return .none
+
       case .delegate:
         return .none
       }
@@ -482,6 +487,9 @@ struct SettingsFeature {
     }
     .ifLet(\.agentProfiles, action: \.agentProfiles) {
       AgentProfilesFeature()
+    }
+    .ifLet(\.agentSkills, action: \.agentSkills) {
+      AgentSkillsFeature()
     }
     // Without this, alert state is only cleared by the view's dismiss
     // writeback: state set while the Settings window is closed (or closed
