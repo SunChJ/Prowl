@@ -59,7 +59,7 @@ TEST_SIGNING_ARGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-integration benchmark-build bump-version log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs embed-skills run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-unit test-cli-integration benchmark-build bump-version log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -128,7 +128,15 @@ embed-docs: # Stage docs/ into Resources for bundling into the app (.app/Content
 	rsync -a --delete --exclude '.sync-meta.json' "$$src/" "$$dst/"; \
 	echo "embedded docs at $$dst"
 
-build-app: ensure-ghostty embed-cli-debug embed-docs # Build the macOS app (Debug)
+embed-skills: # Stage skills/ into Resources for bundling into the app (.app/Contents/Resources/skills)
+	@set -euo pipefail; \
+	src="$(CURRENT_MAKEFILE_DIR)/skills"; \
+	dst="$(CURRENT_MAKEFILE_DIR)/Resources/skills"; \
+	mkdir -p "$$dst"; \
+	rsync -a --delete "$$src/" "$$dst/"; \
+	echo "embedded skills at $$dst"
+
+build-app: ensure-ghostty embed-cli-debug embed-docs embed-skills # Build the macOS app (Debug)
 	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Debug build -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) SWIFT_COMPILATION_MODE=incremental $(DEBUG_SIGNING_ARGS) 2>&1 | mise exec -- xcsift -w --format toon'
 
 sync-cli-version: # Sync app MARKETING_VERSION into ProwlCLIShared/ProwlVersion.swift
@@ -335,13 +343,13 @@ install-release: build-ghostty-xcframework # Build Release, sign locally, instal
 	ditto "$$APP_PATH" "$$DST"; \
 	echo "installed $$DST (Release build, locally signed)"
 
-archive: build-ghostty-xcframework embed-cli embed-docs # Archive Release build for distribution
+archive: build-ghostty-xcframework embed-cli embed-docs embed-skills # Archive Release build for distribution
 	bash -o pipefail -c 'xcodebuild -project supacode.xcodeproj -scheme supacode -configuration Release -archivePath build/supacode.xcarchive archive CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$$APPLE_TEAM_ID" CODE_SIGN_IDENTITY="$$DEVELOPER_ID_IDENTITY_SHA" OTHER_CODE_SIGN_FLAGS="--timestamp" PROWL_SENTRY_DSN="$(PROWL_SENTRY_DSN)" PROWL_POSTHOG_API_KEY="$(PROWL_POSTHOG_API_KEY)" PROWL_POSTHOG_HOST="$(PROWL_POSTHOG_HOST)" -skipMacroValidation -clonedSourcePackagesDirPath $(SPM_CACHE_DIR) $(XCODEBUILD_FLAGS) 2>&1 | mise exec -- xcsift -qw --format toon'
 
 export-archive: # Export xarchive
 	bash -o pipefail -c 'xcodebuild -exportArchive -archivePath build/supacode.xcarchive -exportPath build/export -exportOptionsPlist build/ExportOptions.plist 2>&1 | mise exec -- xcsift -qw --format toon'
 
-test: ensure-ghostty embed-cli-debug embed-docs test-app
+test: ensure-ghostty embed-cli-debug embed-docs embed-skills test-app
 
 test-scripts: # Run tests for the repository's Python scripts
 	@python3 -m unittest discover -s "$(CURRENT_MAKEFILE_DIR)/scripts" -p 'test_*.py'
@@ -398,6 +406,16 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >"$$response" || true; \
 	jq -e '.error.code == "APP_NOT_RUNNING"' "$$response" >/dev/null
 
+test-cli-unit: # Run CLI unit tests via SwiftPM
+	@test_list="$$(swift test list)"; \
+	matching_test_count="$$(printf '%s\n' "$$test_list" | grep -Evc '$(CLI_INTEGRATION_TEST_FILTER)' || true)"; \
+	if [ "$$matching_test_count" -eq 0 ]; then \
+		echo "error: CLI unit filter matched zero tests" >&2; \
+		exit 1; \
+	fi; \
+	echo "CLI unit filter matched $$matching_test_count test(s)."; \
+	swift test --skip-build --skip '$(CLI_INTEGRATION_TEST_FILTER)'
+
 test-cli-integration: # Run CLI integration tests via SwiftPM
 	@test_list="$$(swift test list)"; \
 	matching_test_count="$$(printf '%s\n' "$$test_list" | grep -Ec '$(CLI_INTEGRATION_TEST_FILTER)' || true)"; \
@@ -408,13 +426,13 @@ test-cli-integration: # Run CLI integration tests via SwiftPM
 	echo "CLI integration filter matched $$matching_test_count test(s)."; \
 	swift test --skip-build --filter '$(CLI_INTEGRATION_TEST_FILTER)'
 
-benchmark-build: ensure-ghostty embed-cli-debug embed-docs # Benchmark clean and compilation-cache build/test time
+benchmark-build: ensure-ghostty embed-cli-debug embed-docs embed-skills # Benchmark clean and compilation-cache build/test time
 	@BUILD_BENCHMARK_ROOT="$(CURRENT_MAKEFILE_DIR)/.build-benchmark/build-time" \
 		SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 		bash "$(CURRENT_MAKEFILE_DIR)/scripts/benchmark-build.sh" \
 		"$(BUILD_BENCHMARK_SCENARIO)" "$(BUILD_BENCHMARK_SAMPLES)"
 
-bench: ensure-ghostty embed-cli-debug embed-docs # Run performance benchmarks optimized (-O); append absolute medians to the bench log
+bench: ensure-ghostty embed-cli-debug embed-docs embed-skills # Run performance benchmarks optimized (-O); append absolute medians to the bench log
 	@set -euo pipefail; \
 	bench_log_dir="$$HOME/Library/Logs/Prowl/measurements/bench"; \
 	mkdir -p "$$bench_log_dir"; \

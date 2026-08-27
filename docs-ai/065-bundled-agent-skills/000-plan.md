@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | Planned |
+| **Status** | In progress — S0 and K1 complete; K2–K3 planned |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #712 (plan), K1–K3 to fill in |
+| **Primary PRs** | #712 (plan); K1 pending; K2–K3 to fill in |
 | **Related** | [063-agent-workflows](../063-agent-workflows/000-plan.md) (D1 `skill:` materialization, D1–D3 new skills), [060-prowl-cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md) (four-layer CLI rule), [013-prowl-cli](../013-prowl-cli/000-plan.md), `docs/components/cli.md`, `skills/prowl-cli/SKILL.md` |
 
 ## Background
@@ -63,17 +63,21 @@ skills; the app passes `Bundle.main.resourceURL`, the CLI resolves its own execu
 Not run from a bundle and no override → `BUNDLE_NOT_FOUND`.
 
 **Install targets (declarative, verified per runtime).** `SkillInstallTarget { id,
-displayName, userDirectory, projectDirectory?, runtimes }`. V1 table — entries marked
-*verify* are confirmed (directory, symlink following) by spike S0 before K2 builds on them:
+displayName, userDirectory, projectDirectory?, runtimes }`. S0 confirmed the V1 table before
+K2 builds on it; per-runtime evidence strength and the remaining Cursor credential boundary
+are recorded in [002-s0-skill-targets.md](002-s0-skill-targets.md):
 
-| Target id | User dir | Project dir | Read by |
-| --- | --- | --- | --- |
-| `claude` | `~/.claude/skills` | `.claude/skills` | Claude Code (follows symlinked skill directories — this repo's `.claude/skills/prowl-cli` link loads) |
-| `codex` | `~/.codex/skills` | *verify* | Codex (follows a symlinked skills root; per-directory symlink *verify*) |
-| `agents` | `~/.agents/skills` | `.agents/skills` | cross-agent convention (agentskills.io); *verify* which installed runtimes honour it |
+| Target id | User dir | Project dir | Read by | Directory symlink / dangling link |
+| --- | --- | --- | --- | --- |
+| `claude` | `~/.claude/skills` | `.claude/skills` | Claude Code | Followed; dangling link omitted |
+| `codex` | `~/.codex/skills` | `.codex/skills` | Codex | Followed; dangling link omitted |
+| `agents` | `~/.agents/skills` | `.agents/skills` | Codex, Gemini CLI, Cursor Agent, OpenCode, Copilot CLI, Kimi CLI, Droid, Amp, Qoder CLI, Pi, OMP, Grok Build | Followed by locally exercised readers; dangling link omitted (Droid logs a warning); Cursor location documented but authentication blocked its black-box run |
 
-Other `AgentProfileRuntime` cases (gemini, copilot, cursor, opencode, amp, droid, …) join the
-table as their skill directories are verified; unknown ones stay out rather than guessed.
+S0 verified the local target behavior and records the evidence level for each installed
+runtime in [002-s0-skill-targets.md](002-s0-skill-targets.md). Cline and Qwen Code do not
+read `.agents/skills` by default; Claude Code uses the separate `claude` target. Other
+`AgentProfileRuntime` cases join the table only after their directories and symlink behavior
+are verified; unknown ones stay out rather than guessed.
 A user target counts as *detected* when its parent (`~/.claude`, `~/.codex`, `~/.agents`)
 exists; undetected targets are listed but never chosen by default, and an explicit
 `--target` creates the directory.
@@ -132,8 +136,8 @@ depends on it); K2 and K3 follow inside R1 so the R1 user can `prowl skills inst
 
 | Slice | Contents | Depends |
 | --- | --- | --- |
-| **S0** spike | Verify the target table: Codex per-directory symlink following and project dir, `.agents/skills` readers among installed runtimes, how each runtime treats a dangling symlink. Use a temporary `CODEX_HOME` / project, never the user's live skill folders. Record results in this plan. | — |
-| **K1** | `embed-skills`, `Resources/skills` folder reference, `ProwlSkills` registry + frontmatter parser (incl. `metadata.prowl-install`), tests; 063 plan cross-link. | — |
+| **S0** spike | **Complete** — verified Codex per-directory links and `.codex/skills`, mapped installed `.agents/skills` readers, and confirmed dangling links do not block discovery. Copy mode stays out of K2. See [002-s0-skill-targets.md](002-s0-skill-targets.md). | — |
+| **K1** | **Complete** — `embed-skills`, `Resources/skills` folder reference, Foundation-only `ProwlSkills` registry + typed errors and frontmatter parser, CLI bundle resolution, tests. See [003-k1-bundle-registry.md](003-k1-bundle-registry.md). | — |
 | **K2** | Shared `SymlinkInstaller` extracted from `CLIInstallClient`, `prowl skills list\|install\|uninstall\|path`, contract, `cli.md`, `prowl-cli` skill line, smoke + integration tests (temp dirs, `PROWL_SKILLS_DIR`). | S0, K1 |
 | **K3** | Agent Skills section on the Command Line Tool page, `AgentSkillsFeature` + `SkillInstallClient`, reducer tests, `docs/components/settings.md`. | K2 |
 
@@ -175,8 +179,10 @@ Decisions below were taken in the 2026-08-22 plan review (#712):
 
 ## Risks
 
-- A runtime may not follow directory symlinks for skills → S0 verifies before K2; if any V1
-  target refuses symlinks, copy mode is promoted from open question to K2 scope.
+- A runtime may regress directory-symlink discovery → S0 found no V1 target that refuses
+  the direct-link shape; the verified matrix and evidence boundary live in
+  [002-s0-skill-targets.md](002-s0-skill-targets.md). Keep copy mode deferred unless a
+  supported runtime demonstrably regresses.
 - Debug builds: links point into DerivedData and show as `installedDifferentSource` in a
   Release app (and vice versa). Acceptable; the status text names the other source.
 - Runtimes move their skill directories → the table is declarative and small; unknown
@@ -201,10 +207,23 @@ Decisions below were taken in the 2026-08-22 plan review (#712):
 
 ## Open questions
 
-- Copy mode (`--copy`) in V1 or later? Needed only if S0 finds a symlink-averse runtime.
+- Copy mode (`--copy`) is deferred. S0 found no symlink-averse V1 target; reconsider only
+  for a demonstrated supported-runtime regression.
 - Should 063-D1's Workflows “ask your agent” prompt instruct `prowl skills install` first?
 - Settings project-scope UI (per-repository section in Repo Settings) — V2 if asked.
 
 ## Amendments
 
-(append `- Updated 2026-MM-DD: ... — see [00N-topic.md](00N-topic.md)` lines here)
+- Updated 2026-08-27 during K1 review: clean CI now stages the ignored skills resource and
+  executes a dedicated CLI unit-test target; the frontmatter parser rejects top-level, nested,
+  or inconsistently indented `prowl-install` metadata before audience defaulting — see
+  [003-k1-bundle-registry.md](003-k1-bundle-registry.md).
+- Updated 2026-08-27: Implemented and verified K1: skills are staged into the app bundle;
+  the shared registry parses audience metadata, resolves app/CLI bundle locations, and fails
+  with typed errors; no installation behavior was added — see
+  [003-k1-bundle-registry.md](003-k1-bundle-registry.md).
+- Updated 2026-08-27: Completed S0 with temporary homes/projects only. Claude Code and
+  Codex follow per-skill directory links; Codex project scope is `.codex/skills`; the
+  installed `.agents/skills` reader matrix is recorded; dangling links do not block other
+  skills; copy mode remains deferred. The record also fixes K1's planned shared interface
+  boundary before implementation — see [002-s0-skill-targets.md](002-s0-skill-targets.md).

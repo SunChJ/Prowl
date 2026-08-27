@@ -2,12 +2,13 @@
 
 ## Status
 
-Owner-approved plan; S3a merged in [#721](https://github.com/onevcat/Prowl/pull/721) (hardened
+Complete. S3a merged in [#721](https://github.com/onevcat/Prowl/pull/721) (hardened
 in [#723](https://github.com/onevcat/Prowl/pull/723)). Implementation record:
 [007-s3a-action.md](007-s3a-action.md). S3b merged in [#725](https://github.com/onevcat/Prowl/pull/725) (plan
-[008-s3b-plan.md](008-s3b-plan.md), record [009-s3b-action.md](009-s3b-action.md)). S3c is
-implemented in [#728](https://github.com/onevcat/Prowl/pull/728) (plan
-[010-s3c-plan.md](010-s3c-plan.md), record [011-s3c-action.md](011-s3c-action.md)).
+[008-s3b-plan.md](008-s3b-plan.md), record [009-s3b-action.md](009-s3b-action.md)). S3c merged
+in [#728](https://github.com/onevcat/Prowl/pull/728) (plan
+[010-s3c-plan.md](010-s3c-plan.md), record [011-s3c-action.md](011-s3c-action.md)), completing
+S3 wave 1.
 
 - Planning branch: `feat/agent-signal-hooks-s3a`
 - Prerequisites: 063-A2, 064-S1, and 064-S2 are merged.
@@ -20,8 +21,8 @@ implemented in [#728](https://github.com/onevcat/Prowl/pull/728) (plan
 
 ## S3 wave 1 PR breakdown
 
-S3 wave 1 remains one R1 release slice, delivered as three sequential merge-safe PRs. The
-slice is not complete until S3c passes its complete tier-A gate.
+S3 wave 1 is one complete R1 release slice, delivered as three sequential merge-safe PR
+scopes. S3c passed the complete tier-A gate in #728.
 
 | PR | Runtime scope | Foundation / closure scope | Depends |
 | --- | --- | --- | --- |
@@ -29,8 +30,7 @@ slice is not complete until S3c passes its complete tier-A gate.
 | **S3b** | Copilot, Droid, Qoder | Plugin/settings adapters and fixtures on the S3a foundation | S3a |
 | **S3c** | Pi, OMP, OpenCode | Extension/plugin adapters, complete docs and tier-A live verification (the exact-channel badge was dropped on 2026-08-26) | S3b |
 
-Every PR keeps `main` shippable. Partial runtime support may exist on `main` between these PRs,
-but release documentation must not call S3 wave 1 complete before S3c.
+Every PR kept `main` shippable. S3c completed the tier-A runtime set and closed the wave.
 
 ## S3a objective
 

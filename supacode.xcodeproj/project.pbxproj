@@ -21,6 +21,7 @@
 		D6A1CB362F1F4ACB004FDABD /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D6A1CB342F1F4AC2004FDABD /* Carbon.framework */; };
 		D6CLI0012F99000100000001 /* prowl-cli in Resources */ = {isa = PBXBuildFile; fileRef = D6CLI0022F99000100000001 /* prowl-cli */; };
 		D6DOC0012F99000300000001 /* docs in Resources */ = {isa = PBXBuildFile; fileRef = D6DOC0022F99000300000001 /* docs */; };
+		D6SKL0012F99000500000001 /* skills in Resources */ = {isa = PBXBuildFile; fileRef = D6SKL0022F99000500000001 /* skills */; };
 		D6HOK0012F99000400000001 /* agent-hooks in Resources */ = {isa = PBXBuildFile; fileRef = D6HOK0022F99000400000001 /* agent-hooks */; };
 		D6D054282F2E3EBF00D70ED5 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = D6D054272F2E3EBF00D70ED5 /* PostHog */; };
 		DFE570C142184CC387C1BC78 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B5698573F7354B14B940EA60 /* Sparkle */; };
@@ -45,6 +46,7 @@
 		D6A1CB342F1F4AC2004FDABD /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = System/Library/Frameworks/Carbon.framework; sourceTree = SDKROOT; };
 		D6CLI0022F99000100000001 /* prowl-cli */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "prowl-cli"; path = "Resources/prowl-cli"; sourceTree = "<group>"; };
 		D6DOC0022F99000300000001 /* docs */ = {isa = PBXFileReference; lastKnownFileType = folder; name = docs; path = "Resources/docs"; sourceTree = "<group>"; };
+		D6SKL0022F99000500000001 /* skills */ = {isa = PBXFileReference; lastKnownFileType = folder; name = skills; path = "Resources/skills"; sourceTree = "<group>"; };
 		D6HOK0022F99000400000001 /* agent-hooks */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "agent-hooks"; path = "Resources/agent-hooks"; sourceTree = "<group>"; };
 		D6F821012F1FCBC1004B4174 /* supacodeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = supacodeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -111,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				D6DOC0022F99000300000001 /* docs */,
+				D6SKL0022F99000500000001 /* skills */,
 				D64162AD2F23CAF100260CA3 /* ghostty */,
 				D64162AF2F23CAF100260CA3 /* git-wt */,
 				D6CLI0022F99000100000001 /* prowl-cli */,
@@ -255,6 +258,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D6DOC0012F99000300000001 /* docs in Resources */,
+				D6SKL0012F99000500000001 /* skills in Resources */,
 				D64162B02F23CAF100260CA3 /* ghostty in Resources */,
 				D64162B12F23CAF100260CA3 /* terminfo in Resources */,
 				D64162B22F23CAF100260CA3 /* git-wt in Resources */,
