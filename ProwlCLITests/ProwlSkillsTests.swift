@@ -167,8 +167,82 @@ final class ProwlSkillsTests: XCTestCase {
         frontmatter: """
           ---
           name: Invalid
+          description: Invalid audience.
           metadata:
             prowl-install: everywhere
+          ---
+          """,
+        resourcesURL: resources
+      )
+
+      XCTAssertThrowsError(try ProwlSkills.bundled(resourcesURL: resources)) { error in
+        guard let skillsError = error as? ProwlSkillsError,
+          case .invalidFrontmatter(_, let reason) = skillsError
+        else {
+          return XCTFail("Expected invalid skill frontmatter")
+        }
+        XCTAssertEqual(reason, "metadata.prowl-install must be user or workflow")
+      }
+    }
+  }
+
+  func testBundledRejectsTopLevelProwlInstallMetadata() throws {
+    try withTemporaryDirectory { root in
+      let resources = root.appending(path: "Resources", directoryHint: .isDirectory)
+      _ = try writeSkill(
+        id: "invalid",
+        frontmatter: """
+          ---
+          name: Invalid
+          description: Invalid audience nesting.
+          metadata:
+          prowl-install: workflow
+          ---
+          """,
+        resourcesURL: resources
+      )
+
+      XCTAssertThrowsError(try ProwlSkills.bundled(resourcesURL: resources)) { error in
+        XCTAssertEqual((error as? ProwlSkillsError)?.code, .invalidFrontmatter)
+      }
+    }
+  }
+
+  func testBundledRejectsNestedProwlInstallMetadata() throws {
+    try withTemporaryDirectory { root in
+      let resources = root.appending(path: "Resources", directoryHint: .isDirectory)
+      _ = try writeSkill(
+        id: "invalid",
+        frontmatter: """
+          ---
+          name: Invalid
+          description: Invalid audience nesting.
+          metadata:
+            vendor:
+              prowl-install: workflow
+          ---
+          """,
+        resourcesURL: resources
+      )
+
+      XCTAssertThrowsError(try ProwlSkills.bundled(resourcesURL: resources)) { error in
+        XCTAssertEqual((error as? ProwlSkillsError)?.code, .invalidFrontmatter)
+      }
+    }
+  }
+
+  func testBundledRejectsInconsistentlyIndentedMetadataFields() throws {
+    try withTemporaryDirectory { root in
+      let resources = root.appending(path: "Resources", directoryHint: .isDirectory)
+      _ = try writeSkill(
+        id: "invalid",
+        frontmatter: """
+          ---
+          name: Invalid
+          description: Invalid metadata indentation.
+          metadata:
+            vendor: scalar
+              nested: value
           ---
           """,
         resourcesURL: resources

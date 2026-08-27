@@ -59,7 +59,7 @@ TEST_SIGNING_ARGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs embed-skills run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-integration benchmark-build bump-version log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs embed-skills run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-unit test-cli-integration benchmark-build bump-version log-stream
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -405,6 +405,16 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 	response="$$tmp_dir/response.json"; \
 	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >"$$response" || true; \
 	jq -e '.error.code == "APP_NOT_RUNNING"' "$$response" >/dev/null
+
+test-cli-unit: # Run CLI unit tests via SwiftPM
+	@test_list="$$(swift test list)"; \
+	matching_test_count="$$(printf '%s\n' "$$test_list" | grep -Evc '$(CLI_INTEGRATION_TEST_FILTER)' || true)"; \
+	if [ "$$matching_test_count" -eq 0 ]; then \
+		echo "error: CLI unit filter matched zero tests" >&2; \
+		exit 1; \
+	fi; \
+	echo "CLI unit filter matched $$matching_test_count test(s)."; \
+	swift test --skip-build --skip '$(CLI_INTEGRATION_TEST_FILTER)'
 
 test-cli-integration: # Run CLI integration tests via SwiftPM
 	@test_list="$$(swift test list)"; \

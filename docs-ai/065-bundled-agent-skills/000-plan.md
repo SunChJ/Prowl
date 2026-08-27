@@ -214,6 +214,10 @@ Decisions below were taken in the 2026-08-22 plan review (#712):
 
 ## Amendments
 
+- Updated 2026-08-27 during K1 review: clean CI now stages the ignored skills resource and
+  executes a dedicated CLI unit-test target; the frontmatter parser rejects top-level, nested,
+  or inconsistently indented `prowl-install` metadata before audience defaulting — see
+  [003-k1-bundle-registry.md](003-k1-bundle-registry.md).
 - Updated 2026-08-27: Implemented and verified K1: skills are staged into the app bundle;
   the shared registry parses audience metadata, resolves app/CLI bundle locations, and fails
   with typed errors; no installation behavior was added — see

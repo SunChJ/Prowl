@@ -197,6 +197,8 @@ nonisolated public enum ProwlSkills {
         throw invalidFrontmatter(path: path, reason: "malformed top-level field")
       }
 
+      try validateTopLevelKey(key, path: path)
+
       switch key {
       case "name":
         guard name == nil, !value.isEmpty else {
@@ -310,6 +312,7 @@ nonisolated public enum ProwlSkills {
   ) throws -> ParsedAudienceMetadata {
     var audience = currentAudience
     var wasSet = audienceWasSet
+    var directFieldIndent: Int?
     var index = startIndex
 
     while index < lines.count {
@@ -323,6 +326,15 @@ nonisolated public enum ProwlSkills {
       }
       if fieldIndent == 0 {
         break
+      }
+      if directFieldIndent == nil {
+        directFieldIndent = fieldIndent
+      }
+      guard let directFieldIndent, fieldIndent == directFieldIndent else {
+        throw invalidFrontmatter(
+          path: path,
+          reason: "metadata fields must use consistent direct-child indentation"
+        )
       }
       guard let (key, value) = keyValue(in: line), !key.isEmpty else {
         throw invalidFrontmatter(path: path, reason: "metadata contains a malformed field")
@@ -339,6 +351,15 @@ nonisolated public enum ProwlSkills {
     }
 
     return ParsedAudienceMetadata(audience: audience, wasSet: wasSet, nextIndex: index)
+  }
+
+  private static func validateTopLevelKey(_ key: String, path: String) throws {
+    guard key != "prowl-install" else {
+      throw invalidFrontmatter(
+        path: path,
+        reason: "prowl-install must be a direct child of metadata"
+      )
+    }
   }
 
   private static func keyValue(in line: String) -> (key: String, value: String)? {

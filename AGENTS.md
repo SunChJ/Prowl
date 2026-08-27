@@ -20,7 +20,8 @@ make capture-spike               # Sample the running Prowl Debug app when CPU c
 make measure-titles              # Black-box check that animated tab titles stay coalesced (~1 change/s)
 make log-stream                  # Stream app logs (subsystem: com.onevcat.prowl)
 make build-cli                   # Build CLI (prowl) via SwiftPM
-make test-cli-smoke              # Run CLI smoke tests (unit-level)
+make test-cli-smoke              # Run CLI executable smoke tests
+make test-cli-unit               # Run CLI unit tests
 make test-cli-integration        # Run CLI integration tests (socket round-trip)
 make bump-version                # Bump version (date-based YYYY.M.DD) and create git tag; used by release.sh
 ```
@@ -144,7 +145,7 @@ Reducer ← .terminalEvent(Event) ← AsyncStream<Event>
 ## Rules
 
 - After a task, ensure the app builds: `make build-app`
-- When working on CLI code (`ProwlCLI/`, `ProwlCLITests/`, `Package.swift`), run `make build-cli`, `make test-cli-smoke`, and `make test-cli-integration` before committing.
+- When working on CLI code (`ProwlCLI/`, `ProwlCLITests/`, `Package.swift`), run `make build-cli`, `make test-cli-smoke`, `make test-cli-unit`, and `make test-cli-integration` before committing.
 - When you change user-facing behavior (keyboard shortcuts, settings, the `prowl` CLI, or a feature's UX), update the matching file under `docs/` in the same change. For a full audit, run the `sync-docs` skill.
 - `docs-ai/` is curated, durable product/design documentation — never a working-note archive. Use the `write-ai-doc` skill only for a substantial feature or a non-trivial fix whose design and result must guide future implementation. Do not create entries for reviews, audits, routine research or investigations, status reports, test runs, or docs-only work unless onevcat explicitly asks for a `docs-ai/` record. When uncertain, do not create an entry. For qualifying work, create `docs-ai/NNN-<slug>/000-plan.md` before coding and complete `001-action.md` after implementation. Follow-up work on the same topic amends the existing entry (see `docs-ai/README.md`).
 - When implementing a new feature or fixing a bug that is unrelated to the current branch's active work, first create a dedicated branch from the latest `origin/main`; then work, commit, push, and open a PR from that branch.

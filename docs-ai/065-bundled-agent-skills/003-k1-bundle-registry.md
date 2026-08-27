@@ -28,6 +28,8 @@ installing or modifying any skill in a user or project directory.
   the executable symlink and locates `../skills` beside the bundled `prowl-cli` directory.
 - `ProwlSkillsError` provides typed `BUNDLE_NOT_FOUND` and invalid-frontmatter failures for the
   later K2 command layer to map without parsing localized text.
+- Clean CI stages `embed-skills` before parallel app tests, and the dedicated `test-cli-unit`
+  target executes all non-integration SwiftPM tests before the socket integration suite.
 
 ## Decisions and boundaries
 
@@ -41,15 +43,33 @@ installing or modifying any skill in a user or project directory.
 - Malformed audience metadata never defaults to `user`, preventing a typo from making a future
   workflow-only skill globally installable.
 
+## Review hardening
+
+- Clean CI originally staged only the CLI and docs before invoking `test-app`; because
+  `Resources/skills` is ignored, the Xcode resource input was absent. The staging step now
+  includes `embed-skills`.
+- The CI integration filter compiled the registry tests but executed only socket integration
+  tests. `test-cli-unit` now runs every non-integration CLI test and is part of the same CI task.
+- Audience metadata now requires `prowl-install` to be a direct child of `metadata` and every
+  metadata field to use one consistent direct-child indentation. Top-level, nested, and
+  inconsistently indented forms fail before an audience can default or change.
+- The invalid-audience fixture now includes an otherwise valid description and asserts the
+  specific audience failure reason, so another invalid field cannot make the regression test
+  pass accidentally.
+
 ## Verification
 
 - TDD RED: the focused SwiftPM suite failed with 21 expected missing-symbol errors before the
   shared registry types existed.
-- TDD GREEN: `ProwlSkillsTests` passed 11 tests covering plain and folded descriptions, default
-  and explicit audiences, invalid/missing frontmatter, stable sorting, safe ID lookup, override
-  precedence and invalid-override behavior, executable-symlink resolution, and
-  `BUNDLE_NOT_FOUND`.
+- Review RED: two focused tests reproduced top-level audience metadata silently defaulting to
+  `user` and nested audience metadata being accepted; 11 existing tests passed while both new
+  tests failed for the expected reason.
+- TDD GREEN: `ProwlSkillsTests` passed 14 tests covering plain and folded descriptions, default
+  and explicit audiences, invalid/missing frontmatter, strict metadata hierarchy, stable
+  sorting, safe ID lookup, override precedence and invalid-override behavior,
+  executable-symlink resolution, and `BUNDLE_NOT_FOUND`.
 - `make build-cli` and `make test-cli-smoke` passed.
+- `make test-cli-unit` passed 75 unit tests, including all 14 registry tests.
 - `make test-cli-integration` passed 97 integration tests.
 - `make test` passed and the xcresult checks verified 2,621 main app tests plus 2 isolated shell
   cancellation tests with zero failures.
