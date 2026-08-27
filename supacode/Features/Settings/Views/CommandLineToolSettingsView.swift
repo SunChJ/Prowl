@@ -2,8 +2,9 @@ import ComposableArchitecture
 import SwiftUI
 
 /// Settings → Agents → Command Line Tool: install/status for the bundled `prowl`
-/// CLI and the socket it reaches the app through. Installation behavior stays in
-/// `SettingsFeature`; this view only presents it.
+/// CLI, the socket it reaches the app through, and the bundled agent skills
+/// (`AgentSkillsFeature`). Installation behavior stays in the reducers; this view
+/// only presents it.
 struct CommandLineToolSettingsView: View {
   @Bindable var store: StoreOf<SettingsFeature>
 
@@ -92,6 +93,10 @@ struct CommandLineToolSettingsView: View {
         )
         .foregroundStyle(.secondary)
         .font(.callout)
+      }
+
+      if let agentSkillsStore = store.scope(state: \.agentSkills, action: \.agentSkills) {
+        AgentSkillsSectionView(store: agentSkillsStore)
       }
     }
     .formStyle(.grouped)

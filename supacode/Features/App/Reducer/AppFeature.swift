@@ -408,6 +408,7 @@ struct AppFeature {
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
         case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github, .commandLineTool:
+          // `settings.agentSkills` is owned by SettingsFeature.setSelection.
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
@@ -535,6 +536,16 @@ struct AppFeature {
           return .send(.repositories(.showToast(.success("prowl command line tool removed"))))
         case .failed(let message):
           return .send(.repositories(.showToast(.warning("CLI install failed: \(message)"))))
+        }
+
+      case .settings(.agentSkills(.delegate(.linkChanged(let result)))):
+        switch result {
+        case .installed(let skill, let target):
+          return .send(.repositories(.showToast(.success("\(skill) skill linked for \(target)"))))
+        case .removed(let skill, let target):
+          return .send(.repositories(.showToast(.success("\(skill) skill link removed for \(target)"))))
+        case .failed(let message):
+          return .send(.repositories(.showToast(.warning("Skill link failed: \(message)"))))
         }
 
       case .settings(.delegate(.terminalLayoutSnapshotCleared(let success))):
