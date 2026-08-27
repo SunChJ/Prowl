@@ -36,11 +36,12 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | S2 | Merged | #718: paired dispatch receipt, strict ID wait, generic evidence wait; [action record](../064-agent-completion-signals/005-s2-action.md) |
 | S3 wave 1 | Complete | Merged in #721/#723/#725/#728; S3c plan [064.010](../064-agent-completion-signals/010-s3c-plan.md), record [064.011](../064-agent-completion-signals/011-s3c-action.md) |
 | 065-S0/K1 | Merged | #729; [065.003](../065-bundled-agent-skills/003-k1-bundle-registry.md) |
-| 065-K2 | In progress | Next 065 slice on `feat/bundled-skills-k2`: shared `SymlinkInstaller` + `prowl skills` |
+| 065-K2 | Implemented | PR pending from `feat/bundled-skills-k2`; [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md) |
 | 065-K3 | Planned | Follows K2 inside R1 |
 
 A2 completes 063's R1 implementation work, and S1/S2/S3 wave 1 are on `main`. The remaining
-R1 work is 065 bundled skill distribution: S0 and K1 are merged (#729); K2 is next, then K3.
+R1 work is 065 bundled skill distribution: S0 and K1 are merged (#729), K2 is implemented and
+awaiting review, and K3 follows.
 
 #### S3 wave 1 PR breakdown
 
@@ -123,8 +124,9 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
-- 2026-08-27 — 065-K1 merged in #729. K2 (shared `SymlinkInstaller` + `prowl skills`) started on
-  `feat/bundled-skills-k2`; K3 remains planned inside R1.
+- 2026-08-27 — 065-K1 merged in #729. K2 (shared `SymlinkInstaller` + `prowl skills`) was
+  implemented on `feat/bundled-skills-k2` and awaits review; K3 remains planned inside R1.
+  Record: [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md).
 - 2026-08-27 — 065-S0 completed its target verification and K1 implemented the bundled-skill
   foundation; K2/K3 remain in R1. Record: [065.003](../065-bundled-agent-skills/003-k1-bundle-registry.md).
 - 2026-08-27 — S3c merged (#728), completing S3 wave 1 across #721/#723/#725/#728.

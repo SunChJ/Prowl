@@ -1,0 +1,103 @@
+# 065.004 — Shared Symlink Installer and `prowl skills` (K2)
+
+## Context
+
+K1 (#729) put Prowl's official skills into the app bundle and gave the app, the CLI, and the
+future workflow runner one registry, but nothing could yet link a bundled skill into an agent's
+skill folder. The only symlink installer in the codebase was the `/usr/local/bin/prowl` logic
+inside the TCA `CLIInstallClient`, and it could not see a dangling link (`fileExists` follows
+symlinks). K2 extracts that logic into a shared Foundation-only installer, adds the three
+verified S0 targets as declarative data, and ships the local-only `prowl skills` command group
+with its contract, schema, manual, and skill line. Settings UI stays in K3.
+
+## Change
+
+- `SymlinkInstaller` (`ProwlCLIShared`) owns status/install/uninstall for one link slot. Status
+  is `notInstalled` / `installed` / `installedDifferentSource` / `broken`; the slot is inspected
+  with `attributesOfItem` (lstat) so a dangling link is `broken` instead of invisible. `install`
+  creates parents, replaces live or dangling links, and refuses a real file or directory with
+  `SymlinkInstallError.conflict` before any mutation; `uninstall` removes symlinks only.
+  Filesystem errors other than the typed cases propagate unchanged.
+- `CLIInstallClient` now delegates to the shared installer. `CLIInstallStatus` is a typealias
+  of the shared enum; the user-facing messages, the osascript privilege fallback, and every
+  existing `CLIInstallClientTests` case are unchanged. A dangling `/usr/local/bin/prowl` used to
+  fail installation with a raw `EEXIST`; it is now reported as a broken link and repaired by
+  Install. The Command Line Tool page gained the matching `broken` row (Repair button) because
+  the shared enum is exhaustive; no other Settings work.
+- `SkillInstallTarget.all` declares exactly `claude`, `codex`, and `agents` with their user and
+  project directories. Detection is "the parent of the skills directory exists"; the same rule
+  applies under a project root. `ProwlSkillInstaller` composes target + skill into one link
+  slot (`<skills dir>/<skill id>` → bundled directory) for the CLI now and Settings in K3.
+- `prowl skills list | install | uninstall | path` (`SkillsCommand` + `SkillsCommandExecutor`)
+  runs entirely locally: it resolves the bundle through `ProwlSkills.bundledForCLI` from
+  `Bundle.main.executableURL` (never bare `argv[0]`), reads the user root from `HOME`, and never
+  touches `AppLauncher` or the socket. Bare `install` = every `user`-audience skill × every
+  detected target; repeated `--target` selects and creates targets; `workflow` skills fail
+  `SKILL_NOT_INSTALLABLE`; every slot is conflict-checked before any change so
+  `INSTALL_CONFLICT` leaves nothing half-done; `uninstall` skips `not_installed` slots.
+  Project scope takes `--path <repo>` or walks up from the cwd to the nearest `.git` entry (a
+  worktree's `.git` file counts) and emits the absolute-path / `.git/info/exclude` note exactly
+  once — `data.note` in JSON, one `note:` line on stderr in text mode.
+- Contract layers: `prowl.cli.skills.v1` with `command: "skills"` and `data.action` as the
+  discriminator (same shape as `create`/`handoff`), closed definitions in
+  `cli-output-schema.json`, `docs-ai/013-prowl-cli/contracts/skills.md`, `input.md` and
+  `schema.md` rows, a `prowl skills` section and error rows in `docs/components/cli.md`, and one
+  line in `skills/prowl-cli/SKILL.md` telling an agent that `prowl skills install prowl-cli`
+  keeps it current.
+
+## Decisions and boundaries
+
+- One installer, not two: the CLI installer keeps only message mapping and privilege
+  escalation. The shared status compares the raw link text with the expected source and, when
+  that differs, their resolved real paths, so a link written through `/private/tmp` still counts
+  as installed.
+- Roots are injected (`userRoot`, `currentDirectory`) rather than read from
+  `homeDirectoryForCurrentUser`, so unit tests, integration tests, and manual verification run
+  against temporary homes and throwaway repositories; no test or verification step touched a
+  live skill folder.
+- `--path` requires `--scope project` (`INVALID_ARGUMENT`), mirroring `--prompt` requiring
+  `--profile`. Missing/invalid roots reuse the existing `PATH_NOT_FOUND` /
+  `PATH_NOT_DIRECTORY` codes; unexpected filesystem failures use `SKILLS_FAILED` following the
+  `*_FAILED` convention. A bare `install` that detects no target fails with
+  `TARGET_NOT_FOUND` instead of succeeding with nothing installed; a bare `uninstall` in the same
+  situation succeeds with empty results.
+- `list` reports user scope only; project-scope status is visible through the `install` /
+  `uninstall` `before` field. Runtime reader labels for the `agents` target live in the
+  contract and manual, not in the declarative target data.
+- Not in K2: Settings Agent Skills section, `AgentSkillsFeature`, `SkillInstallClient`, copy
+  mode, third-party skills, auto-install after updates, Git mutations, new targets.
+
+## Verification
+
+- TDD RED: 116 missing-symbol errors across the five new CLI test files before the shared
+  types existed; one hang exposed a `GitRootLocator` loop past `/` (`deletingLastPathComponent`
+  of `/` yields `/..`), fixed by stopping at the filesystem root.
+- `make build-cli` and `make test-cli-smoke` pass; the smoke target now also runs
+  `skills list --json` against a temporary skills root and home with the socket unavailable.
+  `make test-cli-unit` passed 120 tests and `make test-cli-integration` passed 102. New
+  coverage: 13 installer, 6 target, 18 executor, 5 parser, 3 schema, and 5 integration tests;
+  the integration tests run the real binary with an unavailable `PROWL_CLI_SOCKET`, a temporary
+  `PROWL_SKILLS_DIR`, a temporary `HOME`, and a throwaway Git repository, and validate every
+  JSON envelope against the schema bundle.
+- App: `CLIInstallClientTests` (existing cases plus dangling-link status, live install repair,
+  and live uninstall of a dangling link) and `SettingsFeatureCLIInstallTests` passed (18 tests
+  in the focused run). `make test` verified 2,624 main app tests plus 2 isolated tests with zero
+  failures; `make check` passed (strict formatting, SwiftLint, 44 script tests); `make build-app`
+  passed and the Debug app contains `Contents/Resources/skills/prowl-cli/SKILL.md`, identical
+  to the source file.
+- Manual: a temporary `Prowl.app/Contents/Resources` layout with the CLI symlinked from a
+  temporary `bin/` on `PATH`; bare-name invocation resolved to the real executable
+  (`BUNDLE_NOT_FOUND` names the resolved path); list → bare install (detected only) →
+  explicit `--target codex` creation → workflow refusal → real-directory conflict with the
+  conflict-free target untouched → project-scope install from a nested directory of a `git
+  init` repo with the note once on stderr and `git status` showing only an untracked
+  `.codex/` → JSON uninstall with zero stderr bytes → user-scope uninstall of all three
+  targets. The live `~/.claude/skills`, `~/.codex/skills`, and `~/.agents/skills` were not
+  read as inputs or modified.
+
+## Refs
+
+- Slice: 065-K2
+- Branch: `feat/bundled-skills-k2`
+- PR: pending
+- Depends on: [003-k1-bundle-registry.md](003-k1-bundle-registry.md)
