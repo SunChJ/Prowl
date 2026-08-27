@@ -432,10 +432,11 @@ enum OutputRenderer {
       var lines = ["\(skill.id.bold)  \(skill.name)  \(audience)"]
       for target in skill.targets {
         let detected = target.detected ? "" : "  \("(target not detected)".dim)"
+        let destination = target.destination.map { "  \("→ \($0)".dim)" } ?? ""
         lines.append(
           "  \(target.id.padding(toLength: 7, withPad: " ", startingAt: 0))  "
-            + "\(skillsStatusLabel(target.status))  "
-            + "\(target.path.dim)\(detected)"
+            + "\(skillsStatusLabel(target))  "
+            + "\(target.path.dim)\(destination)\(detected)"
         )
       }
       return lines.joined(separator: "\n")
@@ -465,11 +466,12 @@ enum OutputRenderer {
     FileHandle.standardError.write(Data("note: \(note)\n".utf8))
   }
 
-  private static func skillsStatusLabel(_ status: SkillsCommandStatus) -> String {
-    switch status {
+  private static func skillsStatusLabel(_ target: SkillsCommandTargetStatus) -> String {
+    switch target.status {
     case .installed: skillsColumn("installed").green
     case .notInstalled: skillsColumn("not installed").dim
-    case .installedDifferentSource: skillsColumn("installed (different source)").yellow
+    case .installedDifferentSource where target.destination != nil: skillsColumn("linked elsewhere").yellow
+    case .installedDifferentSource: skillsColumn("real file or directory").yellow
     case .broken: skillsColumn("broken link").red
     }
   }

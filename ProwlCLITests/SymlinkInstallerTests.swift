@@ -31,7 +31,21 @@ final class SymlinkInstallerTests: XCTestCase {
 
       XCTAssertEqual(
         SymlinkInstaller.status(linkPath: link, source: source),
-        .installedDifferentSource(path: link)
+        .installedDifferentSource(path: link, destination: other)
+      )
+    }
+  }
+
+  func testStatusResolvesARelativeDifferentSourceAgainstTheLinkDirectory() throws {
+    try withTemporaryDirectory { root in
+      let source = try makeDirectory(root.appending(path: "source"))
+      let other = try makeDirectory(root.appending(path: "bin/other"))
+      let link = root.appending(path: "bin/link").path(percentEncoded: false)
+      try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: "other")
+
+      XCTAssertEqual(
+        SymlinkInstaller.status(linkPath: link, source: source),
+        .installedDifferentSource(path: link, destination: other)
       )
     }
   }
@@ -45,11 +59,11 @@ final class SymlinkInstallerTests: XCTestCase {
 
       XCTAssertEqual(
         SymlinkInstaller.status(linkPath: file, source: source),
-        .installedDifferentSource(path: file)
+        .installedDifferentSource(path: file, destination: nil)
       )
       XCTAssertEqual(
         SymlinkInstaller.status(linkPath: directory, source: source),
-        .installedDifferentSource(path: directory)
+        .installedDifferentSource(path: directory, destination: nil)
       )
     }
   }
@@ -61,7 +75,10 @@ final class SymlinkInstallerTests: XCTestCase {
       let link = root.appending(path: "link").path(percentEncoded: false)
       try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: missing)
 
-      XCTAssertEqual(SymlinkInstaller.status(linkPath: link, source: source), .broken(path: link))
+      XCTAssertEqual(
+        SymlinkInstaller.status(linkPath: link, source: source),
+        .broken(path: link, destination: missing)
+      )
     }
   }
 
@@ -71,7 +88,10 @@ final class SymlinkInstallerTests: XCTestCase {
       let link = root.appending(path: "link").path(percentEncoded: false)
       try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: source)
 
-      XCTAssertEqual(SymlinkInstaller.status(linkPath: link, source: source), .broken(path: link))
+      XCTAssertEqual(
+        SymlinkInstaller.status(linkPath: link, source: source),
+        .broken(path: link, destination: source)
+      )
     }
   }
 

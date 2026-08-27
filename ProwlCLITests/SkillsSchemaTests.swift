@@ -13,6 +13,7 @@ final class SkillsSchemaTests: XCTestCase {
     let targets = zip(["claude", "codex", "agents", "claude"], statuses).map { id, status in
       #"{"id":"\#(id)","detected":false,"path":"/Users/me/.\#(id)/skills/prowl-cli","status":"\#(status)"}"#
     }.joined(separator: ",")
+      + #",{"id":"codex","detected":true,"path":"/Users/me/.codex/skills/prowl-cli","status":"broken","destination":"/Volumes/Old/Prowl.app/Contents/Resources/skills/prowl-cli"}"#
     let list =
       #"{"ok":true,"command":"skills","schema_version":"prowl.cli.skills.v1","data":{"action":"list","skills":[{"id":"prowl-cli","name":"prowl-cli","description":"Drive Prowl.","audience":"user","path":"/Applications/Prowl.app/Contents/Resources/skills/prowl-cli","targets":[\#(targets)]}]}}"#
     let install =
@@ -47,6 +48,21 @@ final class SkillsSchemaTests: XCTestCase {
   }
 
   func testPayloadRoundTripsThroughCodable() throws {
+    let listed = SkillsCommandPayload.list(
+      SkillsListPayload(skills: [
+        SkillsCommandSkill(
+          id: "prowl-cli", name: "prowl-cli", description: "d", audience: .user, path: "/bundle/prowl-cli",
+          targets: [
+            SkillsCommandTargetStatus(id: "claude", detected: true, path: "/h/.claude/skills/prowl-cli", status: .installed),
+            SkillsCommandTargetStatus(
+              id: "codex", detected: true, path: "/h/.codex/skills/prowl-cli", status: .installedDifferentSource,
+              destination: "/dd/skills/prowl-cli"),
+          ])
+      ]))
+    let listedJSON = String(decoding: try JSONEncoder().encode(listed), as: UTF8.self)
+    XCTAssertEqual(listedJSON.components(separatedBy: "\"destination\"").count - 1, 1, "destination is omitted when nil")
+    XCTAssertEqual(try JSONDecoder().decode(SkillsCommandPayload.self, from: Data(listedJSON.utf8)), listed)
+
     let payload = SkillsCommandPayload.install(
       SkillsChangePayload(
         scope: .project,

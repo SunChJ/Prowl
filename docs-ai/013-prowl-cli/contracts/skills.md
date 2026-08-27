@@ -93,8 +93,12 @@ skills directory when it is missing, detected or not. `uninstall` never creates 
 | --- | --- |
 | `not_installed` | Nothing occupies the slot. |
 | `installed` | A symlink that resolves to this app's bundled skill directory. |
-| `installed_different_source` | A symlink to another live location (for example a Debug build), or a real file/directory. |
-| `broken` | A dangling symlink; the app was moved or removed. `install` repairs it. |
+| `installed_different_source` | A symlink to another live location (for example a Debug build) — `destination` names it — or a real file/directory (`destination` absent). |
+| `broken` | A dangling symlink; `destination` names where the app used to be. `install` repairs it. |
+
+`destination` is the link target resolved against the link's directory; it is present only for
+the two statuses above and never for a real file or directory, so its absence under
+`installed_different_source` identifies a non-symlink occupant.
 
 ## Success: `list`
 
@@ -114,7 +118,7 @@ skills directory when it is missing, detected or not. `uninstall` never creates 
         "path": "/Applications/Prowl.app/Contents/Resources/skills/prowl-cli",
         "targets": [
           { "id": "claude", "detected": true, "path": "/Users/me/.claude/skills/prowl-cli", "status": "installed" },
-          { "id": "codex", "detected": true, "path": "/Users/me/.codex/skills/prowl-cli", "status": "broken" },
+          { "id": "codex", "detected": true, "path": "/Users/me/.codex/skills/prowl-cli", "status": "broken", "destination": "/Volumes/Old/Prowl.app/Contents/Resources/skills/prowl-cli" },
           { "id": "agents", "detected": false, "path": "/Users/me/.agents/skills/prowl-cli", "status": "not_installed" }
         ]
       }
@@ -178,7 +182,9 @@ but they are never selected for installation.
 ## Text output
 
 - `list` prints one block per skill (id, name, audience tag) with one line per target:
-  status, link slot, and `(target not detected)` when applicable.
+  status (`installed`, `not installed`, `linked elsewhere`, `real file or directory`,
+  `broken link`), link slot, `→ <destination>` for a foreign or dangling link, and
+  `(target not detected)` when applicable.
 - `install` / `uninstall` print one line per result: `installed`, `repaired`, `replaced`,
   `unchanged`, `removed`, or `not installed`, followed by `skill → target` and the slot path.
 - `path` prints exactly the bundled directory followed by a newline, for `$(…)` use.

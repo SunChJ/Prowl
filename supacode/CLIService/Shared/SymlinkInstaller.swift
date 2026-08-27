@@ -5,10 +5,20 @@ nonisolated public enum SymlinkInstallStatus: Equatable, Sendable {
   case notInstalled
   /// A symlink that resolves to the expected source.
   case installed(path: String)
-  /// A symlink to another live source, or a real file/directory occupying the slot.
-  case installedDifferentSource(path: String)
-  /// A dangling symlink: its destination no longer exists.
-  case broken(path: String)
+  /// A symlink to another live source (`destination` names it, resolved against the link's
+  /// directory), or a real file/directory occupying the slot (`destination` is nil).
+  case installedDifferentSource(path: String, destination: String?)
+  /// A dangling symlink: `destination` no longer exists.
+  case broken(path: String, destination: String)
+
+  /// Where the occupying symlink points, when the slot holds a symlink that is not the expected source.
+  public var destination: String? {
+    switch self {
+    case .installedDifferentSource(_, let destination): destination
+    case .broken(_, let destination): destination
+    case .notInstalled, .installed: nil
+    }
+  }
 }
 
 nonisolated public enum SymlinkInstallError: Error, Equatable, Sendable, LocalizedError {
@@ -40,16 +50,16 @@ nonisolated public enum SymlinkInstaller {
     case .absent:
       return .notInstalled
     case .other:
-      return .installedDifferentSource(path: linkPath)
+      return .installedDifferentSource(path: linkPath, destination: nil)
     case .symlink(let destination):
       let resolvedDestination = resolve(destination, relativeTo: linkPath)
       guard FileManager.default.fileExists(atPath: resolvedDestination) else {
-        return .broken(path: linkPath)
+        return .broken(path: linkPath, destination: resolvedDestination)
       }
       if destination == source || realPath(resolvedDestination) == realPath(source) {
         return .installed(path: linkPath)
       }
-      return .installedDifferentSource(path: linkPath)
+      return .installedDifferentSource(path: linkPath, destination: resolvedDestination)
     }
   }
 

@@ -35,7 +35,27 @@ final class SkillsCommandExecutorTests: XCTestCase {
         list.skills[0].targets.map(\.status),
         [.installed, .installedDifferentSource, .broken]
       )
+      XCTAssertEqual(
+        list.skills[0].targets.map(\.destination),
+        [nil, nil, fixture.root.appending(path: "gone").path(percentEncoded: false)],
+        "A real directory has no destination; a dangling link names where the app used to be"
+      )
       XCTAssertEqual(list.skills[1].targets.map(\.status), [.notInstalled, .notInstalled, .notInstalled])
+    }
+  }
+
+  func testListNamesTheOtherSourceOfAForeignLink() throws {
+    try withFixture { fixture in
+      let debugBuild = fixture.root.appending(path: "DerivedData/skills/prowl-cli", directoryHint: .isDirectory)
+      try fixture.makeDirectory(debugBuild)
+      let debugPath = debugBuild.path(percentEncoded: false).trimmingTrailingPathSeparator()
+      try fixture.link(target: ".claude", skill: "prowl-cli", to: debugPath)
+
+      let payload = try fixture.executor.list()
+      guard case .list(let list) = payload else { return XCTFail("Expected list payload") }
+
+      XCTAssertEqual(list.skills[0].targets[0].status, .installedDifferentSource)
+      XCTAssertEqual(list.skills[0].targets[0].destination, debugPath)
     }
   }
 

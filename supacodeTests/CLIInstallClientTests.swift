@@ -78,7 +78,7 @@ struct CLIInstallClientTests {
     let client = CLIInstallClient.liveValue
     let status = client.installationStatus(installPath)
 
-    #expect(status == .installedDifferentSource(path: installPath.path))
+    #expect(status == .installedDifferentSource(path: installPath.path, destination: otherBinary.path))
   }
 
   @Test func statusDifferentSourceWhenRegularFileExists() throws {
@@ -91,7 +91,7 @@ struct CLIInstallClientTests {
     let client = CLIInstallClient.liveValue
     let status = client.installationStatus(installPath)
 
-    #expect(status == .installedDifferentSource(path: installPath.path))
+    #expect(status == .installedDifferentSource(path: installPath.path, destination: nil))
   }
 
   @Test func statusBrokenWhenSymlinkIsDangling() throws {
@@ -107,7 +107,7 @@ struct CLIInstallClientTests {
     let client = CLIInstallClient.liveValue
     let status = client.installationStatus(installPath)
 
-    #expect(status == .broken(path: installPath.path))
+    #expect(status == .broken(path: installPath.path, destination: tmp.appendingPathComponent("moved-away").path))
   }
 
   @Test func liveInstallReplacesDanglingSymlinkWithBundledCLI() async throws {

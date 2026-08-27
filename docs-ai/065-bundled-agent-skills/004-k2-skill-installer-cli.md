@@ -85,6 +85,12 @@ Adversarial review round 1 (sibling Pi agent, brief and findings kept outside th
   detected targets and points at `--target`. `INVALID_SKILL_FRONTMATTER` joined the manual's
   error table.
 
+Round 2 found no P0/P1 and one P2: `installedDifferentSource` and `broken` dropped the link's
+actual destination, so neither the CLI nor K3 could name the other source the plan promises for
+Debug/Release switches. The shared status now carries `destination` (resolved against the link
+directory; nil for a real file or directory), `list` exposes it as an optional `destination`
+field and `→ path` in text, and the contract, schema, and manual document it.
+
 ## Verification
 
 - TDD RED: 116 missing-symbol errors across the five new CLI test files before the shared

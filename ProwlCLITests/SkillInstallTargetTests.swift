@@ -102,7 +102,7 @@ final class SkillInstallTargetTests: XCTestCase {
 
       XCTAssertEqual(
         ProwlSkillInstaller.status(skill: skill, target: target, scope: .user, root: home).status,
-        .broken(path: linkPath)
+        .broken(path: linkPath, destination: root.appending(path: "gone").path(percentEncoded: false))
       )
 
       try FileManager.default.removeItem(atPath: linkPath)
@@ -113,7 +113,7 @@ final class SkillInstallTargetTests: XCTestCase {
 
       XCTAssertEqual(
         ProwlSkillInstaller.status(skill: skill, target: target, scope: .user, root: home).status,
-        .installedDifferentSource(path: linkPath)
+        .installedDifferentSource(path: linkPath, destination: other.path(percentEncoded: false))
       )
     }
   }

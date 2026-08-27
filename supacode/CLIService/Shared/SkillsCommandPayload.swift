@@ -106,12 +106,22 @@ public struct SkillsCommandTargetStatus: Codable, Equatable, Sendable {
   /// The link slot for this skill inside the target's skills directory.
   public let path: String
   public let status: SkillsCommandStatus
+  /// Where a foreign or dangling link points; omitted for `installed`, `not_installed`, and a
+  /// real file or directory occupying the slot.
+  public let destination: String?
 
-  public init(id: String, detected: Bool, path: String, status: SkillsCommandStatus) {
+  public init(
+    id: String,
+    detected: Bool,
+    path: String,
+    status: SkillsCommandStatus,
+    destination: String? = nil
+  ) {
     self.id = id
     self.detected = detected
     self.path = path
     self.status = status
+    self.destination = destination
   }
 }
 

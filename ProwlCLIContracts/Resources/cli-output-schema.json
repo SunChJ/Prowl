@@ -2762,6 +2762,10 @@
         },
         "status": {
           "$ref": "#/$defs/skillStatus"
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

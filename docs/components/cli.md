@@ -361,9 +361,11 @@ directory exists:
   for any bundled skill.
 - Statuses: `installed` (link → this app), `not_installed`, `installed_different_source`
   (a link elsewhere, e.g. a Debug build, or a real directory), `broken` (dangling link —
-  the app moved; `install` repairs it). Existing links are replaced; a real file or
-  directory is never touched and fails the whole command with `INSTALL_CONFLICT` before
-  anything changes. `uninstall` removes links only.
+  the app moved; `install` repairs it). For a foreign or dangling link, `list` also names
+  where it points (`destination` in JSON, `→ path` in text), so you can tell which app owns
+  the link before replacing it. Existing links are replaced; a real file or directory is
+  never touched and fails the whole command with `INSTALL_CONFLICT` before anything
+  changes. `uninstall` removes links only.
 - `--scope project` acts on a repository: the Git root containing `--path <dir>` (or the
   current directory; worktrees included). Links never leave the repository — a target folder
   such as `.agents` that is a symlink to somewhere outside it fails with `INSTALL_CONFLICT`.
@@ -381,7 +383,7 @@ skill_dir="$(prowl skills path prowl-cli)"
 
 JSON is `prowl.cli.skills.v1` with `data.action` = `list` | `install` | `uninstall` |
 `path`. `list` → `.data.skills[]` with `id`, `name`, `description`, `audience`, `path`,
-and `targets[]` (`id`, `detected`, `path`, `status`); `install`/`uninstall` →
+and `targets[]` (`id`, `detected`, `path`, `status`, optional `destination`); `install`/`uninstall` →
 `.data.scope`, `.data.root`, `.data.results[]` (`skill`, `target`, `path`, `before`,
 `after`) and, for project scope, `.data.note`; `path` → `.data.skill.{id,name,audience,path}`.
 `PROWL_SKILLS_DIR` points the command at a different skills root for development.

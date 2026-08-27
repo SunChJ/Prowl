@@ -56,7 +56,8 @@ struct SkillsCommandExecutor {
             id: target.id,
             detected: status.detected,
             path: status.linkPath,
-            status: SkillsCommandStatus(status.status)
+            status: SkillsCommandStatus(status.status),
+            destination: status.status.destination
           )
         }
       )

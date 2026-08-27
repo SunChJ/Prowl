@@ -18,12 +18,12 @@ struct CommandLineToolSettingsView: View {
                 .foregroundStyle(.green)
                 .accessibilityLabel("Installed")
               Text("Installed at \(path)")
-            case .installedDifferentSource(let path):
+            case .installedDifferentSource(let path, _):
               Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
                 .accessibilityLabel("Different version")
               Text("A different version exists at \(path)")
-            case .broken(let path):
+            case .broken(let path, _):
               Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
                 .accessibilityLabel("Broken link")
