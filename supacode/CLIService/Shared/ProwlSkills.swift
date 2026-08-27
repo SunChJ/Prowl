@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated public enum ProwlSkillAudience: String, Equatable, Sendable {
+nonisolated public enum ProwlSkillAudience: String, Codable, Equatable, Sendable {
   case user
   case workflow
 }

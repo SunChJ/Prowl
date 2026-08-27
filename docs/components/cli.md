@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl profiles list, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl profiles list, prowl skills, skills install, agent skills, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -26,7 +26,9 @@ From the app: **Settings → Agents → Command Line Tool → Install**, or Comm
 Palette → "Install Command Line Tool". This symlinks `prowl` into
 `/usr/local/bin` (prompting for admin if needed). The Settings page also shows
 the local Unix socket path `prowl` uses to reach the app (`PROWL_CLI_SOCKET`
-overrides it for both processes).
+overrides it for both processes). Once `prowl` is installed, `prowl skills install` links
+the bundled `prowl-cli` skill into your agents' skill folders (see
+[`prowl skills`](#prowl-skills)).
 
 ## Global options
 
@@ -329,6 +331,63 @@ Availability is advisory and never blocks launch. Disabled profiles remain visib
 cannot be passed to `create --profile`. Use the Profile UUID for stable automation; an
 exact enabled name also works when unique.
 
+### `prowl skills`
+Link the agent skills bundled inside the Prowl app (`Prowl.app/Contents/Resources/skills/`)
+into agent skill folders as directory symlinks, so every runtime reads the skill version
+that matches the installed app and updates propagate automatically. The whole group is
+**local-only**: it never talks to the socket, never launches the app, and works with Prowl
+closed.
+
+```bash
+prowl skills list [--json]                                   # every bundled skill × target with status
+prowl skills install [<skill>...] [--target <id>]... [--scope user|project] [--path <dir>]
+prowl skills uninstall [<skill>...] [--target <id>]... [--scope user|project] [--path <dir>]
+prowl skills path <skill>                                    # bundled directory, for scripts and workflows
+```
+
+Targets are the verified skill directories; a target is *detected* when its parent
+directory exists:
+
+| `--target` | User scope | Project scope | Read by |
+|---|---|---|---|
+| `claude` | `~/.claude/skills` | `<repo>/.claude/skills` | Claude Code |
+| `codex` | `~/.codex/skills` | `<repo>/.codex/skills` | Codex |
+| `agents` | `~/.agents/skills` | `<repo>/.agents/skills` | Codex, Gemini CLI, Cursor Agent, OpenCode, Copilot CLI, Kimi CLI, Droid, Amp, Qoder CLI, Pi, Oh My Pi, Grok Build |
+
+- A bare `prowl skills install` links every user-installable bundled skill into every
+  detected target; repeat `--target` to pick targets explicitly (an explicit target's
+  directory is created even when it was not detected). Skills tagged `workflow` in `list`
+  belong to workflow runs and refuse installation (`SKILL_NOT_INSTALLABLE`); `path` works
+  for any bundled skill.
+- Statuses: `installed` (link → this app), `not_installed`, `installed_different_source`
+  (a link elsewhere, e.g. a Debug build, or a real directory), `broken` (dangling link —
+  the app moved; `install` repairs it). For a foreign or dangling link, `list` also names
+  where it points (`destination` in JSON, `→ path` in text), so you can tell which app owns
+  the link before replacing it. Existing links are replaced; a real file or directory is
+  never touched and fails the whole command with `INSTALL_CONFLICT` before anything
+  changes. `uninstall` removes links only.
+- `--scope project` acts on a repository: the Git root containing `--path <dir>` (or the
+  current directory; worktrees included). Links never leave the repository — a target folder
+  such as `.agents` that is a symlink to somewhere outside it fails with `INSTALL_CONFLICT`.
+  The command prints one note: the links are absolute, Mac-specific paths and Prowl never
+  edits Git state — use `.git/info/exclude` yourself if they should stay out of version
+  control.
+
+```bash
+prowl skills list
+prowl skills install                                 # all detected user targets
+prowl skills install prowl-cli --target codex        # one skill, one target (creates ~/.codex/skills)
+prowl skills install --scope project --path ~/proj   # project-scoped links
+skill_dir="$(prowl skills path prowl-cli)"
+```
+
+JSON is `prowl.cli.skills.v1` with `data.action` = `list` | `install` | `uninstall` |
+`path`. `list` → `.data.skills[]` with `id`, `name`, `description`, `audience`, `path`,
+and `targets[]` (`id`, `detected`, `path`, `status`, optional `destination`); `install`/`uninstall` →
+`.data.scope`, `.data.root`, `.data.results[]` (`skill`, `target`, `path`, `before`,
+`after`) and, for project scope, `.data.note`; `path` → `.data.skill.{id,name,audience,path}`.
+`PROWL_SKILLS_DIR` points the command at a different skills root for development.
+
 ### `prowl read [target]`
 Read a pane's content.
 
@@ -614,16 +673,21 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `AGENT_GONE` | The meaning is mode-specific: a signal caller disappeared, a dispatch worker became terminal, or a generic condition target closed. Inspect `.error.details.mode`; dispatch details retain a record, while condition details retain the requested condition and exact surface observation. |
 | `BLOCKER_UNREADABLE` | A blocked screen was detected but Prowl could not safely extract its current interaction text. Re-run `agents read` or inspect with `read`. |
 | `SESSION_UNRESOLVED` / `RESULT_NOT_FOUND` / `RESULT_INCOMPLETE` / `RESULT_TOO_LARGE` | `agents read --result-only` could not provide one trustworthy complete result. Drop `--result-only` to retain the live snapshot and inspect `.data.result`. |
+| `SKILL_NOT_FOUND` / `TARGET_NOT_FOUND` (`skills`) | No bundled skill or supported target with that id — re-run `prowl skills list`. A bare `skills install` also reports `TARGET_NOT_FOUND` when no target directory is detected; pass `--target`. |
+| `SKILL_NOT_INSTALLABLE` | The skill is a workflow skill; it is materialized by workflow runs, not installed. Use `prowl skills path`. |
+| `INSTALL_CONFLICT` | A real file or directory occupies a skill link slot, or a project-scope target folder is a symlink leading outside the repository; nothing was changed. Remove or fix it manually, or choose other targets. |
+| `BUNDLE_NOT_FOUND` | The `prowl` binary is not inside a Prowl app bundle and `PROWL_SKILLS_DIR` is unset or invalid — run the installed `prowl` or set the override. |
+| `INVALID_SKILL_FRONTMATTER` | A bundled (or `PROWL_SKILLS_DIR`) skill's `SKILL.md` frontmatter is malformed — fix the override skill, or reinstall Prowl if the bundle itself is damaged. |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |
 | `EMPTY_INPUT` | `send` got neither argv nor stdin (or both). |
 | `INVALID_ARGUMENT` | Bad flag/combo (e.g. `--capture --no-wait`) or out-of-range value. |
 | `CAPTURE_UNSUPPORTED` | Target lacks OSC 133 — drop `--capture`, use `read --wait-stable`. |
 | `WAIT_TIMEOUT` | Command didn't finish in time — raise `--timeout` or use `--no-wait`. |
 | `UNSUPPORTED_KEY` / `INVALID_REPEAT` | Check `prowl key --help`. |
-| `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path. |
+| `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path, or the `skills --scope project` start point (`--path` and the current directory must lie inside a Git repository). |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
 | `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
-| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `PROFILES_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
+| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `PROFILES_FAILED`, `SKILLS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
 
 ## Safety & self-targeting
 

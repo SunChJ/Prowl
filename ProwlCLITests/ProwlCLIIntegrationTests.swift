@@ -1,13 +1,14 @@
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 import Foundation
 import JSONSchema
 import ProwlCLIContracts
 import ProwlCLIShared
 import XCTest
+
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 
 final class ProwlCLIIntegrationTests: XCTestCase {
   private var repoRoot: URL {
@@ -41,6 +42,11 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(help.stdout.contains("USAGE:"))
     XCTAssertTrue(help.stdout.contains("create"))
     XCTAssertTrue(help.stdout.contains("close"))
+    XCTAssertTrue(help.stdout.contains("skills"))
+    XCTAssertTrue(
+      help.stdout.contains("prowl skills install"),
+      "Root help should tell users and agents how to link the bundled skills"
+    )
   }
 
   func testNativeHookBridgeIsHiddenSilentAndFailOpenWithoutListener() throws {
@@ -158,7 +164,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let notifierArgv = ["/usr/bin/python3", script.path, "space value", "", "秘密-like"]
     try JSONSerialization.data(withJSONObject: notifierArgv).write(to: record, options: .atomic)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
-    let payload = #"{"type":"agent-turn-complete","thread-id":"thread-1","turn-id":"turn-1","cwd":"/tmp/project","last-assistant-message":"excluded"}"#
+    let payload =
+      #"{"type":"agent-turn-complete","thread-id":"thread-1","turn-id":"turn-1","cwd":"/tmp/project","last-assistant-message":"excluded"}"#
 
     let result = try runProwl(
       args: ["agents", "_hook", "codex", "agent-turn-complete", payload],
@@ -223,7 +230,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(error["code"] as? String, CLIErrorCode.socketPermissionDenied)
     let message = try XCTUnwrap(error["message"] as? String)
     XCTAssertTrue(message.contains("EACCES"), "Message should include errno name: \(message)")
-    XCTAssertTrue(message.localizedCaseInsensitiveContains("sandbox"), "Message should guide agent recovery: \(message)")
+    XCTAssertTrue(
+      message.localizedCaseInsensitiveContains("sandbox"), "Message should guide agent recovery: \(message)")
   }
 
   func testListReportsTransportFailedWhenSocketPathIsNotASocket() throws {
@@ -260,7 +268,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     let error = try XCTUnwrap(payload["error"] as? [String: Any])
     XCTAssertEqual(error["code"] as? String, CLIErrorCode.transportFailed)
     let message = try XCTUnwrap(error["message"] as? String)
-    XCTAssertTrue(message.localizedCaseInsensitiveContains("too long"), "Message should identify path length: \(message)")
+    XCTAssertTrue(
+      message.localizedCaseInsensitiveContains("too long"), "Message should identify path length: \(message)")
   }
 
   func testAgentsCommandRoundTripsOverSocket() throws {
@@ -624,14 +633,15 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "open",
       schemaVersion: "prowl.cli.open.v1",
-      data: RawJSON(encoding: OpenResponseData(
-        invocation: "open-subcommand",
-        requestedPath: repoRoot.path,
-        resolvedPath: repoRoot.path,
-        resolution: "exact-root",
-        appLaunched: false,
-        broughtToFront: true
-      ))
+      data: RawJSON(
+        encoding: OpenResponseData(
+          invocation: "open-subcommand",
+          requestedPath: repoRoot.path,
+          resolvedPath: repoRoot.path,
+          resolution: "exact-root",
+          appLaunched: false,
+          broughtToFront: true
+        ))
     )
 
     let (requestData, result) = try runWithMockServer(
@@ -664,14 +674,15 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "open",
       schemaVersion: "prowl.cli.open.v1",
-      data: RawJSON(encoding: OpenResponseData(
-        invocation: "implicit-open",
-        requestedPath: repoRoot.path,
-        resolvedPath: repoRoot.path,
-        resolution: "exact-root",
-        appLaunched: false,
-        broughtToFront: true
-      ))
+      data: RawJSON(
+        encoding: OpenResponseData(
+          invocation: "implicit-open",
+          requestedPath: repoRoot.path,
+          resolvedPath: repoRoot.path,
+          resolution: "exact-root",
+          appLaunched: false,
+          broughtToFront: true
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1063,6 +1074,250 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("Availability check has not completed"), result.stdout)
   }
 
+  // MARK: - skills (local-only)
+
+  func testSkillsListIsLocalOnlyAndValidatesAgainstSchema() throws {
+    try withSkillsFixture { fixture in
+      let result = try runProwl(args: ["skills", "list", "--json"], environment: fixture.environment)
+
+      XCTAssertEqual(result.exitCode, 0, result.stderr)
+      XCTAssertEqual(result.stderr, "")
+      try assertResponseMatchesSchema(Data(result.stdout.utf8))
+      let output = try jsonObject(from: result.stdout)
+      XCTAssertEqual(output["command"] as? String, "skills")
+      XCTAssertEqual(output["schema_version"] as? String, "prowl.cli.skills.v1")
+      let data = try XCTUnwrap(output["data"] as? [String: Any])
+      XCTAssertEqual(data["action"] as? String, "list")
+      let skills = try XCTUnwrap(data["skills"] as? [[String: Any]])
+      XCTAssertEqual(skills.map { $0["id"] as? String }, ["prowl-cli", "reviewer"])
+      XCTAssertEqual(skills.map { $0["audience"] as? String }, ["user", "workflow"])
+      let targets = try XCTUnwrap(skills[0]["targets"] as? [[String: Any]])
+      XCTAssertEqual(targets.map { $0["id"] as? String }, ["claude", "codex", "agents"])
+      XCTAssertEqual(targets.map { $0["detected"] as? Bool }, [true, false, true])
+      XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.socketPath), "The command never touches the socket")
+
+      let text = try runProwl(args: ["skills", "list", "--no-color"], environment: fixture.environment)
+      XCTAssertEqual(text.exitCode, 0, text.stderr)
+      XCTAssertTrue(text.stdout.contains("prowl-cli"))
+      XCTAssertTrue(text.stdout.contains("workflow"))
+      XCTAssertTrue(text.stdout.contains("not installed"))
+    }
+  }
+
+  func testSkillsInstallStatusUninstallRoundTripAcrossAllTargets() throws {
+    try withSkillsFixture { fixture in
+      let install = try runProwl(
+        args: [
+          "skills", "install", "prowl-cli", "--target", "claude", "--target", "codex", "--target", "agents", "--json",
+        ],
+        environment: fixture.environment
+      )
+      XCTAssertEqual(install.exitCode, 0, install.stderr)
+      XCTAssertEqual(install.stderr, "")
+      try assertResponseMatchesSchema(Data(install.stdout.utf8))
+      let installData = try XCTUnwrap(try jsonObject(from: install.stdout)["data"] as? [String: Any])
+      XCTAssertEqual(installData["action"] as? String, "install")
+      XCTAssertEqual(installData["scope"] as? String, "user")
+      XCTAssertEqual(installData["root"] as? String, fixture.home.path(percentEncoded: false))
+      XCTAssertNil(installData["note"])
+      let installResults = try XCTUnwrap(installData["results"] as? [[String: Any]])
+      XCTAssertEqual(installResults.map { $0["target"] as? String }, ["claude", "codex", "agents"])
+      XCTAssertEqual(
+        installResults.map { $0["before"] as? String }, ["not_installed", "not_installed", "not_installed"])
+      XCTAssertEqual(installResults.map { $0["after"] as? String }, ["installed", "installed", "installed"])
+      for target in [".claude", ".codex", ".agents"] {
+        let link = fixture.home.appending(path: "\(target)/skills/prowl-cli").path(percentEncoded: false)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link), fixture.skillPath("prowl-cli"))
+      }
+
+      let list = try runProwl(args: ["skills", "list", "--json"], environment: fixture.environment)
+      XCTAssertEqual(list.exitCode, 0, list.stderr)
+      let listData = try XCTUnwrap(try jsonObject(from: list.stdout)["data"] as? [String: Any])
+      let listed = try XCTUnwrap(listData["skills"] as? [[String: Any]])
+      let statuses = try XCTUnwrap(listed[0]["targets"] as? [[String: Any]]).map { $0["status"] as? String }
+      XCTAssertEqual(statuses, ["installed", "installed", "installed"])
+
+      let uninstall = try runProwl(args: ["skills", "uninstall", "--json"], environment: fixture.environment)
+      XCTAssertEqual(uninstall.exitCode, 0, uninstall.stderr)
+      try assertResponseMatchesSchema(Data(uninstall.stdout.utf8))
+      let uninstallData = try XCTUnwrap(try jsonObject(from: uninstall.stdout)["data"] as? [String: Any])
+      XCTAssertEqual(uninstallData["action"] as? String, "uninstall")
+      let uninstallResults = try XCTUnwrap(uninstallData["results"] as? [[String: Any]])
+      XCTAssertEqual(uninstallResults.map { $0["target"] as? String }, ["claude", "codex", "agents"])
+      XCTAssertEqual(
+        uninstallResults.map { $0["after"] as? String }, ["not_installed", "not_installed", "not_installed"])
+      for target in [".claude", ".codex", ".agents"] {
+        let link = fixture.home.appending(path: "\(target)/skills/prowl-cli").path(percentEncoded: false)
+        XCTAssertNil(try? FileManager.default.attributesOfItem(atPath: link))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.home.appending(path: "\(target)/skills").path()))
+      }
+      XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.skillPath("prowl-cli") + "/SKILL.md"))
+    }
+  }
+
+  func testSkillsInstallRefusesWorkflowSkillsAndRealDirectoriesInBothOutputModes() throws {
+    try withSkillsFixture { fixture in
+      let workflow = try runProwl(args: ["skills", "install", "reviewer", "--json"], environment: fixture.environment)
+      XCTAssertNotEqual(workflow.exitCode, 0)
+      try assertResponseMatchesSchema(Data(workflow.stdout.utf8))
+      let workflowError = try XCTUnwrap(try jsonObject(from: workflow.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(workflowError["code"] as? String, "SKILL_NOT_INSTALLABLE")
+
+      let workflowText = try runProwl(args: ["skills", "install", "reviewer"], environment: fixture.environment)
+      XCTAssertNotEqual(workflowText.exitCode, 0)
+      XCTAssertEqual(workflowText.stdout, "")
+      XCTAssertTrue(workflowText.stderr.contains("error [SKILL_NOT_INSTALLABLE]"))
+
+      let realDirectory = fixture.home.appending(path: ".claude/skills/prowl-cli")
+      try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+      try Data("keep".utf8).write(to: realDirectory.appending(path: "SKILL.md"))
+      let conflict = try runProwl(
+        args: ["skills", "install", "prowl-cli", "--target", "claude", "--json"],
+        environment: fixture.environment
+      )
+      XCTAssertNotEqual(conflict.exitCode, 0)
+      try assertResponseMatchesSchema(Data(conflict.stdout.utf8))
+      let conflictError = try XCTUnwrap(try jsonObject(from: conflict.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(conflictError["code"] as? String, "INSTALL_CONFLICT")
+      XCTAssertEqual(try Data(contentsOf: realDirectory.appending(path: "SKILL.md")), Data("keep".utf8))
+      XCTAssertNil(
+        try? FileManager.default.destinationOfSymbolicLink(atPath: realDirectory.path(percentEncoded: false)))
+
+      let unknownTarget = try runProwl(
+        args: ["skills", "install", "--target", "cursor", "--json"], environment: fixture.environment)
+      XCTAssertNotEqual(unknownTarget.exitCode, 0)
+      let unknownTargetError = try XCTUnwrap(try jsonObject(from: unknownTarget.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(unknownTargetError["code"] as? String, "TARGET_NOT_FOUND")
+
+      let unknownSkill = try runProwl(args: ["skills", "path", "missing", "--json"], environment: fixture.environment)
+      XCTAssertNotEqual(unknownSkill.exitCode, 0)
+      let unknownSkillError = try XCTUnwrap(try jsonObject(from: unknownSkill.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(unknownSkillError["code"] as? String, "SKILL_NOT_FOUND")
+    }
+  }
+
+  func testSkillsProjectScopePrintsHygieneNoteOnceAndNeverTouchesGit() throws {
+    try withSkillsFixture { fixture in
+      let repo = fixture.root.appending(path: "repo", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: repo.appending(path: ".git/info"), withIntermediateDirectories: true)
+      try Data("ref: refs/heads/main\n".utf8).write(to: repo.appending(path: ".git/HEAD"))
+      try FileManager.default.createDirectory(at: repo.appending(path: ".claude"), withIntermediateDirectories: true)
+      let gitBefore = try gitEntries(repo)
+
+      let text = try runProwl(
+        args: ["skills", "install", "--scope", "project", "--path", repo.path(percentEncoded: false), "--no-color"],
+        environment: fixture.environment
+      )
+      XCTAssertEqual(text.exitCode, 0, text.stderr)
+      XCTAssertEqual(text.stderr.components(separatedBy: ".git/info/exclude").count - 1, 1, text.stderr)
+      XCTAssertFalse(text.stdout.contains(".git/info/exclude"))
+      XCTAssertTrue(text.stdout.contains("claude"))
+      let link = repo.appending(path: ".claude/skills/prowl-cli").path(percentEncoded: false)
+      XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link), fixture.skillPath("prowl-cli"))
+
+      let json = try runProwl(
+        args: ["skills", "uninstall", "--scope", "project", "--path", repo.path(percentEncoded: false), "--json"],
+        environment: fixture.environment
+      )
+      XCTAssertEqual(json.exitCode, 0, json.stderr)
+      XCTAssertEqual(json.stderr, "")
+      try assertResponseMatchesSchema(Data(json.stdout.utf8))
+      let data = try XCTUnwrap(try jsonObject(from: json.stdout)["data"] as? [String: Any])
+      XCTAssertEqual(data["scope"] as? String, "project")
+      XCTAssertEqual(data["root"] as? String, repo.path(percentEncoded: false).trimmingTrailingPathSeparator())
+      let note = try XCTUnwrap(data["note"] as? String)
+      XCTAssertEqual(note.components(separatedBy: ".git/info/exclude").count - 1, 1)
+      XCTAssertNil(try? FileManager.default.attributesOfItem(atPath: link))
+      XCTAssertEqual(try gitEntries(repo), gitBefore)
+    }
+  }
+
+  func testSkillsPathPrintsBundledDirectoryAndFailsClosedWithoutBundle() throws {
+    try withSkillsFixture { fixture in
+      let path = try runProwl(args: ["skills", "path", "reviewer"], environment: fixture.environment)
+      XCTAssertEqual(path.exitCode, 0, path.stderr)
+      XCTAssertEqual(path.stdout, fixture.skillPath("reviewer") + "\n")
+      XCTAssertEqual(path.stderr, "")
+
+      let pathJSON = try runProwl(args: ["skills", "path", "reviewer", "--json"], environment: fixture.environment)
+      XCTAssertEqual(pathJSON.exitCode, 0, pathJSON.stderr)
+      try assertResponseMatchesSchema(Data(pathJSON.stdout.utf8))
+      let data = try XCTUnwrap(try jsonObject(from: pathJSON.stdout)["data"] as? [String: Any])
+      let skill = try XCTUnwrap(data["skill"] as? [String: Any])
+      XCTAssertEqual(skill["path"] as? String, fixture.skillPath("reviewer"))
+      XCTAssertEqual(skill["audience"] as? String, "workflow")
+
+      var brokenEnvironment = fixture.environment
+      brokenEnvironment["PROWL_SKILLS_DIR"] = fixture.root.appending(path: "missing-skills").path(percentEncoded: false)
+      let missing = try runProwl(args: ["skills", "list", "--json"], environment: brokenEnvironment)
+      XCTAssertNotEqual(missing.exitCode, 0)
+      try assertResponseMatchesSchema(Data(missing.stdout.utf8))
+      let error = try XCTUnwrap(try jsonObject(from: missing.stdout)["error"] as? [String: Any])
+      XCTAssertEqual(error["code"] as? String, "BUNDLE_NOT_FOUND")
+
+      let missingText = try runProwl(args: ["skills", "list"], environment: brokenEnvironment)
+      XCTAssertNotEqual(missingText.exitCode, 0)
+      XCTAssertEqual(missingText.stdout, "")
+      XCTAssertTrue(missingText.stderr.contains("error [BUNDLE_NOT_FOUND]"))
+    }
+  }
+
+  private struct SkillsFixture {
+    let root: URL
+    let home: URL
+    let skillsRoot: URL
+    let socketPath: String
+
+    var environment: [String: String] {
+      [
+        ProwlSocket.environmentKey: socketPath,
+        "PROWL_SKILLS_DIR": skillsRoot.path(percentEncoded: false),
+        "HOME": home.path(percentEncoded: false),
+      ]
+    }
+
+    func skillPath(_ id: String) -> String {
+      skillsRoot.appending(path: id, directoryHint: .notDirectory).path(percentEncoded: false)
+    }
+  }
+
+  private func withSkillsFixture(_ body: (SkillsFixture) throws -> Void) throws {
+    let root = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-skills-cli-\(UUID().uuidString)", directoryHint: .isDirectory)
+      .standardizedFileURL
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let home = root.appending(path: "home", directoryHint: .notDirectory)
+    try FileManager.default.createDirectory(at: home.appending(path: ".claude"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: home.appending(path: ".agents"), withIntermediateDirectories: true)
+
+    let skillsRoot = root.appending(path: "skills", directoryHint: .isDirectory)
+    for (id, extra) in [("prowl-cli", ""), ("reviewer", "metadata:\n  prowl-install: workflow\n")] {
+      let directory = skillsRoot.appending(path: id, directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try Data("---\nname: \(id)\ndescription: \(id) description.\n\(extra)---\n".utf8)
+        .write(to: directory.appending(path: "SKILL.md"))
+    }
+
+    let fixture = SkillsFixture(
+      root: root,
+      home: home,
+      skillsRoot: skillsRoot,
+      socketPath: root.appending(path: "missing.sock").path(percentEncoded: false)
+    )
+    try body(fixture)
+  }
+
+  private func gitEntries(_ repo: URL) throws -> [String] {
+    let enumerator = FileManager.default.enumerator(atPath: repo.appending(path: ".git").path(percentEncoded: false))
+    var entries: [String] = []
+    while let entry = enumerator?.nextObject() as? String {
+      entries.append(entry)
+    }
+    return entries.sorted()
+  }
+
   func testCreatePaneCommandRendersAnchorAndDirection() throws {
     let socketPath = temporarySocketPath(suffix: "create-pane-human")
     let response = try CommandResponse(
@@ -1326,31 +1581,32 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "focus",
       schemaVersion: "prowl.cli.focus.v1",
-      data: RawJSON(encoding: FocusResponseData(
-        requested: FocusRequested(selector: "pane", value: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764"),
-        resolvedVia: "pane",
-        broughtToFront: true,
-        target: FocusResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Users/onevcat/Projects/Prowl",
-            name: "Prowl",
-            path: "/Users/onevcat/Projects/Prowl",
-            rootPath: "/Users/onevcat/Projects/Prowl",
-            kind: "git"
-          ),
-          tab: FocusResponseTab(
-            id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0",
-            title: "Prowl 1",
-            selected: true
-          ),
-          pane: FocusResponsePane(
-            id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
-            title: "zsh",
-            cwd: "/Users/onevcat/Projects/Prowl",
-            focused: true
+      data: RawJSON(
+        encoding: FocusResponseData(
+          requested: FocusRequested(selector: "pane", value: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764"),
+          resolvedVia: "pane",
+          broughtToFront: true,
+          target: FocusResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Users/onevcat/Projects/Prowl",
+              name: "Prowl",
+              path: "/Users/onevcat/Projects/Prowl",
+              rootPath: "/Users/onevcat/Projects/Prowl",
+              kind: "git"
+            ),
+            tab: FocusResponseTab(
+              id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0",
+              title: "Prowl 1",
+              selected: true
+            ),
+            pane: FocusResponsePane(
+              id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
+              title: "zsh",
+              cwd: "/Users/onevcat/Projects/Prowl",
+              focused: true
+            )
           )
-        )
-      ))
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1366,41 +1622,41 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("tab: Prowl 1"), "Missing tab field: \(result.stdout)")
   }
 
-
   func testListCommandTextRenderingFromSocket() throws {
     let socketPath = temporarySocketPath(suffix: "list-text")
     let response = try CommandResponse(
       ok: true,
       command: "list",
       schemaVersion: "prowl.cli.list.v1",
-      data: RawJSON(encoding: ListResponseData(
-        count: 1,
-        items: [
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "Prowl:/Users/onevcat/Projects/Prowl",
-              name: "Prowl",
-              path: "/Users/onevcat/Projects/Prowl",
-              rootPath: "/Users/onevcat/Projects/Prowl",
-              kind: "git"
-            ),
-            tab: ListTab(
-              id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0",
-              handle: 7,
-              title: "Prowl 1",
-              selected: true
-            ),
-            pane: ListPane(
-              id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
-              handle: 8,
-              title: "zsh",
-              cwd: "/Users/onevcat/Projects/Prowl",
-              focused: true
-            ),
-            task: ListTask(status: "running")
-          )
-        ]
-      ))
+      data: RawJSON(
+        encoding: ListResponseData(
+          count: 1,
+          items: [
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "Prowl:/Users/onevcat/Projects/Prowl",
+                name: "Prowl",
+                path: "/Users/onevcat/Projects/Prowl",
+                rootPath: "/Users/onevcat/Projects/Prowl",
+                kind: "git"
+              ),
+              tab: ListTab(
+                id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0",
+                handle: 7,
+                title: "Prowl 1",
+                selected: true
+              ),
+              pane: ListPane(
+                id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
+                handle: 8,
+                title: "zsh",
+                cwd: "/Users/onevcat/Projects/Prowl",
+                focused: true
+              ),
+              task: ListTask(status: "running")
+            )
+          ]
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1443,43 +1699,44 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "agents",
       schemaVersion: "prowl.cli.agents.v1",
-      data: RawJSON(encoding: AgentsResponseData(
-        count: 3,
-        agents: [
-          makeAgentResponse(
-            id: "done-pane",
-            name: "codex",
-            status: "done",
-            projectName: "Prowl",
-            branch: "main",
-            tabTitle: "Done tab",
-            detectionReason: "legacy.detector",
-            session: AgentsResponseSession(
-              id: "019f4e9e-1234-4567-89ab-0123456789ab",
-              path: "/Users/me/.codex/sessions/rollout.jsonl",
-              confidence: "exact",
-              source: "open_file"
-            )
-          ),
-          makeAgentResponse(
-            id: "blocked-pane",
-            handle: 3,
-            name: "omp",
-            status: "blocked",
-            projectName: "Prowl",
-            branch: "feature/cli-agents",
-            tabTitle: "issue 330"
-          ),
-          makeAgentResponse(
-            id: "working-pane",
-            name: "claude",
-            status: "working",
-            projectName: "Notes",
-            branch: "main",
-            tabTitle: "review"
-          ),
-        ]
-      ))
+      data: RawJSON(
+        encoding: AgentsResponseData(
+          count: 3,
+          agents: [
+            makeAgentResponse(
+              id: "done-pane",
+              name: "codex",
+              status: "done",
+              projectName: "Prowl",
+              branch: "main",
+              tabTitle: "Done tab",
+              detectionReason: "legacy.detector",
+              session: AgentsResponseSession(
+                id: "019f4e9e-1234-4567-89ab-0123456789ab",
+                path: "/Users/me/.codex/sessions/rollout.jsonl",
+                confidence: "exact",
+                source: "open_file"
+              )
+            ),
+            makeAgentResponse(
+              id: "blocked-pane",
+              handle: 3,
+              name: "omp",
+              status: "blocked",
+              projectName: "Prowl",
+              branch: "feature/cli-agents",
+              tabTitle: "issue 330"
+            ),
+            makeAgentResponse(
+              id: "working-pane",
+              name: "claude",
+              status: "working",
+              projectName: "Notes",
+              branch: "main",
+              tabTitle: "review"
+            ),
+          ]
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1528,29 +1785,30 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "list",
       schemaVersion: "prowl.cli.list.v1",
-      data: RawJSON(encoding: ListResponseData(
-        count: 2,
-        items: [
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/Alpha", rootPath: "/Projects/Alpha", kind: "git"
+      data: RawJSON(
+        encoding: ListResponseData(
+          count: 2,
+          items: [
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/Alpha", rootPath: "/Projects/Alpha", kind: "git"
+              ),
+              tab: ListTab(id: "t1", title: "Tab A", selected: true),
+              pane: ListPane(id: "p1", title: "zsh", cwd: "/Projects/Alpha", focused: true),
+              task: ListTask(status: "running")
             ),
-            tab: ListTab(id: "t1", title: "Tab A", selected: true),
-            pane: ListPane(id: "p1", title: "zsh", cwd: "/Projects/Alpha", focused: true),
-            task: ListTask(status: "running")
-          ),
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-2", name: "develop",
-              path: "/Projects/Beta", rootPath: "/Projects/Beta", kind: "git"
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-2", name: "develop",
+                path: "/Projects/Beta", rootPath: "/Projects/Beta", kind: "git"
+              ),
+              tab: ListTab(id: "t2", title: "Tab B", selected: true),
+              pane: ListPane(id: "p2", title: "zsh", cwd: "/Projects/Beta", focused: false),
+              task: ListTask(status: "idle")
             ),
-            tab: ListTab(id: "t2", title: "Tab B", selected: true),
-            pane: ListPane(id: "p2", title: "zsh", cwd: "/Projects/Beta", focused: false),
-            task: ListTask(status: "idle")
-          ),
-        ]
-      ))
+          ]
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1575,29 +1833,30 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "list",
       schemaVersion: "prowl.cli.list.v1",
-      data: RawJSON(encoding: ListResponseData(
-        count: 2,
-        items: [
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+      data: RawJSON(
+        encoding: ListResponseData(
+          count: 2,
+          items: [
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+              ),
+              tab: ListTab(id: "t1", title: "Tab 1", selected: true),
+              pane: ListPane(id: "p-same", title: "zsh", cwd: "/Projects/App", focused: true),
+              task: ListTask(status: "idle")
             ),
-            tab: ListTab(id: "t1", title: "Tab 1", selected: true),
-            pane: ListPane(id: "p-same", title: "zsh", cwd: "/Projects/App", focused: true),
-            task: ListTask(status: "idle")
-          ),
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+              ),
+              tab: ListTab(id: "t1", title: "Tab 1", selected: true),
+              pane: ListPane(id: "p-diff", title: "zsh", cwd: "/Users/onevcat", focused: false),
+              task: ListTask(status: "idle")
             ),
-            tab: ListTab(id: "t1", title: "Tab 1", selected: true),
-            pane: ListPane(id: "p-diff", title: "zsh", cwd: "/Users/onevcat", focused: false),
-            task: ListTask(status: "idle")
-          ),
-        ]
-      ))
+          ]
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1626,38 +1885,39 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "list",
       schemaVersion: "prowl.cli.list.v1",
-      data: RawJSON(encoding: ListResponseData(
-        count: 3,
-        items: [
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+      data: RawJSON(
+        encoding: ListResponseData(
+          count: 3,
+          items: [
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+              ),
+              tab: ListTab(id: "tab-a", title: "Tab A", selected: false),
+              pane: ListPane(id: "pa1", title: "zsh", cwd: "/Projects/App", focused: false),
+              task: ListTask(status: "idle")
             ),
-            tab: ListTab(id: "tab-a", title: "Tab A", selected: false),
-            pane: ListPane(id: "pa1", title: "zsh", cwd: "/Projects/App", focused: false),
-            task: ListTask(status: "idle")
-          ),
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+              ),
+              tab: ListTab(id: "tab-b", title: "Tab B", selected: true),
+              pane: ListPane(id: "pb1", title: "vim", cwd: "/Projects/App", focused: true),
+              task: ListTask(status: "idle")
             ),
-            tab: ListTab(id: "tab-b", title: "Tab B", selected: true),
-            pane: ListPane(id: "pb1", title: "vim", cwd: "/Projects/App", focused: true),
-            task: ListTask(status: "idle")
-          ),
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+              ),
+              tab: ListTab(id: "tab-b", title: "Tab B", selected: true),
+              pane: ListPane(id: "pb2", title: "htop", cwd: "/Projects/App", focused: false),
+              task: ListTask(status: "idle")
             ),
-            tab: ListTab(id: "tab-b", title: "Tab B", selected: true),
-            pane: ListPane(id: "pb2", title: "htop", cwd: "/Projects/App", focused: false),
-            task: ListTask(status: "idle")
-          ),
-        ]
-      ))
+          ]
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1679,20 +1939,21 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "list",
       schemaVersion: "prowl.cli.list.v1",
-      data: RawJSON(encoding: ListResponseData(
-        count: 1,
-        items: [
-          ListResponseItem(
-            worktree: ListWorktree(
-              id: "wt-1", name: "main",
-              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
-            ),
-            tab: ListTab(id: "t1", title: "Tab A", selected: true),
-            pane: ListPane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true),
-            task: ListTask(status: "running")
-          ),
-        ]
-      ))
+      data: RawJSON(
+        encoding: ListResponseData(
+          count: 1,
+          items: [
+            ListResponseItem(
+              worktree: ListWorktree(
+                id: "wt-1", name: "main",
+                path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+              ),
+              tab: ListTab(id: "t1", title: "Tab A", selected: true),
+              pane: ListPane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true),
+              task: ListTask(status: "running")
+            )
+          ]
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1714,22 +1975,23 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "send",
       schemaVersion: "prowl.cli.send.v1",
-      data: RawJSON(encoding: SendResponseData(
-        target: SendResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl", name: "Prowl",
-            path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
+      data: RawJSON(
+        encoding: SendResponseData(
+          target: SendResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl", name: "Prowl",
+              path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
+            ),
+            tab: SendResponseTab(id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0", title: "Prowl 1", selected: true),
+            pane: SendResponsePane(
+              id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
+              title: "zsh", cwd: "/Projects/Prowl", focused: true
+            )
           ),
-          tab: SendResponseTab(id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0", title: "Prowl 1", selected: true),
-          pane: SendResponsePane(
-            id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
-            title: "zsh", cwd: "/Projects/Prowl", focused: true
-          )
-        ),
-        input: SendResponseInput(source: "argv", characters: 10, bytes: 10, trailingEnterSent: true),
-        createdTab: false,
-        wait: SendResponseWait(exitCode: 0, durationMs: 1234)
-      ))
+          input: SendResponseInput(source: "argv", characters: 10, bytes: 10, trailingEnterSent: true),
+          createdTab: false,
+          wait: SendResponseWait(exitCode: 0, durationMs: 1234)
+        ))
     )
 
     let (requestData, result) = try runWithMockServer(
@@ -1764,19 +2026,20 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "send",
       schemaVersion: "prowl.cli.send.v1",
-      data: RawJSON(encoding: SendResponseData(
-        target: SendResponseTarget(
-          worktree: ListWorktree(
-            id: "wt-1", name: "main",
-            path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+      data: RawJSON(
+        encoding: SendResponseData(
+          target: SendResponseTarget(
+            worktree: ListWorktree(
+              id: "wt-1", name: "main",
+              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ),
+            tab: SendResponseTab(id: "t1", title: "Tab 1", selected: true),
+            pane: SendResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
           ),
-          tab: SendResponseTab(id: "t1", title: "Tab 1", selected: true),
-          pane: SendResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
-        ),
-        input: SendResponseInput(source: "argv", characters: 5, bytes: 5, trailingEnterSent: true),
-        createdTab: false,
-        wait: nil
-      ))
+          input: SendResponseInput(source: "argv", characters: 5, bytes: 5, trailingEnterSent: true),
+          createdTab: false,
+          wait: nil
+        ))
     )
 
     let (requestData, result) = try runWithMockServer(
@@ -1804,19 +2067,20 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "send",
       schemaVersion: "prowl.cli.send.v1",
-      data: RawJSON(encoding: SendResponseData(
-        target: SendResponseTarget(
-          worktree: ListWorktree(
-            id: "wt-1", name: "main",
-            path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+      data: RawJSON(
+        encoding: SendResponseData(
+          target: SendResponseTarget(
+            worktree: ListWorktree(
+              id: "wt-1", name: "main",
+              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ),
+            tab: SendResponseTab(id: "t1", title: "Tab 1", selected: true),
+            pane: SendResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
           ),
-          tab: SendResponseTab(id: "t1", title: "Tab 1", selected: true),
-          pane: SendResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
-        ),
-        input: SendResponseInput(source: "argv", characters: 10, bytes: 10, trailingEnterSent: true),
-        createdTab: false,
-        wait: SendResponseWait(exitCode: 0, durationMs: 350)
-      ))
+          input: SendResponseInput(source: "argv", characters: 10, bytes: 10, trailingEnterSent: true),
+          createdTab: false,
+          wait: SendResponseWait(exitCode: 0, durationMs: 350)
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1838,19 +2102,20 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "send",
       schemaVersion: "prowl.cli.send.v1",
-      data: RawJSON(encoding: SendResponseData(
-        target: SendResponseTarget(
-          worktree: ListWorktree(
-            id: "wt-1", name: "main",
-            path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+      data: RawJSON(
+        encoding: SendResponseData(
+          target: SendResponseTarget(
+            worktree: ListWorktree(
+              id: "wt-1", name: "main",
+              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ),
+            tab: SendResponseTab(id: "t1", title: "Tab 1", selected: true),
+            pane: SendResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
           ),
-          tab: SendResponseTab(id: "t1", title: "Tab 1", selected: true),
-          pane: SendResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
-        ),
-        input: SendResponseInput(source: "argv", characters: 5, bytes: 5, trailingEnterSent: true),
-        createdTab: false,
-        wait: SendResponseWait(exitCode: 0, durationMs: 100)
-      ))
+          input: SendResponseInput(source: "argv", characters: 5, bytes: 5, trailingEnterSent: true),
+          createdTab: false,
+          wait: SendResponseWait(exitCode: 0, durationMs: 100)
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -1890,22 +2155,23 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "key",
       schemaVersion: "prowl.cli.key.v1",
-      data: RawJSON(encoding: KeyResponseData(
-        requested: KeyResponseRequested(token: "enter", repeat: 1),
-        key: KeyResponseKey(normalized: "enter", category: "editing"),
-        delivery: KeyResponseDelivery(attempted: 1, delivered: 1, mode: "keyDownUp"),
-        target: KeyResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl", name: "Prowl",
-            path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
-          ),
-          tab: KeyResponseTab(id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0", title: "Prowl 1", selected: true),
-          pane: KeyResponsePane(
-            id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
-            title: "zsh", cwd: "/Projects/Prowl", focused: true
+      data: RawJSON(
+        encoding: KeyResponseData(
+          requested: KeyResponseRequested(token: "enter", repeat: 1),
+          key: KeyResponseKey(normalized: "enter", category: "editing"),
+          delivery: KeyResponseDelivery(attempted: 1, delivered: 1, mode: "keyDownUp"),
+          target: KeyResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl", name: "Prowl",
+              path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
+            ),
+            tab: KeyResponseTab(id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0", title: "Prowl 1", selected: true),
+            pane: KeyResponsePane(
+              id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
+              title: "zsh", cwd: "/Projects/Prowl", focused: true
+            )
           )
-        )
-      ))
+        ))
     )
 
     let (requestData, result) = try runWithMockServer(
@@ -2073,19 +2339,20 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "key",
       schemaVersion: "prowl.cli.key.v1",
-      data: RawJSON(encoding: KeyResponseData(
-        requested: KeyResponseRequested(token: "Ctrl+C", repeat: 3),
-        key: KeyResponseKey(normalized: "ctrl-c", category: "control"),
-        delivery: KeyResponseDelivery(attempted: 3, delivered: 3, mode: "keyDownUp"),
-        target: KeyResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl", name: "Prowl",
-            path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
-          ),
-          tab: KeyResponseTab(id: "t1", title: "Prowl 1", selected: true),
-          pane: KeyResponsePane(id: "p1", title: "Claude", cwd: "/Projects/Prowl", focused: true)
-        )
-      ))
+      data: RawJSON(
+        encoding: KeyResponseData(
+          requested: KeyResponseRequested(token: "Ctrl+C", repeat: 3),
+          key: KeyResponseKey(normalized: "ctrl-c", category: "control"),
+          delivery: KeyResponseDelivery(attempted: 3, delivered: 3, mode: "keyDownUp"),
+          target: KeyResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl", name: "Prowl",
+              path: "/Projects/Prowl", rootPath: "/Projects/Prowl", kind: "git"
+            ),
+            tab: KeyResponseTab(id: "t1", title: "Prowl 1", selected: true),
+            pane: KeyResponsePane(id: "p1", title: "Claude", cwd: "/Projects/Prowl", focused: true)
+          )
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -2112,19 +2379,20 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "key",
       schemaVersion: "prowl.cli.key.v1",
-      data: RawJSON(encoding: KeyResponseData(
-        requested: KeyResponseRequested(token: "esc", repeat: 1),
-        key: KeyResponseKey(normalized: "esc", category: "control"),
-        delivery: KeyResponseDelivery(attempted: 1, delivered: 1, mode: "keyDownUp"),
-        target: KeyResponseTarget(
-          worktree: ListWorktree(
-            id: "wt-1", name: "main",
-            path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
-          ),
-          tab: KeyResponseTab(id: "t1", title: "Tab 1", selected: true),
-          pane: KeyResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
-        )
-      ))
+      data: RawJSON(
+        encoding: KeyResponseData(
+          requested: KeyResponseRequested(token: "esc", repeat: 1),
+          key: KeyResponseKey(normalized: "esc", category: "control"),
+          delivery: KeyResponseDelivery(attempted: 1, delivered: 1, mode: "keyDownUp"),
+          target: KeyResponseTarget(
+            worktree: ListWorktree(
+              id: "wt-1", name: "main",
+              path: "/Projects/App", rootPath: "/Projects/App", kind: "git"
+            ),
+            tab: KeyResponseTab(id: "t1", title: "Tab 1", selected: true),
+            pane: KeyResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
+          )
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -2227,7 +2495,8 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     ]
 
     for (raw, normalized) in tokenCases {
-      let socketPath = temporarySocketPath(suffix: "key-expanded-\(normalized.replacingOccurrences(of: "-", with: "_"))")
+      let socketPath = temporarySocketPath(
+        suffix: "key-expanded-\(normalized.replacingOccurrences(of: "-", with: "_"))")
       let response = CommandResponse(
         ok: true,
         command: "key",
@@ -2269,34 +2538,35 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "read",
       schemaVersion: "prowl.cli.read.v1",
-      data: RawJSON(encoding: ReadResponseData(
-        target: ReadResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl",
-            name: "Prowl",
-            path: "/Projects/Prowl",
-            rootPath: "/Projects/Prowl",
-            kind: "git"
+      data: RawJSON(
+        encoding: ReadResponseData(
+          target: ReadResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl",
+              name: "Prowl",
+              path: "/Projects/Prowl",
+              rootPath: "/Projects/Prowl",
+              kind: "git"
+            ),
+            tab: ReadResponseTab(
+              id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0",
+              title: "Prowl 1",
+              selected: true
+            ),
+            pane: ReadResponsePane(
+              id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
+              title: "zsh",
+              cwd: "/Projects/Prowl",
+              focused: true
+            )
           ),
-          tab: ReadResponseTab(
-            id: "2FC00CF0-3974-4E1B-BEF8-7A08A8E3B7C0",
-            title: "Prowl 1",
-            selected: true
-          ),
-          pane: ReadResponsePane(
-            id: "6E1A2A10-D99F-4E3F-920C-D93AA3C05764",
-            title: "zsh",
-            cwd: "/Projects/Prowl",
-            focused: true
-          )
-        ),
-        mode: "last",
-        last: 5,
-        source: "scrollback",
-        truncated: false,
-        lineCount: 5,
-        text: "1\n2\n3\n4\n5"
-      ))
+          mode: "last",
+          last: 5,
+          source: "scrollback",
+          truncated: false,
+          lineCount: 5,
+          text: "1\n2\n3\n4\n5"
+        ))
     )
 
     let (requestData, result) = try runWithMockServer(
@@ -2327,25 +2597,26 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "read",
       schemaVersion: "prowl.cli.read.v1",
-      data: RawJSON(encoding: ReadResponseData(
-        target: ReadResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl",
-            name: "Prowl",
-            path: "/Projects/Prowl",
-            rootPath: "/Projects/Prowl",
-            kind: "git"
+      data: RawJSON(
+        encoding: ReadResponseData(
+          target: ReadResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl",
+              name: "Prowl",
+              path: "/Projects/Prowl",
+              rootPath: "/Projects/Prowl",
+              kind: "git"
+            ),
+            tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
+            pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
           ),
-          tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
-          pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
-        ),
-        mode: "snapshot",
-        last: nil,
-        source: "detection",
-        truncated: false,
-        lineCount: 2,
-        text: "active-line-1\nactive-line-2"
-      ))
+          mode: "snapshot",
+          last: nil,
+          source: "detection",
+          truncated: false,
+          lineCount: 2,
+          text: "active-line-1\nactive-line-2"
+        ))
     )
 
     let (requestData, result) = try runWithMockServer(
@@ -2373,25 +2644,26 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "read",
       schemaVersion: "prowl.cli.read.v1",
-      data: RawJSON(encoding: ReadResponseData(
-        target: ReadResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl",
-            name: "Prowl",
-            path: "/Projects/Prowl",
-            rootPath: "/Projects/Prowl",
-            kind: "git"
+      data: RawJSON(
+        encoding: ReadResponseData(
+          target: ReadResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl",
+              name: "Prowl",
+              path: "/Projects/Prowl",
+              rootPath: "/Projects/Prowl",
+              kind: "git"
+            ),
+            tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
+            pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
           ),
-          tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
-          pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
-        ),
-        mode: "snapshot",
-        last: nil,
-        source: "screen",
-        truncated: false,
-        lineCount: 1,
-        text: "viewport"
-      ))
+          mode: "snapshot",
+          last: nil,
+          source: "screen",
+          truncated: false,
+          lineCount: 1,
+          text: "viewport"
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -2414,25 +2686,26 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "read",
       schemaVersion: "prowl.cli.read.v1",
-      data: RawJSON(encoding: ReadResponseData(
-        target: ReadResponseTarget(
-          worktree: ListWorktree(
-            id: "Prowl:/Projects/Prowl",
-            name: "Prowl",
-            path: "/Projects/Prowl",
-            rootPath: "/Projects/Prowl",
-            kind: "git"
+      data: RawJSON(
+        encoding: ReadResponseData(
+          target: ReadResponseTarget(
+            worktree: ListWorktree(
+              id: "Prowl:/Projects/Prowl",
+              name: "Prowl",
+              path: "/Projects/Prowl",
+              rootPath: "/Projects/Prowl",
+              kind: "git"
+            ),
+            tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
+            pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
           ),
-          tab: ReadResponseTab(id: "tab-1", title: "Prowl 1", selected: true),
-          pane: ReadResponsePane(id: "pane-1", title: "zsh", cwd: "/Projects/Prowl", focused: true)
-        ),
-        mode: "snapshot",
-        last: nil,
-        source: "screen",
-        truncated: false,
-        lineCount: 1,
-        text: "private viewport text"
-      ))
+          mode: "snapshot",
+          last: nil,
+          source: "screen",
+          truncated: false,
+          lineCount: 1,
+          text: "private viewport text"
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -2500,25 +2773,26 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "read",
       schemaVersion: "prowl.cli.read.v1",
-      data: RawJSON(encoding: ReadResponseData(
-        target: ReadResponseTarget(
-          worktree: ListWorktree(
-            id: "wt-1",
-            name: "main",
-            path: "/Projects/App",
-            rootPath: "/Projects/App",
-            kind: "git"
+      data: RawJSON(
+        encoding: ReadResponseData(
+          target: ReadResponseTarget(
+            worktree: ListWorktree(
+              id: "wt-1",
+              name: "main",
+              path: "/Projects/App",
+              rootPath: "/Projects/App",
+              kind: "git"
+            ),
+            tab: ReadResponseTab(id: "t1", title: "Tab 1", selected: true),
+            pane: ReadResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
           ),
-          tab: ReadResponseTab(id: "t1", title: "Tab 1", selected: true),
-          pane: ReadResponsePane(id: "p1", title: "zsh", cwd: "/Projects/App", focused: true)
-        ),
-        mode: "last",
-        last: 3,
-        source: "scrollback",
-        truncated: false,
-        lineCount: 3,
-        text: "a\nb\nc"
-      ))
+          mode: "last",
+          last: 3,
+          source: "scrollback",
+          truncated: false,
+          lineCount: 3,
+          text: "a\nb\nc"
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -2766,36 +3040,38 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "handoff",
       schemaVersion: "prowl.cli.handoff.v2",
-      data: RawJSON(encoding: HandoffCommandPayload(
-        action: .toAgent,
-        artifactPath: "/Projects/App/.prowl/handoff/current.md",
-        outgoingAgent: "codex",
-        toAgent: "claude",
-        repos: [
-          HandoffRepoPayload(name: "App", branch: "feature", isGit: true, changedFileCount: 3, insertions: 120, deletions: 14)
-        ],
-        changedFileCount: 3,
-        archivedPath: "handoff/archive/2026-06-12T1430-codex-to-claude.md",
-        sessionContext: HandoffSessionPayload(
-          agent: "codex",
-          sessionID: "codex-session",
-          paneID: "pane-0",
-          paneTitle: "codex",
-          source: "terminal-scrollback",
-          confidence: "fallback",
-          excerptPath: "handoff/sessions/2026-06-12T1430-pane-0.md",
-          transcriptPath: "/tmp/codex.jsonl"
-        ),
-        briefing: "inline",
-        hasBriefing: true,
-        launchedPane: HandoffPanePayload(
-          worktreeID: "App:/Projects/App",
-          worktreeName: "App",
-          tabID: "tab-1",
-          paneID: "pane-9",
-          paneTitle: "claude"
-        )
-      ))
+      data: RawJSON(
+        encoding: HandoffCommandPayload(
+          action: .toAgent,
+          artifactPath: "/Projects/App/.prowl/handoff/current.md",
+          outgoingAgent: "codex",
+          toAgent: "claude",
+          repos: [
+            HandoffRepoPayload(
+              name: "App", branch: "feature", isGit: true, changedFileCount: 3, insertions: 120, deletions: 14)
+          ],
+          changedFileCount: 3,
+          archivedPath: "handoff/archive/2026-06-12T1430-codex-to-claude.md",
+          sessionContext: HandoffSessionPayload(
+            agent: "codex",
+            sessionID: "codex-session",
+            paneID: "pane-0",
+            paneTitle: "codex",
+            source: "terminal-scrollback",
+            confidence: "fallback",
+            excerptPath: "handoff/sessions/2026-06-12T1430-pane-0.md",
+            transcriptPath: "/tmp/codex.jsonl"
+          ),
+          briefing: "inline",
+          hasBriefing: true,
+          launchedPane: HandoffPanePayload(
+            worktreeID: "App:/Projects/App",
+            worktreeName: "App",
+            tabID: "tab-1",
+            paneID: "pane-9",
+            paneTitle: "claude"
+          )
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -2819,13 +3095,14 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       ok: true,
       command: "handoff",
       schemaVersion: "prowl.cli.handoff.v2",
-      data: RawJSON(encoding: HandoffCommandPayload(
-        action: .toAgent,
-        artifactPath: "/Projects/App/.prowl/handoff/current.md",
-        outgoingAgent: "codex",
-        toAgent: "claude",
-        archivedPath: "handoff/archive/2026-06-12T1430-codex-to-claude.md"
-      ))
+      data: RawJSON(
+        encoding: HandoffCommandPayload(
+          action: .toAgent,
+          artifactPath: "/Projects/App/.prowl/handoff/current.md",
+          outgoingAgent: "codex",
+          toAgent: "claude",
+          archivedPath: "handoff/archive/2026-06-12T1430-codex-to-claude.md"
+        ))
     )
 
     let (_, result) = try runWithMockServer(
@@ -3041,7 +3318,7 @@ final class ProwlCLIIntegrationTests: XCTestCase {
       domain: "ProwlCLITests",
       code: 1,
       userInfo: [
-        NSLocalizedDescriptionKey: "Could not find prowl binary. Checked: \(candidates.joined(separator: ", "))",
+        NSLocalizedDescriptionKey: "Could not find prowl binary. Checked: \(candidates.joined(separator: ", "))"
       ]
     )
   }
@@ -3175,7 +3452,6 @@ private struct OpenResponsePane: Encodable {
   let title: String
   let cwd: String?
 }
-
 
 private struct ListResponseData: Encodable {
   let count: Int

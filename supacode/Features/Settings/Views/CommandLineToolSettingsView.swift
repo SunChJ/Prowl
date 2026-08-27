@@ -18,11 +18,16 @@ struct CommandLineToolSettingsView: View {
                 .foregroundStyle(.green)
                 .accessibilityLabel("Installed")
               Text("Installed at \(path)")
-            case .installedDifferentSource(let path):
+            case .installedDifferentSource(let path, _):
               Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
                 .accessibilityLabel("Different version")
               Text("A different version exists at \(path)")
+            case .broken(let path, _):
+              Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .accessibilityLabel("Broken link")
+              Text("A broken link exists at \(path)")
             case .notInstalled:
               Image(systemName: "xmark.circle")
                 .foregroundStyle(.secondary)
@@ -55,6 +60,12 @@ struct CommandLineToolSettingsView: View {
                 store.send(.installCLIButtonTapped())
               }
               .help("Replace the existing prowl command with the version bundled in this app")
+              .buttonStyle(.bordered)
+            case .broken:
+              Button("Repair") {
+                store.send(.installCLIButtonTapped())
+              }
+              .help("Replace the broken prowl link with the version bundled in this app")
               .buttonStyle(.bordered)
             }
           }

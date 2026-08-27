@@ -9,7 +9,7 @@ and the executable [schema bundle](schema.md).
 ```text
 prowl [path]
 prowl open [path]
-prowl list | agents [read|signal] | profiles | focus | read | send | key | handoff | create | close
+prowl list | agents [read|signal] | profiles | skills | focus | read | send | key | handoff | create | close
 ```
 
 Bare path forms (`/`, `./`, `../`, `~/`, `file://`, `.`, `..`) enter `open`.
@@ -59,6 +59,19 @@ is a read-only global snapshot and accepts no target. `close` requires a pane-or
 shipped release. They keep their legacy parser/transport behavior while emitting a
 stderr warning; new automation must use the lifecycle grammar above.
 
+## Local skills grammar
+
+```bash
+prowl skills list
+prowl skills install [<skill>...] [--target <claude|codex|agents>]... [--scope user|project] [--path <dir>]
+prowl skills uninstall [<skill>...] [--target <claude|codex|agents>]... [--scope user|project] [--path <dir>]
+prowl skills path <skill>
+```
+
+`skills` is local-only: it resolves the bundle beside the executable (or `PROWL_SKILLS_DIR`)
+and never opens the socket. `--target` is repeatable; `--path` requires `--scope project`
+(`INVALID_ARGUMENT`); `path` requires exactly one skill id. See [skills.md](skills.md).
+
 ## Agent signal grammar
 
 ```bash
@@ -80,6 +93,8 @@ See [agents-signal.md](agents-signal.md).
   socket peer process ancestry, never UI focus or `PROWL_PANE_ID`.
 - `handoff` defaults to the calling pane, not UI focus.
 - `list`, `agents`, and `profiles list` are global discovery commands with no target selector.
+- `skills` accepts no target selector and never contacts the app; it acts on the local
+  filesystem only.
 - `open` consumes a path rather than a target.
 
 ## Transport request model

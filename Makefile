@@ -404,7 +404,13 @@ test-cli-smoke: build-cli # Smoke test CLI executable
 	socket="$$tmp_dir/cli.sock"; \
 	response="$$tmp_dir/response.json"; \
 	PROWL_CLI_SOCKET="$$socket" "$$bin" list --json >"$$response" || true; \
-	jq -e '.error.code == "APP_NOT_RUNNING"' "$$response" >/dev/null
+	jq -e '.error.code == "APP_NOT_RUNNING"' "$$response" >/dev/null; \
+	mkdir -p "$$tmp_dir/skills/prowl-cli" "$$tmp_dir/home"; \
+	cp "$(CURRENT_MAKEFILE_DIR)/skills/prowl-cli/SKILL.md" "$$tmp_dir/skills/prowl-cli/SKILL.md"; \
+	skills_response="$$tmp_dir/skills.json"; \
+	PROWL_CLI_SOCKET="$$socket" PROWL_SKILLS_DIR="$$tmp_dir/skills" HOME="$$tmp_dir/home" \
+		"$$bin" skills list --json >"$$skills_response"; \
+	jq -e '.ok and .data.action == "list" and (.data.skills | map(.id)) == ["prowl-cli"]' "$$skills_response" >/dev/null
 
 test-cli-unit: # Run CLI unit tests via SwiftPM
 	@test_list="$$(swift test list)"; \
