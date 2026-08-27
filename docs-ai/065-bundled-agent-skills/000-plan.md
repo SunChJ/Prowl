@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S0, K1, and K2 complete (#729, #730 merged); K3 in progress |
+| **Status** | Implemented — S0, K1 (#729), K2 (#730), and K3 complete; see [001-action.md](001-action.md) |
 | **Anchor date** | 2026-08-22 |
 | **Primary PRs** | #712 (plan); #729 (K1); #730 (K2); K3 to fill in |
 | **Related** | [063-agent-workflows](../063-agent-workflows/000-plan.md) (D1 `skill:` materialization, D1–D3 new skills), [060-prowl-cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md) (four-layer CLI rule), [013-prowl-cli](../013-prowl-cli/000-plan.md), `docs/components/cli.md`, `skills/prowl-cli/SKILL.md` |
@@ -139,7 +139,7 @@ depends on it); K2 and K3 follow inside R1 so the R1 user can `prowl skills inst
 | **S0** spike | **Complete** — verified Codex per-directory links and `.codex/skills`, mapped installed `.agents/skills` readers, and confirmed dangling links do not block discovery. Copy mode stays out of K2. See [002-s0-skill-targets.md](002-s0-skill-targets.md). | — |
 | **K1** | **Complete (#729)** — `embed-skills`, `Resources/skills` folder reference, Foundation-only `ProwlSkills` registry + typed errors and frontmatter parser, CLI bundle resolution, tests. See [003-k1-bundle-registry.md](003-k1-bundle-registry.md). | — |
 | **K2** | **Complete (#730)** — shared `SymlinkInstaller` extracted from `CLIInstallClient`, declarative targets, `prowl skills list\|install\|uninstall\|path`, contract, schema, `cli.md`, `prowl-cli` skill line, unit + integration tests (temp dirs, `PROWL_SKILLS_DIR`). See [004-k2-skill-installer-cli.md](004-k2-skill-installer-cli.md). | S0, K1 |
-| **K3** | Agent Skills section on the Command Line Tool page, `AgentSkillsFeature` + `SkillInstallClient`, reducer tests, `docs/components/settings.md`. | K2 |
+| **K3** | **Complete** — `SkillInstallClient`, `AgentSkillsFeature`, and the Agent Skills section on the Command Line Tool page (skill × detected target chips with Install / Remove / Repair / Replace, Reveal, empty states), reducer and client tests over temporary roots, `docs/components/settings.md`. See [005-k3-settings-agent-skills.md](005-k3-settings-agent-skills.md). | K2 |
 
 ## Alternatives & decisions
 
@@ -214,6 +214,11 @@ Decisions below were taken in the 2026-08-22 plan review (#712):
 
 ## Amendments
 
+- Updated 2026-08-28: Implemented and verified K3: the Command Line Tool page gained the Agent
+  Skills section over a `SkillInstallClient` dependency and an `AgentSkillsFeature` child; every
+  action recomputes all chips so aliased targets stay consistent; success is a toast, failure an
+  alert. 065 is complete — see [005-k3-settings-agent-skills.md](005-k3-settings-agent-skills.md)
+  and [001-action.md](001-action.md).
 - Updated 2026-08-27: Implemented and verified K2: one shared symlink installer with a
   `broken` status now backs both the CLI installer and skill links; `prowl skills` is
   local-only with the four contract layers; project scope prints its Git-hygiene note once and
