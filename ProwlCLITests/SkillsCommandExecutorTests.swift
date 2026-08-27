@@ -147,10 +147,10 @@ final class SkillsCommandExecutorTests: XCTestCase {
   func testInstallRejectsUnknownSkillAndTarget() throws {
     try withFixture { fixture in
       assertExitError(code: CLIErrorCode.skillNotFound) {
-        try fixture.executor.install(SkillsChangeRequest(skillIDs: ["missing"]))
+        _ = try fixture.executor.install(SkillsChangeRequest(skillIDs: ["missing"]))
       }
       assertExitError(code: CLIErrorCode.targetNotFound) {
-        try fixture.executor.install(SkillsChangeRequest(targetIDs: ["cursor"]))
+        _ = try fixture.executor.install(SkillsChangeRequest(targetIDs: ["cursor"]))
       }
       XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.linkPath(target: ".claude", skill: "prowl-cli")))
     }
@@ -159,7 +159,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
   func testInstallRefusesWorkflowAudienceSkills() throws {
     try withFixture { fixture in
       assertExitError(code: CLIErrorCode.skillNotInstallable) {
-        try fixture.executor.install(SkillsChangeRequest(skillIDs: ["prowl-cli", "reviewer"]))
+        _ = try fixture.executor.install(SkillsChangeRequest(skillIDs: ["prowl-cli", "reviewer"]))
       }
       XCTAssertFalse(
         FileManager.default.fileExists(atPath: fixture.linkPath(target: ".claude", skill: "prowl-cli")),
@@ -174,7 +174,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
       try FileManager.default.removeItem(at: fixture.home.appending(path: ".agents"))
 
       assertExitError(code: CLIErrorCode.targetNotFound) {
-        try fixture.executor.install(SkillsChangeRequest())
+        _ = try fixture.executor.install(SkillsChangeRequest())
       }
     }
   }
@@ -186,7 +186,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
       try Data("keep".utf8).write(to: realDirectory.appending(path: "SKILL.md"))
 
       assertExitError(code: CLIErrorCode.installConflict) {
-        try fixture.executor.install(SkillsChangeRequest())
+        _ = try fixture.executor.install(SkillsChangeRequest())
       }
 
       XCTAssertFalse(
@@ -266,7 +266,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
       try fixture.makeDirectory(fixture.home.appending(path: ".agents/skills/prowl-cli"))
 
       assertExitError(code: CLIErrorCode.installConflict) {
-        try fixture.executor.uninstall(SkillsChangeRequest())
+        _ = try fixture.executor.uninstall(SkillsChangeRequest())
       }
       XCTAssertTrue(
         fixture.isSymlink(fixture.linkPath(target: ".claude", skill: "prowl-cli")),
@@ -292,7 +292,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
       XCTAssertEqual(workflow.skill.audience, .workflow)
 
       assertExitError(code: CLIErrorCode.skillNotFound) {
-        try fixture.executor.path(skillID: "../prowl-cli")
+        _ = try fixture.executor.path(skillID: "../prowl-cli")
       }
     }
   }
@@ -393,7 +393,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
       try fixture.makeDirectory(repo.appending(path: ".claude"))
 
       assertExitError(code: CLIErrorCode.installConflict) {
-        try fixture.executor.install(
+        _ = try fixture.executor.install(
           SkillsChangeRequest(scope: .project, projectPath: repo.path(percentEncoded: false)))
       }
 
@@ -421,8 +421,8 @@ final class SkillsCommandExecutorTests: XCTestCase {
         skillIDs: ["prowl-cli"], targetIDs: ["codex"], scope: .project,
         projectPath: repo.path(percentEncoded: false))
 
-      assertExitError(code: CLIErrorCode.installConflict) { try fixture.executor.install(request) }
-      assertExitError(code: CLIErrorCode.installConflict) { try fixture.executor.uninstall(request) }
+      assertExitError(code: CLIErrorCode.installConflict) { _ = try fixture.executor.install(request) }
+      assertExitError(code: CLIErrorCode.installConflict) { _ = try fixture.executor.uninstall(request) }
 
       XCTAssertEqual(
         try FileManager.default.destinationOfSymbolicLink(atPath: external.appending(path: "prowl-cli").path()),
@@ -460,21 +460,21 @@ final class SkillsCommandExecutorTests: XCTestCase {
       try fixture.makeDirectory(plain)
 
       assertExitError(code: CLIErrorCode.pathNotFound) {
-        try fixture.executor(currentDirectory: plain).install(SkillsChangeRequest(scope: .project))
+        _ = try fixture.executor(currentDirectory: plain).install(SkillsChangeRequest(scope: .project))
       }
       assertExitError(code: CLIErrorCode.pathNotFound) {
-        try fixture.executor.install(
+        _ = try fixture.executor.install(
           SkillsChangeRequest(scope: .project, projectPath: plain.path(percentEncoded: false)))
       }
       XCTAssertFalse(FileManager.default.fileExists(atPath: plain.appending(path: ".claude").path()))
       assertExitError(code: CLIErrorCode.pathNotFound) {
-        try fixture.executor.install(
+        _ = try fixture.executor.install(
           SkillsChangeRequest(scope: .project, projectPath: fixture.root.appending(path: "missing").path()))
       }
       let file = fixture.root.appending(path: "file")
       try Data().write(to: file)
       assertExitError(code: CLIErrorCode.pathNotDirectory) {
-        try fixture.executor.install(
+        _ = try fixture.executor.install(
           SkillsChangeRequest(scope: .project, projectPath: file.path(percentEncoded: false)))
       }
     }
@@ -485,7 +485,7 @@ final class SkillsCommandExecutorTests: XCTestCase {
       let repo = try fixture.makeRepository(name: "repo")
 
       assertExitError(code: CLIErrorCode.targetNotFound) {
-        try fixture.executor.install(
+        _ = try fixture.executor.install(
           SkillsChangeRequest(scope: .project, projectPath: repo.path(percentEncoded: false)))
       }
       XCTAssertFalse(FileManager.default.fileExists(atPath: repo.appending(path: ".claude").path()))
