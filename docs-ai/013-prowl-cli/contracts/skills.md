@@ -96,9 +96,10 @@ skills directory when it is missing, detected or not. `uninstall` never creates 
 | `installed_different_source` | A symlink to another live location (for example a Debug build) — `destination` names it — or a real file/directory (`destination` absent). |
 | `broken` | A dangling symlink; `destination` names where the app used to be. `install` repairs it. |
 
-`destination` is the link target resolved against the link's directory; it is present only for
-the two statuses above and never for a real file or directory, so its absence under
-`installed_different_source` identifies a non-symlink occupant.
+`destination` is the link target resolved against the link's directory. The schema ties it to
+the status: it is required for `broken`, optional for `installed_different_source` (present
+for a foreign symlink, absent for a real file or directory, so its absence identifies a
+non-symlink occupant), and forbidden for `installed` and `not_installed`.
 
 ## Success: `list`
 

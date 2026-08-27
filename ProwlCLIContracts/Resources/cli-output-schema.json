@@ -2737,37 +2737,107 @@
       ]
     },
     "skillTargetStatus": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "detected",
-        "path",
-        "status"
-      ],
-      "properties": {
-        "id": {
-          "enum": [
-            "claude",
-            "codex",
-            "agents"
-          ]
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "detected",
+            "path",
+            "status"
+          ],
+          "properties": {
+            "id": {
+              "enum": [
+                "claude",
+                "codex",
+                "agents"
+              ]
+            },
+            "detected": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "not_installed",
+                "installed"
+              ]
+            }
+          }
         },
-        "detected": {
-          "type": "boolean"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "detected",
+            "path",
+            "status"
+          ],
+          "properties": {
+            "id": {
+              "enum": [
+                "claude",
+                "codex",
+                "agents"
+              ]
+            },
+            "detected": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "const": "installed_different_source"
+            },
+            "destination": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         },
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "$ref": "#/$defs/skillStatus"
-        },
-        "destination": {
-          "type": "string",
-          "minLength": 1
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "detected",
+            "path",
+            "status",
+            "destination"
+          ],
+          "properties": {
+            "id": {
+              "enum": [
+                "claude",
+                "codex",
+                "agents"
+              ]
+            },
+            "detected": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "const": "broken"
+            },
+            "destination": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
-      }
+      ]
     },
     "skillsListSkill": {
       "type": "object",

@@ -91,6 +91,14 @@ Debug/Release switches. The shared status now carries `destination` (resolved ag
 directory; nil for a real file or directory), `list` exposes it as an optional `destination`
 field and `→ path` in text, and the contract, schema, and manual document it.
 
+Round 3 found the app test target no longer compiled after the status change (a hand-rolled
+status closure in `CLIInstallClientTests`; it now delegates to `SymlinkInstaller.status`) — the
+focused Xcode run before the round-2 commit had been read through a pipeline that hid
+xcodebuild's exit code, so its "pass" was wrong — and that the schema accepted
+`destination` on every status. `skillTargetStatus` is now a status-discriminated `oneOf`:
+`destination` required for `broken`, optional for `installed_different_source`, forbidden
+otherwise, with negative fixtures for each invalid combination.
+
 ## Verification
 
 - TDD RED: 116 missing-symbol errors across the five new CLI test files before the shared

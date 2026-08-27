@@ -9,11 +9,13 @@ final class SkillsSchemaTests: XCTestCase {
     #"{"id":"claude","detected":true,"path":"/Users/me/.claude/skills/prowl-cli","status":"installed"}"#
 
   func testSchemaAcceptsEveryActionAndStatus() throws {
-    let statuses = ["not_installed", "installed", "installed_different_source", "broken"]
-    let targets = zip(["claude", "codex", "agents", "claude"], statuses).map { id, status in
-      #"{"id":"\#(id)","detected":false,"path":"/Users/me/.\#(id)/skills/prowl-cli","status":"\#(status)"}"#
-    }.joined(separator: ",")
-      + #",{"id":"codex","detected":true,"path":"/Users/me/.codex/skills/prowl-cli","status":"broken","destination":"/Volumes/Old/Prowl.app/Contents/Resources/skills/prowl-cli"}"#
+    let targets = [
+      #"{"id":"claude","detected":false,"path":"/Users/me/.claude/skills/prowl-cli","status":"not_installed"}"#,
+      #"{"id":"codex","detected":true,"path":"/Users/me/.codex/skills/prowl-cli","status":"installed"}"#,
+      #"{"id":"agents","detected":true,"path":"/Users/me/.agents/skills/prowl-cli","status":"installed_different_source"}"#,
+      #"{"id":"agents","detected":true,"path":"/Users/me/.agents/skills/prowl-cli","status":"installed_different_source","destination":"/DerivedData/Prowl.app/Contents/Resources/skills/prowl-cli"}"#,
+      #"{"id":"codex","detected":true,"path":"/Users/me/.codex/skills/prowl-cli","status":"broken","destination":"/Volumes/Old/Prowl.app/Contents/Resources/skills/prowl-cli"}"#,
+    ].joined(separator: ",")
     let list =
       #"{"ok":true,"command":"skills","schema_version":"prowl.cli.skills.v1","data":{"action":"list","skills":[{"id":"prowl-cli","name":"prowl-cli","description":"Drive Prowl.","audience":"user","path":"/Applications/Prowl.app/Contents/Resources/skills/prowl-cli","targets":[\#(targets)]}]}}"#
     let install =
@@ -43,6 +45,24 @@ final class SkillsSchemaTests: XCTestCase {
       #"{"ok":true,"command":"skills","schema_version":"prowl.cli.skills.v2","data":{"action":"list","skills":[]}}"#
 
     for instance in [unknownField, invalidStatus, crossAction, invalidAudience, wrongVersion] {
+      try assertValidity(instance, expected: false)
+    }
+  }
+
+  func testSchemaTiesDestinationToTheStatusesThatCanCarryIt() throws {
+    func list(_ target: String) -> String {
+      #"{"ok":true,"command":"skills","schema_version":"prowl.cli.skills.v1","data":{"action":"list","skills":[{"id":"prowl-cli","name":"prowl-cli","description":"Drive Prowl.","audience":"user","path":"/skills/prowl-cli","targets":[\#(target)]}]}}"#
+    }
+    let installedWithDestination = list(
+      #"{"id":"claude","detected":true,"path":"/h/.claude/skills/prowl-cli","status":"installed","destination":"/x"}"#)
+    let notInstalledWithDestination = list(
+      #"{"id":"claude","detected":true,"path":"/h/.claude/skills/prowl-cli","status":"not_installed","destination":"/x"}"#)
+    let brokenWithoutDestination = list(
+      #"{"id":"claude","detected":true,"path":"/h/.claude/skills/prowl-cli","status":"broken"}"#)
+    let emptyDestination = list(
+      #"{"id":"claude","detected":true,"path":"/h/.claude/skills/prowl-cli","status":"broken","destination":""}"#)
+
+    for instance in [installedWithDestination, notInstalledWithDestination, brokenWithoutDestination, emptyDestination] {
       try assertValidity(instance, expected: false)
     }
   }
