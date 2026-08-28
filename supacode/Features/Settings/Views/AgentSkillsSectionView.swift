@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Settings → Agents → Command Line Tool → Agent Skills: one row per bundled `user`
+/// Settings → Agents → CLI & Skills → Agent Skills: one row per bundled `user`
 /// skill, with one full-width line per detected target (status, link folder, action).
 /// Link behavior stays in `AgentSkillsFeature`; this view only presents it.
 struct AgentSkillsSectionView: View {

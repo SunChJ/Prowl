@@ -35,7 +35,7 @@ struct AppFeatureAgentSkillsTests {
     }
   }
 
-  /// Leaving the Command Line Tool page removes the child state; the in-flight link effect must be
+  /// Leaving the CLI & Skills page removes the child state; the in-flight link effect must be
   /// cancelled with it, or its completion lands on nil state and the outcome is never reported.
   @Test(.dependencies, arguments: [AgentSkillsFeatureTests.LinkAction.install, .remove])
   func switchingSectionsCancelsAnInFlightLinkEffect(action: AgentSkillsFeatureTests.LinkAction) async throws {

@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
 
-/// Settings → Agents → Command Line Tool → Agent Skills (docs-ai 065): the `user`-audience
+/// Settings → Agents → CLI & Skills → Agent Skills (docs-ai 065): the `user`-audience
 /// skills bundled in this app, one status chip per detected user target, and one explicit
 /// action per skill × target link. Statuses come from the shared installer, so the section
 /// always agrees with `prowl skills list`.

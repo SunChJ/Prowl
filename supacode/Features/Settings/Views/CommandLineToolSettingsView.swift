@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Settings → Agents → Command Line Tool: install/status for the bundled `prowl`
+/// Settings → Agents → CLI & Skills: install/status for the bundled `prowl`
 /// CLI, the socket it reaches the app through, and the bundled agent skills
 /// (`AgentSkillsFeature`). Installation behavior stays in the reducers; this view
 /// only presents it.
