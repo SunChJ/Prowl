@@ -1161,6 +1161,24 @@
         }
       }
     },
+    "agentSignalWarning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "signal_unbound"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
     "agentSignalData": {
       "type": "object",
       "additionalProperties": false,
@@ -1194,6 +1212,7 @@
             "event",
             "source",
             "confidence",
+            "binding",
             "at"
           ],
           "properties": {
@@ -1227,6 +1246,12 @@
             "confidence": {
               "const": "exact"
             },
+            "binding": {
+              "enum": [
+                "current",
+                "unbound"
+              ]
+            },
             "at": {
               "type": "string",
               "format": "date-time"
@@ -1247,6 +1272,37 @@
               "maxLength": 256
             }
           }
+        },
+        "warnings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/agentSignalWarning"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "signal": {
+            "properties": {
+              "binding": {
+                "const": "unbound"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "warnings"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "warnings"
+          ]
         }
       }
     },

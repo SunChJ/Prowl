@@ -42,6 +42,10 @@ final class AgentWaitCommandHandler: CommandHandler {
     case cancelled
   }
 
+  /// A condition wait armed right after an agent was launched tolerates this much detector
+  /// latency before failing with `AGENT_NOT_FOUND`; `--timeout` still bounds the whole call.
+  nonisolated static let agentAppearanceGraceMilliseconds = 10_000
+
   private let observeDispatch: ObserveDispatch
   private let observeCondition: ObserveCondition
   private let resolveConditionTarget: @MainActor (String) -> Result<TabResolvedTarget, TargetResolverError>
@@ -322,8 +326,40 @@ final class AgentWaitCommandHandler: CommandHandler {
     }
   }
 
-  // This is the single cancellation-scoped state machine for freshness and stabilization.
-  // swiftlint:disable:next function_body_length
+  private struct ConditionBaseline {
+    let revision: UInt64
+    let changedSignal: AgentSignal?
+    /// Terminal evidence that already existed when the wait was armed; it satisfies `idle` or
+    /// `blocked` only with detector corroboration, so a stale level cannot end a fresh wait.
+    let terminalSignal: AgentSignal?
+    let state: String
+  }
+
+  private enum AgentAppearance {
+    case appeared(ConditionSnapshot, elapsedMilliseconds: Int)
+    case failed(CommandResponse)
+  }
+
+  /// Tracks how long a heuristic candidate state has been unchanged; `auto` accepts it only
+  /// after two seconds so a transient screen never resolves a wait.
+  private struct HeuristicStabilizer {
+    private var state: String?
+    private var sinceMilliseconds = 0
+
+    mutating func observe(candidate: String?, elapsedMilliseconds: Int) -> Bool {
+      guard let candidate else {
+        state = nil
+        return false
+      }
+      if state != candidate {
+        state = candidate
+        sinceMilliseconds = elapsedMilliseconds
+        return false
+      }
+      return elapsedMilliseconds - sinceMilliseconds >= 2_000
+    }
+  }
+
   private func waitForCondition(_ input: AgentWaitInput) async -> CommandResponse {
     guard let pane = input.pane, let condition = input.condition, input.dispatchID == nil else {
       return failure(code: CLIErrorCode.invalidArgument, message: "Condition wait requires a pane and condition.")
@@ -341,129 +377,187 @@ final class AgentWaitCommandHandler: CommandHandler {
       return failure(code: CLIErrorCode.targetNotFound, message: "The pane identifier is invalid.")
     }
 
-    let initial = conditionSnapshot(target)
-    if let initialFailure = await initialConditionFailure(
-      condition: condition,
-      target: target,
-      snapshot: initial,
-      includeScreenLines: input.includeScreenLines
-    ) {
-      return initialFailure
-    }
-    let baselineRevision = initial.revision
-    let baselineSignal = initial.changedSignal
-    let baselineState = normalizedState(initial)
-    var stableState: String?
-    var stableSinceMilliseconds = 0
-    var elapsedMilliseconds = 0
     let timeoutMilliseconds = input.timeoutSeconds * 1_000
+    var elapsedMilliseconds = 0
+    var initial = conditionSnapshot(target)
+    if !initial.isLive, condition != .exit {
+      return await conditionGoneFailure(
+        condition: condition,
+        waitedMilliseconds: 0,
+        target: target,
+        snapshot: initial,
+        includeScreenLines: input.includeScreenLines
+      )
+    }
+    if initial.agent == nil, condition != .exit {
+      switch await awaitAgentAppearance(
+        condition: condition,
+        target: target,
+        initial: initial,
+        graceMilliseconds: min(timeoutMilliseconds, Self.agentAppearanceGraceMilliseconds),
+        includeScreenLines: input.includeScreenLines
+      ) {
+      case .failed(let response):
+        return response
+      case .appeared(let snapshot, let waited):
+        initial = snapshot
+        elapsedMilliseconds = waited
+      }
+    }
+    let baseline = ConditionBaseline(
+      revision: initial.revision,
+      changedSignal: initial.changedSignal,
+      terminalSignal: initial.signal,
+      state: normalizedState(initial)
+    )
     let observationPump = AgentWaitObservationPump()
     observationPump.start(surfaceID: surfaceID, observe: observeCondition)
     defer { observationPump.cancel() }
 
     return await withTaskCancellationHandler {
-      while elapsedMilliseconds <= timeoutMilliseconds {
-        if Task.isCancelled {
-          return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
-        }
-        let snapshot = conditionSnapshot(target)
-        if !snapshot.isLive, condition != .exit {
-          return await conditionGoneFailure(
-            condition: condition,
-            waitedMilliseconds: elapsedMilliseconds,
-            target: target,
-            snapshot: snapshot,
-            includeScreenLines: input.includeScreenLines
-          )
-        }
-        if let observation = exactMatch(
-          condition: condition,
-          snapshot: snapshot,
-          baselineRevision: baselineRevision,
-          baselineSignal: baselineSignal,
-          minimumConfidence: input.minimumConfidence ?? .auto
-        ) {
-          return await conditionSuccess(
-            condition: condition,
-            waitedMilliseconds: elapsedMilliseconds,
-            target: target,
-            observation: observation,
-            signals: snapshot.signals,
-            includeScreenLines: input.includeScreenLines
-          )
-        }
-
-        let state = normalizedState(snapshot)
-        let heuristicEligible = allowsHeuristic(
-          input.minimumConfidence ?? .auto,
-          condition: condition,
-          signals: snapshot.signals
-        )
-        let heuristicCandidate =
-          heuristicEligible
-          && heuristicMatches(
-            condition: condition,
-            snapshot: snapshot,
-            normalizedState: state,
-            baselineState: baselineState,
-            baselineRevision: baselineRevision
-          )
-        if heuristicCandidate {
-          if stableState != state {
-            stableState = state
-            stableSinceMilliseconds = elapsedMilliseconds
-          } else if elapsedMilliseconds - stableSinceMilliseconds >= 2_000,
-            let observation = heuristicObservation(snapshot, state: state)
-          {
-            return await conditionSuccess(
-              condition: condition,
-              waitedMilliseconds: elapsedMilliseconds,
-              target: target,
-              observation: observation,
-              signals: snapshot.signals,
-              includeScreenLines: input.includeScreenLines
-            )
-          }
-        } else {
-          stableState = nil
-        }
-
-        guard elapsedMilliseconds < timeoutMilliseconds else { break }
-        do {
-          try await clock.sleep(for: .milliseconds(200))
-        } catch {
-          return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
-        }
-        elapsedMilliseconds += 200
-      }
-      let last = conditionSnapshot(target)
-      let details = AgentWaitErrorDetails.condition(
-        AgentConditionWaitErrorDetails(
-          condition: condition,
-          waitedMilliseconds: min(elapsedMilliseconds, timeoutMilliseconds),
-          target: TabTarget(from: target),
-          observation: heuristicObservation(last, state: normalizedState(last)),
-          signals: last.signals,
-          screen: await stableScreen(
-            requestedLines: input.includeScreenLines,
-            target: TabTarget(from: target)
-          )
-        ))
-      return failure(
-        code: CLIErrorCode.waitTimeout,
-        message: "Timed out waiting for the agent condition.",
-        details: details
+      await pollCondition(
+        input,
+        condition: condition,
+        target: target,
+        baseline: baseline,
+        elapsedMilliseconds: elapsedMilliseconds,
+        timeoutMilliseconds: timeoutMilliseconds
       )
     } onCancel: {
       observationPump.cancel()
     }
   }
 
+  // This is the single cancellation-scoped state machine for freshness and stabilization.
+  // swiftlint:disable:next function_parameter_count
+  private func pollCondition(
+    _ input: AgentWaitInput,
+    condition: AgentWaitCondition,
+    target: TabResolvedTarget,
+    baseline: ConditionBaseline,
+    elapsedMilliseconds startMilliseconds: Int,
+    timeoutMilliseconds: Int
+  ) async -> CommandResponse {
+    let minimumConfidence = input.minimumConfidence ?? .auto
+    var elapsedMilliseconds = startMilliseconds
+    var stabilizer = HeuristicStabilizer()
+    while elapsedMilliseconds <= timeoutMilliseconds {
+      if Task.isCancelled {
+        return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
+      }
+      let snapshot = conditionSnapshot(target)
+      if !snapshot.isLive, condition != .exit {
+        return await conditionGoneFailure(
+          condition: condition,
+          waitedMilliseconds: elapsedMilliseconds,
+          target: target,
+          snapshot: snapshot,
+          includeScreenLines: input.includeScreenLines
+        )
+      }
+      let state = normalizedState(snapshot)
+      var observation = exactMatch(
+        condition: condition,
+        snapshot: snapshot,
+        normalizedState: state,
+        baseline: baseline,
+        minimumConfidence: minimumConfidence
+      )
+      if observation == nil {
+        let candidate =
+          allowsHeuristic(minimumConfidence, condition: condition, signals: snapshot.signals)
+          && heuristicMatches(condition: condition, snapshot: snapshot, normalizedState: state, baseline: baseline)
+        if stabilizer.observe(candidate: candidate ? state : nil, elapsedMilliseconds: elapsedMilliseconds) {
+          observation = heuristicObservation(snapshot, state: state)
+        }
+      }
+      if let observation {
+        return await conditionSuccess(
+          condition: condition,
+          waitedMilliseconds: elapsedMilliseconds,
+          target: target,
+          observation: observation,
+          signals: snapshot.signals,
+          includeScreenLines: input.includeScreenLines
+        )
+      }
+
+      guard elapsedMilliseconds < timeoutMilliseconds else { break }
+      do {
+        try await clock.sleep(for: .milliseconds(200))
+      } catch {
+        return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
+      }
+      elapsedMilliseconds += 200
+    }
+    let last = conditionSnapshot(target)
+    let details = AgentWaitErrorDetails.condition(
+      AgentConditionWaitErrorDetails(
+        condition: condition,
+        waitedMilliseconds: min(elapsedMilliseconds, timeoutMilliseconds),
+        target: TabTarget(from: target),
+        observation: heuristicObservation(last, state: normalizedState(last)),
+        signals: last.signals,
+        screen: await stableScreen(
+          requestedLines: input.includeScreenLines,
+          target: TabTarget(from: target)
+        )
+      ))
+    return failure(
+      code: CLIErrorCode.waitTimeout,
+      message: "Timed out waiting for the agent condition.",
+      details: details
+    )
+  }
+
+  /// Polls until the detector publishes an agent for the pane, the surface closes, or the grace
+  /// budget is spent; the elapsed time counts toward the caller's `waited_ms`.
+  private func awaitAgentAppearance(
+    condition: AgentWaitCondition,
+    target: TabResolvedTarget,
+    initial: ConditionSnapshot,
+    graceMilliseconds: Int,
+    includeScreenLines: Int?
+  ) async -> AgentAppearance {
+    var snapshot = initial
+    var elapsedMilliseconds = 0
+    while snapshot.agent == nil {
+      guard elapsedMilliseconds < graceMilliseconds else {
+        return .failed(
+          await agentNotFoundFailure(
+            condition: condition,
+            waitedMilliseconds: elapsedMilliseconds,
+            target: target,
+            snapshot: snapshot,
+            includeScreenLines: includeScreenLines
+          ))
+      }
+      do {
+        try await clock.sleep(for: .milliseconds(200))
+      } catch {
+        return .failed(failure(code: CLIErrorCode.timeout, message: "The wait was cancelled."))
+      }
+      elapsedMilliseconds += 200
+      snapshot = conditionSnapshot(target)
+      if !snapshot.isLive {
+        return .failed(
+          await conditionGoneFailure(
+            condition: condition,
+            waitedMilliseconds: elapsedMilliseconds,
+            target: target,
+            snapshot: snapshot,
+            includeScreenLines: includeScreenLines
+          ))
+      }
+    }
+    return .appeared(snapshot, elapsedMilliseconds: elapsedMilliseconds)
+  }
+
   private func exactMatch(
     condition: AgentWaitCondition,
     snapshot: ConditionSnapshot,
-    baselineRevision: UInt64,
-    baselineSignal: AgentSignal?,
+    normalizedState: String,
+    baseline: ConditionBaseline,
     minimumConfidence: AgentWaitMinimumConfidence
   ) -> AgentWaitObservation? {
     let signal = condition == .changed ? snapshot.changedSignal : snapshot.signal
@@ -482,11 +576,15 @@ final class AgentWaitCommandHandler: CommandHandler {
       }
       return nil
     }
+    let isPreArmLevel = condition != .changed && signal == baseline.terminalSignal
     let matches =
       switch condition {
-      case .idle: signal.event == .turnEnded
-      case .blocked: signal.event == .needsInput
-      case .changed: snapshot.revision > baselineRevision && signal != baselineSignal
+      case .idle:
+        signal.event == .turnEnded && (!isPreArmLevel || detectorReports(.idle, normalizedState: normalizedState))
+      case .blocked:
+        signal.event == .needsInput
+          && (!isPreArmLevel || detectorReports(.blocked, normalizedState: normalizedState))
+      case .changed: snapshot.revision > baseline.revision && signal != baseline.changedSignal
       case .exit: signal.event == .sessionEnd
       }
     guard matches else { return nil }
@@ -500,6 +598,17 @@ final class AgentWaitCommandHandler: CommandHandler {
     )
   }
 
+  /// Whether the screen detector currently reports the requested `idle` or `blocked` condition.
+  private func detectorReports(_ condition: AgentWaitCondition, normalizedState: String) -> Bool {
+    switch condition {
+    case .idle:
+      normalizedState == AgentsCommandStatus.idle.rawValue || normalizedState == AgentsCommandStatus.done.rawValue
+    case .blocked:
+      normalizedState == AgentsCommandStatus.blocked.rawValue
+    case .changed, .exit:
+      false
+    }
+  }
   private func accepts(
     _ confidence: AgentSignal.Confidence,
     minimum: AgentWaitMinimumConfidence
@@ -539,18 +648,14 @@ final class AgentWaitCommandHandler: CommandHandler {
     condition: AgentWaitCondition,
     snapshot: ConditionSnapshot,
     normalizedState: String,
-    baselineState: String,
-    baselineRevision: UInt64
+    baseline: ConditionBaseline
   ) -> Bool {
     switch condition {
-    case .idle:
-      normalizedState == AgentsCommandStatus.idle.rawValue || normalizedState == AgentsCommandStatus.done.rawValue
-    case .blocked: normalizedState == AgentsCommandStatus.blocked.rawValue
-    case .changed: snapshot.revision > baselineRevision && normalizedState != baselineState
+    case .idle, .blocked: detectorReports(condition, normalizedState: normalizedState)
+    case .changed: snapshot.revision > baseline.revision && normalizedState != baseline.state
     case .exit: !snapshot.isLive || snapshot.agent == nil
     }
   }
-
   private func normalizedState(_ snapshot: ConditionSnapshot) -> String {
     guard snapshot.isLive else { return "gone" }
     return snapshot.agent.map { status(for: $0, fallback: .idle).rawValue } ?? "absent"
@@ -571,30 +676,27 @@ final class AgentWaitCommandHandler: CommandHandler {
     )
   }
 
-  private func initialConditionFailure(
+  private func agentNotFoundFailure(
     condition: AgentWaitCondition,
+    waitedMilliseconds: Int,
     target: TabResolvedTarget,
     snapshot: ConditionSnapshot,
     includeScreenLines: Int?
-  ) async -> CommandResponse? {
-    if !snapshot.isLive, condition != .exit {
-      return await conditionGoneFailure(
-        condition: condition,
-        waitedMilliseconds: 0,
-        target: target,
-        snapshot: snapshot,
-        includeScreenLines: includeScreenLines
-      )
-    }
-    guard snapshot.agent != nil || condition == .exit else {
-      return failure(
-        code: CLIErrorCode.agentNotFound,
-        message: "No detected agent is active in the selected pane."
-      )
-    }
-    return nil
+  ) async -> CommandResponse {
+    let payloadTarget = TabTarget(from: target)
+    return failure(
+      code: CLIErrorCode.agentNotFound,
+      message: "No detected agent became active in the selected pane.",
+      details: .condition(
+        AgentConditionWaitErrorDetails(
+          condition: condition,
+          waitedMilliseconds: waitedMilliseconds,
+          target: payloadTarget,
+          signals: snapshot.signals,
+          screen: await stableScreen(requestedLines: includeScreenLines, target: payloadTarget)
+        ))
+    )
   }
-
   private func conditionGoneFailure(
     condition: AgentWaitCondition,
     waitedMilliseconds: Int,

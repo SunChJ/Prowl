@@ -216,11 +216,12 @@ prowl agents read "$pane" --max-bytes 2097152 --json
 prowl agents read p7 --result-only > /tmp/agent-result.txt
 ```
 
-JSON is `prowl.cli.agents.read.v1`. `.data.result.state` is independent from live
-agent state: `complete` includes trusted `text`; `pending` means a working/blocked
-agent has not completed a turn; `unavailable`, `missing`, `incomplete`, and
-`too_large` retain a successful live snapshot but include a reason under
-`.data.result.error`. Prowl reads a transcript only after a fresh `exact` or `high`
+JSON is `prowl.cli.agents.read.v1`. `.data.result.state` follows the live agent state:
+`pending` whenever the agent is working or blocked — even if an earlier turn produced a
+complete answer, so a read right after re-prompting a pane never returns the previous turn's
+text; `complete` includes trusted `text` and appears only for an idle/done agent;
+`unavailable`, `missing`, `incomplete`, and `too_large` retain a successful live snapshot but
+include a reason under `.data.result.error`. Prowl reads a transcript only after a fresh `exact` or `high`
 session resolution — never a `medium` candidate — and never returns partial text.
 
 `--max-bytes` defaults to 1 MiB and accepts up to 4 MiB. `--result-only` is mutually
@@ -252,6 +253,17 @@ tmux/detached ancestry, and already-closed panes fail with `SOURCE_REQUIRED` or
 means explicit channel and caller-pane attribution, not verified business completion.
 Claimed origin never upgrades trust. JSON uses `prowl.cli.agents.signal.v1`.
 
+The receipt also reports whether the signal bound to the pane's current agent.
+`.data.signal.binding` is `current` when the caller descends from the detected agent's launch
+process (and names no other session than the one Prowl knows), or `unbound` otherwise — a
+plain shell pane with no detected agent, or a runtime whose process the detector has not
+resolved yet. Only a `current` signal becomes wait or dispatch evidence; an `unbound` one is
+kept as diagnostics under `signals.last`, the command still exits zero, and `.data.warnings[]`
+carries one `signal_unbound` item (text mode prints it once on stderr). Waits read the latest
+terminal signal rather than a queue: a `needs-input` followed within one 200 ms poll by
+`turn-ended` leaves only the `turn-ended` visible, so report distinct events from distinct
+turns rather than back to back.
+
 Prowl's bundled CLI has a hidden, silent native-hook ingress for managed Claude Code, Codex,
 Copilot, Droid, Qoder, Pi, Oh My Pi, and OpenCode Profile launches. It is not a user command
 and does not appear in help/completion. Only an app-issued in-memory token plus exact caller
@@ -275,10 +287,11 @@ prowl agents dispatch-complete --outcome failed --summary "Blocked by an invalid
 ```
 
 The required summary must be one non-empty line with no control characters and at most 32 KiB
-of UTF-8. The command accepts no public dispatch id. Prowl reads the launch-scoped environment
-value and independently verifies the socket caller's process ancestry against the immutable launch
-pane. Repeating identical completion is safe; a conflicting retry is rejected. Unprompted
-Profile launches remain interactive and do not create a dispatch.
+of UTF-8. The command accepts no public dispatch id; outside a prompted launch it fails with
+`DISPATCH_CONTEXT_REQUIRED`. Prowl reads the launch-scoped environment value and independently
+verifies the socket caller's process ancestry against the immutable launch pane. Repeating
+identical completion is safe; a conflicting retry is rejected. Unprompted Profile launches
+remain interactive and do not create a dispatch.
 
 The coordinator waits by exact id:
 
@@ -299,6 +312,11 @@ to 256 records. A coordinator can explicitly stop tracking one without stopping 
 prowl agents dispatch-abandon --dispatch "$dispatch_id" --reason "Superseded assignment"
 ```
 
+Abandoning a record that already completed, was abandoned, or is gone fails with
+`DISPATCH_ALREADY_TERMINAL`. A closed worker pane turns its pending record into `gone` a
+moment after the close, so a wait issued in that same instant may still report
+`DISPATCH_INCOMPLETE`; re-run it.
+
 For state observation rather than task proof, wait on a pane condition:
 
 ```bash
@@ -307,13 +325,22 @@ prowl agents wait "$pane" --until idle --include-screen 40 --json
 ```
 
 Conditions are `idle`, `blocked`, `changed`, and `exit`. Results include their evidence
-`source` and `confidence`; `auto` may fall back to a heuristic result only after the pane has
-remained unchanged for two seconds. `--include-screen` samples the detection buffer until it
-is stable for 800 ms (or the two-second cap), then returns the requested trailing lines on
-both success and structured timeout/error details.
+`source` and `confidence`; `observation.status` and `raw_state` always describe what the
+screen detector saw at that moment, so a `turn-ended` signal can satisfy `idle` while `status`
+still reads `working`. Condition waits observe state, not edges: a signal that already existed
+when the wait was armed satisfies `idle` or `blocked` only if the detector agrees (idle/done,
+or blocked), while a signal arriving after arming counts on its own. To wait for the *next*
+turn edge rather than the current state, use `--until changed`, which needs a post-baseline
+revision or a newer signal — under `auto` with a `verified_live` channel it returns at the next
+runtime signal, not at a screen change. `auto` may fall back to a heuristic result only after
+the pane has remained unchanged for two seconds. When the pane hosts no detected agent yet
+(typically right after launching one), the wait keeps polling for up to ten seconds, bounded
+by `--timeout`, before failing with `AGENT_NOT_FOUND`. `--include-screen` samples the
+detection buffer until it is stable for 800 ms (or the two-second cap), then returns the
+requested trailing lines on both success and structured timeout/error details.
 Strict dispatch waits never accept a visual or idle-state substitute. Closing or killing the
-waiting CLI cancels its server-side subscription promptly. `workflow done` remains the only
-workflow-step completion command.
+waiting CLI cancels its server-side subscription promptly. `turn-ended` is a runtime turn
+edge; only a `dispatch-complete` receipt proves that an assigned task finished.
 
 ### `prowl profiles list`
 
@@ -671,7 +698,11 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `TARGET_NOT_UNIQUE` | Selector matched several — be more specific (use `--pane`). |
 | `PROFILE_NOT_FOUND` | No enabled Profile matches the UUID or exact name — re-run `profiles list`; disabled Profiles cannot launch. |
 | `PROFILE_NOT_UNIQUE` | Several enabled Profiles have the exact name — use the Profile UUID from `profiles list`. |
-| `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code. Re-run `agents`. |
+| `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code; `agents wait <pane> --until …` saw no detected agent within its ten-second appearance grace. Re-run `agents`. |
+| `DISPATCH_NOT_FOUND` | No dispatch record matches `--dispatch`; records are memory-only and reset on app restart. |
+| `DISPATCH_CONTEXT_REQUIRED` | `dispatch-complete` ran outside a prompted Profile launch (no launch-scoped `PROWL_DISPATCH_ID`). |
+| `DISPATCH_ALREADY_TERMINAL` | `dispatch-abandon` targeted a record that already completed, was abandoned, or is gone. |
+| `DISPATCH_FAILED` / `DISPATCH_ABANDONED` / `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE` | `agents wait --dispatch` structured outcomes; `.error.details` retains the record, target, and evidence (see **Dispatch completion and waiting**). |
 | `SOURCE_REQUIRED` | A caller-owned command such as `agents signal` or selector-free `handoff` could not map the socket peer ancestry to a Prowl pane. Run it inside the source pane without tmux/detached wrappers, or use an explicit selector where that command permits one. |
 | `AGENT_GONE` | The meaning is mode-specific: a signal caller disappeared, a dispatch worker became terminal, or a generic condition target closed. Inspect `.error.details.mode`; dispatch details retain a record, while condition details retain the requested condition and exact surface observation. |
 | `BLOCKER_UNREADABLE` | A blocked screen was detected but Prowl could not safely extract its current interaction text. Re-run `agents read` or inspect with `read`. |
@@ -685,7 +716,7 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `EMPTY_INPUT` | `send` got neither argv nor stdin (or both). |
 | `INVALID_ARGUMENT` | Bad flag/combo (e.g. `--capture --no-wait`) or out-of-range value. |
 | `CAPTURE_UNSUPPORTED` | Target lacks OSC 133 — drop `--capture`, use `read --wait-stable`. |
-| `WAIT_TIMEOUT` | Command didn't finish in time — raise `--timeout` or use `--no-wait`. |
+| `WAIT_TIMEOUT` | `send` did not finish, or `agents wait` saw no matching evidence, before `--timeout`; wait details retain the last observation and signals. Raise `--timeout`, use `--no-wait` (send), or re-arm the wait. |
 | `UNSUPPORTED_KEY` / `INVALID_REPEAT` | Check `prowl key --help`. |
 | `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path, or the `skills --scope project` start point (`--path` and the current directory must lie inside a Git repository). |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
@@ -724,7 +755,15 @@ fi
   a supported agent's status, blocker, and trustworthy result state; use `prowl list --json`
   when you need all panes, including ordinary shells.
 - Use `prowl agents signal` only from the pane reporting the event; it never targets focus
-  or another pane and never substitutes for `workflow done`.
+  or another pane, and `turn-ended` never substitutes for a `dispatch-complete` receipt. Check
+  `.data.signal.binding`: an `unbound` signal is diagnostics only.
+- After launching an agent by hand (`send 'claude'`), wait until `prowl agents --json` lists
+  the pane before arming waits or sending prompts: a wait tolerates ten seconds of detector
+  latency, and text typed into a runtime that is still starting can merge with the next message.
+- `--until idle|blocked` report the current state (a pre-existing signal needs the detector to
+  agree); use `--until changed` to wait for the next turn edge.
+- `agents read` returns `pending` while the agent works or is blocked, even if a previous turn
+  completed.
 - `--capture` needs shell integration; otherwise `read --wait-stable` or file
   redirection.
 - `open` is navigation, not a guaranteed new pane — use `create tab` or `create pane`.

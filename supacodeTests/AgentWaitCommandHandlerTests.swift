@@ -463,6 +463,261 @@ struct AgentWaitCommandHandlerTests {
     _ = await task.value
   }
 
+  @Test func preArmNeedsInputNeedsBlockedDetectorBeforeSatisfyingBlocked() async {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let working = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .working)
+    let staleNeedsInput = signal(.needsInput, at: Self.start)
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: working, signal: staleNeedsInput, revision: 3, isLive: true, signals: .empty)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .blocked, timeout: 1, minimumConfidence: .exact))
+    }
+
+    for _ in 0..<6 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
+  }
+
+  @Test func preArmNeedsInputSatisfiesBlockedWhenDetectorAgrees() async throws {
+    let target = resolvedTarget()
+    let blocked = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .blocked)
+    let needsInput = signal(.needsInput, at: Self.start)
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: blocked, signal: needsInput, revision: 3, isLive: true, signals: .empty)
+      }
+    )
+    let response = await handler.handle(
+      envelope: conditionWait(target, .blocked, timeout: 1, minimumConfidence: .exact)
+    )
+    #expect(response.ok)
+    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
+    guard case .condition(let condition) = payload else {
+      Issue.record("Expected condition payload")
+      return
+    }
+    #expect(condition.observation.source == "cooperative_cli")
+    #expect(condition.observation.status == .blocked)
+  }
+
+  @Test func needsInputArrivingAfterArmSatisfiesBlockedWithoutDetectorCorroboration() async throws {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let working = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .working)
+    let preArm = signal(.turnEnded, at: Self.start)
+    let fresh = signal(.needsInput, at: Self.start.addingTimeInterval(5))
+    var snapshotReads = 0
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        snapshotReads += 1
+        return .init(
+          agent: working,
+          signal: snapshotReads > 3 ? fresh : preArm,
+          revision: snapshotReads > 3 ? 4 : 3,
+          isLive: true,
+          signals: .empty
+        )
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .blocked, timeout: 5, minimumConfidence: .exact))
+    }
+
+    for _ in 0..<4 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.ok)
+    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
+    guard case .condition(let condition) = payload else {
+      Issue.record("Expected condition payload")
+      return
+    }
+    #expect(condition.observation.source == "cooperative_cli")
+    #expect(condition.observation.status == .working)
+    #expect(condition.waitedMilliseconds == 400)
+  }
+
+  @Test func preArmTurnEndedNeedsIdleDetectorBeforeSatisfyingIdle() async {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let working = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .working)
+    let staleTurnEnded = signal(.turnEnded, at: Self.start)
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: working, signal: staleTurnEnded, revision: 3, isLive: true, signals: .empty)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .idle, timeout: 1, minimumConfidence: .exact))
+    }
+
+    for _ in 0..<6 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
+  }
+
+  @Test func agentAppearingWithinGraceStartsTheConditionWait() async throws {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let idle = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .idle)
+    let turnEnded = signal(.turnEnded, at: Self.start.addingTimeInterval(1))
+    var snapshotReads = 0
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        snapshotReads += 1
+        let appeared = snapshotReads > 3
+        return .init(
+          agent: appeared ? idle : nil,
+          signal: appeared ? turnEnded : nil,
+          revision: appeared ? 1 : 0,
+          isLive: true,
+          signals: .empty
+        )
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .idle, timeout: 60, minimumConfidence: .exact))
+    }
+
+    for _ in 0..<4 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.ok)
+    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
+    guard case .condition(let condition) = payload else {
+      Issue.record("Expected condition payload")
+      return
+    }
+    #expect(condition.observation.source == "cooperative_cli")
+    #expect(condition.waitedMilliseconds == 600)
+  }
+
+  @Test func agentNeverAppearingFailsWithAgentNotFoundAfterGrace() async throws {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: nil, signal: nil, revision: 0, isLive: true, signals: .empty)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .blocked, timeout: 600))
+    }
+
+    let graceTicks = AgentWaitCommandHandler.agentAppearanceGraceMilliseconds / 200
+    for _ in 0..<graceTicks {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.agentNotFound)
+    let details = try #require(response.error?.details).decode(as: AgentWaitErrorDetails.self)
+    guard case .condition(let condition) = details else {
+      Issue.record("Expected condition error details")
+      return
+    }
+    #expect(condition.waitedMilliseconds == AgentWaitCommandHandler.agentAppearanceGraceMilliseconds)
+    #expect(condition.target?.pane.id == target.paneID)
+  }
+
+  @Test func shortTimeoutBoundsTheAgentAppearanceGrace() async throws {
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: nil, signal: nil, revision: 0, isLive: true, signals: .empty)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .idle, timeout: 1))
+    }
+
+    for _ in 0..<5 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.agentNotFound)
+    let details = try #require(response.error?.details).decode(as: AgentWaitErrorDetails.self)
+    guard case .condition(let condition) = details else {
+      Issue.record("Expected condition error details")
+      return
+    }
+    #expect(condition.waitedMilliseconds == 1_000)
+  }
+
+  private func conditionWait(
+    _ target: TabResolvedTarget,
+    _ condition: AgentWaitCondition,
+    timeout: Int,
+    minimumConfidence: AgentWaitMinimumConfidence? = nil
+  ) -> CommandEnvelope {
+    CommandEnvelope(
+      output: .json,
+      command: .agentsWait(
+        AgentWaitInput(
+          mode: .condition,
+          pane: target.paneID,
+          condition: condition,
+          timeoutSeconds: timeout,
+          minimumConfidence: minimumConfidence
+        )
+      )
+    )
+  }
+
+  private func signal(_ event: AgentSignal.Kind, at timestamp: Date) -> AgentSignal {
+    AgentSignal(
+      kind: event,
+      source: .cooperativeCLI,
+      confidence: .exact,
+      timestamp: timestamp,
+      sessionID: nil,
+      detail: nil,
+      claimedOrigin: nil
+    )
+  }
+
   private static let start = Date(timeIntervalSince1970: 1_000)
 
   private func handler(dispatchSnapshot: AgentDispatchSnapshot) -> AgentWaitCommandHandler {
@@ -535,9 +790,17 @@ struct AgentWaitCommandHandlerTests {
       paneIndex: 0,
       iconLookupToken: "codex",
       agent: .codex,
-      rawState: status == .idle ? .idle : .working,
+      rawState: Self.rawState(for: status),
       displayState: status,
       lastChangedAt: Self.start
     )
+  }
+
+  private static func rawState(for status: AgentDisplayState) -> AgentRawState {
+    switch status {
+    case .working: .working
+    case .blocked: .blocked
+    case .idle, .done: .idle
+    }
   }
 }

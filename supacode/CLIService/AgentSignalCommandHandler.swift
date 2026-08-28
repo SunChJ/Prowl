@@ -1,9 +1,15 @@
 import Foundation
 
+/// What the app did with a cooperative signal from a live caller pane.
+nonisolated enum AgentSignalRecordOutcome: Equatable, Sendable {
+  case recorded(binding: AgentSignalBinding)
+  case paneGone
+}
+
 @MainActor
 final class AgentSignalCommandHandler: CommandHandler {
   typealias ResolveCaller = @MainActor (pid_t) -> CallerPane?
-  typealias RecordSignal = @MainActor (CallerPane, AgentSignal) -> Bool
+  typealias RecordSignal = @MainActor (CallerPane, AgentSignal) -> AgentSignalRecordOutcome
 
   private let resolveCaller: ResolveCaller
   private let recordSignal: RecordSignal
@@ -56,13 +62,34 @@ final class AgentSignalCommandHandler: CommandHandler {
       detail: input.detail,
       claimedOrigin: input.origin
     )
-    guard recordSignal(caller, signal) else {
+    let binding: AgentSignalBinding
+    switch recordSignal(caller, signal) {
+    case .recorded(let recordedBinding):
+      // Receipts report the binding decided at attribution time, which is never `stale`;
+      // collapse defensively so the wire contract stays `current` | `unbound`.
+      binding = recordedBinding == .current ? .current : .unbound
+    case .paneGone:
       return failure(
         code: CLIErrorCode.agentGone,
         message: "The caller pane closed before its agent signal could be recorded."
       )
     }
 
+    let warnings: [AgentSignalWarning] =
+      switch binding {
+      case .current:
+        []
+      case .unbound, .stale:
+        [
+          AgentSignalWarning(
+            code: .signalUnbound,
+            message:
+              "The signal was attributed to the pane but not to its current agent, so it is recorded "
+              + "as diagnostics only and will not satisfy waits or dispatches. Run it from a process "
+              + "descending from the pane's agent, or pass --session with the agent's current session id."
+          )
+        ]
+      }
     let payload = AgentSignalCommandPayload(
       pane: AgentSignalPanePayload(
         id: caller.surfaceID.uuidString,
@@ -73,11 +100,13 @@ final class AgentSignalCommandHandler: CommandHandler {
         progress: input.progress,
         source: "cooperative_cli",
         confidence: signal.confidence.rawValue,
+        binding: binding,
         timestamp: dateFormatter.string(from: signal.timestamp),
         sessionID: signal.sessionID,
         detail: signal.detail,
         claimedOrigin: signal.claimedOrigin
-      )
+      ),
+      warnings: warnings
     )
     do {
       return try CommandResponse(

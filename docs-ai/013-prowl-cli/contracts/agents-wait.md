@@ -33,7 +33,8 @@ prowl agents dispatch-abandon --dispatch <id> --reason <text> [--json]
 ```
 
 Abandonment terminalizes only the coordinator's retained record. It does not stop, close,
-succeed, or fail the worker. An identical retry is replayed; later completion is rejected.
+succeed, or fail the worker. A retry against an already terminal record (completed, abandoned,
+or gone) fails with `DISPATCH_ALREADY_TERMINAL`; later completion is rejected.
 Pending records never expire or evict automatically. The in-memory app-lifetime store holds
 at most 256 records and evicts the oldest terminal record first; if all 256 are pending, a new
 prompted launch fails before creating a surface.
@@ -71,6 +72,18 @@ Exact/high current-epoch cooperative evidence wins. `auto` may fall back to a he
 idle/blocked match only after the observed state and revision remain unchanged for two seconds.
 Higher minimum-confidence settings reject weaker
 evidence rather than relabelling it.
+
+`idle` and `blocked` are state observations, not edge detectors. The active terminal signal
+present when the wait was armed satisfies the condition only when the screen detector
+corroborates it (`idle`/`done` for `idle`, `blocked` for `blocked`); a signal that arrives
+after arming satisfies it on its own. `changed` is the edge wait. The reported
+`observation.status`/`raw_state` are the detector's view at match time; `source` and
+`confidence` describe the evidence that matched.
+
+A pane with no detected agent is not an immediate failure: the wait polls for up to
+`agentAppearanceGraceMilliseconds` (10 s), bounded by `--timeout`, and only then fails with
+`AGENT_NOT_FOUND` carrying condition-mode details (`waited_ms`, `target`, `signals`, optional
+`screen`). Once an agent has been seen, its later disappearance does not end the wait.
 
 Evidence is bound to PID plus process start time and, when known at exact/high confidence,
 the current session id. A dispatch launch accepts its first detected process generation only

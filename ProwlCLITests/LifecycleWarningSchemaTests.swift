@@ -14,7 +14,7 @@ final class LifecycleWarningSchemaTests: XCTestCase {
   }
 
   func testAgentSignalSchemaAcceptsManagedHookSourcesWithoutTokenField() throws {
-    let response = #"{"ok":true,"command":"agents.signal","schema_version":"prowl.cli.agents.signal.v1","data":{"pane":{"id":"D2719F02-5F27-4D46-A62F-0FAF49410D4D","worktree_id":"wt"},"signal":{"event":"turn-ended","source":"hook_codex","confidence":"exact","at":"2026-08-24T00:00:00.000Z","session_id":"thread-1"}}}"#
+    let response = #"{"ok":true,"command":"agents.signal","schema_version":"prowl.cli.agents.signal.v1","data":{"pane":{"id":"D2719F02-5F27-4D46-A62F-0FAF49410D4D","worktree_id":"wt"},"signal":{"event":"turn-ended","source":"hook_codex","confidence":"exact","binding":"current","at":"2026-08-24T00:00:00.000Z","session_id":"thread-1"}}}"#
     try assertValidity(response, expected: true)
     XCTAssertFalse(response.contains("token"))
   }

@@ -245,6 +245,12 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-28: follow-up on CLI evidence semantics after exercising the `prowl-cli` skill
+  end to end — `agents read` reports `pending` during a live turn, condition waits require
+  detector corroboration for arm-time terminal signals and tolerate 10 s of agent-appearance
+  latency, `agents signal` exposes `binding` plus a `signal_unbound` warning, and the docs stop
+  naming the unshipped `workflow done`. See
+  [012-cli-evidence-semantics.md](012-cli-evidence-semantics.md).
 - Updated 2026-08-27: S3c merged (#728), completing S3 wave 1 across
   #721/#723/#725/#728. S4 and S5 remain planned.
 - Updated 2026-08-26: S3b merged (#725); planned S3c for Pi, Oh My Pi, and OpenCode after a

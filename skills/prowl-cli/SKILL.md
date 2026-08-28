@@ -75,7 +75,7 @@ prowl agents signal turn-ended --detail "Review complete" --json
 prowl agents signal needs-input --session session-1 --json
 ```
 
-The app attributes the socket peer PID through process ancestry. `turn-ended` means a runtime turn edge, not task/workflow completion; only `workflow done` completes a workflow step. Public `--origin` is claimed metadata and never upgrades trust.
+The app attributes the socket peer PID through process ancestry. `turn-ended` means a runtime turn edge, not task completion; only an `agents dispatch-complete` receipt proves an assigned task finished. Public `--origin` is claimed metadata and never upgrades trust. Check `.data.signal.binding` on the receipt: `current` means the signal is wait/dispatch evidence; `unbound` (with a `signal_unbound` entry in `.data.warnings[]`) means it was only recorded as diagnostics — the pane has no detected agent yet, the caller is outside that agent's process tree, or `--session` names a different session than the one Prowl knows. Report distinct events from distinct turns: waits see the latest terminal signal, so `needs-input` followed within 200 ms by `turn-ended` leaves only the `turn-ended`.
 
 ## Common Recipes
 
@@ -159,10 +159,10 @@ Key fields by command:
 
 - `list` → `.data.items[]` with `.worktree.{id,name,path,root_path,kind}`, `.tab.{id,title,selected}`, `.pane.{id,title,cwd,focused,agent}`, `.task.status` (`running`|`idle`|null).
 - `agents` → `.data.agents[]` with `.status`, `.raw_state`, `.detection_reason`, `.type`, `.name`, `.pane.{id,focused,cwd}`, `.tab`, `.worktree`, `.project.{name,branch,path}`.
-- `agents read` → `.data.agent`, `.data.blocker.text`, `.data.result.{state,text}` — `pending`, `unavailable`, `missing`, `incomplete`, `too_large` carry no partial text.
-- `agents signal` → `.data.pane.{id,worktree_id}`, `.data.signal.{event,source,confidence,at,session_id,detail,claimed_origin}`; optional fields are omitted.
+- `agents read` → `.data.agent`, `.data.blocker.text`, `.data.result.{state,text}` — `pending`, `unavailable`, `missing`, `incomplete`, `too_large` carry no partial text; `pending` is returned whenever the agent is working or blocked, even if an earlier turn completed.
+- `agents signal` → `.data.pane.{id,worktree_id}`, `.data.signal.{event,source,confidence,binding,at,session_id,detail,claimed_origin}`, optional `.data.warnings[]` (`code=signal_unbound`); optional fields are omitted.
 - `agents wait --dispatch` → `.data.receipt`, immutable `.data.target`, `.data.signals`, optional `.data.screen`; nonzero results retain the record and evidence under `.error.details`.
-- `agents wait <pane> --until …` → `.data.observation.{status,raw_state,source,confidence,at,revision}`, `.data.signals`, and optional `.data.screen`.
+- `agents wait <pane> --until …` → `.data.observation.{status,raw_state,source,confidence,at,revision}`, `.data.signals`, and optional `.data.screen`. `source`/`confidence` are the evidence that satisfied the condition; `status`/`raw_state` are what the screen detector saw at that moment, so `idle` satisfied by a `turn-ended` signal may still show `status: working`.
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode`, `.data.source`; `.data.stabilized` / `.data.waited_ms` with `--wait-stable`.
 - `send` → `.data.input`, `.data.wait.{exit_code,duration_ms}` when waiting, `.data.capture.{text,line_count,truncated}` with `--capture`.
 - `create tab` / `open` → `.data.target.{pane,tab,worktree}`; `create pane` → `.data.anchor`, `.data.direction`, `.data.target`; Profile launches also include `.data.launch.{profile_id,profile_name,agent}`, prompted launches require `.data.dispatch.{id,state,created_at}`, and a safe managed-signal fallback may add `.data.warnings[]` with `code=managed_hook_degraded`.
@@ -172,19 +172,22 @@ Terminal text is `.data.text` (read) and `.data.capture.text` (send) — never `
 
 ## Reading Agent Output
 
-- For Codex/Claude Code, `prowl agents read` beats scraping: check `.data.agent.status`, inspect `.data.blocker.text` before answering a prompt with `send`/`key` (read and write are not atomic), and only trust `.data.result.text` when `state == "complete"`. `--result-only` prints the raw trusted result and fails otherwise; it cannot combine with `--json`.
+- For Codex/Claude Code, `prowl agents read` beats scraping: check `.data.agent.status`, inspect `.data.blocker.text` before answering a prompt with `send`/`key` (read and write are not atomic), and only trust `.data.result.text` when `state == "complete"`. The result belongs to the latest completed turn and is `pending` while the agent works or is blocked, so after re-prompting a pane wait for `--until changed` or idle before reading it. `--result-only` prints the raw trusted result and fails otherwise; it cannot combine with `--json`.
 - Prowl-launched Claude Code, Codex, Copilot, Droid, Qoder, Pi, Oh My Pi, and OpenCode
   Profiles may expose `verified_live` channels with `source=hook_<runtime>`; manually typing
   those runtimes does not. A managed hook
   `turn-ended` proves only a runtime turn edge, never assigned-task completion. If Profile
   creation returns `managed_hook_degraded`, keep the successful pane but expect honest
   heuristic/cooperative fallback for that session.
+- After launching an agent by hand (`prowl send --pane "$pane" 'claude' --no-wait`), wait until `prowl agents --json` lists that pane before arming waits or sending the first prompt: a condition wait tolerates ten seconds of detector latency and then fails with `AGENT_NOT_FOUND`, and text typed into a runtime that is still starting can merge with the next message.
 - For an unpaired or manually launched agent, use one condition wait instead of a polling loop:
 
 ```bash
 result="$(prowl agents wait "$pane" --until idle --include-screen 40 --timeout 600 --json)"
 printf '%s\n' "$result" | jq '.data.observation, .data.screen'
 ```
+
+  `--until idle|blocked` observe the current state: a signal that already existed when the wait was armed counts only if the screen detector agrees, a signal arriving afterwards counts on its own, and an already-idle agent with such a signal returns immediately. Detection-only evidence (no hook or cooperative signal, the usual case for a manually launched agent) resolves only after the state has stayed unchanged for two seconds, so give those waits a `--timeout` of at least a few seconds. To wait for the *next* turn edge (for example after `send`ing a new prompt), use `--until changed`; with a `verified_live` hook channel it returns at the next runtime signal, not at a screen change.
 
   Exact/high evidence can establish the requested observable condition. If
   `jq -e '.data.observation.confidence == "heuristic"'` matches, inspect the included stable
@@ -228,6 +231,7 @@ printf '%s\n' "$result" | jq '.data.observation, .data.screen'
 - `EMPTY_INPUT`, `INVALID_ARGUMENT`, `UNSUPPORTED_KEY`, `INVALID_REPEAT`: fix the arguments (`prowl <cmd> --help`).
 - `CAPTURE_UNSUPPORTED`: drop `--capture` and use `read --wait-stable` or file redirection.
 - `WAIT_TIMEOUT`: inspect `.error.details`, then re-arm the wait if the task remains active.
+- `AGENT_NOT_FOUND` (`agents wait`): no detected agent appeared in the pane within ten seconds — confirm the pane with `prowl agents --json` before re-arming. `DISPATCH_NOT_FOUND`: no such dispatch record (records reset on app restart). `DISPATCH_CONTEXT_REQUIRED`: `dispatch-complete` ran outside a prompted Profile launch. `DISPATCH_ALREADY_TERMINAL`: `dispatch-abandon` hit a record that already completed, was abandoned, or is gone.
 - `DISPATCH_FAILED` / `DISPATCH_ABANDONED`: the exact dispatch is terminal; inspect its retained record and immutable target in `.error.details`.
 - `AGENT_GONE`: inspect `.error.details.mode`. `dispatch` means the exact worker is terminal and retains a record; `condition` means the target pane closed. Without details on `agents signal`, the caller pane disappeared before recording.
 - `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE`: the dispatch remains pending; use the intervention sequencing in **Reading Agent Output** before waiting again.

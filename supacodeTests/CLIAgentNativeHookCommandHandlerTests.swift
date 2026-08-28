@@ -29,6 +29,8 @@ struct CLIAgentNativeHookCommandHandlerTests {
     let payload = try #require(try response.data?.decode(as: AgentSignalCommandPayload.self))
     #expect(payload.signal.source == "hook_claude")
     #expect(payload.signal.confidence == "exact")
+    #expect(payload.signal.binding == .current)
+    #expect(payload.warnings == nil)
     let encoded = try JSONEncoder().encode(response)
     let encodedText = try #require(String(bytes: encoded, encoding: .utf8))
     #expect(!encodedText.contains(input.token))

@@ -77,8 +77,8 @@ present only when the transcript result used an eligible session; it contains `i
 | `state` | `text` | Meaning |
 | --- | --- | --- |
 | `complete` | required | A final answer from a complete, attributable native transcript turn. |
-| `pending` | absent | The agent is working or blocked and has no earlier completed turn. |
-| `unavailable` | absent | No exact/high transcript session is available. |
+| `pending` | absent | The agent is working or blocked; the transcript is not consulted, so an earlier completed turn is never surfaced as the current result. |
+| `unavailable` | absent | Idle/done agent without an exact/high transcript session. |
 | `missing` | absent | Idle/done agent has no completed final answer in its trusted transcript. |
 | `incomplete` | absent | The candidate turn is max-token-limited, malformed, unsupported, or not closed. |
 | `too_large` | absent | A complete answer exceeds the requested `max_bytes`. |

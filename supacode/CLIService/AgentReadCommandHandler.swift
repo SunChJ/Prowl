@@ -91,6 +91,15 @@ final class AgentReadCommandHandler: CommandHandler {
   }
 
   private func makeResult(from snapshot: AgentReadRuntimeSnapshot, maxBytes: Int) async -> AgentReadResult {
+    // A live turn owns the result slot: the transcript's last complete answer belongs to an
+    // earlier turn and must not be mistaken for this one, and an unresolved session is not
+    // yet a defect while the agent is still working.
+    switch snapshot.status {
+    case .working, .blocked:
+      return AgentReadResult(state: .pending)
+    case .idle, .done:
+      break
+    }
     guard let session = snapshot.transcriptSession, let path = session.transcriptPath else {
       return failedResult(.unavailable)
     }
@@ -101,12 +110,7 @@ final class AgentReadCommandHandler: CommandHandler {
       guard let text = transcript.text else { return failedResult(.incomplete) }
       return AgentReadResult(state: .complete, text: text)
     case .missing:
-      switch snapshot.status {
-      case .working, .blocked:
-        return AgentReadResult(state: .pending)
-      case .idle, .done:
-        return failedResult(.missing)
-      }
+      return failedResult(.missing)
     case .incomplete:
       return failedResult(.incomplete)
     case .tooLarge:

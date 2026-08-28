@@ -122,9 +122,10 @@ prowl agents signal needs-input
 
 Prowl attributes the socket caller through process ancestry, not focus or
 `PROWL_PANE_ID`. A signal can exist for an ordinary shell pane with no detected agent and
-does not create or overwrite a detected-agent entry. `turn-ended` means one interaction
-ended, not that a workflow step completed; only `prowl workflow done` will advance a
-workflow, and only a matching `agents dispatch-complete` can complete an exact dispatch.
+does not create or overwrite a detected-agent entry; such a signal is recorded as `unbound`
+and never becomes wait or dispatch evidence. `turn-ended` means one interaction ended, not
+that an assigned task completed; only a matching `agents dispatch-complete` receipt can
+complete an exact dispatch.
 
 Signal eligibility is generation-aware. Prowl binds evidence to the agent's launch process —
 the topmost member of the pane's foreground job above the detected process — by PID **and

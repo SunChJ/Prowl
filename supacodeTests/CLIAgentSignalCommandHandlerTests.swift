@@ -15,7 +15,7 @@ struct CLIAgentSignalCommandHandlerTests {
       },
       recordSignal: { caller, signal in
         recorded = (caller, signal)
-        return true
+        return .recorded(binding: .current)
       },
       now: { Date(timeIntervalSince1970: 1_000) }
     )
@@ -45,11 +45,35 @@ struct CLIAgentSignalCommandHandlerTests {
     #expect(payload.signal.sessionID == "session-1")
     #expect(payload.signal.detail == "Review complete")
     #expect(payload.signal.claimedOrigin == "manual-review")
+    #expect(payload.signal.binding == .current)
+    #expect(payload.warnings == nil)
     #expect(recorded?.0 == pane)
     #expect(recorded?.1.kind == .turnEnded)
     #expect(recorded?.1.source == .cooperativeCLI)
     #expect(recorded?.1.confidence == .exact)
     #expect(recorded?.1.timestamp == Date(timeIntervalSince1970: 1_000))
+  }
+
+  @Test func unboundSignalSucceedsWithBindingAndWarning() async throws {
+    let pane = CallerPane(worktreeID: "wt", surfaceID: UUID())
+    let handler = AgentSignalCommandHandler(
+      resolveCaller: { _ in pane },
+      recordSignal: { _, _ in .recorded(binding: .unbound) }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(output: .json, command: .agentsSignal(AgentSignalInput(event: .needsInput))),
+      context: CLICommandContext(callerProcessID: 7)
+    )
+
+    #expect(response.ok)
+    let payload = try #require(try response.data?.decode(as: AgentSignalCommandPayload.self))
+    #expect(payload.signal.binding == .unbound)
+    #expect(payload.signal.confidence == "exact")
+    let warnings = try #require(payload.warnings)
+    #expect(warnings.count == 1)
+    #expect(warnings.first?.code == .signalUnbound)
+    #expect(warnings.first?.message.isEmpty == false)
   }
 
   @Test func supportsIndeterminateAndBoundedProgress() async throws {
@@ -59,7 +83,7 @@ struct CLIAgentSignalCommandHandlerTests {
       resolveCaller: { _ in pane },
       recordSignal: { _, signal in
         signals.append(signal)
-        return true
+        return .recorded(binding: .current)
       }
     )
 
@@ -83,7 +107,7 @@ struct CLIAgentSignalCommandHandlerTests {
       resolveCaller: { _ in nil },
       recordSignal: { _, _ in
         didRecord = true
-        return true
+        return .recorded(binding: .current)
       }
     )
 
@@ -100,7 +124,7 @@ struct CLIAgentSignalCommandHandlerTests {
   @Test func rejectsClosedCallerPane() async {
     let handler = AgentSignalCommandHandler(
       resolveCaller: { _ in CallerPane(worktreeID: "wt", surfaceID: UUID()) },
-      recordSignal: { _, _ in false }
+      recordSignal: { _, _ in .paneGone }
     )
 
     let response = await handler.handle(
@@ -119,7 +143,7 @@ struct CLIAgentSignalCommandHandlerTests {
         resolved = true
         return nil
       },
-      recordSignal: { _, _ in true }
+      recordSignal: { _, _ in .recorded(binding: .current) }
     )
     let maximumDetail = AgentSignalInput(
       event: .needsInput,
