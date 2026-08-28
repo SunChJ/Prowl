@@ -53,6 +53,7 @@ final class AgentNativeHookCommandHandler: CommandHandler {
         progress: nil,
         source: "hook_\(input.runtime.rawValue)",
         confidence: AgentSignal.Confidence.exact.rawValue,
+        binding: .current,
         timestamp: dateFormatter.string(from: now()),
         sessionID: input.signal.sessionID,
         detail: input.signal.detail,

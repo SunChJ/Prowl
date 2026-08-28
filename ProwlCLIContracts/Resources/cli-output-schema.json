@@ -1212,6 +1212,7 @@
             "event",
             "source",
             "confidence",
+            "binding",
             "at"
           ],
           "properties": {
@@ -1279,6 +1280,29 @@
           "items": {
             "$ref": "#/$defs/agentSignalWarning"
           }
+        }
+      },
+      "if": {
+        "properties": {
+          "signal": {
+            "properties": {
+              "binding": {
+                "const": "unbound"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "warnings"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "warnings"
+          ]
         }
       }
     },

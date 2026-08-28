@@ -22,6 +22,20 @@ final class AgentSignalSchemaTests: XCTestCase {
     try assertValidity(emptyWarnings, expected: false)
   }
 
+  func testAgentSignalSchemaRequiresBindingAndPairsUnboundWithItsWarning() throws {
+    let bound = #"{"ok":true,"command":"agents.signal","schema_version":"prowl.cli.agents.signal.v1","data":{"pane":{"id":"D2719F02-5F27-4D46-A62F-0FAF49410D4D","worktree_id":"wt"},"signal":{"event":"turn-ended","source":"cooperative_cli","confidence":"exact","binding":"current","at":"2026-08-24T00:00:00.000Z"}}}"#
+    let missingBinding = bound.replacingOccurrences(of: #""binding":"current","#, with: "")
+    let unboundWithoutWarning = bound.replacingOccurrences(of: #""binding":"current""#, with: #""binding":"unbound""#)
+    let currentWithWarning = bound.replacingOccurrences(
+      of: #"}}}"#,
+      with: #"},"warnings":[{"code":"signal_unbound","message":"Recorded as diagnostic only."}]}}"#
+    )
+
+    try assertValidity(missingBinding, expected: false)
+    try assertValidity(unboundWithoutWarning, expected: false)
+    try assertValidity(currentWithWarning, expected: false)
+  }
+
   func testSignalPayloadOmitsEmptyWarningsAndRoundTripsBinding() throws {
     let signal = AgentSignalPayload(
       event: .needsInput,

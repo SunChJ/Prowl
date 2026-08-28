@@ -91,16 +91,17 @@ final class AgentReadCommandHandler: CommandHandler {
   }
 
   private func makeResult(from snapshot: AgentReadRuntimeSnapshot, maxBytes: Int) async -> AgentReadResult {
-    guard let session = snapshot.transcriptSession, let path = session.transcriptPath else {
-      return failedResult(.unavailable)
-    }
     // A live turn owns the result slot: the transcript's last complete answer belongs to an
-    // earlier turn and must not be mistaken for this one.
+    // earlier turn and must not be mistaken for this one, and an unresolved session is not
+    // yet a defect while the agent is still working.
     switch snapshot.status {
     case .working, .blocked:
       return AgentReadResult(state: .pending)
     case .idle, .done:
       break
+    }
+    guard let session = snapshot.transcriptSession, let path = session.transcriptPath else {
+      return failedResult(.unavailable)
     }
 
     let transcript = await resultProvider(snapshot.agent, path, maxBytes)

@@ -108,9 +108,11 @@ JSON:
 }
 ```
 
-An unbound receipt adds `"binding": "unbound"` and
-`"warnings": [{"code": "signal_unbound", "message": "…"}]` under `data`. Text mode prints
-`warning: [signal_unbound] …` on stderr after the receipt line.
+`binding` is required. An unbound receipt carries `"binding": "unbound"` together with
+exactly one `"warnings": [{"code": "signal_unbound", "message": "…"}]` entry under `data`; a
+`current` receipt never carries `warnings`, and the schema enforces that pairing. Managed
+native-hook receipts are always `current`. Text mode prints `warning: [signal_unbound] …` on
+stderr after the receipt line.
 
 Optional fields are omitted rather than encoded as `null`. The executable schema is
 `#/$defs/agentsSignalResponse` in

@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct AgentReadCommandHandlerTests {
-  @Test func blockedSnapshotPreservesBlockerWhenTranscriptIsUnavailable() async throws {
+  @Test func blockedSnapshotWithoutSessionPreservesBlockerAndReportsPending() async throws {
     let handler = AgentReadCommandHandler(
       snapshotProvider: { _ in
         .success(self.makeSnapshot(status: .blocked, blockerText: "Do you want to proceed?\n❯ 1. Yes\n  2. No"))
@@ -24,8 +24,47 @@ struct AgentReadCommandHandlerTests {
     let payload = try #require(try response.data?.decode(as: AgentReadCommandPayload.self))
     #expect(payload.agent.status == .blocked)
     #expect(payload.blocker?.text.contains("1. Yes") == true)
+    #expect(payload.result.state == .pending)
+    #expect(payload.result.error == nil)
+  }
+
+  @Test func idleSnapshotWithoutSessionReportsUnavailable() async throws {
+    let handler = AgentReadCommandHandler(
+      snapshotProvider: { _ in .success(self.makeSnapshot(status: .idle)) },
+      resultProvider: { _, _, _ in
+        Issue.record("Unexpected transcript read")
+        return .failure(.incomplete)
+      }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(output: .json, command: .agentsRead(AgentReadInput(pane: "p7")))
+    )
+
+    #expect(response.ok)
+    let payload = try #require(try response.data?.decode(as: AgentReadCommandPayload.self))
     #expect(payload.result.state == .unavailable)
     #expect(payload.result.error?.code == CLIErrorCode.sessionUnresolved)
+  }
+
+  @Test func resultOnlyFailsWithResultNotFoundForLiveAgentWithoutSession() async {
+    let handler = AgentReadCommandHandler(
+      snapshotProvider: { _ in .success(self.makeSnapshot(status: .working)) },
+      resultProvider: { _, _, _ in
+        Issue.record("Unexpected transcript read")
+        return .failure(.incomplete)
+      }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .text,
+        command: .agentsRead(AgentReadInput(pane: "p7", resultOnly: true))
+      )
+    )
+
+    #expect(response.ok == false)
+    #expect(response.error?.code == CLIErrorCode.resultNotFound)
   }
 
   @Test func workingSnapshotMapsMissingTrustedHistoryToPending() async throws {
