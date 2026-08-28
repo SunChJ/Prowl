@@ -96,7 +96,7 @@ struct CLISocketServerTests {
       resolveCaller: { _ in pane },
       recordSignal: { _, signal in
         recordedSignal = signal
-        return true
+        return .recorded(binding: .current)
       }
     )
     let accepted = DispatchSemaphore(value: 0)
@@ -156,7 +156,7 @@ struct CLISocketServerTests {
       recordSignal: { caller, signal in
         #expect(caller == pane)
         recordedSignal = signal
-        return true
+        return .recorded(binding: .current)
       },
       now: { Date(timeIntervalSince1970: 1_000) }
     )

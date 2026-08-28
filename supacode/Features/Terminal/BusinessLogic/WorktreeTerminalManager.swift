@@ -513,8 +513,8 @@ final class WorktreeTerminalManager {
   }
 
   @discardableResult
-  func recordAgentSignal(_ signal: AgentSignal, caller: CallerPane) -> Bool {
-    guard containsSurface(caller.surfaceID) else { return false }
+  func recordAgentSignal(_ signal: AgentSignal, caller: CallerPane) -> AgentSignalRecordOutcome {
+    guard containsSurface(caller.surfaceID) else { return .paneGone }
     let evidence = currentAgentEvidence(surfaceID: caller.surfaceID)
     handleEvidenceEpochUpdate(
       agentObservationStore.updateEvidenceEpoch(
@@ -534,13 +534,13 @@ final class WorktreeTerminalManager {
     guard
       binding == .current,
       let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: caller.surfaceID)
-    else { return true }
+    else { return .recorded(binding: binding) }
     noteDispatchEvidence(
       signal,
       surfaceID: caller.surfaceID,
       evidenceEpoch: evidenceEpoch
     )
-    return true
+    return .recorded(binding: binding)
   }
 
   @discardableResult

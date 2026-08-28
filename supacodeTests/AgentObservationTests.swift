@@ -185,6 +185,29 @@ struct AgentObservationTests {
     #expect(try await iterator.next() == nil)
   }
 
+  @Test func signalFromPaneWithoutDetectedAgentIsRecordedButUnbound() {
+    let fixture = makeFixture()
+    let signal = makeSignal(detail: "from a plain shell")
+    let caller = CallerPane(
+      worktreeID: "/tmp/agent-observation",
+      surfaceID: fixture.surfaceID,
+      processAncestry: []
+    )
+
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller) == .recorded(binding: .unbound))
+    #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == nil)
+    let diagnostics = fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID)
+    #expect(diagnostics.channels.isEmpty)
+    #expect(diagnostics.last?.detail == "from a plain shell")
+    #expect(diagnostics.lastBinding == .unbound)
+  }
+
+  @Test func signalForClosedSurfaceReportsPaneGone() {
+    let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
+    let caller = CallerPane(worktreeID: "/tmp/agent-observation", surfaceID: UUID(), processAncestry: [])
+    #expect(manager.recordAgentSignal(makeSignal(), caller: caller) == .paneGone)
+  }
+
   @Test func normalizedWorkingActivityInvalidatesPriorTerminalEvidence() throws {
     let fixture = makeFixture()
     let processID = getpid()
@@ -216,7 +239,7 @@ struct AgentObservationTests {
       ]
     )
 
-    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller) == .recorded(binding: .current))
     #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
 
     let workingState = PaneAgentState(
@@ -276,7 +299,7 @@ struct AgentObservationTests {
       ]
     )
 
-    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller) == .recorded(binding: .current))
     #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
     #expect(fixture.manager.agentSignalsPayload(surfaceID: fixture.surfaceID).lastBinding == .current)
   }
@@ -318,7 +341,7 @@ struct AgentObservationTests {
         AgentProcessGeneration(pid: processID, startedAt: startedAt)
       ]
     )
-    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller) == .recorded(binding: .current))
     #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
 
     fixture.state.surfaceAgentStates[fixture.surfaceID] = PaneAgentState(
@@ -389,7 +412,7 @@ struct AgentObservationTests {
         AgentProcessGeneration(pid: launchPID, startedAt: launchStartedAt),
       ]
     )
-    #expect(fixture.manager.recordAgentSignal(signal, caller: caller))
+    #expect(fixture.manager.recordAgentSignal(signal, caller: caller) == .recorded(binding: .current))
     #expect(fixture.manager.currentEligibleAgentSignal(surfaceID: fixture.surfaceID) == signal)
 
     // The runtime forks an engine child that the classifier now identifies

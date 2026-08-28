@@ -81,6 +81,9 @@ enum OutputRenderer {
          let payload = try? data.decode(as: AgentSignalCommandPayload.self)
       {
         print(agentSignalText(payload))
+        for line in agentSignalWarningLines(payload) {
+          FileHandle.standardError.write(Data((line + "\n").utf8))
+        }
         return
       }
 
@@ -314,6 +317,10 @@ enum OutputRenderer {
       let sessionLabel = agent.session.map { "  session=\($0.id) [\($0.confidence)]" } ?? ""
       return "\(statusLabel)  \(agent.name)  \(projectLabel)  \(agent.tab.title)  \(paneHandle)\(sessionLabel)"
     }.joined(separator: "\n")
+  }
+
+  static func agentSignalWarningLines(_ payload: AgentSignalCommandPayload) -> [String] {
+    (payload.warnings ?? []).map { "warning: [\($0.code.rawValue)] \($0.message)" }
   }
 
   static func agentSignalText(_ payload: AgentSignalCommandPayload) -> String {
