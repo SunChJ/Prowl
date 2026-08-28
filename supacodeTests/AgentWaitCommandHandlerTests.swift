@@ -723,9 +723,9 @@ struct AgentWaitCommandHandlerTests {
     #expect(condition.observation.source == "detection")
   }
 
-  @Test func autoIdleFallsBackToDetectorWhenLiveChannelHoldsAnotherLevel() async throws {
-    // The channel's active terminal signal is `needs-input`, which says nothing about idleness;
-    // the detector's stable idle view must still be able to end the wait.
+  @Test func autoIdleDoesNotOverridePreArmNeedsInputWhileLiveChannelIsPresent() async {
+    // The channel's active terminal level is an exact `needs-input`: the runtime disagrees with
+    // the screen, so the stabilized detector view must not end the wait on its own.
     let clock = TestClock()
     let target = resolvedTarget()
     let idle = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .idle)
@@ -743,20 +743,79 @@ struct AgentWaitCommandHandlerTests {
       await handler.handle(envelope: conditionWait(target, .idle, timeout: 3))
     }
 
-    // Advance past the timeout so a regression surfaces as WAIT_TIMEOUT instead of a hang.
     for _ in 0..<16 {
       await Task.yield()
       await clock.advance(by: .milliseconds(200))
     }
     let response = await task.value
-    #expect(response.ok, "\(String(describing: response.error))")
-    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
-    guard case .condition(let condition) = payload else {
-      Issue.record("Expected condition payload")
-      return
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
+  }
+
+  @Test func autoIdleDoesNotOverrideFreshNeedsInputDuringStabilization() async {
+    // The detector has shown idle for 1.8 s when an exact `needs-input` lands before the screen
+    // catches up: exact evidence wins, so the stabilizer resets instead of resolving idle at the
+    // two-second mark.
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let idle = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .idle)
+    let fresh = signal(.needsInput, at: Self.start.addingTimeInterval(1.8))
+    var snapshotReads = 0
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        snapshotReads += 1
+        // Read 1 is the arm-time baseline and poll read k happens at (k - 2) * 200 ms, so the
+        // signal lands at 1.8 s — inside the stabilizer's window.
+        let arrived = snapshotReads > 10
+        return .init(
+          agent: idle,
+          signal: arrived ? fresh : nil,
+          revision: arrived ? 3 : 2,
+          isLive: true,
+          signals: Self.liveClaudeSignals
+        )
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .idle, timeout: 3))
     }
-    #expect(condition.waitedMilliseconds == 2_000)
-    #expect(condition.observation.confidence == "heuristic")
+
+    for _ in 0..<16 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
+    #expect(snapshotReads > 10)
+  }
+
+  @Test func autoExitWaitsForSessionEndWhileLiveChannelIsPresent() async {
+    // A verified_live channel reports its own `session-end`; the detector losing sight of the
+    // agent on a still-live surface is not an exit under `auto`.
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: nil, signal: nil, revision: 2, isLive: true, signals: Self.liveClaudeSignals)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .exit, timeout: 3))
+    }
+
+    for _ in 0..<16 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
   }
 
   @Test func autoChangedIgnoresDetectorChangesWhileLiveChannelIsPresent() async {

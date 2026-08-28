@@ -334,13 +334,14 @@ or blocked), while a signal arriving after arming counts on its own. To wait for
 turn edge rather than the current state, use `--until changed`, which needs a post-baseline
 revision or a newer signal — under `auto` with a `verified_live` channel it returns at the next
 runtime signal, not at a screen change. `auto` may fall back to a heuristic result — the
-detector's view after the pane has remained unchanged for two seconds — whenever no
-`verified_live` channel holds a terminal signal for the condition: right after a Profile
-launch, when the channel has only reported `session-start`, or when its active level is a
-different event. While the channel holds the condition's own level (`turn-ended` for `idle`,
-`needs-input` for `blocked`), that signal decides — with detector corroboration when it
-predates the wait — or the next runtime signal does; `changed` never falls back while a
-`verified_live` channel exists. When the pane hosts no detected agent yet
+detector's view after the pane has remained unchanged for two seconds — only while no
+covering `verified_live` channel holds a terminal signal: right after a Profile launch, when
+the channel has only reported `session-start`. Once the channel holds a terminal level, that
+level decides: the condition's own event (`turn-ended` for `idle`, `needs-input` for
+`blocked`) resolves the wait, with detector corroboration when it predates the wait, and an
+opposite event is never overridden by the screen — the wait then ends at the next runtime
+signal. `changed` and `exit` never fall back while such a channel exists (`exit` resolves on
+`session-end` or surface closure). When the pane hosts no detected agent yet
 (typically right after launching one), the wait keeps polling for up to ten seconds, bounded
 by `--timeout`, before failing with `AGENT_NOT_FOUND`. `--include-screen` samples the
 detection buffer until it is stable for 800 ms (or the two-second cap), then returns the

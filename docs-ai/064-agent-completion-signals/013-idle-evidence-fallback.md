@@ -38,7 +38,7 @@ person's in-flight keystrokes land in the new shell.
 | # | Decision | Alternatives rejected |
 | --- | --- | --- |
 | C1 | `decodeClaude` accepts the same `Notification` types as the S3b decoder (`permission_prompt`, `elicitation_dialog`); `idle_prompt` throws `unsupportedEvent` and the hook ingress drops it. One shared `acceptedAttentionNotifications` set replaces the two lists. | Mapping `idle_prompt` to an idle-flavoured signal (a new event on the public `agents signal` schema for a runtime-specific timer); special-casing the detail string inside the wait handler. |
-| C2 | Under `auto`, a `verified_live` channel suppresses the stabilized heuristic fallback only while the pane's active terminal signal *is* the condition's covered event (`turn-ended` for `idle`, `needs-input` for `blocked`, `session-end` for `exit`); `changed` stays suppressed whenever such a channel exists. A channel with no terminal level, or another level, cannot describe the current state, so the two-second detector view decides. | Keeping the advertised-event rule and documenting `--min-confidence heuristic` as the launch recipe (leaves `auto` — the default — wrong for the skill's own flow); dropping suppression entirely (would let a detector guess pre-empt an exact `changed` edge). |
+| C2 | Under `auto`, a covering `verified_live` channel suppresses the stabilized heuristic fallback for `changed` and `exit` always, and for `idle`/`blocked` whenever the pane holds *any* active terminal signal: the condition's own event resolves through the exact path, and an opposite event (a `needs-input` during an idle wait, a `turn-ended` during a blocked wait) means the runtime disagrees with the screen, which the detector must not override. Only a channel with no terminal level — a freshly launched, unprompted Profile that has reported `session-start` alone — leaves the current state to the two-second detector view. | Keeping the advertised-event rule and documenting `--min-confidence heuristic` as the launch recipe (leaves `auto` — the default — wrong for the skill's own flow); allowing the fallback whenever the level is not the condition's own event (review P1: a fresh opposite exact signal could be out-voted by 1.8 s of stale detector state); dropping suppression entirely (would let a detector guess pre-empt an exact `changed` edge). |
 | C3 | Docs and the skill say `worktree.id` for automation, warn that plain creates take focus, name `.data.anchor.pane.id`, and note that a receipt may precede Codex's own `turn-ended`. Plain `--background` stays a product follow-up. | Implementing `--background` for plain shells in this PR (feature, not a fix). |
 
 Note that C2 alone is not enough for (1): with `idle_prompt` recorded, the active level is a
@@ -51,8 +51,10 @@ path intact; C2 covers the no-level case that C1 cannot.
 - `AgentNativeHookDecoder`: `acceptedAttentionNotifications` (`elicitation_dialog`,
   `permission_prompt`) is the single accepted list for Claude Code and the S3b runtimes.
 - `AgentWaitCommandHandler.allowsHeuristic` takes the current `ConditionSnapshot`: with a
-  covering `verified_live` channel it returns `false` for `changed`, and otherwise `false` only
-  when `snapshot.signal?.event == coveredEvent`.
+  covering `verified_live` channel it returns `false` for `changed` and `exit`, and for
+  `idle`/`blocked` returns `true` only while `snapshot.signal == nil`. A signal arriving
+  mid-stabilization therefore also resets the `HeuristicStabilizer` (its candidate becomes
+  `nil`).
 - Docs: `docs/components/cli.md` (targeting model, wait fallback, dispatch/receipt timing,
   `create tab` focus note, anchor field), `docs/components/agent-detection.md` (Claude
   notification types), `skills/prowl-cli/SKILL.md`, and the `agents-wait` contract page.
@@ -79,6 +81,22 @@ path intact; C2 covers the no-level case that C1 cannot.
 - The live evidence that motivated the change is kept in the session scratchpad
   (`e2e/phase1*.log`, `dispatch-*.log`, `s*.log`, `burst*.log`) and in the independent
   validation run under `/tmp/prowl-independent-validation-20260828-235005`.
+
+## Review
+
+One adversarial round on the PR, both findings fixed test-first:
+
+- P1 — the first cut allowed the fallback whenever the active level was not the condition's
+  own event, so 1.8 s of stale `idle` detector state plus a freshly arrived exact `needs-input`
+  resolved `idle` heuristically at the two-second mark (and `blocked` symmetrically on a fresh
+  `turn-ended`). Now any terminal level suppresses the fallback;
+  `autoIdleDoesNotOverrideFreshNeedsInputDuringStabilization` and
+  `autoIdleDoesNotOverridePreArmNeedsInputWhileLiveChannelIsPresent` pin it. A pre-arm opposite
+  level stays suppressed as before this change rather than letting the detector out-vote it.
+- P2 — the same cut let `exit` fall back on a live surface whose agent merely left the detector,
+  contradicting the contract (`exit` needs `session-end` or surface closure) without a test.
+  `exit` now stays suppressed with a covering channel, as it was;
+  `autoExitWaitsForSessionEndWhileLiveChannelIsPresent` pins it.
 
 ## Observed but not changed
 

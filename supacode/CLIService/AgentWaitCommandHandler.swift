@@ -620,11 +620,14 @@ final class AgentWaitCommandHandler: CommandHandler {
     }
   }
 
-  /// Whether `auto` may fall back to the stabilized screen detector. A `verified_live` channel
-  /// that covers the condition's event is authoritative for `changed` (the runtime reports the
-  /// next edge) and, for a level condition, only while the pane's active terminal signal is that
-  /// event: a channel that has reported nothing terminal yet — a freshly launched, unprompted
-  /// Profile — or whose level is another event cannot describe the current state.
+  /// Whether `auto` may fall back to the stabilized screen detector. A covering `verified_live`
+  /// channel reports the next edge itself (`changed`) and its own `session-end` (`exit`), so
+  /// those never fall back. For `idle` and `blocked` the channel is authoritative while it holds
+  /// any terminal level: the condition's own event resolves through the exact path, and an
+  /// opposite event means the runtime disagrees with the screen, which a stabilized detector
+  /// view must not override. Only a channel with no terminal level yet — a freshly launched,
+  /// unprompted Profile that has reported `session-start` alone — leaves the current state to
+  /// the detector.
   private func allowsHeuristic(
     _ minimum: AgentWaitMinimumConfidence,
     condition: AgentWaitCondition,
@@ -647,7 +650,12 @@ final class AgentWaitCommandHandler: CommandHandler {
         $0.state == .verifiedLive && (condition == .changed || $0.events.contains(coveredEvent))
       }
       guard liveChannelCovers else { return true }
-      return condition != .changed && snapshot.signal?.event != coveredEvent
+      switch condition {
+      case .changed, .exit:
+        return false
+      case .idle, .blocked:
+        return snapshot.signal == nil
+      }
     }
   }
 
