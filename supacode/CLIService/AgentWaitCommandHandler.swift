@@ -465,7 +465,7 @@ final class AgentWaitCommandHandler: CommandHandler {
       )
       if observation == nil {
         let candidate =
-          allowsHeuristic(minimumConfidence, condition: condition, signals: snapshot.signals)
+          allowsHeuristic(minimumConfidence, condition: condition, snapshot: snapshot)
           && heuristicMatches(condition: condition, snapshot: snapshot, normalizedState: state, baseline: baseline)
         if stabilizer.observe(candidate: candidate ? state : nil, elapsedMilliseconds: elapsedMilliseconds) {
           observation = heuristicObservation(snapshot, state: state)
@@ -620,10 +620,15 @@ final class AgentWaitCommandHandler: CommandHandler {
     }
   }
 
+  /// Whether `auto` may fall back to the stabilized screen detector. A `verified_live` channel
+  /// that covers the condition's event is authoritative for `changed` (the runtime reports the
+  /// next edge) and, for a level condition, only while the pane's active terminal signal is that
+  /// event: a channel that has reported nothing terminal yet — a freshly launched, unprompted
+  /// Profile — or whose level is another event cannot describe the current state.
   private func allowsHeuristic(
     _ minimum: AgentWaitMinimumConfidence,
     condition: AgentWaitCondition,
-    signals: AgentSignalsPayload
+    snapshot: ConditionSnapshot
   ) -> Bool {
     switch minimum {
     case .exact, .high:
@@ -638,9 +643,11 @@ final class AgentWaitCommandHandler: CommandHandler {
         case .exit: .sessionEnd
         case .changed: .progress
         }
-      return !signals.channels.contains {
+      let liveChannelCovers = snapshot.signals.channels.contains {
         $0.state == .verifiedLive && (condition == .changed || $0.events.contains(coveredEvent))
       }
+      guard liveChannelCovers else { return true }
+      return condition != .changed && snapshot.signal?.event != coveredEvent
     }
   }
 

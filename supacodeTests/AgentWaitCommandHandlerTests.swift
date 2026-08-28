@@ -686,6 +686,132 @@ struct AgentWaitCommandHandlerTests {
     #expect(condition.waitedMilliseconds == 1_000)
   }
 
+  @Test func autoIdleFallsBackToDetectorWhenLiveChannelHoldsNoTerminalSignal() async throws {
+    // A freshly launched Profile has a verified_live channel that has only reported
+    // `session-start`; the channel cannot describe the current level, so the stabilized
+    // detector view resolves the wait instead of a timeout.
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let idle = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .idle)
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: idle, signal: nil, revision: 2, isLive: true, signals: Self.liveClaudeSignals)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .idle, timeout: 3))
+    }
+
+    // Advance past the timeout so a regression surfaces as WAIT_TIMEOUT instead of a hang.
+    for _ in 0..<16 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.ok, "\(String(describing: response.error))")
+    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
+    guard case .condition(let condition) = payload else {
+      Issue.record("Expected condition payload")
+      return
+    }
+    #expect(condition.waitedMilliseconds == 2_000)
+    #expect(condition.observation.confidence == "heuristic")
+    #expect(condition.observation.source == "detection")
+  }
+
+  @Test func autoIdleFallsBackToDetectorWhenLiveChannelHoldsAnotherLevel() async throws {
+    // The channel's active terminal signal is `needs-input`, which says nothing about idleness;
+    // the detector's stable idle view must still be able to end the wait.
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let idle = agentEntry(surfaceID: UUID(uuidString: target.paneID)!, status: .idle)
+    let needsInput = signal(.needsInput, at: Self.start)
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: idle, signal: needsInput, revision: 2, isLive: true, signals: Self.liveClaudeSignals)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .idle, timeout: 3))
+    }
+
+    // Advance past the timeout so a regression surfaces as WAIT_TIMEOUT instead of a hang.
+    for _ in 0..<16 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.ok, "\(String(describing: response.error))")
+    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
+    guard case .condition(let condition) = payload else {
+      Issue.record("Expected condition payload")
+      return
+    }
+    #expect(condition.waitedMilliseconds == 2_000)
+    #expect(condition.observation.confidence == "heuristic")
+  }
+
+  @Test func autoChangedIgnoresDetectorChangesWhileLiveChannelIsPresent() async {
+    // `changed` stays an edge wait: with a verified_live channel the runtime reports the next
+    // edge, so a detector-only state change never resolves it under `auto`.
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let surfaceID = UUID(uuidString: target.paneID)!
+    let idle = agentEntry(surfaceID: surfaceID, status: .idle)
+    let working = agentEntry(surfaceID: surfaceID, status: .working)
+    let staleSignal = signal(.turnEnded, at: Self.start)
+    var snapshotReads = 0
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        snapshotReads += 1
+        let didChangeHeuristically = snapshotReads > 2
+        return .init(
+          agent: didChangeHeuristically ? working : idle,
+          signal: staleSignal,
+          revision: didChangeHeuristically ? 2 : 1,
+          isLive: true,
+          signals: Self.liveClaudeSignals
+        )
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .changed, timeout: 3))
+    }
+
+    for _ in 0..<16 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.error?.code == CLIErrorCode.waitTimeout)
+  }
+
+  private static let liveClaudeSignals = AgentSignalsPayload(
+    channels: [
+      AgentSignalChannelPayload(
+        source: "hook_claude",
+        state: .verifiedLive,
+        confidence: "exact",
+        events: [.needsInput, .sessionEnd, .sessionStart, .turnEnded],
+        lastSeenAt: "2026-08-28T00:00:00Z"
+      )
+    ],
+    last: nil,
+    lastBinding: nil
+  )
+
   private func conditionWait(
     _ target: TabResolvedTarget,
     _ condition: AgentWaitCondition,
