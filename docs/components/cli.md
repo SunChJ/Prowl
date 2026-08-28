@@ -340,8 +340,10 @@ the channel has only reported `session-start`. Once the channel holds a terminal
 level decides: the condition's own event (`turn-ended` for `idle`, `needs-input` for
 `blocked`) resolves the wait, with detector corroboration when it predates the wait, and an
 opposite event is never overridden by the screen — the wait then ends at the next runtime
-signal. `changed` and `exit` never fall back while such a channel exists (`exit` resolves on
-`session-end` or surface closure). When the pane hosts no detected agent yet
+signal. `changed` never falls back while such a channel exists, and neither does `exit` while
+the channel can report `session-end`; a Codex or OpenCode Profile, whose channel cannot, still
+resolves `exit` when the detector loses the agent for two seconds on a live surface — the
+only exit evidence once `/quit` has returned the shell. When the pane hosts no detected agent yet
 (typically right after launching one), the wait keeps polling for up to ten seconds, bounded
 by `--timeout`, before failing with `AGENT_NOT_FOUND`. `--include-screen` samples the
 detection buffer until it is stable for 800 ms (or the two-second cap), then returns the

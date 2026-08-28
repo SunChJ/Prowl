@@ -857,6 +857,54 @@ struct AgentWaitCommandHandlerTests {
     #expect(response.error?.code == CLIErrorCode.waitTimeout)
   }
 
+  @Test func autoExitFallsBackToDetectorWhenChannelCannotReportSessionEnd() async throws {
+    // Codex's notifier reports only `turn-ended`, so after `/quit` the detector losing the agent
+    // on a still-live surface is the only exit evidence and must keep resolving under `auto`.
+    let clock = TestClock()
+    let target = resolvedTarget()
+    let handler = AgentWaitCommandHandler(
+      observeDispatch: { _ in .failure(.notFound) },
+      resolveConditionTarget: { _ in .success(target) },
+      conditionSnapshot: { _ in
+        .init(agent: nil, signal: nil, revision: 2, isLive: true, signals: Self.liveCodexSignals)
+      },
+      clock: clock,
+      now: { Self.start }
+    )
+    let task = Task {
+      await handler.handle(envelope: conditionWait(target, .exit, timeout: 3))
+    }
+
+    for _ in 0..<16 {
+      await Task.yield()
+      await clock.advance(by: .milliseconds(200))
+    }
+    let response = await task.value
+    #expect(response.ok, "\(String(describing: response.error))")
+    let payload = try #require(response.data).decode(as: AgentWaitCommandPayload.self)
+    guard case .condition(let condition) = payload else {
+      Issue.record("Expected condition payload")
+      return
+    }
+    #expect(condition.waitedMilliseconds == 2_000)
+    #expect(condition.observation.confidence == "heuristic")
+    #expect(condition.observation.rawState == "absent")
+  }
+
+  private static let liveCodexSignals = AgentSignalsPayload(
+    channels: [
+      AgentSignalChannelPayload(
+        source: "hook_codex",
+        state: .verifiedLive,
+        confidence: "exact",
+        events: [.turnEnded],
+        lastSeenAt: "2026-08-28T00:00:00Z"
+      )
+    ],
+    last: nil,
+    lastBinding: nil
+  )
+
   private static let liveClaudeSignals = AgentSignalsPayload(
     channels: [
       AgentSignalChannelPayload(

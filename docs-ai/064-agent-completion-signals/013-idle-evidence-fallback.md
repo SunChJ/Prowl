@@ -38,7 +38,7 @@ person's in-flight keystrokes land in the new shell.
 | # | Decision | Alternatives rejected |
 | --- | --- | --- |
 | C1 | `decodeClaude` accepts the same `Notification` types as the S3b decoder (`permission_prompt`, `elicitation_dialog`); `idle_prompt` throws `unsupportedEvent` and the hook ingress drops it. One shared `acceptedAttentionNotifications` set replaces the two lists. | Mapping `idle_prompt` to an idle-flavoured signal (a new event on the public `agents signal` schema for a runtime-specific timer); special-casing the detail string inside the wait handler. |
-| C2 | Under `auto`, a covering `verified_live` channel suppresses the stabilized heuristic fallback for `changed` and `exit` always, and for `idle`/`blocked` whenever the pane holds *any* active terminal signal: the condition's own event resolves through the exact path, and an opposite event (a `needs-input` during an idle wait, a `turn-ended` during a blocked wait) means the runtime disagrees with the screen, which the detector must not override. Only a channel with no terminal level — a freshly launched, unprompted Profile that has reported `session-start` alone — leaves the current state to the two-second detector view. | Keeping the advertised-event rule and documenting `--min-confidence heuristic` as the launch recipe (leaves `auto` — the default — wrong for the skill's own flow); allowing the fallback whenever the level is not the condition's own event (review P1: a fresh opposite exact signal could be out-voted by 1.8 s of stale detector state); dropping suppression entirely (would let a detector guess pre-empt an exact `changed` edge). |
+| C2 | Under `auto`, a covering `verified_live` channel suppresses the stabilized heuristic fallback for `changed` always and for `exit` while the channel can report `session-end` (a Codex or OpenCode channel cannot, so `exit` stays with the detector there, as before), and for `idle`/`blocked` whenever the pane holds *any* active terminal signal: the condition's own event resolves through the exact path, and an opposite event (a `needs-input` during an idle wait, a `turn-ended` during a blocked wait) means the runtime disagrees with the screen, which the detector must not override. Only a channel with no terminal level — a freshly launched, unprompted Profile that has reported `session-start` alone — leaves the current state to the two-second detector view. | Keeping the advertised-event rule and documenting `--min-confidence heuristic` as the launch recipe (leaves `auto` — the default — wrong for the skill's own flow); allowing the fallback whenever the level is not the condition's own event (review P1: a fresh opposite exact signal could be out-voted by 1.8 s of stale detector state); dropping suppression entirely (would let a detector guess pre-empt an exact `changed` edge). |
 | C3 | Docs and the skill say `worktree.id` for automation, warn that plain creates take focus, name `.data.anchor.pane.id`, and note that a receipt may precede Codex's own `turn-ended`. Plain `--background` stays a product follow-up. | Implementing `--background` for plain shells in this PR (feature, not a fix). |
 
 Note that C2 alone is not enough for (1): with `idle_prompt` recorded, the active level is a
@@ -52,9 +52,10 @@ path intact; C2 covers the no-level case that C1 cannot.
   `permission_prompt`) is the single accepted list for Claude Code and the S3b runtimes.
 - `AgentWaitCommandHandler.allowsHeuristic` takes the current `ConditionSnapshot`: with a
   covering `verified_live` channel it returns `false` for `changed` and `exit`, and for
-  `idle`/`blocked` returns `true` only while `snapshot.signal == nil`. A signal arriving
-  mid-stabilization therefore also resets the `HeuristicStabilizer` (its candidate becomes
-  `nil`).
+  `idle`/`blocked` returns `true` only while `snapshot.signal == nil`. A terminal signal
+  arriving mid-stabilization therefore also resets the `HeuristicStabilizer` (its candidate
+  becomes `nil`). "Covering" means the channel advertises the condition's event, so a Codex or
+  OpenCode channel, which cannot report `session-end`, leaves `exit` to the detector.
 - Docs: `docs/components/cli.md` (targeting model, wait fallback, dispatch/receipt timing,
   `create tab` focus note, anchor field), `docs/components/agent-detection.md` (Claude
   notification types), `skills/prowl-cli/SKILL.md`, and the `agents-wait` contract page.
@@ -97,6 +98,22 @@ One adversarial round on the PR, both findings fixed test-first:
   contradicting the contract (`exit` needs `session-end` or surface closure) without a test.
   `exit` now stays suppressed with a covering channel, as it was;
   `autoExitWaitsForSessionEndWhileLiveChannelIsPresent` pins it.
+
+Round 2 raised two more; both resolved on the contract side under the rule "fix what a
+normal flow can hit, correct the contract where the behavior is right":
+
+- P1 — a fresh `progress` or `session-start` bumps the revision and clears the level without
+  moving the detector, so it does not restart the two-second window; the contract had promised
+  "state and revision unchanged". Reaching it needs the detector to misread a working agent as
+  idle for two seconds ending within 200 ms of a cooperative `progress`, and the result is
+  labelled `heuristic`. Restarting on the raw revision would also restart on every coalesced
+  title re-publish and starve the heuristic `changed` path for a working agent. Left as is; the
+  contract now says signals do not restart the window.
+- P2 — a channel that cannot report `session-end` (Codex, OpenCode) still lets `exit` resolve
+  when the detector loses the agent on a live surface — the pre-PR behavior and the only exit
+  evidence after `/quit`. The contract's "exit requires the surface to stop being live" was
+  wrong, not the code; it now describes the three exit sources, and
+  `autoExitFallsBackToDetectorWhenChannelCannotReportSessionEnd` pins the Codex-shaped branch.
 
 ## Observed but not changed
 

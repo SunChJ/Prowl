@@ -622,7 +622,10 @@ final class AgentWaitCommandHandler: CommandHandler {
 
   /// Whether `auto` may fall back to the stabilized screen detector. A covering `verified_live`
   /// channel reports the next edge itself (`changed`) and its own `session-end` (`exit`), so
-  /// those never fall back. For `idle` and `blocked` the channel is authoritative while it holds
+  /// those never fall back; a channel that cannot report `session-end` (Codex's notifier,
+  /// OpenCode's relay) leaves `exit` to the detector, the only exit evidence once `/quit` has
+  /// returned the shell on a still-live surface. For `idle` and `blocked` the channel is
+  /// authoritative while it holds
   /// any terminal level: the condition's own event resolves through the exact path, and an
   /// opposite event means the runtime disagrees with the screen, which a stabilized detector
   /// view must not override. Only a channel with no terminal level yet — a freshly launched,
