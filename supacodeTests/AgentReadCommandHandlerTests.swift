@@ -85,6 +85,46 @@ struct AgentReadCommandHandlerTests {
     #expect(payload.result.text == "Final result")
   }
 
+  @Test func liveWorkingOrBlockedAgentReportsPendingEvenWithAnEarlierCompleteTurn() async throws {
+    for status in [AgentsCommandStatus.working, .blocked] {
+      let handler = AgentReadCommandHandler(
+        snapshotProvider: { _ in .success(self.makeSnapshot(status: status, session: self.makeSession())) },
+        resultProvider: { _, _, _ in
+          Issue.record("A live working/blocked agent must not read the transcript")
+          return .complete("Answer from the previous turn")
+        }
+      )
+
+      let response = await handler.handle(
+        envelope: CommandEnvelope(output: .json, command: .agentsRead(AgentReadInput(pane: "p7")))
+      )
+
+      #expect(response.ok)
+      let payload = try #require(try response.data?.decode(as: AgentReadCommandPayload.self))
+      #expect(payload.agent.status == status)
+      #expect(payload.result.state == .pending)
+      #expect(payload.result.text == nil)
+      #expect(payload.result.error == nil)
+    }
+  }
+
+  @Test func resultOnlyFailsWhileTheAgentIsStillWorking() async {
+    let handler = AgentReadCommandHandler(
+      snapshotProvider: { _ in .success(self.makeSnapshot(status: .working, session: self.makeSession())) },
+      resultProvider: { _, _, _ in .complete("Answer from the previous turn") }
+    )
+
+    let response = await handler.handle(
+      envelope: CommandEnvelope(
+        output: .text,
+        command: .agentsRead(AgentReadInput(pane: "p7", resultOnly: true))
+      )
+    )
+
+    #expect(response.ok == false)
+    #expect(response.error?.code == CLIErrorCode.resultNotFound)
+  }
+
   private func makeSnapshot(
     status: AgentsCommandStatus,
     blockerText: String? = nil,
