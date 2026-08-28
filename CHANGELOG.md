@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026.8.29](https://github.com/onevcat/Prowl/releases/tag/v2026.8.29)
+
+This release focuses on letting Prowl and your agents know what other agents are actually doing, plus new CLI and Settings tooling for skills and panes.
+
+### New
+- Agent coordination from the CLI: `prowl create tab|pane --profile <name> --prompt -` launches an Agent Profile with a kickoff prompt and returns a dispatch receipt; `prowl agents wait --dispatch <id>` blocks until the worker reports `prowl agents dispatch-complete`, and `prowl agents wait <pane> --until idle|blocked|changed|exit` waits on an observed pane state. Agents can report their own events with `prowl agents signal`, and `prowl profiles list` shows the configured Profiles with their runtime availability.
+- Native completion-signal hooks for all eight supported runtimes (Claude Code, Codex, GitHub Copilot, Droid, Qoder, Pi, Oh My Pi, OpenCode) when launched from a Profile, so `agents wait` knows precisely when a turn ends or an agent needs input instead of guessing from the screen. Nothing is written to your runtime configuration; the hooks live only for that launch.
+- Prowl's bundled skills (`prowl-cli`) can be installed with `prowl skills install`, or from the Agent Skills section on the new Settings → Agents → CLI & Skills page. Both link the bundled skills into your Claude, Codex, or shared `~/.agents` skill folders and show the same per-target status.
+- `prowl create pane <anchor> --direction right|left|up|down` opens a split against an explicit anchor pane, and every pane now exports `PROWL_PANE_ID` so an agent or script can address its own pane without guessing from focus.
+
+### Improved
+- Settings now has an Agents group: Profiles moved there, and the new CLI & Skills page takes over the `prowl` CLI install from Advanced.
+
+### Fixed
+- Claude Code's periodic idle-prompt notification was misread as "needs input", which could make `agents wait` hang on an already-idle pane; freshly launched Profile agents are also detected as idle promptly instead of timing out.
+- Pi's background sub-agent activity is now recognized as Working instead of appearing idle.
+- A Claude pane with an active spinner above a queued multi-line message was incorrectly reported as idle.
+
 ## [2026.8.20](https://github.com/onevcat/Prowl/releases/tag/v2026.8.20)
 
 This release adds per-repository diffing for workspace children and unifies the Prowl CLI's target syntax.
