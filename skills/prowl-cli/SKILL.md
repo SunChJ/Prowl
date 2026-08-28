@@ -75,7 +75,7 @@ prowl agents signal turn-ended --detail "Review complete" --json
 prowl agents signal needs-input --session session-1 --json
 ```
 
-The app attributes the socket peer PID through process ancestry. `turn-ended` means a runtime turn edge, not task completion; only an `agents dispatch-complete` receipt proves an assigned task finished. Public `--origin` is claimed metadata and never upgrades trust. Check `.data.signal.binding` on the receipt: `current` means the signal is wait/dispatch evidence; `unbound` (with a `signal_unbound` entry in `.data.warnings[]`) means it was only recorded as diagnostics — the caller did not descend from the pane's detected agent. Report distinct events from distinct turns: waits see the latest terminal signal, so `needs-input` followed within 200 ms by `turn-ended` leaves only the `turn-ended`.
+The app attributes the socket peer PID through process ancestry. `turn-ended` means a runtime turn edge, not task completion; only an `agents dispatch-complete` receipt proves an assigned task finished. Public `--origin` is claimed metadata and never upgrades trust. Check `.data.signal.binding` on the receipt: `current` means the signal is wait/dispatch evidence; `unbound` (with a `signal_unbound` entry in `.data.warnings[]`) means it was only recorded as diagnostics — the pane has no detected agent yet, the caller is outside that agent's process tree, or `--session` names a different session than the one Prowl knows. Report distinct events from distinct turns: waits see the latest terminal signal, so `needs-input` followed within 200 ms by `turn-ended` leaves only the `turn-ended`.
 
 ## Common Recipes
 
