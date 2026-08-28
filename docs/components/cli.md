@@ -551,8 +551,9 @@ in a repository file and use the kickoff prompt to tell the Profile which file t
 `--background` is Profile-only and creates the tab without changing the selected
 worktree, tab, or pane.
 
-Claude Code and Codex Profile launches complete managed-signal preflight before a dispatch
-slot or surface is created. Safe preparation failure launches the original argv unchanged.
+Claude Code, Codex, GitHub Copilot, Droid, Qoder, Pi, Oh My Pi, and OpenCode Profile launches
+complete managed-signal preflight before a dispatch slot or surface is created. Safe preparation
+failure launches the original argv unchanged.
 JSON success then includes one optional `.data.warnings[]` item with
 `code=managed_hook_degraded`; text mode keeps launch output on stdout and renders the warning
 exactly once on stderr. No warning array is encoded when empty, and degradation never changes
