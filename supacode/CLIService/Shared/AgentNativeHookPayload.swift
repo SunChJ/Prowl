@@ -80,16 +80,13 @@ nonisolated public enum AgentNativeHookDecodeError: Error, Equatable, Sendable {
 nonisolated public enum AgentNativeHookDecoder {
   public static let maximumPayloadBytes = 1_024 * 1_024
   private static let maximumCWDBytes = 4 * 1_024
-  private static let acceptedClaudeNotifications: Set<String> = [
-    "elicitation_dialog",
-    "idle_prompt",
-    "permission_prompt",
-  ]
-
-  /// S3b runtimes report attention through `Notification` only. `idle_prompt` means the agent
-  /// is waiting rather than blocked on a person, and `auth_success` / background-task types are
-  /// informational, so neither may resolve a wait as `needs-input` (docs-ai 064.008).
-  private static let acceptedBlockingNotifications: Set<String> = [
+  /// `Notification` types that mean a person must act, for Claude Code and the S3b runtimes
+  /// alike. `idle_prompt` means the agent is waiting rather than blocked on a person — Claude
+  /// fires it 60 s after every turn at an empty composer, where it would displace the
+  /// `turn-ended` level idle waits read and wake `changed` waits — and `auth_success` /
+  /// background-task types are informational, so none may resolve a wait as `needs-input`
+  /// (docs-ai 064.008, 064.013).
+  private static let acceptedAttentionNotifications: Set<String> = [
     "elicitation_dialog",
     "permission_prompt",
   ]
@@ -190,7 +187,7 @@ nonisolated public enum AgentNativeHookDecoder {
     let detail: String?
     if nativeEvent == "Notification" {
       guard let type = object["notification_type"] as? String,
-        acceptedBlockingNotifications.contains(type)
+        acceptedAttentionNotifications.contains(type)
       else {
         throw AgentNativeHookDecodeError.unsupportedEvent
       }
@@ -233,7 +230,7 @@ nonisolated public enum AgentNativeHookDecoder {
       detail = boundedOptionalString(object["tool_name"] ?? object["reason"])
     case "Notification":
       guard let type = object["notification_type"] as? String,
-        acceptedClaudeNotifications.contains(type)
+        acceptedAttentionNotifications.contains(type)
       else {
         throw AgentNativeHookDecodeError.unsupportedEvent
       }

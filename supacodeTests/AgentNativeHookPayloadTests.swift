@@ -55,12 +55,26 @@ struct AgentNativeHookPayloadTests {
     #expect(signal.event == .needsInput)
     #expect(signal.detail == "permission_prompt")
 
-    let ignored = Data(
-      #"{"hook_event_name":"Notification","notification_type":"future_notice","session_id":"s","cwd":"/tmp/p"}"#
+    let elicitation = Data(
+      #"{"hook_event_name":"Notification","notification_type":"elicitation_dialog","session_id":"s","cwd":"/tmp/p"}"#
         .utf8
     )
-    #expect(throws: AgentNativeHookDecodeError.unsupportedEvent) {
-      try AgentNativeHookDecoder.decode(runtime: .claude, nativeEvent: "Notification", payload: ignored)
+    #expect(
+      try AgentNativeHookDecoder.decode(runtime: .claude, nativeEvent: "Notification", payload: elicitation).detail
+        == "elicitation_dialog"
+    )
+
+    // `idle_prompt` fires 60 s after a turn ended while the composer sits empty: the agent is
+    // waiting, not blocked on a person, and treating it as `needs-input` would displace the
+    // `turn-ended` level that idle waits rely on.
+    for rejected in ["idle_prompt", "auth_success", "future_notice"] {
+      let ignored = Data(
+        #"{"hook_event_name":"Notification","notification_type":"\#(rejected)","session_id":"s","cwd":"/tmp/p"}"#
+          .utf8
+      )
+      #expect(throws: AgentNativeHookDecodeError.unsupportedEvent) {
+        try AgentNativeHookDecoder.decode(runtime: .claude, nativeEvent: "Notification", payload: ignored)
+      }
     }
   }
 
