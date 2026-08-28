@@ -32,6 +32,21 @@ Here `exact` means explicit channel plus exact caller-pane attribution; it does 
 producer's business judgment authoritative. `--origin` is caller-authored metadata only and
 cannot upgrade source/confidence or satisfy a native-hook capability check.
 
+Attribution and evidence eligibility are separate. The receipt reports `binding`:
+
+- `current` — the caller descends from the detected agent's launch process (PID + start time)
+  and, when Prowl knows the agent's session, names no other session. The signal is wait and
+  dispatch evidence.
+- `unbound` — no detected agent, a caller outside the agent's process tree, or a mismatched
+  `--session`. The signal is retained only as the diagnostic `signals.last`; it never satisfies
+  a wait or dispatch. The command still exits zero, and `data.warnings[]` carries exactly one
+  `signal_unbound` item that text mode prints once on stderr.
+
+Terminal events (`turn-ended`, `needs-input`, `session-end`) replace one another as the pane's
+active terminal evidence; waits poll that single value every 200 ms rather than consuming a
+queue, so two events reported back to back within one interval leave only the later one
+observable.
+
 ## Bundled native-hook ingress
 
 The bundled CLI also contains a hidden `agents _hook` bridge for Prowl-managed Claude Code,
@@ -56,7 +71,7 @@ workflow. A matching `dispatch-complete` receipt retains priority over an adjace
 `--session` and `--origin` are non-empty, control-free UTF-8 up to 256 bytes. `--detail`
 is non-empty, control-free UTF-8 up to 32768 bytes. Detail is a short result or reason returned
 with the signal; it is not logged and does not change confidence. Large results use
-`agents read`; workflow outputs use `workflow done -`.
+`agents read`; assigned-task results use `agents dispatch-complete --summary`.
 
 ## Success response
 
@@ -83,6 +98,7 @@ JSON:
       "event": "turn-ended",
       "source": "cooperative_cli",
       "confidence": "exact",
+      "binding": "current",
       "at": "2026-08-22T12:00:00.000Z",
       "session_id": "session-1",
       "detail": "Review complete",
@@ -91,6 +107,10 @@ JSON:
   }
 }
 ```
+
+An unbound receipt adds `"binding": "unbound"` and
+`"warnings": [{"code": "signal_unbound", "message": "…"}]` under `data`. Text mode prints
+`warning: [signal_unbound] …` on stderr after the receipt line.
 
 Optional fields are omitted rather than encoded as `null`. The executable schema is
 `#/$defs/agentsSignalResponse` in
@@ -112,7 +132,7 @@ CLI `create tab|pane --profile --prompt` returns an opaque `dispatch_id`; the ag
 `dispatch-complete --outcome succeeded|failed --summary <non-empty-summary>` from its
 launch-scoped context; a bounded in-memory receipt survives pane closure but not app restart;
 and ID-only `agents wait --dispatch` re-snapshots after observer overflow. Generic runtime
-`turn-ended` never substitutes for that dispatch receipt or `workflow done`. This paragraph
+`turn-ended` never substitutes for that dispatch receipt. This paragraph
 is a forward reference, not a shipped command contract; the owner-reviewed S2 design is
 [064.003](../../064-agent-completion-signals/003-s2-dispatch-wait-design.md), and normative
 wait/completion contracts ship with the implementation.
