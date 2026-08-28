@@ -69,7 +69,10 @@ The pane is resolved once to a stable target. `changed` requires a post-baseline
 `exit` requires the surface to stop being live. Exact surface closure satisfies `exit`; for
 `idle`, `blocked`, or `changed` it returns structured condition-mode `AGENT_GONE` immediately.
 Exact/high current-epoch cooperative evidence wins. `auto` may fall back to a heuristic
-idle/blocked match only after the observed state and revision remain unchanged for two seconds.
+idle/blocked/exit match only after the observed state and revision remain unchanged for two
+seconds, and only while no `verified_live` channel holds a terminal signal for that condition
+(a channel that has only reported `session-start`, or whose active level is another event,
+does not suppress the fallback); `changed` never falls back while such a channel exists.
 Higher minimum-confidence settings reject weaker
 evidence rather than relabelling it.
 

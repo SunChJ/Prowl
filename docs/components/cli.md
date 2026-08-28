@@ -51,7 +51,8 @@ Most commands accept one selector (mutually exclusive):
 - `--tab <uuid|tN|N>` — a specific tab (its focused/first pane). `tN` is the
   short handle shown in text output; bare `N` is accepted too.
 - `--worktree <id|name|path>` — a worktree (its selected/first tab → focused/first
-  pane).
+  pane). For a Git worktree, `name` is the checked-out branch and stops matching after a
+  checkout; automation should pass `id` (the worktree path).
 - `-t, --target <value>` — auto-resolve: `pN` as a pane, `tN` as a tab, then
   pane UUID, tab UUID, or worktree id/name/path.
 - **No selector** → the *current* focus (focused worktree → selected tab → focused
@@ -332,15 +333,24 @@ when the wait was armed satisfies `idle` or `blocked` only if the detector agree
 or blocked), while a signal arriving after arming counts on its own. To wait for the *next*
 turn edge rather than the current state, use `--until changed`, which needs a post-baseline
 revision or a newer signal — under `auto` with a `verified_live` channel it returns at the next
-runtime signal, not at a screen change. `auto` may fall back to a heuristic result only after
-the pane has remained unchanged for two seconds. When the pane hosts no detected agent yet
+runtime signal, not at a screen change. `auto` may fall back to a heuristic result — the
+detector's view after the pane has remained unchanged for two seconds — whenever no
+`verified_live` channel holds a terminal signal for the condition: right after a Profile
+launch, when the channel has only reported `session-start`, or when its active level is a
+different event. While the channel holds the condition's own level (`turn-ended` for `idle`,
+`needs-input` for `blocked`), that signal decides — with detector corroboration when it
+predates the wait — or the next runtime signal does; `changed` never falls back while a
+`verified_live` channel exists. When the pane hosts no detected agent yet
 (typically right after launching one), the wait keeps polling for up to ten seconds, bounded
 by `--timeout`, before failing with `AGENT_NOT_FOUND`. `--include-screen` samples the
 detection buffer until it is stable for 800 ms (or the two-second cap), then returns the
 requested trailing lines on both success and structured timeout/error details.
 Strict dispatch waits never accept a visual or idle-state substitute. Closing or killing the
 waiting CLI cancels its server-side subscription promptly. `turn-ended` is a runtime turn
-edge; only a `dispatch-complete` receipt proves that an assigned task finished.
+edge; only a `dispatch-complete` receipt proves that an assigned task finished. A receipt can
+also precede the runtime's own `turn-ended` by a second or two (Codex's notifier fires after
+the turn), so `agents` and `agents read` immediately after a receipt may still report
+`working` / `pending`.
 
 ### `prowl profiles list`
 
@@ -511,6 +521,10 @@ either positionally or with `--worktree`; `--path` must remain inside it.
 pane="$(prowl create tab "$wt" --json | jq -r '.data.target.pane.id')"
 ```
 
+Without `--profile`, the new tab always takes focus (`--background` is Profile-only), so
+keystrokes a person is typing at that moment land in the new shell; while someone is working
+in the app, prefer a Profile launch with `--background`.
+
 Add `--profile <name|uuid>` to launch an enabled Agent Profile instead of a shell. An
 optional kickoff prompt uses the sole stdin spelling `--prompt -`:
 
@@ -556,8 +570,9 @@ anchor's worktree and tab. With `--profile`, it launches the selected Profile an
 kickoff prompt from `--prompt -`; `--background` inserts the split without focusing it or
 selecting a hidden anchor's worktree/tab.
 
-`.data.anchor` records the source pane as resolved before the split (its `focused` flag is
-pre-split state), `.data.direction` records the public direction, and a Profile launch adds
+`.data.anchor` (`.data.anchor.pane.id`) records the source pane as resolved before the split
+(its `focused` flag is pre-split state), `.data.direction` records the public direction, and a
+Profile launch adds
 `.data.launch.{profile_id,profile_name,agent}`. The CLI requires this metadata for
 `--profile`, so an older app cannot silently return an ordinary shell. A mismatch error warns
 that the older app may already have created a resource; inspect `prowl list` and close it

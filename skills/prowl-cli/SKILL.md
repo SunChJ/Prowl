@@ -64,7 +64,7 @@ prowl key --pane "$pane" enter --json
 prowl focus --pane "$pane" --json
 ```
 
-Pick targets by `pane.id`, `tab.id`, `worktree.id`/`name`/`path`, and `pane.cwd`. Never trust tab titles: they are free-form and can lag or lie. Text `prowl list` / `prowl agents` also print short handles (`p7`, `t6`) that work in any target position for the life of the app process (`read p7`, `close t6`). UUIDs are the canonical identity of a *live* pane or tab, not a durable one: after an app restart restored tabs keep their tab UUID but panes are new surfaces with new UUIDs — never cache handles or pane UUIDs across a restart; re-run `prowl list`.
+Pick targets by `pane.id`, `tab.id`, `worktree.id`/`name`/`path`, and `pane.cwd`. Never trust tab titles: they are free-form and can lag or lie. For a Git worktree, `worktree.name` is the checked-out branch and stops matching after a checkout — automation should pass `worktree.id` (the path). Text `prowl list` / `prowl agents` also print short handles (`p7`, `t6`) that work in any target position for the life of the app process (`read p7`, `close t6`). UUIDs are the canonical identity of a *live* pane or tab, not a durable one: after an app restart restored tabs keep their tab UUID but panes are new surfaces with new UUIDs — never cache handles or pane UUIDs across a restart; re-run `prowl list`.
 
 For a currently active Codex or Claude Code agent, `prowl agents read p7 --json` returns an immediate semantic snapshot: `.data.agent.status`, `.data.blocker.text` when blocked, and `.data.result` — a result is trustworthy only when `.data.result.state == "complete"`.
 
@@ -85,7 +85,7 @@ Open a split beside yourself (or any positively identified anchor) and capture t
 pane="$(prowl create pane "$PROWL_PANE_ID" --direction right --json | jq -r '.data.target.pane.id')"
 ```
 
-Directions are `right`, `left`, `up`, `down`; the anchor must be a pane UUID or current `pN`. The new pane inherits the anchor's working directory, becomes focused, and Prowl selects its worktree and tab (as `create tab` does). Run input afterwards with an explicit `prowl send --pane "$pane" …`.
+Directions are `right`, `left`, `up`, `down`; the anchor must be a pane UUID or current `pN`, and `.data.anchor.pane.id` echoes it. The new pane inherits the anchor's working directory, becomes focused, and Prowl selects its worktree and tab (as `create tab` does). Without `--profile` there is no `--background`, so the split always takes focus and keystrokes a person is typing at that moment land in it — while someone is working in the app, prefer a Profile launch with `--background`. Run input afterwards with an explicit `prowl send --pane "$pane" …`.
 
 Launch a reviewer beside yourself after the identity guard in **Who You Are** has verified `$me`:
 
@@ -111,8 +111,10 @@ and prompt the Profile to read it. Add `--background` when the split must not ch
 select a hidden anchor's tab/worktree.
 
 Only a succeeded dispatch receipt proves that prompted assignment completed. The receipt may
-arrive before the TUI paints its final response; if the next action sends another prompt to the
-same pane, wait for an idle condition or read a stable screen first.
+arrive before the TUI paints its final response — and, for Codex, a second or two before its
+own `turn-ended`, so `prowl agents` / `agents read` right after a receipt can still report
+`working` / `pending`; if the next action sends another prompt to the same pane, wait for an
+idle condition or read a stable screen first.
 
 Create a fresh tab in a listed worktree:
 
@@ -120,7 +122,7 @@ Create a fresh tab in a listed worktree:
 pane="$(prowl create tab "$worktree" --json | jq -r '.data.target.pane.id')"
 ```
 
-Prefer a `worktree.id` or `worktree.name` from `prowl list --json` over a hand-typed path; `--path` only sets the new tab's working directory inside that worktree. `prowl open /path` is navigation — it may reuse an existing pane — so use `create tab`/`create pane` when you need a guaranteed new shell.
+Pass the `worktree.id` (its path) from `prowl list --json`: `worktree.name` is the checked-out branch for Git worktrees and stops matching after a checkout, and a hand-typed path is easy to get wrong. `--path` only sets the new tab's working directory inside that worktree. `prowl open /path` is navigation — it may reuse an existing pane — so use `create tab`/`create pane` when you need a guaranteed new shell.
 
 Run a command and capture its output and exit code:
 
@@ -187,7 +189,7 @@ result="$(prowl agents wait "$pane" --until idle --include-screen 40 --timeout 6
 printf '%s\n' "$result" | jq '.data.observation, .data.screen'
 ```
 
-  `--until idle|blocked` observe the current state: a signal that already existed when the wait was armed counts only if the screen detector agrees, a signal arriving afterwards counts on its own, and an already-idle agent with such a signal returns immediately. Detection-only evidence (no hook or cooperative signal, the usual case for a manually launched agent) resolves only after the state has stayed unchanged for two seconds, so give those waits a `--timeout` of at least a few seconds. To wait for the *next* turn edge (for example after `send`ing a new prompt), use `--until changed`; with a `verified_live` hook channel it returns at the next runtime signal, not at a screen change.
+  `--until idle|blocked` observe the current state: a signal that already existed when the wait was armed counts only if the screen detector agrees, a signal arriving afterwards counts on its own, and an already-idle agent with such a signal returns immediately. Detection-only evidence (no hook or cooperative signal, the usual case for a manually launched agent) resolves only after the state has stayed unchanged for two seconds. The same stabilized fallback applies to a Profile agent whose `verified_live` channel holds no signal for the condition yet — a freshly launched, unprompted Profile has only reported `session-start` — so `--until idle` before the first prompt resolves with `confidence: heuristic`. Give those waits a `--timeout` of at least a few seconds. To wait for the *next* turn edge (for example after `send`ing a new prompt), use `--until changed`; with a `verified_live` hook channel it returns at the next runtime signal, not at a screen change.
 
   Exact/high evidence can establish the requested observable condition. If
   `jq -e '.data.observation.confidence == "heuristic"'` matches, inspect the included stable
