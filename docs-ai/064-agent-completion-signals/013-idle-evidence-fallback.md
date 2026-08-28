@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented from `fix/agent-wait-idle-evidence` (PR pending). Follow-up to
+Implemented in [#736](https://github.com/onevcat/Prowl/pull/736) from `fix/agent-wait-idle-evidence`. Follow-up to
 [012](012-cli-evidence-semantics.md) after a second end-to-end exercise of the bundled
 `prowl-cli` skill on 2026-08-28/29 against the Release app built from `main` at `7523ad3d`,
 independently re-verified by a second agent.
