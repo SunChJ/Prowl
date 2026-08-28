@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented in PR #PR_NUMBER from `feat/cli-wait-signal-read-semantics`. Follow-up to S1/S2
+Implemented in [#732](https://github.com/onevcat/Prowl/pull/732) from `feat/cli-wait-signal-read-semantics`. Follow-up to S1/S2
 (`prowl agents signal`, `agents wait`, `agents read`) after an end-to-end exercise of the
 bundled `prowl-cli` skill on 2026-08-28 against the app built from `main` at `199fceb5`.
 
