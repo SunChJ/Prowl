@@ -40,7 +40,7 @@ struct SettingsView: View {
         Section("Agents") {
           Label("Profiles", systemImage: "person.crop.circle")
             .tag(SettingsSection.profiles)
-          Label("Command Line Tool", systemImage: "terminal")
+          Label("CLI & Skills", systemImage: "terminal")
             .tag(SettingsSection.commandLineTool)
         }
 
@@ -122,7 +122,7 @@ struct SettingsView: View {
       case .commandLineTool:
         SettingsDetailView {
           CommandLineToolSettingsView(store: settingsStore)
-            .navigationTitle("Command Line Tool")
+            .navigationTitle("CLI & Skills")
         }
       case .repository(let repositoryID):
         if let repository = repositories[id: repositoryID] {

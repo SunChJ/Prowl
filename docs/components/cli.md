@@ -22,7 +22,7 @@ inside a repo, and not for how-to questions about Prowl's settings.
 
 ## Install
 
-From the app: **Settings → Agents → Command Line Tool → Install**, or Command
+From the app: **Settings → Agents → CLI & Skills → Install**, or Command
 Palette → "Install Command Line Tool". This symlinks `prowl` into
 `/usr/local/bin` (prompting for admin if needed). The Settings page also shows
 the local Unix socket path `prowl` uses to reach the app (`PROWL_CLI_SOCKET`
@@ -414,7 +414,7 @@ and `targets[]` (`id`, `detected`, `path`, `status`, optional `destination`); `i
 `.data.scope`, `.data.root`, `.data.results[]` (`skill`, `target`, `path`, `before`,
 `after`) and, for project scope, `.data.note`; `path` → `.data.skill.{id,name,audience,path}`.
 `PROWL_SKILLS_DIR` points the command at a different skills root for development.
-Settings › Agents › Command Line Tool › **Agent Skills** offers the same user-scope actions
+Settings › Agents › CLI & Skills › **Agent Skills** offers the same user-scope actions
 from the GUI (Install / Remove / Repair / Replace per skill × detected target) and shows
 the same status as `prowl skills list` — see [settings](settings.md#agent-skills).
 
