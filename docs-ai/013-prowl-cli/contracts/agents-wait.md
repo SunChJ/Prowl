@@ -65,11 +65,21 @@ prowl agents wait <pane> --until idle|blocked|changed|exit \
   [--include-screen 1...200] [--json]
 ```
 
-The pane is resolved once to a stable target. `changed` requires a post-baseline revision;
-`exit` requires the surface to stop being live. Exact surface closure satisfies `exit`; for
-`idle`, `blocked`, or `changed` it returns structured condition-mode `AGENT_GONE` immediately.
+The pane is resolved once to a stable target. `changed` requires a post-baseline revision.
+`exit` is satisfied by an exact `session-end`, by surface closure, or — when no `verified_live`
+channel can report `session-end` (Codex's notifier, OpenCode's relay, a manually launched
+agent) — by the detector losing the agent for two seconds while the surface stays live; a
+channel that reports `session-end` makes that signal or surface closure the only exit
+evidence. Surface closure satisfies `exit`; for `idle`, `blocked`, or `changed` it returns
+structured condition-mode `AGENT_GONE` immediately.
 Exact/high current-epoch cooperative evidence wins. `auto` may fall back to a heuristic
-idle/blocked match only after the observed state and revision remain unchanged for two seconds.
+idle/blocked match only after the observed detector state has remained unchanged for two
+seconds (signals do not restart that window: a matching one resolves the wait exactly, a
+contradicting terminal one suppresses the fallback, and a `progress` or `session-start` leaves
+it to the labelled heuristic), and only while no covering `verified_live` channel holds a
+terminal signal (a channel that has only reported `session-start` does not suppress the
+fallback; one holding an opposite level does, so exact evidence is never overridden by the
+screen). `changed` never falls back while such a channel exists.
 Higher minimum-confidence settings reject weaker
 evidence rather than relabelling it.
 
@@ -83,7 +93,8 @@ after arming satisfies it on its own. `changed` is the edge wait. The reported
 A pane with no detected agent is not an immediate failure: the wait polls for up to
 `agentAppearanceGraceMilliseconds` (10 s), bounded by `--timeout`, and only then fails with
 `AGENT_NOT_FOUND` carrying condition-mode details (`waited_ms`, `target`, `signals`, optional
-`screen`). Once an agent has been seen, its later disappearance does not end the wait.
+`screen`). Once an agent has been seen, its later disappearance does not end an `idle`,
+`blocked`, or `changed` wait.
 
 Evidence is bound to PID plus process start time and, when known at exact/high confidence,
 the current session id. A dispatch launch accepts its first detected process generation only

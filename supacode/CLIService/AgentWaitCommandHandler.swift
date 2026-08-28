@@ -465,7 +465,7 @@ final class AgentWaitCommandHandler: CommandHandler {
       )
       if observation == nil {
         let candidate =
-          allowsHeuristic(minimumConfidence, condition: condition, signals: snapshot.signals)
+          allowsHeuristic(minimumConfidence, condition: condition, snapshot: snapshot)
           && heuristicMatches(condition: condition, snapshot: snapshot, normalizedState: state, baseline: baseline)
         if stabilizer.observe(candidate: candidate ? state : nil, elapsedMilliseconds: elapsedMilliseconds) {
           observation = heuristicObservation(snapshot, state: state)
@@ -620,10 +620,21 @@ final class AgentWaitCommandHandler: CommandHandler {
     }
   }
 
+  /// Whether `auto` may fall back to the stabilized screen detector. A covering `verified_live`
+  /// channel reports the next edge itself (`changed`) and its own `session-end` (`exit`), so
+  /// those never fall back; a channel that cannot report `session-end` (Codex's notifier,
+  /// OpenCode's relay) leaves `exit` to the detector, the only exit evidence once `/quit` has
+  /// returned the shell on a still-live surface. For `idle` and `blocked` the channel is
+  /// authoritative while it holds
+  /// any terminal level: the condition's own event resolves through the exact path, and an
+  /// opposite event means the runtime disagrees with the screen, which a stabilized detector
+  /// view must not override. Only a channel with no terminal level yet — a freshly launched,
+  /// unprompted Profile that has reported `session-start` alone — leaves the current state to
+  /// the detector.
   private func allowsHeuristic(
     _ minimum: AgentWaitMinimumConfidence,
     condition: AgentWaitCondition,
-    signals: AgentSignalsPayload
+    snapshot: ConditionSnapshot
   ) -> Bool {
     switch minimum {
     case .exact, .high:
@@ -638,8 +649,15 @@ final class AgentWaitCommandHandler: CommandHandler {
         case .exit: .sessionEnd
         case .changed: .progress
         }
-      return !signals.channels.contains {
+      let liveChannelCovers = snapshot.signals.channels.contains {
         $0.state == .verifiedLive && (condition == .changed || $0.events.contains(coveredEvent))
+      }
+      guard liveChannelCovers else { return true }
+      switch condition {
+      case .changed, .exit:
+        return false
+      case .idle, .blocked:
+        return snapshot.signal == nil
       }
     }
   }

@@ -245,6 +245,12 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-29: idle evidence fallback after a second end-to-end pass over the
+  `prowl-cli` skill — Claude's `idle_prompt` notification is no longer decoded as
+  `needs-input` (it displaced the `turn-ended` level and woke `changed` waits on idle panes),
+  and `auto` condition waits fall back to the stabilized detector whenever the `verified_live`
+  channel holds no terminal signal for the condition (freshly launched, unprompted Profiles).
+  See [013-idle-evidence-fallback.md](013-idle-evidence-fallback.md).
 - Updated 2026-08-28: follow-up on CLI evidence semantics after exercising the `prowl-cli` skill
   end to end — `agents read` reports `pending` during a live turn, condition waits require
   detector corroboration for arm-time terminal signals and tolerate 10 s of agent-appearance

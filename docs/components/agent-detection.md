@@ -160,8 +160,11 @@ Prowl Agent Profile launches of **Claude Code**, **Codex**, **GitHub Copilot**, 
 bridges without writing user, dedicated-home, or project configuration:
 
 - Claude `SessionStart` verifies launch coverage; `Stop` / `StopFailure` report
-  `turn-ended`; `PermissionRequest` and supported elicitation notifications report
-  `needs-input`; `SessionEnd` reports `session-end`.
+  `turn-ended`; `PermissionRequest`, `Elicitation`, and a `Notification` of type
+  `permission_prompt` or `elicitation_dialog` report `needs-input`; `SessionEnd` reports
+  `session-end`. The `idle_prompt` notification (Claude has sat at an empty composer for
+  60 s) is ignored: it means waiting, not needing a person, and accepting it would displace
+  the `turn-ended` level that idle waits read and wake `changed` waits on idle panes.
 - Codex's native `agent-turn-complete` notifier reports `turn-ended`. Prowl never passes
   Codex's hook-trust bypass flag.
 - Copilot, Droid, and Qoder report `SessionStart`, `Stop` (plus Qoder's `StopFailure`), and
