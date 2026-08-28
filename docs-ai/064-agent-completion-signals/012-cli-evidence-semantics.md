@@ -73,6 +73,26 @@ and `DISPATCH_ALREADY_TERMINAL`.
 - `make check`, targeted `xcodebuild test` suites, `make build-cli`, `make test-cli-unit`,
   `make test-cli-smoke`, `make test-cli-integration`, `make build-app` (see the PR).
 
+## Review
+
+Three adversarial rounds with the `Pi Reviewer` Profile launched beside the coordinator via
+`prowl create pane --profile … --prompt -` and awaited with `agents wait --dispatch`; briefs and
+findings stayed outside the repository. Each accepted finding was fixed test-first.
+
+- Round 1 — P1: `makeResult` checked the transcript session before the live status, so a live
+  agent without a resolved session reported `unavailable` instead of `pending`; P2: the schema
+  neither required `signal.binding` nor paired `unbound` with its warning. Fixed in 4965fc00.
+- Round 2 — P1: the tightened schema rejected the two `agents.signal` integration fixtures
+  (`make test-cli-integration` red); P3: the skill named only one `unbound` cause. Fixed in
+  7f457b5b.
+- Round 3 — P3 only: the skill overstated when an already-idle agent returns immediately.
+  Fixed in the closing docs commit; loop closed with no P0–P2 open.
+
+Two operational lessons from the loop: a second concurrent `xcodebuild test` in the same
+checkout hangs the build service (the reviewer's run sat 27 min at 0 % CPU), and a Profile
+launch fails with `CREATE_FAILED` while the display is asleep (see the 064 S3c notes) — both
+handled by serializing app test runs and keeping the display awake during unattended rounds.
+
 ## Observed but not changed
 
 - Cooperative signals are still coalesced by state at a 200 ms poll: `needs-input` followed
