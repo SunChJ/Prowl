@@ -9,7 +9,7 @@ extension AgentWaitMinimumConfidence: ExpressibleByArgument {}
 struct AgentsDispatchCompleteCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "dispatch-complete",
-    abstract: "Record the terminal outcome for this launched dispatch."
+    abstract: "Record the terminal outcome for this pane's current dispatch."
   )
 
   @Option(name: .long, help: "Terminal outcome: succeeded or failed.")
@@ -35,22 +35,22 @@ struct AgentsDispatchCompleteCommand: ParsableCommand {
   }
 
   func validate() throws {
-    let input = DispatchCompleteInput(dispatchID: "validation", outcome: outcome, summary: summary)
+    let input = DispatchCompleteInput(dispatchID: nil, outcome: outcome, summary: summary)
     if let message = input.validationErrorMessage {
       throw ValidationError(message)
     }
   }
 
+  /// The app resolves the receipt from the caller's process ancestry; a launch-scoped
+  /// `PROWL_DISPATCH_ID` rides along as diagnostics only, so its absence is not an error.
   func makeInput(
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) throws -> DispatchCompleteInput {
-    guard let dispatchID = environment[DispatchCompleteInput.environmentKey] else {
-      throw ExitError(
-        code: CLIErrorCode.dispatchContextRequired,
-        message: "This command requires launch-scoped PROWL_DISPATCH_ID context."
-      )
-    }
-    let input = DispatchCompleteInput(dispatchID: dispatchID, outcome: outcome, summary: summary)
+    let input = DispatchCompleteInput(
+      dispatchID: environment[DispatchCompleteInput.environmentKey],
+      outcome: outcome,
+      summary: summary
+    )
     if let message = input.validationErrorMessage {
       throw ExitError(code: CLIErrorCode.invalidArgument, message: message)
     }

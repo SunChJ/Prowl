@@ -38,6 +38,53 @@ final class DispatchOutputRendererTests: XCTestCase {
     )
   }
 
+  func testDispatchReceiptAndRefusalsRenderDeterministically() throws {
+    let payload = AgentDispatchCommandPayload(
+      target: Self.target,
+      dispatch: DispatchPendingRecord(id: "d2", createdAt: "2026-08-29T02:00:00.000Z")
+    )
+    XCTAssertEqual(
+      OutputRenderer.dispatchText(payload),
+      "Dispatched d2 (pending)\n  pane: pane\n  created: 2026-08-29T02:00:00.000Z"
+    )
+
+    let pending = CommandError(
+      code: "DISPATCH_PENDING",
+      message: "Pending.",
+      details: try RawJSON(
+        encoding: AgentDispatchErrorDetails(
+          target: Self.target,
+          record: .pending(DispatchPendingRecord(id: "d1", createdAt: "2026-08-29T02:00:00.000Z"))
+        ))
+    )
+    XCTAssertEqual(
+      OutputRenderer.errorText(pending, command: "agents.dispatch"),
+      "error [DISPATCH_PENDING]: Pending.\n  pane: pane\n  dispatch: d1 (pending)"
+    )
+
+    let busy = CommandError(
+      code: "DISPATCH_TARGET_BUSY",
+      message: "Busy.",
+      details: try RawJSON(
+        encoding: AgentDispatchErrorDetails(
+          target: Self.target,
+          observation: AgentWaitObservation(
+            status: .working,
+            rawState: "working",
+            source: "detection",
+            confidence: "heuristic",
+            timestamp: "2026-08-29T02:00:00.000Z",
+            revision: 3
+          ),
+          signals: AgentSignalsPayload(channels: [], last: nil, lastBinding: nil)
+        ))
+    )
+    XCTAssertEqual(
+      OutputRenderer.errorText(busy, command: "agents.dispatch"),
+      "error [DISPATCH_TARGET_BUSY]: Busy.\n  pane: pane\n  observation: working [heuristic] via detection"
+    )
+  }
+
   func testWaitSuccessRendersModeProvenanceAndSummary() {
     let payload = AgentWaitCommandPayload.dispatch(
       AgentDispatchWaitPayload(

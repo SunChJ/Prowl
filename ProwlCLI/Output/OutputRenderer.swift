@@ -87,6 +87,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "agents.dispatch",
+         let data = response.data,
+         let payload = try? data.decode(as: AgentDispatchCommandPayload.self)
+      {
+        print(dispatchText(payload))
+        return
+      }
+
       if response.command == "agents.dispatch-complete",
          let data = response.data,
          let payload = try? data.decode(as: DispatchCompleteCommandPayload.self)
@@ -333,6 +341,14 @@ enum OutputRenderer {
     return "Signaled \(event) for pane \(payload.pane.id)."
   }
 
+  static func dispatchText(_ payload: AgentDispatchCommandPayload) -> String {
+    [
+      "Dispatched \(payload.dispatch.id) (\(payload.dispatch.state.rawValue))",
+      "  pane: \(payload.target.pane.id)",
+      "  created: \(payload.dispatch.createdAt)",
+    ].joined(separator: "\n")
+  }
+
   static func dispatchCompleteText(_ payload: DispatchCompleteCommandPayload) -> String {
     let replayed = payload.replayed ? " (replayed)" : ""
     return [
@@ -370,6 +386,20 @@ enum OutputRenderer {
 
   static func errorText(_ error: CommandError, command: String) -> String {
     var lines = ["error [\(error.code)]: \(error.message)"]
+    if command == "agents.dispatch",
+      let details = try? error.details?.decode(as: AgentDispatchErrorDetails.self)
+    {
+      lines.append("  pane: \(details.target.pane.id)")
+      if let record = details.record {
+        lines.append("  dispatch: \(record.id) (\(record.state.rawValue))")
+      }
+      if let observation = details.observation {
+        lines.append(
+          "  observation: \(observation.status.rawValue) [\(observation.confidence)] via \(observation.source)"
+        )
+      }
+      return lines.joined(separator: "\n")
+    }
     guard command == "agents.wait",
       let details = try? error.details?.decode(as: AgentWaitErrorDetails.self)
     else {

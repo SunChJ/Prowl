@@ -391,6 +391,106 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertEqual(rendered["schema_version"] as? String, "prowl.cli.agents.signal.v1")
   }
 
+  func testDispatchRoundTripsOverSocketWithStdinPrompt() throws {
+    let socketPath = temporarySocketPath(suffix: "dispatch")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.dispatch",
+      schemaVersion: "prowl.cli.agents.dispatch.v1",
+      data: RawJSON(
+        encoding: AgentDispatchCommandPayload(
+          target: makeTabTarget(),
+          dispatch: DispatchPendingRecord(id: "dispatch-2", createdAt: "2026-08-29T04:00:00.000Z")
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["agents", "dispatch", "p7", "--prompt", "-", "--json"],
+      stdinData: Data("Round two.\nRe-review the diff against main.\n".utf8)
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsDispatch(let input) = envelope.command else {
+      return XCTFail("Expected agents.dispatch command envelope")
+    }
+    XCTAssertEqual(input.pane, "p7")
+    XCTAssertEqual(input.prompt, "Round two.\nRe-review the diff against main.")
+    let rendered = try jsonObject(from: result.stdout)
+    let data = try XCTUnwrap(rendered["data"] as? [String: Any])
+    let dispatch = try XCTUnwrap(data["dispatch"] as? [String: Any])
+    XCTAssertEqual(dispatch["id"] as? String, "dispatch-2")
+    XCTAssertEqual(dispatch["state"] as? String, "pending")
+  }
+
+  func testDispatchRefusalRendersGovernedDetails() throws {
+    let socketPath = temporarySocketPath(suffix: "dispatch-pending")
+    let response = CommandResponse(
+      ok: false,
+      command: "agents.dispatch",
+      schemaVersion: "prowl.cli.agents.dispatch.v1",
+      error: CommandError(
+        code: CLIErrorCode.dispatchPending,
+        message: "Pending.",
+        details: try RawJSON(
+          encoding: AgentDispatchErrorDetails(
+            target: makeTabTarget(),
+            record: .pending(DispatchPendingRecord(id: "dispatch-1", createdAt: "2026-08-29T04:00:00.000Z"))
+          ))
+      )
+    )
+
+    let (_, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["agents", "dispatch", "p7", "--prompt", "-"],
+      stdinData: Data("Round two.\n".utf8)
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stderr.contains("error [DISPATCH_PENDING]: Pending."))
+    XCTAssertTrue(result.stderr.contains("dispatch: dispatch-1 (pending)"))
+  }
+
+  func testDispatchCompleteRoundTripsOverSocketWithoutLaunchContext() throws {
+    let socketPath = temporarySocketPath(suffix: "dispatch-complete-no-env")
+    let response = try CommandResponse(
+      ok: true,
+      command: "agents.dispatch-complete",
+      schemaVersion: "prowl.cli.agents.dispatch-complete.v1",
+      data: RawJSON(
+        encoding: DispatchCompleteCommandPayload(
+          target: makeTabTarget(),
+          receipt: DispatchCompletedRecord(
+            id: "dispatch-complete-2",
+            outcome: .failed,
+            summary: "Blocked",
+            createdAt: "2026-08-29T04:00:00.000Z",
+            completedAt: "2026-08-29T04:01:00.000Z"
+          ),
+          replayed: false
+        )
+      )
+    )
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath,
+      response: response,
+      args: ["agents", "dispatch-complete", "--outcome", "failed", "--summary", "Blocked", "--json"]
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .agentsDispatchComplete(let input) = envelope.command else {
+      return XCTFail("Expected agents.dispatch-complete command envelope")
+    }
+    XCTAssertNil(input.dispatchID)
+    XCTAssertEqual(input.outcome, .failed)
+  }
+
   func testDispatchCompleteRoundTripsOverSocket() throws {
     let socketPath = temporarySocketPath(suffix: "dispatch-complete")
     let response = try CommandResponse(

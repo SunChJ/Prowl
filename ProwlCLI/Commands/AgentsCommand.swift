@@ -11,6 +11,7 @@ struct AgentsCommand: ParsableCommand {
       AgentsReadCommand.self,
       AgentsSignalCommand.self,
       AgentsHookCommand.self,
+      AgentsDispatchCommand.self,
       AgentsDispatchCompleteCommand.self,
       AgentsDispatchAbandonCommand.self,
       AgentsWaitCommand.self,

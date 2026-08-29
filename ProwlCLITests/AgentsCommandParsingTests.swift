@@ -174,13 +174,18 @@ final class AgentsCommandParsingTests: XCTestCase {
     XCTAssertTrue(command.options.json)
   }
 
-  func testDispatchCompleteRejectsMissingContextInvalidOutcomeAndBoundedSummary() throws {
-    let missingContext = try AgentsDispatchCompleteCommand.parse([
+  func testDispatchCompleteWithoutLaunchContextSendsNoDispatchID() throws {
+    let command = try AgentsDispatchCompleteCommand.parse([
       "--outcome", "failed", "--summary", "SDK unavailable",
     ])
-    XCTAssertThrowsError(try missingContext.makeInput(environment: [:])) {
-      XCTAssertEqual(($0 as? ExitError)?.code, CLIErrorCode.dispatchContextRequired)
-    }
+    let input = try command.makeInput(environment: [:])
+
+    XCTAssertNil(input.dispatchID)
+    XCTAssertEqual(input.outcome, .failed)
+    XCTAssertEqual(input.summary, "SDK unavailable")
+  }
+
+  func testDispatchCompleteRejectsInvalidOutcomeAndBoundedSummary() throws {
     XCTAssertThrowsError(
       try AgentsDispatchCompleteCommand.parse(["--outcome", "cancelled", "--summary", "Nope"])
     )
@@ -194,6 +199,48 @@ final class AgentsCommandParsingTests: XCTestCase {
         "--outcome", "failed", "--summary", String(repeating: "界", count: 10_923),
       ])
     )
+  }
+
+  func testDispatchParsesPaneAndReadsMultilinePromptFromPipedStdin() throws {
+    let command = try AgentsDispatchCommand.parse(["p7", "--prompt", "-", "--json"])
+    let input = try command.makeInput(
+      stdinIsTerminal: false,
+      readStdin: { Data("Round two.\r\nRe-review the diff.\n\n".utf8) }
+    )
+
+    XCTAssertEqual(input.pane, "p7")
+    XCTAssertEqual(input.prompt, "Round two.\nRe-review the diff.")
+    XCTAssertTrue(command.options.json)
+    XCTAssertNil(input.validationErrorMessage)
+    XCTAssertEqual(
+      try AgentsDispatchCommand.parse(["6E1A2A10-D99F-4E3F-920C-D93AA3C05764", "--prompt", "-"]).pane,
+      "6E1A2A10-D99F-4E3F-920C-D93AA3C05764"
+    )
+  }
+
+  func testDispatchRequiresExplicitPaneStdinPromptAndBoundedControlFreeText() throws {
+    XCTAssertThrowsError(try AgentsDispatchCommand.parse(["main", "--prompt", "-"]))
+    XCTAssertThrowsError(try AgentsDispatchCommand.parse(["p7"]))
+    XCTAssertThrowsError(try AgentsDispatchCommand.parse(["p7", "--prompt", "Inline text"]))
+
+    let command = try AgentsDispatchCommand.parse(["p7", "--prompt", "-"])
+    XCTAssertThrowsError(try command.makeInput(stdinIsTerminal: true, readStdin: { Data() })) {
+      XCTAssertEqual(($0 as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
+    XCTAssertThrowsError(try command.makeInput(stdinIsTerminal: false, readStdin: { Data("\n\n".utf8) })) {
+      XCTAssertEqual(($0 as? ExitError)?.code, CLIErrorCode.emptyInput)
+    }
+    XCTAssertThrowsError(try command.makeInput(stdinIsTerminal: false, readStdin: { Data("bell\u{07}".utf8) })) {
+      XCTAssertEqual(($0 as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
+    XCTAssertThrowsError(
+      try command.makeInput(
+        stdinIsTerminal: false,
+        readStdin: { Data(repeating: UInt8(ascii: "x"), count: DispatchInput.maximumPromptUTF8ByteCount + 1) }
+      )
+    ) {
+      XCTAssertEqual(($0 as? ExitError)?.code, CLIErrorCode.invalidArgument)
+    }
   }
 
   func testDispatchAbandonParsesIDAndReasonAndRejectsBoundViolations() throws {
