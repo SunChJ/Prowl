@@ -515,15 +515,7 @@ final class WorktreeTerminalManager {
   @discardableResult
   func recordAgentSignal(_ signal: AgentSignal, caller: CallerPane) -> AgentSignalRecordOutcome {
     guard containsSurface(caller.surfaceID) else { return .paneGone }
-    let evidence = currentAgentEvidence(surfaceID: caller.surfaceID)
-    handleEvidenceEpochUpdate(
-      agentObservationStore.updateEvidenceEpoch(
-        surfaceID: caller.surfaceID,
-        processGeneration: evidence.generation,
-        sessionID: evidence.sessionID
-      ),
-      surfaceID: caller.surfaceID
-    )
+    let evidence = refreshEvidenceEpoch(surfaceID: caller.surfaceID)
     let generationMatches = evidence.generation.map(caller.processAncestry.contains) ?? false
     let binding = agentObservationStore.bindingForSignal(
       surfaceID: caller.surfaceID,
@@ -546,15 +538,7 @@ final class WorktreeTerminalManager {
   @discardableResult
   func recordAgentNativeHook(_ input: AgentNativeHookInput, caller: CallerPane) -> Bool {
     guard containsSurface(caller.surfaceID) else { return false }
-    let evidence = currentAgentEvidence(surfaceID: caller.surfaceID)
-    handleEvidenceEpochUpdate(
-      agentObservationStore.updateEvidenceEpoch(
-        surfaceID: caller.surfaceID,
-        processGeneration: evidence.generation,
-        sessionID: evidence.sessionID
-      ),
-      surfaceID: caller.surfaceID
-    )
+    refreshEvidenceEpoch(surfaceID: caller.surfaceID)
     switch agentObservationStore.recordManagedHook(
       input,
       callerAncestry: caller.processAncestry,
@@ -568,6 +552,24 @@ final class WorktreeTerminalManager {
       noteDispatchEvidence(signal, surfaceID: caller.surfaceID, evidenceEpoch: evidenceEpoch)
       return true
     }
+  }
+
+  /// Reconciles the surface's evidence epoch with the agent generation and session the
+  /// detector currently proves, activating any hook signals that were waiting for it.
+  @discardableResult
+  private func refreshEvidenceEpoch(
+    surfaceID: UUID
+  ) -> (generation: AgentProcessGeneration?, sessionID: String?) {
+    let evidence = currentAgentEvidence(surfaceID: surfaceID)
+    handleEvidenceEpochUpdate(
+      agentObservationStore.updateEvidenceEpoch(
+        surfaceID: surfaceID,
+        processGeneration: evidence.generation,
+        sessionID: evidence.sessionID
+      ),
+      surfaceID: surfaceID
+    )
+    return evidence
   }
 
   private func handleEvidenceEpochUpdate(
@@ -637,15 +639,7 @@ final class WorktreeTerminalManager {
     surfaceID: UUID,
     includeDiagnosticLast: Bool = true
   ) -> AgentSignalsPayload {
-    let evidence = currentAgentEvidence(surfaceID: surfaceID)
-    handleEvidenceEpochUpdate(
-      agentObservationStore.updateEvidenceEpoch(
-        surfaceID: surfaceID,
-        processGeneration: evidence.generation,
-        sessionID: evidence.sessionID
-      ),
-      surfaceID: surfaceID
-    )
+    refreshEvidenceEpoch(surfaceID: surfaceID)
     return agentObservationStore.signalsPayload(
       surfaceID: surfaceID,
       formatter: Self.agentSignalDateFormatter,
@@ -731,12 +725,48 @@ final class WorktreeTerminalManager {
     )
   }
 
+  /// Issues a record for an agent already running in `target` and binds it to the pane's
+  /// current evidence epoch in one main-actor step (docs-ai 064.014). Unlike a prompted
+  /// launch this never begins a new epoch: the generation that will report the receipt is
+  /// the one the pane holds now, so its hook and cooperative signals keep counting.
+  func issueAgentDispatch(boundTo target: TabResolvedTarget) throws -> AgentDispatchSnapshot {
+    guard let surfaceID = UUID(uuidString: target.paneID), containsSurface(surfaceID) else {
+      throw AgentDispatchStoreError.bindingMissing
+    }
+    refreshEvidenceEpoch(surfaceID: surfaceID)
+    guard let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: surfaceID) else {
+      throw AgentDispatchStoreError.bindingMissing
+    }
+    guard agentDispatchStore.pendingSnapshot(surfaceID: surfaceID) == nil else {
+      throw AgentDispatchStoreError.surfacePending
+    }
+    let issued = try agentDispatchStore.issue()
+    do {
+      try agentDispatchStore.bind(
+        dispatchID: issued.record.id,
+        binding: AgentDispatchBinding(
+          surfaceID: surfaceID,
+          target: TabTarget(from: target),
+          evidenceEpoch: evidenceEpoch
+        )
+      )
+    } catch {
+      agentDispatchStore.cancelIssuance(dispatchID: issued.record.id)
+      throw error
+    }
+    return agentDispatchStore.snapshot(dispatchID: issued.record.id) ?? issued
+  }
+
   func cancelAgentDispatchIssuance(dispatchID: String) {
     agentDispatchStore.cancelIssuance(dispatchID: dispatchID)
   }
 
   func agentDispatchSnapshot(dispatchID: String) -> AgentDispatchSnapshot? {
     agentDispatchStore.snapshot(dispatchID: dispatchID)
+  }
+
+  func pendingAgentDispatchSnapshot(surfaceID: UUID) -> AgentDispatchSnapshot? {
+    agentDispatchStore.pendingSnapshot(surfaceID: surfaceID)
   }
 
   func completeAgentDispatch(
@@ -751,6 +781,15 @@ final class WorktreeTerminalManager {
       summary: summary,
       callerSurfaceID: callerSurfaceID
     )
+  }
+
+  /// Completes the caller pane's current pending dispatch (see `AgentDispatchStore.complete(surfaceID:)`).
+  func completeAgentDispatch(
+    surfaceID: UUID,
+    outcome: DispatchCompletionOutcome,
+    summary: String
+  ) throws -> AgentDispatchMutationResult {
+    try agentDispatchStore.complete(surfaceID: surfaceID, outcome: outcome, summary: summary)
   }
 
   func abandonAgentDispatch(dispatchID: String, reason: String) throws -> AgentDispatchMutationResult {
@@ -871,15 +910,7 @@ final class WorktreeTerminalManager {
     state.onAgentEntryChanged = { [weak self] entry in
       guard let self else { return }
       let beganWorking = agentObservationStore.publishAgentChanged(entry)
-      let evidence = currentAgentEvidence(surfaceID: entry.surfaceID)
-      handleEvidenceEpochUpdate(
-        agentObservationStore.updateEvidenceEpoch(
-          surfaceID: entry.surfaceID,
-          processGeneration: evidence.generation,
-          sessionID: evidence.sessionID
-        ),
-        surfaceID: entry.surfaceID
-      )
+      refreshEvidenceEpoch(surfaceID: entry.surfaceID)
       if beganWorking,
         let evidenceEpoch = agentObservationStore.currentEvidenceEpoch(surfaceID: entry.surfaceID)
       {

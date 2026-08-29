@@ -17,6 +17,8 @@ final class DispatchSchemaTests: XCTestCase {
       "dispatchRecord",
       "agentSignals",
       "agentWaitScreen",
+      "agentsDispatchResponse",
+      "agentsDispatchErrorDetails",
       "agentsDispatchCompleteResponse",
       "agentsDispatchAbandonResponse",
       "agentsWaitResponse",
@@ -36,6 +38,32 @@ final class DispatchSchemaTests: XCTestCase {
 
     try assertValid(completion)
     try assertValid(timeout)
+  }
+
+  func testSchemaAcceptsDispatchSuccessAndStructuredRefusalsButNotUnknownDetails() throws {
+    let target =
+      #"{"worktree":{"id":"wt","name":"main","path":"/Projects/Prowl","root_path":"/Projects/Prowl","kind":"git"},"tab":{"id":"tab","title":"Tab","selected":true},"pane":{"id":"pane","title":"Pane","cwd":"/Projects/Prowl","focused":true}}"#
+    let success =
+      #"{"ok":true,"command":"agents.dispatch","schema_version":"prowl.cli.agents.dispatch.v1","data":{"target":"# + target
+      + #","dispatch":{"id":"d2","state":"pending","created_at":"2026-08-29T02:00:00.000Z"}}}"#
+    let pending =
+      #"{"ok":false,"command":"agents.dispatch","schema_version":"prowl.cli.agents.dispatch.v1","error":{"code":"DISPATCH_PENDING","message":"Pending.","details":{"target":"# + target
+      + #","record":{"id":"d1","state":"pending","created_at":"2026-08-29T02:00:00.000Z"}}}}"#
+    let busy =
+      #"{"ok":false,"command":"agents.dispatch","schema_version":"prowl.cli.agents.dispatch.v1","error":{"code":"DISPATCH_TARGET_BUSY","message":"Busy.","details":{"target":"# + target
+      + #","observation":{"status":"working","raw_state":"working","source":"detection","confidence":"heuristic","at":"2026-08-29T02:00:00.000Z","revision":3},"signals":{"channels":[]}}}}"#
+    let unknown =
+      #"{"ok":false,"command":"agents.dispatch","schema_version":"prowl.cli.agents.dispatch.v1","error":{"code":"DISPATCH_PENDING","message":"Pending.","details":{"target":"# + target
+      + #","waited_ms":1}}}"#
+    let extraData =
+      #"{"ok":true,"command":"agents.dispatch","schema_version":"prowl.cli.agents.dispatch.v1","data":{"target":"# + target
+      + #","dispatch":{"id":"d2","state":"pending","created_at":"2026-08-29T02:00:00.000Z"},"delivered":true}}"#
+
+    try assertValid(success)
+    try assertValid(pending)
+    try assertValid(busy)
+    try assertInvalid(unknown)
+    try assertInvalid(extraData)
   }
 
   func testSchemaRejectsCrossVariantFieldsAndUnknownWaitDetails() throws {

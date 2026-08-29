@@ -20,6 +20,9 @@
       "$ref": "#/$defs/agentsSignalResponse"
     },
     {
+      "$ref": "#/$defs/agentsDispatchResponse"
+    },
+    {
       "$ref": "#/$defs/agentsDispatchCompleteResponse"
     },
     {
@@ -1309,6 +1312,64 @@
         }
       }
     },
+    "agentsDispatchData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "dispatch"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "dispatch": {
+          "$ref": "#/$defs/dispatchPendingRecord"
+        }
+      }
+    },
+    "agentsDispatchErrorDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "record": {
+          "$ref": "#/$defs/dispatchRecord"
+        },
+        "observation": {
+          "$ref": "#/$defs/agentWaitObservation"
+        },
+        "signals": {
+          "$ref": "#/$defs/agentSignals"
+        }
+      }
+    },
+    "agentsDispatchError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "$ref": "#/$defs/agentsDispatchErrorDetails"
+        }
+      }
+    },
     "agentsDispatchCompleteData": {
       "type": "object",
       "additionalProperties": false,
@@ -2568,6 +2629,58 @@
             },
             "error": {
               "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "agentsDispatchResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "agents.dispatch"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.dispatch.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/agentsDispatchData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "agents.dispatch"
+            },
+            "schema_version": {
+              "const": "prowl.cli.agents.dispatch.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/agentsDispatchError"
             }
           }
         }

@@ -36,6 +36,10 @@ public enum CLIErrorCode {
   public static let dispatchAbandoned = "DISPATCH_ABANDONED"
   public static let dispatchNeedsInput = "DISPATCH_NEEDS_INPUT"
   public static let dispatchIncomplete = "DISPATCH_INCOMPLETE"
+  /// `agents dispatch` refused because the pane already holds a pending dispatch.
+  public static let dispatchPending = "DISPATCH_PENDING"
+  /// `agents dispatch` refused because the pane's agent is working or blocked.
+  public static let dispatchTargetBusy = "DISPATCH_TARGET_BUSY"
   public static let blockerUnreadable = "BLOCKER_UNREADABLE"
   public static let sessionUnresolved = "SESSION_UNRESOLVED"
   public static let resultNotFound = "RESULT_NOT_FOUND"

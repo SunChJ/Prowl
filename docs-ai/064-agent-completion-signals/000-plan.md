@@ -246,6 +246,11 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-29 (#733 re-dispatch): `prowl agents dispatch <pane> --prompt -` creates a
+  new pending record for an agent already running in a pane (one pending record per surface,
+  idle precondition shared with `agents wait --until idle`, delivery measured as one bracketed
+  paste), and `dispatch-complete` resolves the record from the caller pane instead of
+  `PROWL_DISPATCH_ID` — see [014-re-dispatch.md](014-re-dispatch.md).
 - Updated 2026-08-29 (#726 T0): [agent-attestation.json](agent-attestation.json) now records the
   version each tier-A runtime last passed a live sweep against (all eight from
   [011-s3c-action.md](011-s3c-action.md)); `make agent-versions` compares the installed binaries

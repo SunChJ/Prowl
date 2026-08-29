@@ -116,6 +116,40 @@ own `turn-ended`, so `prowl agents` / `agents read` right after a receipt can st
 `working` / `pending`; if the next action sends another prompt to the same pane, wait for an
 idle condition or read a stable screen first.
 
+Reuse one reviewer across rounds instead of launching a fresh Profile per round: launch once,
+then hand each later round to the same pane with `agents dispatch`, which keeps the reviewer's
+context and still returns an exact receipt per round.
+
+```bash
+launch="$(prowl create pane "$PROWL_PANE_ID" --direction right --profile Reviewer --prompt - --json <<'EOF'
+Round 1: review the current branch against main. Write findings to /tmp/review-1.md.
+EOF
+)"
+pane="$(printf '%s\n' "$launch" | jq -r '.data.target.pane.id')"
+dispatch="$(printf '%s\n' "$launch" | jq -r '.data.dispatch.id')"
+prowl agents wait --dispatch "$dispatch" --json | jq -r '.data.receipt.summary'
+# … fix the findings, then:
+prowl agents wait "$pane" --until idle --timeout 30 --json >/dev/null
+round="$(prowl agents dispatch "$pane" --prompt - --json <<'EOF'
+Round 2: re-review the diff against main. Report only findings not already fixed; write them to /tmp/review-2.md.
+EOF
+)"
+dispatch="$(printf '%s\n' "$round" | jq -r '.data.dispatch.id')"
+prowl agents wait --dispatch "$dispatch" --json | jq -r '.data.receipt.summary'
+```
+
+`agents dispatch` needs a pane whose detected agent is idle: it applies the same evidence
+rules as `--until idle` (a corroborated `turn-ended` resolves at once; a detector-only idle
+view must hold for two seconds) and refuses a working or blocked agent with
+`DISPATCH_TARGET_BUSY` instead of merging text into the running turn — hence the `--until idle`
+between rounds, which also covers Codex's late `turn-ended`. When that wait resolved on a fresh
+runtime `turn-ended` a moment before the screen caught up, the dispatch waits up to five
+seconds for the screen to agree before refusing, so the two commands work back to back. A pane
+holds at most one pending dispatch: a second `dispatch` fails with `DISPATCH_PENDING` (the
+record is in `.error.details.record`) until you wait for or `dispatch-abandon` the previous
+one. The prompt is piped stdin (multi-line is fine; it arrives as one message), and the
+reviewer completes with the usual `agents dispatch-complete` — from its own pane, no id needed.
+
 Create a fresh tab in a listed worktree:
 
 ```bash
@@ -163,6 +197,7 @@ Key fields by command:
 - `agents` → `.data.agents[]` with `.status`, `.raw_state`, `.detection_reason`, `.type`, `.name`, `.pane.{id,focused,cwd}`, `.tab`, `.worktree`, `.project.{name,branch,path}`.
 - `agents read` → `.data.agent`, `.data.blocker.text`, `.data.result.{state,text}` — `pending`, `unavailable`, `missing`, `incomplete`, `too_large` carry no partial text; `pending` is returned whenever the agent is working or blocked, even if an earlier turn completed.
 - `agents signal` → `.data.pane.{id,worktree_id}`, `.data.signal.{event,source,confidence,binding,at,session_id,detail,claimed_origin}`, optional `.data.warnings[]` (`code=signal_unbound`); optional fields are omitted.
+- `agents dispatch` → `.data.target` and the new pending `.data.dispatch.{id,state,created_at}`; refusals carry `.error.details.{target,record,observation,signals}`.
 - `agents wait --dispatch` → `.data.receipt`, immutable `.data.target`, `.data.signals`, optional `.data.screen`; nonzero results retain the record and evidence under `.error.details`.
 - `agents wait <pane> --until …` → `.data.observation.{status,raw_state,source,confidence,at,revision}`, `.data.signals`, and optional `.data.screen`. `source`/`confidence` are the evidence that satisfied the condition; `status`/`raw_state` are what the screen detector saw at that moment, so `idle` satisfied by a `turn-ended` signal may still show `status: working`.
 - `read` → `.data.text`, `.data.line_count`, `.data.truncated`, `.data.mode`, `.data.source`; `.data.stabilized` / `.data.waited_ms` with `--wait-stable`.
@@ -233,7 +268,8 @@ printf '%s\n' "$result" | jq '.data.observation, .data.screen'
 - `EMPTY_INPUT`, `INVALID_ARGUMENT`, `UNSUPPORTED_KEY`, `INVALID_REPEAT`: fix the arguments (`prowl <cmd> --help`).
 - `CAPTURE_UNSUPPORTED`: drop `--capture` and use `read --wait-stable` or file redirection.
 - `WAIT_TIMEOUT`: inspect `.error.details`, then re-arm the wait if the task remains active.
-- `AGENT_NOT_FOUND` (`agents wait`): no detected agent appeared in the pane within ten seconds — confirm the pane with `prowl agents --json` before re-arming. `DISPATCH_NOT_FOUND`: no such dispatch record (records reset on app restart). `DISPATCH_CONTEXT_REQUIRED`: `dispatch-complete` ran outside a prompted Profile launch. `DISPATCH_ALREADY_TERMINAL`: `dispatch-abandon` hit a record that already completed, was abandoned, or is gone.
+- `AGENT_NOT_FOUND` (`agents wait`, `agents dispatch`): no detected agent in the pane (a wait tolerates ten seconds; a dispatch does not) — confirm the pane with `prowl agents --json`. `DISPATCH_NOT_FOUND`: no such dispatch record, or `dispatch-complete` ran in a pane that never held one (records reset on app restart). `DISPATCH_CONTEXT_REQUIRED`: `dispatch-complete` ran from a process outside any Prowl pane. `DISPATCH_ALREADY_TERMINAL`: `dispatch-abandon` hit a record that already completed, was abandoned, or is gone.
+- `DISPATCH_PENDING` / `DISPATCH_TARGET_BUSY` (`agents dispatch`): the pane still holds a pending record (wait for it or abandon it), or its agent is working/blocked (wait `--until idle`, then retry). Nothing was typed into the pane.
 - `DISPATCH_FAILED` / `DISPATCH_ABANDONED`: the exact dispatch is terminal; inspect its retained record and immutable target in `.error.details`.
 - `AGENT_GONE`: inspect `.error.details.mode`. `dispatch` means the exact worker is terminal and retains a record; `condition` means the target pane closed. Without details on `agents signal`, the caller pane disappeared before recording.
 - `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE`: the dispatch remains pending; use the intervention sequencing in **Reading Agent Output** before waiting again.
@@ -259,4 +295,4 @@ Required sections are `## Objective`, `## Current State`, and `## Next Steps`; o
 
 ## Command Set
 
-`list`, `agents`, `agents read`, `agents signal`, `agents dispatch-complete`, `agents dispatch-abandon`, `agents wait`, `profiles list`, `skills list|install|uninstall|path` (local-only), `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.
+`list`, `agents`, `agents read`, `agents signal`, `agents dispatch`, `agents dispatch-complete`, `agents dispatch-abandon`, `agents wait`, `profiles list`, `skills list|install|uninstall|path` (local-only), `read`, `send`, `key`, `focus`, `create tab`, `create pane`, `close`, `handoff to`, `handoff save`, and `open` (default). There is no CLI `quit`; close temporary tabs or panes with an explicit `close`. `tab create`, `tab close`, and `pane close` remain deprecated aliases for one release.

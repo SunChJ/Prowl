@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl profiles list, prowl skills, skills install, agent skills, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl agents dispatch, prowl agents wait, prowl profiles list, prowl skills, skills install, agent skills, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -288,11 +288,46 @@ prowl agents dispatch-complete --outcome failed --summary "Blocked by an invalid
 ```
 
 The required summary must be one non-empty line with no control characters and at most 32 KiB
-of UTF-8. The command accepts no public dispatch id; outside a prompted launch it fails with
-`DISPATCH_CONTEXT_REQUIRED`. Prowl reads the launch-scoped environment value and independently
-verifies the socket caller's process ancestry against the immutable launch pane. Repeating
-identical completion is safe; a conflicting retry is rejected. Unprompted Profile launches
-remain interactive and do not create a dispatch.
+of UTF-8. The command accepts no public dispatch id: Prowl resolves the socket caller's
+process ancestry to its pane and completes *that pane's current pending dispatch*, so a
+worker completes whatever it was most recently assigned even when it was launched with an
+older `PROWL_DISPATCH_ID` (the variable is kept for the launch case as diagnostics only).
+Outside any Prowl pane the command fails with `DISPATCH_CONTEXT_REQUIRED`; in a pane that
+never held a dispatch it fails with `DISPATCH_NOT_FOUND`. Repeating an identical completion
+replays the receipt; a conflicting retry is rejected. Unprompted Profile launches remain
+interactive and do not create a dispatch.
+
+A pane keeps its agent between assignments. To hand a *new* task to an agent that is already
+running — a reviewer that should keep its context across rounds — dispatch into the pane
+instead of launching another Profile:
+
+```bash
+prowl agents dispatch p7 --prompt - --json <<'EOF'
+Round 2: re-review the diff against main. Report only findings not already fixed.
+EOF
+```
+
+`--prompt -` reads the prompt from piped stdin (up to 256 KiB of UTF-8; newlines and tabs are
+allowed, other control characters are rejected with `INVALID_ARGUMENT`). Prowl creates a new
+pending `data.dispatch` bound to the pane and its current agent generation, then types the
+prompt plus the same completion protocol a launch appends — as one bracketed paste followed by
+Enter, prefixed with `[Prowl] ` so the origin is visible — through the pane's input path.
+The response carries `data.target` and `data.dispatch.{id,state,created_at}` exactly like a
+prompted `create`, and every wait, receipt, abandon, needs-input, incomplete, and gone rule
+below applies to the new record unchanged.
+
+Preconditions are checked before anything is typed: the pane must host a detected agent
+(`AGENT_NOT_FOUND` otherwise) that is idle by the same evidence rules as
+`agents wait --until idle` — a `turn-ended` the detector corroborates resolves at once; a
+`turn-ended` the screen has not caught up with yet (the detector holds `working` for a few
+seconds after a turn) or a detector-only idle view that still needs its two seconds of
+stability is given up to five seconds to settle; a working or blocked agent without such
+evidence (including a runtime `needs-input` the screen does not show) is refused with
+`DISPATCH_TARGET_BUSY` rather than having text merged into its running turn. One pending
+dispatch per pane: while a record is pending, a second `dispatch` fails with
+`DISPATCH_PENDING` and never overwrites it; complete, abandon, or lose the previous record
+first. Because a receipt can precede Codex's own `turn-ended` by a second or two, wait for
+`--until idle` between rounds before dispatching again.
 
 The coordinator waits by exact id:
 
@@ -763,9 +798,11 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `TARGET_NOT_UNIQUE` | Selector matched several — be more specific (use `--pane`). |
 | `PROFILE_NOT_FOUND` | No enabled Profile matches the UUID or exact name — re-run `profiles list`; disabled Profiles cannot launch. |
 | `PROFILE_NOT_UNIQUE` | Several enabled Profiles have the exact name — use the Profile UUID from `profiles list`. |
-| `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code; `agents wait <pane> --until …` saw no detected agent within its ten-second appearance grace. Re-run `agents`. |
-| `DISPATCH_NOT_FOUND` | No dispatch record matches `--dispatch`; records are memory-only and reset on app restart. |
-| `DISPATCH_CONTEXT_REQUIRED` | `dispatch-complete` ran outside a prompted Profile launch (no launch-scoped `PROWL_DISPATCH_ID`). |
+| `AGENT_NOT_FOUND` / `AGENT_UNSUPPORTED` | `agents read` target no longer hosts an agent, or it is not Codex/Claude Code; `agents wait <pane> --until …` saw no detected agent within its ten-second appearance grace; `agents dispatch` targeted a pane with no detected agent. Re-run `agents`. |
+| `DISPATCH_NOT_FOUND` | No dispatch record matches `--dispatch`, or `dispatch-complete` ran in a pane that never held one; records are memory-only and reset on app restart. |
+| `DISPATCH_CONTEXT_REQUIRED` | `dispatch-complete` ran from a process outside any Prowl pane (tmux/detached wrapper, another terminal), so no pane could own the receipt. |
+| `DISPATCH_PENDING` | `agents dispatch` refused: the pane already holds a pending dispatch (`.error.details.record`). Wait for it, or `dispatch-abandon` it, before dispatching again. |
+| `DISPATCH_TARGET_BUSY` | `agents dispatch` refused: the pane's agent is working or blocked (`.error.details.observation`, `.signals`). Wait for `--until idle`, then retry. |
 | `DISPATCH_ALREADY_TERMINAL` | `dispatch-abandon` targeted a record that already completed, was abandoned, or is gone. |
 | `DISPATCH_FAILED` / `DISPATCH_ABANDONED` / `DISPATCH_NEEDS_INPUT` / `DISPATCH_INCOMPLETE` | `agents wait --dispatch` structured outcomes; `.error.details` retains the record, target, and evidence (see **Dispatch completion and waiting**). |
 | `SOURCE_REQUIRED` | A caller-owned command such as `agents signal` or selector-free `handoff` could not map the socket peer ancestry to a Prowl pane. Run it inside the source pane without tmux/detached wrappers, or use an explicit selector where that command permits one. |
@@ -829,6 +866,8 @@ fi
   latency, and text typed into a runtime that is still starting can merge with the next message.
 - `--until idle|blocked` report the current state (a pre-existing signal needs the detector to
   agree); use `--until changed` to wait for the next turn edge.
+- To give a running agent another task with a receipt, use `agents dispatch <pane> --prompt -`
+  once it is idle — not `send` (no receipt) and not a fresh Profile launch (loses its context).
 - `agents read` returns `pending` while the agent works or is blocked, even if a previous turn
   completed.
 - `--capture` needs shell integration; otherwise `read --wait-stable` or file

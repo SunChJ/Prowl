@@ -5,6 +5,7 @@ import XCTest
 final class DispatchWireModelTests: XCTestCase {
   func testDispatchCommandsRoundTripWithStableNames() throws {
     let commands: [Command] = [
+      .agentsDispatch(DispatchInput(pane: "p7", prompt: "Round two.\nRe-review the diff.")),
       .agentsDispatchComplete(
         DispatchCompleteInput(dispatchID: "dispatch-1", outcome: .succeeded, summary: "Done")
       ),
@@ -18,13 +19,36 @@ final class DispatchWireModelTests: XCTestCase {
 
     XCTAssertEqual(
       commands.map(\.name),
-      ["agents.dispatch-complete", "agents.dispatch-abandon", "agents.wait"]
+      ["agents.dispatch", "agents.dispatch-complete", "agents.dispatch-abandon", "agents.wait"]
     )
     for command in commands {
       let data = try JSONEncoder().encode(CommandEnvelope(output: .json, command: command))
       let decoded = try JSONDecoder().decode(CommandEnvelope.self, from: data)
       XCTAssertEqual(decoded.command.name, command.name)
     }
+  }
+
+  func testDispatchCompleteInputCarriesTheLaunchIDOnlyAsOptionalDiagnostics() throws {
+    let withoutID = try JSONEncoder().encode(
+      CommandEnvelope(
+        output: .json,
+        command: .agentsDispatchComplete(DispatchCompleteInput(dispatchID: nil, outcome: .succeeded, summary: "Done"))
+      ))
+    guard case .agentsDispatchComplete(let decoded) = try JSONDecoder().decode(CommandEnvelope.self, from: withoutID).command
+    else {
+      return XCTFail("Expected agents.dispatch-complete")
+    }
+    XCTAssertNil(decoded.dispatchID)
+    XCTAssertNil(decoded.validationErrorMessage)
+
+    let legacy = Data(
+      #"{"output":"json","command":{"agentsDispatchComplete":{"_0":{"dispatch_id":"d1","outcome":"failed","summary":"No"}}}}"#
+        .utf8)
+    guard case .agentsDispatchComplete(let legacyInput) = try JSONDecoder().decode(CommandEnvelope.self, from: legacy).command
+    else {
+      return XCTFail("Expected agents.dispatch-complete")
+    }
+    XCTAssertEqual(legacyInput.dispatchID, "d1")
   }
 
   func testCommandErrorDetailsRoundTripWithoutChangingLegacyErrors() throws {

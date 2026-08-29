@@ -19,7 +19,8 @@ create roster rows. Text output additionally shows a current-process `pN` handle
 Use `prowl agents read <pN|pane-uuid>` for a semantic agent snapshot. A process inside
 a Prowl pane can report cooperative runtime events with `prowl agents signal`; these
 commands have separate [read](agents-read.md) and [signal](agents-signal.md) contracts.
-Condition and exact-receipt waiting is specified by [agents-wait](agents-wait.md).
+Condition and exact-receipt waiting, and re-dispatching a new task into an existing agent
+pane with `prowl agents dispatch`, are specified by [agents-wait](agents-wait.md).
 The complete roster response schema is
 `#/$defs/agentsResponse` in
 [`schema-bundle.json`](../../../ProwlCLIContracts/Resources/cli-output-schema.json).

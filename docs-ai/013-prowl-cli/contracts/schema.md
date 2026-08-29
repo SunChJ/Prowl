@@ -16,6 +16,10 @@ The bundle has one versioned success-or-error response schema for every wire com
 | `agents` | `#/$defs/agentsResponse` |
 | `agents.read` | `#/$defs/agentsReadResponse` |
 | `agents.signal` | `#/$defs/agentsSignalResponse` |
+| `agents.dispatch` | `#/$defs/agentsDispatchResponse` (errors may carry `#/$defs/agentsDispatchErrorDetails`) |
+| `agents.dispatch-complete` | `#/$defs/agentsDispatchCompleteResponse` |
+| `agents.dispatch-abandon` | `#/$defs/agentsDispatchAbandonResponse` |
+| `agents.wait` | `#/$defs/agentsWaitResponse` (errors may carry `#/$defs/agentsWaitErrorDetails`) |
 | `profiles` | `#/$defs/profilesResponse` |
 | `skills` (local-only) | `#/$defs/skillsResponse` |
 | `workflow` (`list` over the socket; `validate`/`schema` local-only) | `#/$defs/workflowResponse` |
