@@ -209,7 +209,13 @@ Everything lives in `supacode/Domain/Workflow/` (app target) plus three Shared t
   role without a pane, and a later `message` to it raises `agent_gone:not_launched` with
   Relaunch.
 - `git.context`'s `root` and `handoff.*`'s `briefing` must resolve inside the worktree
-  (`UNSAFE_PATH` otherwise), so a repo-scoped workflow cannot point an action elsewhere.
+  (`UNSAFE_PATH` otherwise), so a repo-scoped workflow cannot point an action elsewhere; both
+  are re-walked from the worktree root without following links right before use.
+- The run store refuses a `<root>/.prowl` or `<root>/.prowl/workflow-runs` that is a symbolic
+  link, and every leaf it writes or reads (`run.json`, `log.md`, instructions, outputs).
+- A watchdog armed on a pane that is already gone raises `agent_gone:pane_closed` at once; an
+  explicit `expect.timeout` keeps counting through grace-based attention, and a deadline that
+  already passed applies its policy on Keep waiting / Nudge.
 
 ### What B3 must do with each effect (the harness is the reference)
 
@@ -237,7 +243,8 @@ dispatch record (the machine ignores events on terminal runs).
   first full run; the watchdog policy suite caught two real semantics errors on its first run
   (`sawActivity` not reset per heuristic window; a spent nudge escalating straight to
   attention on the next `turn-ended`), both fixed in the policy.
-- App suites (`xcodebuild test`, 144 tests after the review round, all passing): `WorkflowLineRendererTests`,
+- App suites (`xcodebuild test`, 152 workflow tests after two review rounds — 182 together
+  with the three handoff suites the normalizer change touches — all passing): `WorkflowLineRendererTests`,
   `WorkflowTemplateRendererTests`, `WorkflowDeliveryValidatorTests`, `WorkflowRunMachineTests`,
   `WorkflowRunStoreTests`, `WorkflowWatchdogPolicyTests`, `WorkflowWatchdogDriverTests`
   (TestClock), `WorkflowNativeActionsTests` (temp git repositories),
@@ -275,6 +282,24 @@ SwiftPM-only so it could run beside the app builds; briefs and findings under
   never run again (position-aware now: later in the iteration, earlier only when another
   iteration follows, after the loop only when an `until` can exit it). Every fix carries a
   regression test; the two-phase delivery reshaped the machine tests (`deliverPersisted`).
+- **Round 2 — 8 findings (1 P0, 3 P1, 4 P2), all accepted and fixed; round-1 fixes verified
+  (three with objections that became these findings).** P0: a `<root>/.prowl` or
+  `workflow-runs` that is a symbolic link (a repository can ship one) moved the whole run
+  directory elsewhere, and `readRecord` bypassed the run-directory gate (both refused now;
+  the interrupted scan reports a linked run directory as unreadable). P1: watchdog verdicts
+  were still applied while a delivery was `persisting` (`deliver` disarms first, verdicts
+  need a `.waiting` activation, a persist Retry never re-arms); the canonical-path fix of
+  round 1 did not cover a parent directory swapped for a link (briefing and `git.context` root
+  are now walked from the worktree root with `openat(O_NOFOLLOW | O_DIRECTORY)` right before
+  use); a watchdog armed on a pane that was already gone waited forever (arm-time `gone`
+  raises attention). P2: re-arming after an expired hard deadline granted a one-second window
+  (the timeout policy runs instead); start-time `--skip` still scanned readers after a
+  `repeat` without `until`; `HandoffStore.validatedBriefing` still matched sections by
+  substring (heading lines outside fences now, through the shared normalizer); tilde-fenced
+  replies were not unwrapped. Residual, recorded rather than fixed: `HandoffStore`'s own
+  path-based writes under `.prowl/handoff/` keep the pre-existing handoff trust model, and a
+  concurrent local process racing directory swaps is outside B2's threat model (it already
+  runs as the user) — static links from a repository are what the gates close.
 
 ## Open items
 
