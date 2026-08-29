@@ -10,6 +10,12 @@ nonisolated public enum WorkflowSchema {
   public static let reservedIDPrefix = "prowl."
   public static let repeatMaximum = 20
   public static let verdictRange = 2...4
+  /// Carries an activation's delivery token to `prowl workflow done`: typed as the line's
+  /// environment prefix for a `message` step, set in the child environment for a `launch` step.
+  public static let tokenEnvironmentKey = "PROWL_WORKFLOW_TOKEN"
+  /// Cross-check hints in a launched surface's child environment; the dispatch store stays the authority.
+  public static let runEnvironmentKey = "PROWL_WORKFLOW_RUN"
+  public static let roleEnvironmentKey = "PROWL_WORKFLOW_ROLE"
   /// Workflow and skill ids may contain dots; a leading alphanumeric rules out `.` and `..`.
   public static var workflowIDPattern: Regex<Substring> { /^[a-z0-9][a-z0-9_.-]{0,63}$/ }
   /// Step ids, role names, output names, input names, and verdict values become path
@@ -297,6 +303,9 @@ nonisolated public struct WorkflowExpectation: Equatable, Sendable {
   /// Hard cap in seconds; nil = wait as long as the agent works.
   public let timeoutSeconds: Int?
   public let onTimeout: WorkflowTimeoutPolicy?
+  /// `true`: a delivery that misses `sections`, `format`, or `verdict` is rejected. `false`
+  /// (default): it is kept as provisional and the run asks the user to accept, ask again, or skip.
+  public let strict: Bool
   public let location: WorkflowSourceLocation?
 
   public init(
@@ -306,6 +315,7 @@ nonisolated public struct WorkflowExpectation: Equatable, Sendable {
     verdict: [String]? = nil,
     timeoutSeconds: Int? = nil,
     onTimeout: WorkflowTimeoutPolicy? = nil,
+    strict: Bool = false,
     location: WorkflowSourceLocation? = nil
   ) {
     self.output = output
@@ -314,6 +324,7 @@ nonisolated public struct WorkflowExpectation: Equatable, Sendable {
     self.verdict = verdict
     self.timeoutSeconds = timeoutSeconds
     self.onTimeout = onTimeout
+    self.strict = strict
     self.location = location
   }
 }

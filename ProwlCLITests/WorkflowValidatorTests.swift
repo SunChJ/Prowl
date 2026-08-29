@@ -105,6 +105,9 @@ final class WorkflowValidatorTests: XCTestCase {
     XCTAssertEqual(
       WorkflowFixtures.codes(minimal() + "inputs:\n  s: { type: string, default: \"two\\nlines\" }\n"),
       ["input_default_multiline"])
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal() + "inputs:\n  m: { type: enum, values: [a, \"two\\nlines\"] }\n"),
+      ["enum_value_multiline"])
   }
 
   // MARK: - Templates

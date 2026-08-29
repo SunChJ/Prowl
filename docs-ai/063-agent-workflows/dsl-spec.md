@@ -4,9 +4,11 @@
 > and the CLI participant protocol. Updated in place as the design settles and the
 > implementation lands; history and rationale live in [000-plan.md](000-plan.md).
 >
-> Status: **draft, revised 2026-08-29** after R1 shipped — B1 (definitions) is next; §4, §5, §9,
+> Status: **draft, revised 2026-08-29** after R1 shipped — B1 (definitions) landed in #740; §4, §5, §9,
 > §10, and §12 were aligned with the shipped dispatch model (064-S2/S3, #733) on 2026-08-29
-> (decisions in [006-b1-definitions.md](006-b1-definitions.md)). Sections marked *TBD* are open.
+> (decisions in [006-b1-definitions.md](006-b1-definitions.md)); the B2 runner decisions of
+> [007-b2-runner-core.md](007-b2-runner-core.md) (Relaunch scope, immediate Skip consequence, `run.json`
+> contents, `git.context` location, action failure) were folded in the same day. Sections marked *TBD* are open.
 
 ## 1. Principles
 
@@ -184,7 +186,7 @@ JSON Schema):
 | --- | --- | --- |
 | `handoff.transition` | `briefing` (path, optional — **absent = context-only transition**: archive the outgoing `current.md`/`context.md`, then *remove* `current.md` so a stale briefing can never impersonate a fresh one, regenerate `context.md`, and select the context/archive-only kickoff prompt), `from` (role, required), `to` (role, required; its agent token is the frozen profile binding's agent), `note` (string, optional) | `kickoff_prompt` (string; briefing or context-only variant), `artifact_path` (path), `has_briefing` (bool) |
 | `handoff.checkpoint` | `briefing` (path, optional — absent = context-only checkpoint: regenerate `context.md`, keep an earlier valid `current.md` if present), `note` (string, optional) | `artifact_path` (path), `has_briefing` (bool, for this invocation) |
-| `git.context` | `root` (path, optional; default worktree) | `path` (path to the generated markdown summary), `branch` (string) |
+| `git.context` | `root` (path, optional; default worktree) | `path` (path to the generated markdown summary — the handoff context generator: it writes `<root>/.prowl/handoff/context.md` and appends one line to the handoff log), `branch` (string) |
 
 ## 5. `expect`
 
@@ -196,7 +198,24 @@ expect:
   verdict: [clean, issues]  # declares 2–4 allowed values (safe slugs); the rendered completion command then carries `--verdict <value>` and it becomes mandatory
   timeout: 2h               # optional hard cap; NO default — without it Prowl waits as long as the agent works
   on_timeout: attention     # only with `timeout`: attention (default) | skip | cancel
+  strict: false             # default false: a delivery that misses sections/format/verdict is kept as
+                            # provisional and the run asks the user; true: it is rejected outright
 ```
+
+- **Validation is a review gate, not a wall (decision 2026-08-29, [007](007-b2-runner-core.md) H14).**
+  `prowl workflow done` always rejects what the pipeline cannot use at all — a missing or
+  wrong token, an empty body, a body above the size cap. Everything the *author* declared —
+  `sections`, `format`, `verdict` — is checked too, but by default a delivery that misses
+  them is **persisted as provisional** (`outputs/<name>.<ordinal>.md` is written, the CLI
+  answers `ok` with `warnings`), the dispatch record stays pending, and the run enters
+  `needsAttention` with **Accept as delivered** (or **Accept with verdict …** when a declared
+  verdict is missing or not one of the declared values — the user picks one), **Ask again**
+  (Prowl types what was missing plus the completion command into the role's pane; the same
+  activation and token keep waiting), Skip, and Cancel. Only `strict: true` turns those
+  findings into `OUTPUT_INVALID` / `VERDICT_REQUIRED` rejections; use it when a downstream
+  consumer needs a machine guarantee (a `json` output read by a tool). Section matching is
+  forgiving about heading level and letter case (`### findings` satisfies `## Findings`), but
+  a heading inside a code fence never counts.
 
 - **Activation = dispatch (decision 2026-08-29).** Every activation is a record in the shared
   dispatch store (`AgentDispatchStore`, 064-S2): a `launch` step creates it through the
@@ -233,7 +252,9 @@ expect:
   degrades to a context-only transition, i.e. the old HUD's "Context Only"). Every other
   reference — `text` / `instruction` / `prompt` / `notify` templates, required action
   inputs, or the `until` of an enclosing `repeat` — makes the run end as `skipped` instead
-  of advancing, because V1 has no optional template values. The panel states the
+  of advancing, because V1 has no optional template values; the consequence is resolved at the
+  moment of the skip (the remaining steps, including the enclosing loop body and its `until`,
+  are scanned for a non-optional reader), not when the reader is reached. The panel states the
   consequence ("continues without a briefing" vs. "ends the run; step X depends on it")
   before the user confirms Skip; the validator warns when `on_timeout: skip` would end the
   run this way.
@@ -282,8 +303,9 @@ non-optional consumer references (the run would end as `skipped`).
 
 ```
 <root>/.prowl/workflow-runs/<run-id>/
-  run.json                  # state snapshot: workflow id/version, frozen role bindings (profile UUID/name, pane ids), invocation records,
-                            # step states, timestamps; no env values, no extra arguments, no credentials
+  run.json                  # state snapshot (`version: 1`): workflow id/name/scope, frozen role bindings (profile UUID/name/agent, pane ids),
+                            # invocation records with their activation's dispatch id and output, step states, timestamps;
+                            # never delivery tokens, env values, extra arguments, home paths, or credentials
   log.md                    # human-readable, append-only
   instructions/<step>.<ordinal>.md   # materialized `instruction` / `prompt` text, one per invocation (run-global ordinal, §5)
   skills/<id>/SKILL.md      # materialized bundled skills
@@ -367,7 +389,8 @@ makes a self-handoff two commands: `prowl workflow run prowl.handoff`, then the 
 
 Error codes: `WORKFLOW_NOT_FOUND`, `WORKFLOW_INVALID`, `RUN_NOT_FOUND`, `PANE_BUSY`,
 `ROLE_MISMATCH`, `STEP_NOT_EXPECTING`, `TOKEN_REQUIRED`, `TOKEN_INVALID`,
-`OUTPUT_INVALID` (sections/format/verdict), `OUTPUT_TOO_LARGE`, `VERDICT_REQUIRED`,
+`OUTPUT_INVALID` (empty body; sections/format/verdict only under `strict: true`), `OUTPUT_TOO_LARGE`,
+`VERDICT_REQUIRED` (`strict: true` only),
 `PROFILE_NOT_FOUND`, `PROFILE_NOT_UNIQUE`, `SKILL_NOT_FOUND`, `RENDERED_TEXT_INVALID`
 (a rendered `text`/pointer/`--input` value would not survive as one terminal line),
 `UNSAFE_PATH`, `PROMPT_TOO_LARGE` (a rendered `launch` prompt above 32 KiB),
@@ -400,11 +423,11 @@ changed` / `exit` was requested.
 | Binding scope | As defined in §3 (four-tuple key with the canonical role-requirements digest); §3 is normative. |
 | Invocation / activation | Defined in §5: every `message`/`launch` execution mints a run-global invocation ordinal (artifact naming); a waiting invocation is an activation with its own token; one delivery per activation; revocation is per activation; outputs and instructions are versioned by ordinal. |
 | Rendered-text boundary | Every string that reaches `insertCommittedText` + submit — rendered `text`, pointer lines, completion commands, nudges — is validated after template substitution: no line terminators (`\n`, `\r`, U+2028/2029) and no C0/C1 control characters; violations stop the step with `RENDERED_TEXT_INVALID` (`needsAttention`, never a partial injection). String inputs and `--input` values are validated the same way at start; a worktree path that cannot be rendered on one line is rejected at start (`UNSAFE_PATH`). Multi-line content always goes through `instruction` / materialized files. |
-| Watchdog | Exact signals first, heuristics as fallback (decision 2026-08-29; 064-S5's watchdog part). The runner subscribes to the role's surface through `TerminalClient.observeAgentState` (064-S1 multicast: `snapshot` first, then `changed` / `removed` / `surfaceClosed` / `.signal`) and to the activation through `observeAgentDispatch`, plus an injected clock. When a step starts waiting the watchdog reads the current state first and schedules cancellable deadlines; it never depends on a later event alone. With a `verified_live` channel: `needs-input` → `needsAttention` immediately (Focus pane / Cancel); `turn-ended` without a delivery → `turn_grace` (default 15 s, floor 5 s; at expiry the state is re-read, and a role that is `working` again or has since reported `session-start` / `progress` re-arms instead of nudging) → one automatic nudge (`[Prowl] When your work for this step is fully complete, finish with: <the active activation's completion command, from the §4 renderer — token and verdict choices included>`) → `idle_grace` (default 3 min) → `needsAttention` (Nudge again / Keep waiting / Skip / Cancel); `session-end` or agent process gone → `needsAttention` (Relaunch role / Skip / Cancel). Without a channel (manually launched or tier-B runtimes) the heuristic rules apply, using 064.012's corroboration for arm-time state: `blocked` ≥ `blocked_grace` (default 30 s) → `needsAttention`; `idle`/`done` ≥ `idle_grace` without a delivery → nudge, then `needsAttention` after another `idle_grace`. `working` never triggers anything. Grace values are global settings. |
-| `needsAttention` | A UI state (orange status slot + notification), never a deadline: a late `done` is still accepted; only an explicit Skip marks the output missing and rejects later deliveries. |
+| Watchdog | Exact signals first, heuristics as fallback (decision 2026-08-29; 064-S5's watchdog part). The runner subscribes to the role's surface through `TerminalClient.observeAgentState` (064-S1 multicast: `snapshot` first, then `changed` / `removed` / `surfaceClosed` / `.signal`) and to the activation through `observeAgentDispatch`, plus an injected clock. When a step starts waiting the watchdog reads the current state first and schedules cancellable deadlines; it never depends on a later event alone. With a `verified_live` channel: `needs-input` → `needsAttention` immediately (Focus pane / Cancel); `turn-ended` without a delivery → `turn_grace` (default 15 s, floor 5 s; at expiry the state is re-read, and a role that is `working` again or has since reported `session-start` / `progress` re-arms instead of nudging) → one automatic nudge (`[Prowl] When your work for this step is fully complete, finish with: <the active activation's completion command, from the §4 renderer — token and verdict choices included>`) → `idle_grace` (default 3 min) → `needsAttention` (Nudge again / Keep waiting / Skip / Cancel); `session-end` or agent process gone → `needsAttention` (Relaunch role / Skip / Cancel; Relaunch is offered for `launch` roles only — it abandons the current activation, mints a new invocation of the *current* step, and re-delivers that step's content as the kickoff prompt of a fresh launch of the frozen profile, rebinding the role's pane; a gone `current` / `pick` role offers Skip / Cancel). Without a channel (manually launched or tier-B runtimes) the heuristic rules apply, using 064.012's corroboration for arm-time state: `blocked` ≥ `blocked_grace` (default 30 s) → `needsAttention`; `idle`/`done` ≥ `idle_grace` without a delivery → nudge, then `needsAttention` after another `idle_grace`. `working` never triggers anything. Grace values are global settings. |
+| `needsAttention` | A UI state (orange status slot + notification), never a deadline: a late `done` is still accepted; only an explicit Skip marks the output missing and rejects later deliveries. A provisional delivery (§5) is a `needsAttention` of its own with Accept / Accept with verdict / Ask again / Skip / Cancel; until the user accepts it the output is on disk but not yet the step's output. |
 | Explicit `timeout` | Only when an author sets `expect.timeout`: `attention` (default) enters `needsAttention`; `skip` / `cancel` act automatically. |
 | Cancel | Stops advancing and injecting; keeps all panes and outputs; logs. |
-| Failure | Launch/plan/provision failure → `needsAttention` with Retry / Skip role / Cancel; outputs already delivered are kept. |
+| Failure | Launch/plan/provision failure → `needsAttention` with Retry / Skip role / Cancel; a native action failure → `needsAttention` with Retry / Cancel (action outputs have no "missing" semantics, so an action cannot be skipped); outputs already delivered are kept. |
 | Concurrency | One run per pane; many runs per worktree; the status center shows the selected worktree's most recent active run, the panel lists all. |
 | Restart | V1: runs found on disk at launch are marked `interrupted`; no resume. |
 | Privacy | Prowl-authored response metadata and persisted metadata (`run.json`, logs, the non-body fields of CLI payloads) carry profile UUID/name and agent tokens only — never extra arguments, environment values, home paths, or credentials. The agent-provided output body of `workflow done` is explicitly excluded from that claim: it is persisted as delivered, under the self-ignored run directory, within the size caps of §5. |

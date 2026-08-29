@@ -255,7 +255,8 @@ nonisolated public enum WorkflowJSONSchema {
               "type": "array", "minItems": 2, "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/slug" }
             },
             "timeout": { "type": "string", "pattern": "^\\d+\\s*[smh]$" },
-            "on_timeout": { "enum": ["attention", "skip", "cancel"] }
+            "on_timeout": { "enum": ["attention", "skip", "cancel"] },
+            "strict": { "type": "boolean" }
           },
           "dependentRequired": { "on_timeout": ["timeout"] }
         }

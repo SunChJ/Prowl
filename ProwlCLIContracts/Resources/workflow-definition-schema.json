@@ -524,6 +524,9 @@
             "skip",
             "cancel"
           ]
+        },
+        "strict": {
+          "type": "boolean"
         }
       },
       "dependentRequired": {
