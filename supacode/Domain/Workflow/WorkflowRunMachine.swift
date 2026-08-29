@@ -446,7 +446,7 @@ nonisolated struct WorkflowRunMachine {
     var loopID: String?
     if fromStart {
       remaining = steps
-    } else if let loop = run.position.loop, case .repeat(_, let until, let body) = steps[run.position.index].action {
+    } else if run.position.loop != nil, case .repeat(_, let until, let body) = steps[run.position.index].action {
       remaining = body
       loopUntil = until
       loopID = steps[run.position.index].id

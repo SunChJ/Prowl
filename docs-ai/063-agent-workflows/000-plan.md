@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — R1 shipped in v2026.8.29; R2a under way: B1 implemented (definitions in `ProwlCLIShared`, `prowl workflow list/validate/schema`; [006](006-b1-definitions.md)), #733 and #726 T0 in flight; B2 next |
+| **Status** | In progress — R1 shipped in v2026.8.29; R2a under way: B1 (#740, [006](006-b1-definitions.md)), #733 (#741), and #726 T0 (#739) merged; B2 runner core implemented ([007](007-b2-runner-core.md)); B3 next |
 | **Anchor date** | 2026-08-21 |
-| **Primary PRs** | R1: #709 (C0), #710 (A1), #713 (A1b), #714 (A2) — shipped in v2026.8.29; R2a/R2b/R3 (B1–D3) TBD |
+| **Primary PRs** | R1: #709 (C0), #710 (A1), #713 (A1b), #714 (A2) — shipped in v2026.8.29; R2a: #740 (B1), B2 (this record's PR, see [007](007-b2-runner-core.md)); B3–D3 TBD |
 | **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
 
 ## Background
@@ -596,6 +596,13 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-29 (B2, grilled): the runner core is a pure reducer (`WorkflowRunMachine`)
+  whose effects B3 interprets; activation tokens are checked in the machine, the dispatch store
+  stays untouched; the watchdog observes each activation through `observeAgentDispatch` +
+  `observeAgentState` on an injected clock; `run.json` v1 records dispatch ids but never tokens;
+  Relaunch is offered for `launch` roles only; a Skip resolves its §5 consequence immediately;
+  binding resolution is a pure resolver (memory storage and the sheet stay with B3/C2). The
+  spec's §4/§5/§8/§10 were clarified accordingly — see [007-b2-runner-core.md](007-b2-runner-core.md).
 - Updated 2026-08-29 (B1 kickoff, grilled): the DSL spec was aligned with what R1 shipped.
   (1) `expect` activations are records in the shared dispatch store — `launch` via the S2
   prompted-launch path, `message` via #733's re-dispatch — and `workflow done` is the

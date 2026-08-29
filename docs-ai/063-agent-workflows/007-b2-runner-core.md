@@ -139,14 +139,116 @@ protocol block and `PROWL_WORKFLOW_TOKEN` in the child environment only; the wat
 and attention timings on hooked and unhooked runtimes; `dispatch-complete` refused with
 `WORKFLOW_DELIVERY_REQUIRED`; run directory contents after a full `prowl.adversarial-review`.
 
+## Delivered
+
+Everything lives in `supacode/Domain/Workflow/` (app target) plus three Shared touches:
+
+- `WorkflowRun.swift` — the run value (`WorkflowRun`), bindings (`WorkflowRoleBinding` with
+  `WorkflowPaneIdentity` / `WorkflowProfileBinding`), context (`WorkflowRunContext`,
+  `WorkflowRunScope`, `WorkflowRunWorktree`), path derivation (`WorkflowRunPaths`),
+  invocations / activations / outputs, the position cursor with loop state, step records,
+  attention (`WorkflowAttention`, reasons, actions), status and phase.
+- `WorkflowRunMachine.swift` — `WorkflowRunStartRequest` + `start(_:now:makeToken:)` (input
+  defaults / ranges / single-line, `UNSAFE_PATH`, `repeat.max` in 1…20, `--skip` legality,
+  missing bindings), `apply(_:)`, `deliver(ordinal:selector:body:verdict:)`,
+  `skipConsequence(forStep:)`, `activation(forDispatchID:)`, `templateContext()`; the effect
+  vocabulary (`WorkflowRunEffect`, `WorkflowLaunchRequest`, `WorkflowWatchdogRequest`) and the
+  event vocabulary (`WorkflowRunEvent`, `WorkflowUserAction`, `WorkflowInjectionFailure`,
+  `WorkflowWatchdogVerdict`).
+- `WorkflowLineRenderer.swift` — `WorkflowCompletionCommand` (message form, launch form, typed
+  suffix, instruction trailer, protocol block, nudge, `WORKFLOW_DELIVERY_REQUIRED` message),
+  `WorkflowTypedLine` (`[Prowl] ` prefix from `AgentDispatchPrompt.injectedPrefix`),
+  `WorkflowRenderedText` (the §10 boundary over `WorkflowValidator.isSingleLine`),
+  `WorkflowLaunchPrompt` (NUL, 32 KiB).
+- `WorkflowTemplateRenderer.swift` — `WorkflowTemplateContext` and `WorkflowTemplate.render`;
+  `missingOutput` is the runtime Skip-rule signal; substituted values are never re-scanned.
+- `WorkflowDeliveryValidator.swift` — `WorkflowDeliveryLimits` (1 MiB default, 4 MiB hard
+  max), `WorkflowDeliveryError` with the §9 codes, markdown normalization through the Shared
+  `MarkdownArtifactNormalizer`, `text`, `json`.
+- `WorkflowRunStore.swift` — `WorkflowRunRecord` v1 (+ `WorkflowRunRecordInfo` /
+  `Invocation` / `Activation`), `WorkflowRunStore` (layout + `.gitignore`, `run.json`, `log.md`,
+  instructions, versioned outputs with `rename(2)` latest view, bundled-skill copy, the
+  `AgentProfileHomeProvisioner` containment gate on the run directory and a symlink check on
+  every subdirectory, `markInterruptedRuns(now:)`).
+- `WorkflowWatchdog.swift` — `WorkflowWatchdogSettings` (15 s / 5 s floor, 3 min, 30 s), the
+  pure `WorkflowWatchdogPolicy`, and the `WorkflowWatchdog` driver (two streams + deadlines on
+  an injected clock; `snapshot(from:)` maps `AgentConditionSnapshot` so the watchdog and
+  `agents wait` agree on what a live channel is).
+- `WorkflowNativeActions.swift` — `WorkflowActionExecuting`, `WorkflowActionContext`,
+  `WorkflowNativeActionRunner` (`handoff.transition`, `handoff.checkpoint`, `git.context`; path
+  inputs must resolve inside the worktree, canonical comparison).
+- `WorkflowBindingResolver.swift` — `WorkflowBindingMemoryKey`, `requirementsDigest`
+  (canonical JSON via `JSONSerialization.sortedKeys` + SHA-256), `resolve(role:remembered:override:context:)`
+  returning `.resolved(profile, tier:)` / `.ask(candidates:suggestion:)` plus the rejections a
+  CLI override should warn about; the seeded-prompt probe goes through
+  `AgentRuntimeAdapterRegistry` (Amp rejects).
+- `WorkflowActivationBridge.swift` — the protocol of H3 (`openMessageActivation`,
+  `cancelActivation`, `abandonActivation`, `completeActivation`, `observeActivation`).
+- Shared: `MarkdownArtifactNormalizer` (moved out of `HandoffStore`, which now calls it; it
+  additionally recognizes chatter *before* the opening fence), `WorkflowSchema.tokenEnvironmentKey`
+  / `runEnvironmentKey` / `roleEnvironmentKey`, and the §9 error-code constants in `CLIErrorCode`
+  (`STEP_NOT_EXPECTING`, `TOKEN_REQUIRED`, `TOKEN_INVALID`, `OUTPUT_INVALID`, `OUTPUT_TOO_LARGE`,
+  `VERDICT_REQUIRED`, `RENDERED_TEXT_INVALID`, `UNSAFE_PATH`, `PROMPT_TOO_LARGE`,
+  `WORKFLOW_DELIVERY_REQUIRED`, `RUN_NOT_FOUND`, `PANE_BUSY`, `ROLE_MISMATCH`). `CLIErrorCode`
+  itself became `nonisolated` so nonisolated domain code can read it.
+
+### Behaviors worth knowing (beyond the spec text)
+
+- A `repeat` without `until` ends the run as `max_rounds_reached` after `max` iterations, as
+  §4 says; it never falls through to the steps after it.
+- `roleBusy` from the bridge (the #733 refusal) is not attention: the step returns to
+  `waitingForRole` with the same invocation and token.
+- After the automatic nudge is spent (or after "Keep waiting"), a later `turn-ended` still earns
+  `idle_grace` before the run asks for attention; only an `idle_grace` that expires idle
+  escalates. `needs-input` and heuristic `blocked` raise attention but keep watching, so a
+  later `turn-ended` without delivery can still nudge.
+- Skip of an `action` step is not offered (Retry / Cancel); Skip of a `launch` step leaves the
+  role without a pane, and a later `message` to it raises `agent_gone:not_launched` with
+  Relaunch.
+- `git.context`'s `root` and `handoff.*`'s `briefing` must resolve inside the worktree
+  (`UNSAFE_PATH` otherwise), so a repo-scoped workflow cannot point an action elsewhere.
+
+### What B3 must do with each effect (the harness is the reference)
+
+`awaitRoleIdle` → the #733 idle precondition without its 5 s cap, then `.roleIdle`;
+`inject` → `openMessageActivation` (issue + bind) then `insertCommittedText` + `submitLine`,
+`.injectionSucceeded(dispatchID)` or `.injectionFailed` (cancelling the issuance);
+`openActivation` → issue + bind only (self-initiated first step; the line is in
+`run.selfInitiatedLine`); `materializeInstruction` before the inject that names it;
+`launch` → plan the frozen profile with `.prompt`, attach the environment values as child-only
+carriers (like `attachingDispatch`), issue the dispatch when `expectsDelivery`, then `.launched`;
+`runAction` → `WorkflowNativeActionRunner`; `armWatchdog` → one `WorkflowWatchdog` per request,
+`disarmWatchdog` → `cancel()`; `persist` / `persistOutput` / `log` → `WorkflowRunStore`;
+`abandonActivation` / `completeActivation` → the bridge; `cancelRoleWait` → stop the idle wait;
+`finished` → tear down. A `.launched` that arrives after the run ended must abandon its
+dispatch record (the machine ignores events on terminal runs).
+
 ## Verification
 
-(filled in when the slice lands)
+- Red first: every suite was written before its implementation compiled (the first
+  `xcodebuild build-for-testing` of batch A failed on the missing types; the normalizer test
+  failed on the "preamble before the opening fence" case, which the normalizer then learned);
+  the machine suite (29 tests) was authored from this record's test plan and passed on its
+  first full run; the watchdog policy suite caught two real semantics errors on its first run
+  (`sawActivity` not reset per heuristic window; a spent nudge escalating straight to
+  attention on the next `turn-ended`), both fixed in the policy.
+- App suites (`xcodebuild test`, 132 tests, all passing): `WorkflowLineRendererTests`,
+  `WorkflowTemplateRendererTests`, `WorkflowDeliveryValidatorTests`, `WorkflowRunMachineTests`,
+  `WorkflowRunStoreTests`, `WorkflowWatchdogPolicyTests`, `WorkflowWatchdogDriverTests`
+  (TestClock), `WorkflowNativeActionsTests` (temp git repositories),
+  `WorkflowBindingResolverTests`, `WorkflowRunHarnessTests`, plus the untouched
+  `HandoffStoreTests` over the moved normalizer.
+- Gates: `make check` (swift-format + SwiftLint strict) clean; `make build-cli`;
+  `make test-cli-unit` (221 tests); `make test-cli-smoke`; `make test-cli-integration` (109
+  tests); `make build-app` (0 warnings after the last fix); full `make test` — see the PR.
 
 ## Review
 
-(filled in when the slice lands)
+(adversarial rounds recorded below as they complete)
 
 ## Open items
 
-(filled in when the slice lands)
+- B3 verifies live what B2 cannot (listed above); the bundled `prowl.adversarial-review` and
+  the reviewer skill are D2.
+- Watchdog grace values are constructor settings; the Settings › Workflows page (D1) will
+  feed them from `@Shared`.
