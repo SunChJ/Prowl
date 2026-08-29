@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — S1 #715, S2 #718, and S3 wave 1 #721/#723/#725/#728 merged; S4/S5 planned |
+| **Status** | In progress — S1 #715, S2 #718, S3 wave 1 #721/#723/#725/#728, and follow-ups #732/#736 shipped in v2026.8.29; #733 re-dispatch and #726 T0 scheduled in R2a, #726 T1 in R2b; S4/S5 planned |
 | **Anchor date** | 2026-08-22 |
-| **Primary PRs** | #715 (S1); #718 (S2); #721, #723 (S3a); #725 (S3b); #728 (S3c) |
+| **Primary PRs** | #715 (S1); #718 (S2); #721, #723 (S3a); #725 (S3b); #728 (S3c); #732 (012); #736 (013) |
 | **Related** | [063 agent-workflows](../063-agent-workflows/000-plan.md) (consumer; defines the `ObservedAgentState` observer this entry feeds), [030 agent-status-detection](../030-agent-status-detection/000-plan.md), [045 native-agent-session-detection](../045-native-agent-session-detection/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [#473](https://github.com/onevcat/Prowl/issues/473), [#676](https://github.com/onevcat/Prowl/issues/676), `docs/components/agent-detection.md`, `docs/components/cli.md` |
 
 ## Background
@@ -241,10 +241,16 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 - S3 hook self-check grace defaults (Claude's trust-dialog hold suggests a generous,
   state-aware grace rather than a fixed few seconds).
 - Re-verification cadence: the matrix is versioned per row; S3 adapters need fixture tests
-  that fail loudly when a CLI's hook syntax changes.
+  that fail loudly when a CLI's hook syntax changes. Tracked as #726 (T0 attestation in R2a,
+  T1 headless contract tests in R2b).
 
 ## Amendments
 
+- Updated 2026-08-29: shipped in v2026.8.29 with 063's R1. Two follow-ups are scheduled as
+  slices in the shared [release plan](../063-agent-workflows/release-plan.md): #733
+  (`prowl agents dispatch <pane> --prompt -`, one pending dispatch per surface, completion
+  resolved from the caller's ancestry) in R2a, and #726 (T0 version attestation in R2a, T1
+  headless contract tests in R2b before 063-D2).
 - Updated 2026-08-29: idle evidence fallback after a second end-to-end pass over the
   `prowl-cli` skill — Claude's `idle_prompt` notification is no longer decoded as
   `needs-input` (it displaced the `turn-ended` level and woke `changed` waits on idle panes),
