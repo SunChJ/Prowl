@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feat/workflow-definitions-b1` (2026-08-29); PR: TBD. Owner decisions were settled
+Implemented on `feat/workflow-definitions-b1` (2026-08-29); PR [#740](https://github.com/onevcat/Prowl/pull/740). Owner decisions were settled
 in a grill session on 2026-08-29 (below) after a re-read of [dsl-spec.md](dsl-spec.md) against what
 R1 shipped; the spec's §4/§5/§9/§10/§12 were amended in #738. The "Delivered" section records
 what landed and where it deviates from the scope below.

@@ -34,7 +34,7 @@ say when each is cut:
 | Release | State | Next action |
 | --- | --- | --- |
 | R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
-| R2a | In progress | B1 implemented on `feat/workflow-definitions-b1` (PR TBD); #726 T0 = #739 (review pending); #733 in progress on `feat/agent-redispatch` |
+| R2a | In progress | B1 = #740 (review); #726 T0 = #739 (review); #733 in progress on `feat/agent-redispatch`; B2 next |
 | R2b | Planned | after R2a ships |
 | R3 | Planned | after R2b ships |
 
@@ -101,7 +101,7 @@ User-visible result: onevcat's daily CLI-driven orchestration is first-class
 
 | Order | Slice | Entry | Depends | Outcome |
 | --- | --- | --- | --- | --- |
-| 1 | **B1** definitions (Yams, model, validator, JSON Schema, three-source discovery, `workflow list/validate/schema`) | 063 | — | DSL authorable and validatable; dormant until B3 |
+| 1 | **B1** definitions (Yams, model, validator, JSON Schema, three-source discovery, `workflow list/validate/schema`) — #740, record [063.006](006-b1-definitions.md) | 063 | — | DSL authorable and validatable; dormant until B3 |
 | 1 | **#733** `prowl agents dispatch <pane> --prompt -`: a new pending dispatch bound to an existing surface, one pending per surface, `dispatch-complete` resolved from the caller's ancestry to the pane's current record, refused while the agent is working or blocked | 064 | S2, 064.012 | a reviewer launched once takes N assignments, each with its own receipt — the transport B3's `message` + `expect` rides on (decision 2026-08-29), and usable from the CLI recipe as soon as it merges |
 | 1 | **#726 T0** version attestation: per-runtime attested version record beside the research matrix + `make agent-versions` | 064 | S3 wave 1 | an installed runtime newer than its attested contract warns before a release |
 | 2 | **B2** runner core (pure state machine, run store, templates, registry, watchdog) | 063 | B1 | watchdog on exact signals (064-S5 watchdog part, moved from D2) |
