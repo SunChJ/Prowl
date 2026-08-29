@@ -78,12 +78,20 @@ nonisolated public enum WorkflowDiscovery {
   ) throws -> [WorkflowSourceFile] {
     guard let directory, fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else { return [] }
     let contents = try fileManager.contentsOfDirectory(
-      at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
+      at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
     return
       contents
-      .filter { fileExtensions.contains($0.pathExtension.lowercased()) }
+      .filter { fileExtensions.contains($0.pathExtension.lowercased()) && isRegularFile($0, fileManager) }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
       .map { url in load(url: url, scope: scope, context: context) }
+  }
+
+  /// Regular files and symlinks that resolve to one; directories and dangling links are not
+  /// definitions even when named `*.yaml`.
+  private static func isRegularFile(_ url: URL, _ fileManager: FileManager) -> Bool {
+    var isDirectory: ObjCBool = false
+    let path = url.resolvingSymlinksInPath().path(percentEncoded: false)
+    return fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
   }
 
   /// Parses and validates one file. A file that cannot be read is an `unreadable` error.

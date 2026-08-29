@@ -120,6 +120,22 @@ final class WorkflowDiscoveryTests: XCTestCase {
       ["user valid=true shadowed=false", "repo valid=false shadowed=false"])
   }
 
+  func testOnlyRegularFilesAndLinksToThemAreRead() throws {
+    let user = try directory("user")
+    try write(WorkflowFixtures.minimal(id: "real"), to: user, name: "real.yaml")
+    try FileManager.default.createDirectory(at: user.appending(path: "folder.yaml"), withIntermediateDirectories: true)
+    let elsewhere = try directory("elsewhere")
+    try write(WorkflowFixtures.minimal(id: "linked"), to: elsewhere, name: "source.yaml")
+    try FileManager.default.createSymbolicLink(
+      at: user.appending(path: "link.yaml"), withDestinationURL: elsewhere.appending(path: "source.yaml"))
+    try FileManager.default.createSymbolicLink(
+      at: user.appending(path: "dangling.yaml"), withDestinationURL: elsewhere.appending(path: "missing.yaml"))
+
+    let files = try WorkflowDiscovery.files(in: user, scope: .user, context: context(.user))
+    XCTAssertEqual(files.map(\.url.lastPathComponent), ["link.yaml", "real.yaml"])
+    XCTAssertEqual(files.map(\.id), ["linked", "real"])
+  }
+
   func testSourceDirectoryHelpers() {
     let home = URL(filePath: "/Users/me", directoryHint: .isDirectory)
     XCTAssertEqual(WorkflowSources.userDirectory(home: home).path(percentEncoded: false), "/Users/me/.prowl/workflows/")

@@ -78,7 +78,6 @@ nonisolated private struct OutputInfo {
   /// Verdict set of the producer whose delivery is the latest at this point of the walk; nil
   /// when it declares none, or when a skippable loop leaves the latest producer ambiguous.
   var latestVerdicts: Set<String>?
-  var skipLocations: [WorkflowSourceLocation?] = []
 }
 
 nonisolated private final class Walker {
@@ -95,6 +94,9 @@ nonisolated private final class Walker {
   private var insideRepeat = false
   private var currentLoopID: String?
   private var loopSeen = false
+  /// `on_timeout: skip` expectations, kept apart from `outputs` so folding a skippable loop
+  /// cannot lose them before the consumers are reported.
+  private var skipOutputs: [(name: String, location: WorkflowSourceLocation?)] = []
 
   init(definition: WorkflowDefinition, context: WorkflowValidationContext) {
     self.definition = definition
@@ -112,6 +114,9 @@ nonisolated private final class Walker {
   // MARK: Header, inputs, roles
 
   private func checkHeader() {
+    if definition.name.trimmingCharacters(in: .whitespaces).isEmpty {
+      collector.error("name_empty", "'name' must not be blank.")
+    }
     if !WorkflowSchema.isWorkflowID(definition.id) {
       collector.error("workflow_id", "Workflow id '\(definition.id)' is not a valid id (lowercase slug, max 64).")
     }
@@ -146,6 +151,9 @@ nonisolated private final class Walker {
       if input.values.isEmpty {
         collector.error("enum_values_empty", "Enum input '\(input.name)' needs at least one value.", at: input.location)
       }
+      if input.values.contains(where: { $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+        collector.error("enum_value_empty", "Enum input '\(input.name)' lists an empty value.", at: input.location)
+      }
       if Set(input.values).count != input.values.count {
         collector.error("enum_values_duplicate", "Enum input '\(input.name)' repeats a value.", at: input.location)
       }
@@ -167,6 +175,9 @@ nonisolated private final class Walker {
         collector.error("role_name_slug", "Role name '\(role.name)' is not a valid slug.", at: role.location)
       }
       guard let launch = role.launch else { continue }
+      if (launch.agents ?? []).contains(where: { $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+        collector.error("agent_token_empty", "Role '\(role.name)' lists an empty agent token.", at: role.location)
+      }
       checkAgentTokens(launch.agents ?? [], role: role)
       if let suggested = launch.suggest?.agent {
         checkAgentTokens([suggested], role: role)
@@ -392,12 +403,17 @@ nonisolated private final class Walker {
         at: location)
       return
     }
-    var relevant = info.producers.filter { $0.loopID == loopID }
-    if let last = before[until.output]?.producers.last {
-      relevant.append(last)
+    // Only the body's final producer is read after an iteration; before entry the latest
+    // pre-loop state applies, already folded when it came out of a skippable loop.
+    var candidates: [Set<String>?] = []
+    if let final = info.producers.last(where: { $0.loopID == loopID }) {
+      candidates.append(final.verdicts)
     }
-    let sets = relevant.compactMap(\.verdicts)
-    guard sets.count == relevant.count, let first = sets.first else {
+    if let earlier = before[until.output] {
+      candidates.append(earlier.latestVerdicts)
+    }
+    let sets = candidates.compactMap { $0 }
+    guard sets.count == candidates.count, let first = sets.first else {
       collector.error("until_verdict_undeclared", "Output '\(until.output)' declares no verdict.", at: location)
       return
     }
@@ -434,7 +450,7 @@ nonisolated private final class Walker {
     info.producers.append(OutputProducer(verdicts: verdicts, loopID: currentLoopID))
     info.latestVerdicts = verdicts
     if expect.onTimeout == .skip {
-      info.skipLocations.append(location)
+      skipOutputs.append((name, location))
     }
     outputs[name] = info
   }
@@ -452,15 +468,13 @@ nonisolated private final class Walker {
   }
 
   private func reportSkipConsumers() {
-    for (name, info) in outputs.sorted(by: { $0.key < $1.key }) {
+    for (name, location) in skipOutputs {
       let blocking = (consumers[name] ?? []).contains { $0 != .optionalActionInput }
       guard blocking else { continue }
-      for location in info.skipLocations {
-        collector.warning(
-          "skip_ends_run",
-          "'on_timeout: skip' on output '\(name)' would end the run: a later step depends on it.",
-          at: location)
-      }
+      collector.warning(
+        "skip_ends_run",
+        "'on_timeout: skip' on output '\(name)' would end the run: a later step depends on it.",
+        at: location)
     }
   }
 

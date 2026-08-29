@@ -397,5 +397,81 @@ final class WorkflowValidatorTests: XCTestCase {
     XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role), enabledProfiles: [claude, codexHigh]), [])
     XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role)), [], "no profile catalog: no warning")
   }
+
+  // MARK: - Round 2 review findings
+
+  func testUntilReadsOnlyTheFinalProducerOfTheLoopBody() {
+    let steps = """
+        - id: initial
+          message: author
+          text: Initial
+          expect: { output: result, verdict: [retry, stop] }
+        - id: loop
+          repeat: { max: 3, until: "outputs.result.verdict == stop" }
+          steps:
+            - id: intermediate
+              message: author
+              text: Working
+              expect: { output: result, verdict: [working, failed] }
+            - id: final
+              message: author
+              text: Final
+              expect: { output: result, verdict: [retry, stop] }
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: steps)), [])
+  }
+
+  func testALaterSkippableLoopSeesTheFoldedStateOfAnEarlierOne() {
+    let steps = """
+        - id: initial
+          message: author
+          text: Initial
+          expect: { output: findings, verdict: [clean, issues] }
+        - id: first
+          repeat: { max: 2, until: "outputs.findings.verdict == clean" }
+          steps:
+            - id: again
+              message: author
+              text: Again
+              expect: { output: findings, verdict: [needs-work, clean] }
+        - id: second
+          repeat: { max: 2, until: "outputs.findings.verdict == needs-work" }
+          steps:
+            - id: poke
+              notify: "round {{ loop.index }}"
+      """
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal(steps: steps)), ["until_verdict_literal"],
+      "if the first loop is skipped the latest findings verdict set is {clean, issues}; needs-work is not in it")
+  }
+
+  func testSkipWarningsSurviveFoldingASkippableLoop() {
+    let steps = """
+        - id: initial
+          message: author
+          text: Initial
+          expect: { output: gate, verdict: [go, stop] }
+        - id: loop
+          repeat: { max: 2, until: "outputs.gate.verdict == stop" }
+          steps:
+            - id: produce
+              message: author
+              text: Produce
+              expect: { output: draft, timeout: 5m, on_timeout: skip }
+            - id: consume
+              notify: "{{ outputs.draft.path }}"
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: steps)), ["skip_ends_run"])
+  }
+
+  func testBlankNamesAndTokensAreRejectedLikeTheSchemaDoes() {
+    XCTAssertEqual(
+      WorkflowFixtures.codes("schema: prowl.workflow/v1\nid: demo\nname: \"\"\nroles:\n  author:\n    source: current\nsteps:\n  - id: a\n    notify: hi\n"),
+      ["name_empty"])
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal(roles: "  r:\n    source: launch\n    agents: [\"\", codex]")), ["agent_token_empty"])
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal() + "inputs:\n  m: { type: enum, values: [\"\", b] }\n"), ["enum_value_empty"])
+  }
 }
 
