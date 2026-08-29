@@ -4,27 +4,76 @@
 
 Current versions:
 
+- `prowl.cli.agents.dispatch.v1`
 - `prowl.cli.agents.dispatch-complete.v1`
 - `prowl.cli.agents.dispatch-abandon.v1`
 - `prowl.cli.agents.wait.v1`
 
 ## Exact dispatch completion
 
-Every prompted `create tab|pane --profile … --prompt -` returns a pending dispatch. The
-launched child receives its id through `PROWL_DISPATCH_ID`; callers cannot supply an id to
-completion manually.
+Every prompted `create tab|pane --profile … --prompt -` returns a pending dispatch, and
+`agents dispatch` (below) returns one for an agent already running in a pane. Callers cannot
+supply an id to completion manually.
 
 ```bash
 prowl agents dispatch-complete --outcome succeeded|failed --summary <text> [--json]
 ```
 
 `--summary` is required, control-free, and limited to 32768 UTF-8 bytes. The app resolves the
-socket peer ancestry and requires the caller to belong to the dispatch-bound surface.
-Completion is first-write-wins: an identical retry replays the receipt, while a conflicting
-outcome or summary fails. `turn-ended` is observation only and never becomes success.
+socket peer ancestry to the caller's pane and completes that pane's current pending record;
+with no pending record it addresses the pane's most recently issued record so an identical
+retry replays its receipt and a conflicting one fails. A caller outside any pane fails with
+`DISPATCH_CONTEXT_REQUIRED`; a pane that never held a dispatch fails with
+`DISPATCH_NOT_FOUND`. The launch child still receives `PROWL_DISPATCH_ID`, and the CLI
+forwards it when present, but it is compatibility diagnostics only: a process launched with an
+older id completes the pane's current record. Completion is first-write-wins. `turn-ended` is
+observation only and never becomes success.
 
 Success returns `target`, completed `receipt`, and `replayed`. The immutable receipt contains
 `id`, `state=completed`, `outcome`, `summary`, `created_at`, and `completed_at`.
+
+## Re-dispatch into an existing pane
+
+```bash
+prowl agents dispatch <pN|pane-uuid> --prompt - [--json]
+```
+
+The pane is resolved once to the immutable target snapshot. `--prompt` accepts only `-` and
+reads piped UTF-8 stdin up to 256 KiB; an interactive terminal is rejected. CRLF is
+normalized and trailing newlines are dropped by the CLI; the app rejects an empty prompt or
+any control character other than newline and tab with `INVALID_ARGUMENT`, because the text is
+delivered through the pane's input path (one bracketed paste — `ghostty_surface_text` goes
+through Ghostty's paste encoder, so newlines survive as one message in Claude Code and Codex —
+followed by Enter) where other control bytes are stripped or reinterpreted.
+
+Checks run in this order, before any text is typed:
+
+1. `DISPATCH_PENDING` when the pane already holds a pending record; `error.details.record`
+   carries it. The existing record is never overwritten — complete, abandon, or lose it first.
+2. `AGENT_NOT_FOUND` when the pane hosts no detected agent (no appearance grace: the command
+   targets an agent that already exists); `AGENT_GONE` when the surface is closed.
+3. `DISPATCH_TARGET_BUSY` unless the agent is idle by the arm-time rules of
+   `agents wait --until idle` under `auto`: an exact `turn-ended` level counts only with detector
+   corroboration (idle/done); a detector-only idle view counts after two seconds unchanged, and
+   only where the wait would fall back to the detector (no covering `verified_live` channel, or
+   one holding no terminal level). Idle by one source alone — a `turn-ended` the detector has
+   not corroborated yet (its working hold after a turn), or a detector view still stabilizing —
+   is not a refusal: the precondition polls every 200 ms for up to five seconds, as the wait
+   would, and refuses only when the budget expires. A working or blocked detector state without
+   such evidence, or a runtime `needs-input` level, refuses immediately.
+   `error.details.observation` and `signals` carry the evidence.
+
+Then one main-actor step issues the record and binds it to the pane's *current* evidence
+epoch — never a new one, so the generation that will report the receipt is the one already
+proven for the pane — and the rendered text (`[Prowl] ` + prompt + the versioned completion
+protocol) is inserted and submitted. A delivery failure cancels the issuance. Success returns
+`target` and the pending `dispatch` record with the `create` shape; the id never appears in the
+typed text.
+
+Every later rule is unchanged: `agents wait --dispatch`, `dispatch-abandon`,
+`DISPATCH_NEEDS_INPUT`, `DISPATCH_INCOMPLETE`, `AGENT_GONE`, capacity, and eviction apply to the
+new record exactly as to a launch record. One pending record per surface is enforced by the
+store on binding (`surfacePending`), so a launch and a re-dispatch can never race for one pane.
 
 ## Explicit abandonment
 

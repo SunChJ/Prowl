@@ -246,6 +246,11 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-29 (#733 re-dispatch): `prowl agents dispatch <pane> --prompt -` creates a
+  new pending record for an agent already running in a pane (one pending record per surface,
+  idle precondition shared with `agents wait --until idle`, delivery measured as one bracketed
+  paste), and `dispatch-complete` resolves the record from the caller pane instead of
+  `PROWL_DISPATCH_ID` — see [014-re-dispatch.md](014-re-dispatch.md).
 - Updated 2026-08-29 (063 B1 kickoff): 063's `expect` activations are records in this entry's
   dispatch store (`launch` via the S2 prompted-launch path, `message` via #733's re-dispatch),
   and S5's watchdog part ships with 063-B2 instead of D2. #733 therefore lands before 063-B3.

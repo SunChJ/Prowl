@@ -9,7 +9,7 @@ and the executable [schema bundle](schema.md).
 ```text
 prowl [path]
 prowl open [path]
-prowl list | agents [read|signal] | profiles | skills | focus | read | send | key | handoff | create | close
+prowl list | agents [read|signal|dispatch|dispatch-complete|dispatch-abandon|wait] | profiles | skills | focus | read | send | key | handoff | create | close
 ```
 
 Bare path forms (`/`, `./`, `../`, `~/`, `file://`, `.`, `..`) enter `open`.
@@ -85,10 +85,27 @@ Session/origin are at most 256 UTF-8 bytes and detail is at most 32768. All are 
 and control-free when present. Parser and handler enforce the same shared validation.
 See [agents-signal.md](agents-signal.md).
 
+## Agent dispatch grammar
+
+```bash
+prowl agents dispatch <pN|pane-uuid> --prompt -
+prowl agents dispatch-complete --outcome <succeeded|failed> --summary <text>
+prowl agents dispatch-abandon --dispatch <id> --reason <text>
+prowl agents wait --dispatch <id> [--timeout <1...600>] [--include-screen <1...200>]
+prowl agents wait <pN|pane-uuid> --until <idle|blocked|changed|exit> [--timeout <1...600>]
+                  [--min-confidence <auto|exact|high|heuristic>] [--include-screen <1...200>]
+```
+
+`agents dispatch` requires a pane-only target and `--prompt -`: the prompt is piped UTF-8
+stdin up to 256 KiB, CRLF-normalized, trailing newlines dropped, non-empty, and free of
+control characters other than newline and tab. `dispatch-complete` takes no id; it forwards
+a launch-scoped `PROWL_DISPATCH_ID` only when present. See [agents-wait.md](agents-wait.md).
+
 ## Command-specific exceptions
 
 - `agents read <pN|pane-uuid>` is a pane-only semantic snapshot, no selectors or
   focus fallback.
+- `agents dispatch <pN|pane-uuid>` is pane-only as well; it never falls back to focus.
 - `agents signal` accepts no selector. Its source is the caller pane resolved from the
   socket peer process ancestry, never UI focus or `PROWL_PANE_ID`.
 - `handoff` defaults to the calling pane, not UI focus.
