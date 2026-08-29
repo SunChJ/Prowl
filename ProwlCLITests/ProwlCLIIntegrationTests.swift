@@ -1176,6 +1176,114 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("Availability check has not completed"), result.stdout)
   }
 
+  // MARK: - workflow
+
+  private func withWorkflowFile(_ yaml: String, _ body: (URL, String) throws -> Void) throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appending(path: "prowl-workflow-cli-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appending(path: "flow.yaml")
+    try Data(yaml.utf8).write(to: file)
+    try body(file, directory.appending(path: "missing.sock").path(percentEncoded: false))
+  }
+
+  func testWorkflowValidateIsLocalOnlyAndReportsAValidFile() throws {
+    try withWorkflowFile(WorkflowFixtures.minimal(id: "demo")) { file, socketPath in
+      let environment = [ProwlSocket.environmentKey: socketPath]
+      let result = try runProwl(
+        args: ["workflow", "validate", file.path(percentEncoded: false), "--json"], environment: environment)
+      XCTAssertEqual(result.exitCode, 0, result.stderr)
+      try assertResponseMatchesSchema(Data(result.stdout.utf8))
+      let output = try jsonObject(from: result.stdout)
+      XCTAssertEqual(output["command"] as? String, "workflow")
+      XCTAssertEqual(output["schema_version"] as? String, "prowl.cli.workflow.v1")
+      let data = try XCTUnwrap(output["data"] as? [String: Any])
+      XCTAssertEqual(data["action"] as? String, "validate")
+      XCTAssertEqual(data["valid"] as? Bool, true)
+      XCTAssertEqual((data["workflow"] as? [String: Any])?["id"] as? String, "demo")
+      XCTAssertFalse(FileManager.default.fileExists(atPath: socketPath), "The command never touches the socket")
+
+      let text = try runProwl(
+        args: ["workflow", "validate", file.path(percentEncoded: false), "--no-color"], environment: environment)
+      XCTAssertEqual(text.exitCode, 0, text.stderr)
+      XCTAssertTrue(text.stdout.contains("OK"), text.stdout)
+    }
+  }
+
+  func testWorkflowValidateFailsWithDiagnosticsForAnInvalidFile() throws {
+    let yaml = WorkflowFixtures.minimal(id: "demo", extraSteps: "  - id: b\n    close: ghost")
+    try withWorkflowFile(yaml) { file, socketPath in
+      let environment = [ProwlSocket.environmentKey: socketPath]
+      let result = try runProwl(
+        args: ["workflow", "validate", file.path(percentEncoded: false), "--json"], environment: environment)
+      XCTAssertEqual(result.exitCode, 1)
+      try assertResponseMatchesSchema(Data(result.stdout.utf8))
+      let output = try jsonObject(from: result.stdout)
+      XCTAssertEqual(output["ok"] as? Bool, false)
+      let error = try XCTUnwrap(output["error"] as? [String: Any])
+      XCTAssertEqual(error["code"] as? String, "WORKFLOW_INVALID")
+      let details = try XCTUnwrap(error["details"] as? [String: Any])
+      let diagnostics = try XCTUnwrap(details["diagnostics"] as? [[String: Any]])
+      XCTAssertEqual(diagnostics.map { $0["code"] as? String }, ["undefined_role"])
+      XCTAssertEqual(diagnostics.first?["line"] as? Int, 12)
+
+      let text = try runProwl(
+        args: ["workflow", "validate", file.path(percentEncoded: false), "--no-color"], environment: environment)
+      XCTAssertEqual(text.exitCode, 1)
+      XCTAssertTrue(text.stdout.contains("error[undefined_role]"), text.stdout)
+      XCTAssertTrue(text.stdout.contains("INVALID"), text.stdout)
+    }
+  }
+
+  func testWorkflowSchemaPrintsTheDefinitionSchema() throws {
+    let result = try runProwl(args: ["workflow", "schema", "--json"])
+    XCTAssertEqual(result.exitCode, 0, result.stderr)
+    try assertResponseMatchesSchema(Data(result.stdout.utf8))
+    let data = try XCTUnwrap(try jsonObject(from: result.stdout)["data"] as? [String: Any])
+    XCTAssertEqual(data["action"] as? String, "schema")
+    let schema = try XCTUnwrap(data["schema"] as? [String: Any])
+    XCTAssertEqual(schema["$id"] as? String, WorkflowJSONSchema.identifier)
+
+    let text = try runProwl(args: ["workflow", "schema"])
+    XCTAssertEqual(text.exitCode, 0, text.stderr)
+    let printed = try jsonObject(from: text.stdout)
+    XCTAssertEqual(printed["$id"] as? String, WorkflowJSONSchema.identifier)
+  }
+
+  func testWorkflowListRoundTripsThroughTheSocket() throws {
+    let socketPath = temporarySocketPath(suffix: "workflow-list")
+    let payload = WorkflowCommandPayload.list(
+      WorkflowListPayload(
+        worktree: WorkflowListWorktree(id: "wt", name: "main", path: "/Projects/App", rootPath: "/Projects/App"),
+        sources: WorkflowListSources(bundle: nil, user: "/Users/me/.prowl/workflows", repo: "/Projects/App/.prowl/workflows"),
+        workflows: [
+          WorkflowListEntry(
+            id: "demo", name: "Demo", description: nil, scope: .repo, path: "/Projects/App/.prowl/workflows/demo.yaml",
+            enabled: true, valid: true, errors: 0, warnings: 1, shadowed: false)
+        ]))
+    let response = try CommandResponse(
+      ok: true, command: "workflow", schemaVersion: "prowl.cli.workflow.v1", data: RawJSON(encoding: payload))
+
+    let (requestData, result) = try runWithMockServer(
+      socketPath: socketPath, response: response, args: ["workflow", "list", "main", "--json"])
+    XCTAssertEqual(result.exitCode, 0, result.stderr)
+    let envelope = try JSONDecoder().decode(CommandEnvelope.self, from: requestData)
+    guard case .workflow(let input) = envelope.command else { return XCTFail("Expected a workflow envelope") }
+    XCTAssertEqual(input.action, .list)
+    XCTAssertEqual(input.target, .auto("main"))
+    let output = try jsonObject(from: result.stdout)
+    XCTAssertEqual(output["schema_version"] as? String, "prowl.cli.workflow.v1")
+
+    let text = try runWithMockServer(
+      socketPath: temporarySocketPath(suffix: "workflow-list-text"), response: response,
+      args: ["workflow", "list", "--no-color"]).1
+    XCTAssertEqual(text.exitCode, 0, text.stderr)
+    XCTAssertTrue(text.stdout.contains("demo"), text.stdout)
+    XCTAssertTrue(text.stdout.contains("[repo]"), text.stdout)
+    XCTAssertTrue(text.stdout.contains("1 warning(s)"), text.stdout)
+  }
+
   // MARK: - skills (local-only)
 
   func testSkillsListIsLocalOnlyAndValidatesAgainstSchema() throws {

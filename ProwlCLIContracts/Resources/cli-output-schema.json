@@ -63,6 +63,9 @@
     },
     {
       "$ref": "#/$defs/handoffResponse"
+    },
+    {
+      "$ref": "#/$defs/workflowResponse"
     }
   ],
   "$defs": {
@@ -3762,6 +3765,288 @@
           }
         }
       ]
+    },
+    "workflowResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "data"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "command": {
+              "const": "workflow"
+            },
+            "schema_version": {
+              "const": "prowl.cli.workflow.v1"
+            },
+            "data": {
+              "$ref": "#/$defs/workflowData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "command",
+            "schema_version",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "command": {
+              "const": "workflow"
+            },
+            "schema_version": {
+              "const": "prowl.cli.workflow.v1"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            }
+          }
+        }
+      ]
+    },
+    "workflowData": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/workflowListData"
+        },
+        {
+          "$ref": "#/$defs/workflowValidateData"
+        },
+        {
+          "$ref": "#/$defs/workflowSchemaData"
+        }
+      ]
+    },
+    "workflowScope": {
+      "enum": [
+        "bundle",
+        "user",
+        "repo"
+      ]
+    },
+    "workflowListData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "sources",
+        "workflows"
+      ],
+      "properties": {
+        "action": {
+          "const": "list"
+        },
+        "worktree": {
+          "$ref": "#/$defs/workflowListWorktree"
+        },
+        "sources": {
+          "$ref": "#/$defs/workflowListSources"
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workflowListEntry"
+          }
+        }
+      }
+    },
+    "workflowListWorktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "root_path"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "root_path": {
+          "type": "string"
+        }
+      }
+    },
+    "workflowListSources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user"
+      ],
+      "properties": {
+        "bundle": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        }
+      }
+    },
+    "workflowListEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "path",
+        "enabled",
+        "valid",
+        "errors",
+        "warnings",
+        "shadowed"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/workflowScope"
+        },
+        "path": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shadowed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "workflowValidateData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "path",
+        "valid",
+        "diagnostics"
+      ],
+      "properties": {
+        "action": {
+          "const": "validate"
+        },
+        "path": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowIdentity"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workflowDiagnostic"
+          }
+        }
+      }
+    },
+    "workflowIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "workflowDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "severity",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "workflowSchemaData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "schema"
+      ],
+      "properties": {
+        "action": {
+          "const": "schema"
+        },
+        "schema": {
+          "type": "object"
+        }
+      }
     }
   }
 }

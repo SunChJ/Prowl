@@ -685,3 +685,22 @@ public struct PaneInput: Codable, Sendable {
     self.force = try container.decodeIfPresent(Bool.self, forKey: .force) ?? false
   }
 }
+
+// MARK: - Workflow
+
+nonisolated public enum WorkflowInputAction: String, Codable, Sendable {
+  /// Discover definitions for a worktree; the only workflow action that crosses the socket today.
+  case list
+}
+
+nonisolated public struct WorkflowInput: Codable, Sendable {
+  public let action: WorkflowInputAction
+  /// Worktree whose repo source is searched: any 060 target; `.none` = the caller's pane, then
+  /// the focused worktree.
+  public let target: TargetSelector
+
+  public init(action: WorkflowInputAction = .list, target: TargetSelector = .none) {
+    self.action = action
+    self.target = target
+  }
+}

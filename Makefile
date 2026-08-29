@@ -59,7 +59,7 @@ TEST_SIGNING_ARGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs embed-skills run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-unit test-cli-integration benchmark-build bump-version log-stream
+.PHONY: build-ghostty-xcframework ensure-ghostty sync-ghostty _record-ghostty-hash build-app build-cli build-cli-release embed-cli-debug embed-cli embed-docs embed-skills run-app install-dev-build install-release archive export-archive format format-changed format-lint lint check test test-app test-scripts test-cli-smoke test-cli-unit test-cli-integration benchmark-build bump-version log-stream agent-versions
 
 help:  # Display this help.
 	@-+echo "Run make with one of the following targets:"
@@ -468,6 +468,10 @@ capture-spike: # Sample the running Prowl Debug app the moment CPU crosses a thr
 
 measure-titles: # Black-box check that animated tab titles stay coalesced to ~1 change/s (works on Release builds)
 	@bash scripts/measure-title-coalescing.sh
+
+AGENT_VERSIONS_ARGS ?=
+agent-versions: # Compare installed tier-A agent CLI versions with the managed-hook attestation (AGENT_VERSIONS_ARGS="--json" / "--strict" / "--check-matrix")
+	@python3 "$(CURRENT_MAKEFILE_DIR)/scripts/agent_versions.py" $(AGENT_VERSIONS_ARGS)
 
 format: # Format all Swift code with swift-format (full-tree cleanup)
 	swift-format -p --in-place --recursive --configuration ./.swift-format.json supacode supacodeTests
