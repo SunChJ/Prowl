@@ -9,6 +9,7 @@
 | 2026-08-27 | K1 merged: `embed-skills` staging, `Resources/skills` folder reference, Foundation-only `ProwlSkills` registry with the frontmatter parser and `metadata.prowl-install` audience, CLI bundle resolution, typed errors. | #729, [003-k1-bundle-registry.md](003-k1-bundle-registry.md) |
 | 2026-08-27 | K2 merged after four review rounds and an owner-authorized real-environment check: shared `SymlinkInstaller` (extracted from `CLIInstallClient`, adds `broken`), declarative `SkillInstallTarget`, `ProwlSkillInstaller`, local-only `prowl skills list\|install\|uninstall\|path` with contract, schema, manual, and skill line; aliased targets handled by re-reading each slot. | #730, [004-k2-skill-installer-cli.md](004-k2-skill-installer-cli.md) |
 | 2026-08-28 | K3: `SkillInstallClient`, `AgentSkillsFeature`, and the Agent Skills section on Settings › Agents › Command Line Tool; `settings.md` / `cli.md` updated; 065 complete. | #731, [005-k3-settings-agent-skills.md](005-k3-settings-agent-skills.md) |
+| 2026-08-29 | Shipped in v2026.8.29. The hosting page was renamed from Command Line Tool to **CLI & Skills**; the records above keep the name they were written under. | #735 |
 
 ## Outcome & current state (as of 2026-08-28)
 

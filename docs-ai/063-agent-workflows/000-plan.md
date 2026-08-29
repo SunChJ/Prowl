@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — R1 foundations C0/A1/A1b/A2 and 064-S1/S2 merged; 064-S3 wave 1 is next |
+| **Status** | In progress — R1 (C0/A1/A1b/A2 with 064-S1/S2/S3 wave 1 and 065) shipped in v2026.8.29; R2a (B1 → B2 → B3 → C1, with #733 and #726 T0) is next |
 | **Anchor date** | 2026-08-21 |
-| **Primary PRs** | R1 foundations: #709 (C0), #710 (A1), #713 (A1b), #714 (A2); B1–D3 TBD |
+| **Primary PRs** | R1: #709 (C0), #710 (A1), #713 (A1b), #714 (A2) — shipped in v2026.8.29; R2a/R2b/R3 (B1–D3) TBD |
 | **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
 
 ## Background
@@ -408,8 +408,9 @@ Shapes are intentionally close to what exists so the runner and the CLI share on
 
 This section defines **what** each slice contains. **When** it ships and in what order —
 including the interleaving with 064's signal slices — is owned by the living
-[release-plan.md](release-plan.md) (three releases: R1 CLI primitives + signals, R2 Agent
-Workflows, R3 handoff migration; decision 2026-08-22). Only two couplings cross the two
+[release-plan.md](release-plan.md) (R1 CLI primitives + signals, R2a workflow engine + CLI,
+R2b workflow GUI + first built-in, R3 handoff migration; decisions 2026-08-22 and
+2026-08-29). Only two couplings cross the two
 entries: 064-S1 delivers the `ObservedAgentState` observer that B3 consumes, and 064-S3
 attaches hooks through A2's launch boundary.
 
@@ -425,7 +426,7 @@ attaches hooks through A2's launch boundary.
 | **C1** | C | B3 | Status center fifth state + run panel + attention triggers + notifications (061 visual verification). Runs become visible. |
 | **C2** | C | B3 | Start sheet (bindings, suggestion-based profile creation, don't-ask-again, `--skip` equivalent) + entry points (capsule popover, palette, Active Agents context menu). GUI-initiated runs. |
 | **D1** | D | B1, C2, 065-K1 | `prowl-workflows` authoring skill (registered by adding it to `skills/`; embedding and the registry come from [065](../065-bundled-agent-skills/000-plan.md)), `docs/components/workflows.md`, Settings › Workflows page (enable/validate/Reveal/New/Ask-agent/per-workflow auto) added to the Agents group. Distribution and docs. |
-| **D2** | D | A2, C2, D1, 064-S3 wave 1 | `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification; the watchdog consumes exact signals (064-S5 part). Proves the engine on a fresh flow before touching shipped behavior. |
+| **D2** | D | A2, C2, D1, 064-S3 wave 1, #733, #726 T1 | `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification; the watchdog consumes exact signals (064-S5 part). Proves the engine on a fresh flow before touching shipped behavior. |
 | **D3** | D | D2 | `prowl.handoff` + `prowl.handoff-checkpoint` built-ins + `handoff.transition`/`handoff.checkpoint` actions; `prowl handoff to\|save` → `HANDOFF_RETIRED` stubs; remove `HandoffHudFeature`, `HandoffCommandHandler`, `HandoffRequestRegistry`; rewrite `docs/components/handoff.md` and the `prowl-cli` skill. Migrate the shipped feature last. |
 | **V2** | — | — | observe mode (`expect.status` + `agents read` / hook `last_assistant_message`), `on_attention: ask <role>`, fan-out (`count`, `wait all`), run persistence/resume, retention, cross-worktree roles, GUI editor. |
 
@@ -595,6 +596,11 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-29: R1 shipped in v2026.8.29. R2 is split into R2a (B1–C1) and R2b (C2–D2);
+  #733 (re-dispatch into an existing pane) and #726 T0 (version attestation) are scheduled in
+  R2a as D2 prerequisites, #726 T1 precedes D2 in R2b, and the working cadence is recorded in
+  [release-plan.md](release-plan.md). The Settings page this plan and C0's record call
+  "Command Line Tool" shipped under that name and was renamed **CLI & Skills** in #735.
 - Updated 2026-08-23: removed 064-S3 wave 2 from R3. Prowl does not install hooks for
   runtimes that require writes to global configuration, dedicated homes, or project files;
   those runtimes continue to use cooperative, transcript/process, or heuristic evidence.

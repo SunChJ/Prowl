@@ -15,6 +15,9 @@
 | D | 063 | built-ins, skills, docs, handoff migration |
 | S | 064 | completion signals (bus, `agents signal` / `agents wait`, hooks, producers) |
 
+GitHub issues scheduled as slices (#733 re-dispatch, #726 drift guard) keep their issue number
+as the slice name; both belong to 064.
+
 Cross-entry couplings (only these two): 064-S1 delivers the `ObservedAgentState` observer
 that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launch boundary.
 063 V1 does not otherwise depend on 064 (steps complete on `prowl workflow done`).
@@ -22,9 +25,20 @@ that 063-B3 consumes; 064-S3 attaches launch-scoped hooks through 063-A2's launc
 ## Releases
 
 PRs merge to `main` one at a time (each keeps `main` shippable); engine PRs without a
-user-facing surface may merge before "their" release and stay dormant. Three releases:
+user-facing surface may merge before "their" release and stay dormant. Four releases — R1,
+R2a, R2b, R3 (R2 was split on 2026-08-29); the [cadence rules](#cadence-and-working-rules)
+say when each is cut:
 
-### Current R1 status (2026-08-28)
+### Status (2026-08-29)
+
+| Release | State | Next action |
+| --- | --- | --- |
+| R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
+| R2a | Next | B1 ∥ #733 ∥ #726 T0 on three branches from `main`; B1 starts with a grilled slice record |
+| R2b | Planned | after R2a ships |
+| R3 | Planned | after R2b ships |
+
+#### R1 PR ledger
 
 | Slice(s) | State | PR / next action |
 | --- | --- | --- |
@@ -37,12 +51,18 @@ user-facing surface may merge before "their" release and stay dormant. Three rel
 | S3 wave 1 | Complete | Merged in #721/#723/#725/#728; S3c plan [064.010](../064-agent-completion-signals/010-s3c-plan.md), record [064.011](../064-agent-completion-signals/011-s3c-action.md) |
 | 065-S0/K1 | Merged | #729; [065.003](../065-bundled-agent-skills/003-k1-bundle-registry.md) |
 | 065-K2 | Merged | #730; [065.004](../065-bundled-agent-skills/004-k2-skill-installer-cli.md) |
-| 065-K3 | In review | #731; [065.005](../065-bundled-agent-skills/005-k3-settings-agent-skills.md); closes 065 |
+| 065-K3 | Merged | #731; [065.005](../065-bundled-agent-skills/005-k3-settings-agent-skills.md); closes 065 |
+| R1 tail | Merged | #732: `agents read` reports `pending` during a live turn, arm-time terminal signals need detector corroboration, 10 s agent-appearance grace, `agents signal` receipts carry `binding`; [064.012](../064-agent-completion-signals/012-cli-evidence-semantics.md) |
+| R1 tail | Merged | #735: Settings › Agents › Command Line Tool renamed **CLI & Skills** (records written before it keep the old name) |
+| R1 tail | Merged | #736: Claude `idle_prompt` no longer decodes as `needs-input`; `auto` waits fall back to the detector while the channel holds no terminal level; [064.013](../064-agent-completion-signals/013-idle-evidence-fallback.md) |
+| Release | Shipped | v2026.8.29 — the CHANGELOG entry covers every row above |
 
-A2 completes 063's R1 implementation work, and S1/S2/S3 wave 1 are on `main`. The remaining
-R1 work is 065 bundled skill distribution: S0, K1 (#729), and K2 (#730) are merged; K3, the
-Settings section, is implemented and in review — once it merges, 065 and R1's implementation
-work are complete.
+R1 is complete and shipped. Every planned slice merged in order; the three "R1 tail" PRs
+were not in the plan — each came out of driving the bundled `prowl-cli` skill end to end
+against a build of `main` after the last planned slice merged, which is why that pass is now
+a standing rule (see [cadence](#cadence-and-working-rules)). Scope removed during R1: S3
+wave 2 (2026-08-23), the Active Agents exact-channel badge (2026-08-26), and a Profile-free
+`create tab|pane --background` (recorded in 064.013 as a product follow-up, unscheduled).
 
 #### S3 wave 1 PR breakdown
 
@@ -77,22 +97,36 @@ User-visible result: onevcat's daily CLI-driven orchestration is first-class
 (`create pane --profile --prompt -` → `agents wait` → `send`). Docs: `docs/components/cli.md`,
 `agent-detection.md`, `settings.md`, `prowl-cli` skill. Parallelism: C0 ∥ A1 ∥ 065-K1, A2 ∥ S1.
 
-### R2 — Agent Workflows
+### R2a — Workflow engine and CLI
 
 | Order | Slice | Entry | Depends | Outcome |
 | --- | --- | --- | --- | --- |
-| 1 | **B1** definitions (Yams, model, validator, JSON Schema, three-source discovery, `workflow list/validate/schema`) | 063 | — | DSL authorable and validatable (may merge during R1) |
+| 1 | **B1** definitions (Yams, model, validator, JSON Schema, three-source discovery, `workflow list/validate/schema`) | 063 | — | DSL authorable and validatable; dormant until B3 |
+| 1 | **#733** `prowl agents dispatch <pane> --prompt -`: a new pending dispatch bound to an existing surface, one pending per surface, `dispatch-complete` resolved from the caller's ancestry to the pane's current record, refused while the agent is working or blocked | 064 | S2, 064.012 | a reviewer launched once takes N assignments, each with its own receipt — the shape `prowl.adversarial-review` (D2) needs, and usable from the CLI recipe as soon as it merges |
+| 1 | **#726 T0** version attestation: per-runtime attested version record beside the research matrix + `make agent-versions` | 064 | S3 wave 1 | an installed runtime newer than its attested contract warns before a release |
 | 2 | **B2** runner core (pure state machine, run store, templates, registry, watchdog) | 063 | B1 | — |
 | 3 | **B3** runner wiring + `workflow run/status/done/cancel` | 063 | A2, S1, B2 | engine powered on |
 | 4 | **C1** status center + run panel + notifications | 063 | B3 | runs visible |
-| 5 | **C2** start sheet + entry points (capsule popover, palette, Active Agents) | 063 | B3 | GUI-initiated runs |
-| 6 | **D1** `prowl-workflows` authoring skill (skills embedding from 065), `docs/components/workflows.md`, Settings › Workflows page | 063 | B1, C2, 065-K1 | custom workflows, agent-assisted authoring |
-| 7 | **D2** `prowl.adversarial-review` built-in + reviewer skill + E2E; watchdog consumes exact signals (064-S5 part) | 063 + 064 | A2, C2, D1, S3 wave 1 | first built-in workflow |
 
-The shipped handoff (HUD + `prowl handoff`) stays untouched in R2. Fallback split if R2 is
-too large: R2a = B1–C1 (workflows runnable from the CLI, visible in the status center),
-R2b = C2–D2 (GUI entry, Settings, skills, E2E). Default is one R2. Docs: `workflows.md`,
-`command-palette.md`, `active-agents.md`, `settings.md`.
+User-visible result: a workflow file runs from the CLI (`prowl workflow run`), its steps and
+attention states show in the status center, and a coordinating agent can re-dispatch into a
+reviewer it already launched. Parallelism: B1 ∥ #733 ∥ #726 T0 (the two 064 slices do not
+touch B1's files). Docs: `workflows.md` (CLI part), `cli.md`, `prowl-cli` skill.
+
+### R2b — Workflow GUI, docs, and the first built-in
+
+| Order | Slice | Entry | Depends | Outcome |
+| --- | --- | --- | --- | --- |
+| 1 | **C2** start sheet + entry points (capsule popover, palette, Active Agents) | 063 | B3 | GUI-initiated runs |
+| 2 | **D1** `prowl-workflows` authoring skill (skills embedding from 065), `docs/components/workflows.md`, Settings › Workflows page, CLI reachability status (deferred from C0) | 063 | B1, C2, 065-K1 | custom workflows, agent-assisted authoring |
+| 3 | **#726 T1** headless contract tests against the real tier-A binaries through the production renderers/decoder (`make test-agent-contracts`, passing runs update T0) | 064 | #726 T0, S3 wave 1 | hook contracts fail loudly on binary drift before D2's E2E leans on them |
+| 4 | **D2** `prowl.adversarial-review` built-in + reviewer skill + E2E; watchdog consumes exact signals (064-S5 part) | 063 + 064 | A2, C2, D1, S3 wave 1, #733, #726 T1 | first built-in workflow |
+
+The shipped handoff (HUD + `prowl handoff`) stays untouched through R2a and R2b. The split
+replaces the earlier "one R2" default (decision 2026-08-29): R2's seven slices outweigh R1's
+implementation work, and R1 showed that a slice is only proven once it has been driven end to
+end from the skill, so the CLI route ships and collects that feedback before the GUI is built
+on it. Docs: `workflows.md`, `command-palette.md`, `active-agents.md`, `settings.md`.
 
 ### R3 — Handoff migration + signal completion
 
@@ -110,21 +144,59 @@ release after R3.
 063 V2 items (observe mode, `on_attention: ask <role>`, fan-out, retention, run resume,
 cross-worktree roles, GUI editor) and the rest of 064-S5; scheduled by demand.
 
+## Cadence and working rules
+
+Agreed 2026-08-29 after R1 shipped; they apply from R2a on.
+
+- **Ship when a coherent slice set is on `main`, not on a calendar.** R1's tags landed 4–9
+  days apart. A release is cut when the slices in its table are merged and the end-to-end
+  pass below is green; a slice that is not ready moves to the next release in this file
+  rather than holding the current one.
+- **One PR at a time, each keeping `main` shippable.** Engine slices without a user-facing
+  surface (B1, B2) merge early and stay dormant; the release table lists them where they
+  become visible.
+- **Every merged slice is driven end to end from the bundled skill** (`prowl-cli`, and from
+  B3 the workflow recipe as well) against a Debug build of `main` before the next slice
+  starts. R1's tail (#732, #736) came entirely from such passes; unit and socket tests alone
+  do not close a slice. Isolated-instance recipes: 064.007 / 009 / 011 / 013.
+- **Grill before a public surface.** A slice that introduces a public contract — B1's DSL,
+  JSON Schema, and `workflow` CLI; C2's start sheet; D1's skill and Settings page — gets a
+  `grill-me` pass on its slice record before code, and the DSL spec is amended in the same
+  PR when a decision changes it.
+- **Drift guard travels with the release.** #726 T0 (`make agent-versions`) ships in R2a and
+  runs before every release from then on; T1 (`make test-agent-contracts`) ships in R2b
+  before D2's E2E and is re-run whenever a runtime is upgraded or a release is cut.
+- **Records move with the code.** The PR that merges a slice updates this file's ledger and
+  change log, the owning plan's Status / Primary PRs lines and Amendments, and the slice's
+  own record; the release PR adds the "shipped" line. A stale ledger is a defect of the next
+  PR, not of a later audit.
+- **Release mechanics** stay with the
+  [release runbook](../001-fork-bootstrap-and-release-pipeline/release-runbook.md)
+  (`sync-docs`, CHANGELOG, notarized build); nothing here changes them.
+
 ## Dependency graph
 
 ```
-R1:  C0            A1 ──► A1b
+R1:  C0            A1 ──► A1b                         (shipped v2026.8.29)
                      └──► A2 ──┐
-                               ├──► S2 ──► S3w1
+                               ├──► S2 ──► S3w1 ──► #732 ──► #736
                           S1 ──┘
      065-S0/K1 ──► 065-K2 ──► 065-K3
-R2:  B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1 ──► C2 ──► D1 (◄ 065-K1) ──► D2 (◄ S3w1)
+R2a: B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1
+     #733 (◄ S2)        #726-T0 (◄ S3w1)
+R2b: C2 (◄ B3) ──► D1 (◄ B1, 065-K1) ──► D2 (◄ S3w1, #733, #726-T1)
+     #726-T1 (◄ #726-T0)
 R3:  D3 (◄ D2)        S4 (◄ S1)
 R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 ```
 
 ## Change log
 
+- 2026-08-29 — R1 shipped in v2026.8.29 (tag `5ba8aacd`), including three unplanned tail PRs
+  found by end-to-end passes over the `prowl-cli` skill: #732 (064.012 evidence semantics),
+  #735 (Settings page renamed CLI & Skills), #736 (064.013 idle evidence fallback). R2 is
+  split into R2a (B1–C1) and R2b (C2–D2); #733 re-dispatch and #726 T0 attestation join R2a
+  as D2 prerequisites, #726 T1 precedes D2 in R2b. Added the cadence and working rules.
 - 2026-08-28 — 065-K3 implemented on `feat/bundled-skills-k3` and opened as #731: the Agent
   Skills section on Settings › Agents › Command Line Tool; 065's action log
   ([065.001](../065-bundled-agent-skills/001-action.md)) summarizes K1–K3. Record:
