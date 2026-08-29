@@ -39,6 +39,12 @@ nonisolated enum SupacodePaths {
     Bundle.main.resourceURL?.appending(path: "docs", directoryHint: .isDirectory)
   }
 
+  /// Bundled workflow definitions (`Prowl.app/Contents/Resources/workflows`); absent until the
+  /// first built-in ships, which discovery tolerates.
+  static var bundledWorkflowsURL: URL? {
+    Bundle.main.resourceURL.map(WorkflowSources.bundleDirectory(resourcesURL:))
+  }
+
   static var bundledCLIURL: URL? {
     Bundle.main.resourceURL?.appending(
       path: "prowl-cli/prowl",

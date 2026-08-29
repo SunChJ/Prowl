@@ -24,6 +24,7 @@ final class CLICommandRouter {
   private let tabHandler: any CommandHandler
   private let paneHandler: any CommandHandler
   private let handoffHandler: any CommandHandler
+  private let workflowHandler: any CommandHandler
 
   init(
     openHandler: any CommandHandler = StubCommandHandler(command: "open"),
@@ -44,7 +45,8 @@ final class CLICommandRouter {
     closeHandler: any CommandHandler = StubCommandHandler(command: "close"),
     tabHandler: any CommandHandler = StubCommandHandler(command: "tab"),
     paneHandler: any CommandHandler = StubCommandHandler(command: "pane"),
-    handoffHandler: any CommandHandler = StubCommandHandler(command: "handoff")
+    handoffHandler: any CommandHandler = StubCommandHandler(command: "handoff"),
+    workflowHandler: any CommandHandler = StubCommandHandler(command: "workflow")
   ) {
     self.openHandler = openHandler
     self.listHandler = listHandler
@@ -65,6 +67,7 @@ final class CLICommandRouter {
     self.tabHandler = tabHandler
     self.paneHandler = paneHandler
     self.handoffHandler = handoffHandler
+    self.workflowHandler = workflowHandler
   }
 
   // Intentional exhaustive routing table for the public CLI command union.
@@ -94,6 +97,7 @@ final class CLICommandRouter {
     case .tab: handler = tabHandler
     case .pane: handler = paneHandler
     case .handoff: handler = handoffHandler
+    case .workflow: handler = workflowHandler
     }
     return await handler.handle(envelope: envelope, context: context)
   }

@@ -93,6 +93,12 @@ public enum CLIErrorCode {
   /// A HUD-injected request was already superseded by its fallback.
   public static let handoffRequestSuperseded = "HANDOFF_REQUEST_SUPERSEDED"
 
+  // Workflow
+  public static let workflowFailed = "WORKFLOW_FAILED"
+  public static let workflowNotFound = "WORKFLOW_NOT_FOUND"
+  /// The file parsed or validated with errors; `details` carries the validate payload.
+  public static let workflowInvalid = "WORKFLOW_INVALID"
+
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"
   public static let socketPermissionDenied = "SOCKET_PERMISSION_DENIED"
