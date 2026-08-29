@@ -603,6 +603,10 @@ attaches hooks through A2's launch boundary.
   Relaunch is offered for `launch` roles only; a Skip resolves its §5 consequence immediately;
   binding resolution is a pure resolver (memory storage and the sheet stay with B3/C2). The
   spec's §4/§5/§8/§10 were clarified accordingly — see [007-b2-runner-core.md](007-b2-runner-core.md).
+- Updated 2026-08-29 (B2, H14): `prowl workflow done` validation became a review gate — a
+  delivery that misses `sections` / `format` / `verdict` is kept as provisional and the run asks
+  the user (Accept / Accept with verdict / Ask again / Skip); `expect.strict: true` restores the
+  hard rejection. Spec §5/§9/§10 amended; see [007-b2-runner-core.md](007-b2-runner-core.md).
 - Updated 2026-08-29 (B1 kickoff, grilled): the DSL spec was aligned with what R1 shipped.
   (1) `expect` activations are records in the shared dispatch store — `launch` via the S2
   prompted-launch path, `message` via #733's re-dispatch — and `workflow done` is the

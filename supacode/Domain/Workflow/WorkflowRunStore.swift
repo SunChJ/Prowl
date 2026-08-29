@@ -83,6 +83,8 @@ nonisolated struct WorkflowRunRecord: Codable, Equatable, Sendable {
     let step: String
     let role: String?
     let ordinal: Int?
+    /// Issue codes of a provisional delivery (`delivery_issues` only).
+    let issues: [String]?
   }
 
   struct Status: Codable, Equatable, Sendable {
@@ -226,7 +228,8 @@ extension WorkflowRunRecord.Status {
         state: "needs_attention", step: attention.stepID, dependent: nil,
         attention: WorkflowRunRecord.Attention(
           reason: attention.reason.code, message: attention.message, actions: attention.actions,
-          step: attention.stepID, role: attention.role, ordinal: attention.ordinal))
+          step: attention.stepID, role: attention.role, ordinal: attention.ordinal,
+          issues: attention.reason.issueCodes))
     case .completed:
       self.init(state: "completed", step: nil, dependent: nil, attention: nil)
     case .cancelled:
@@ -246,6 +249,11 @@ extension WorkflowRunRecord.Status {
 }
 
 extension WorkflowAttentionReason {
+  nonisolated var issueCodes: [String]? {
+    if case .deliveryIssues(let issues) = self { return issues.map(\.code) }
+    return nil
+  }
+
   nonisolated var code: String {
     switch self {
     case .needsInput: "needs_input"
@@ -265,6 +273,7 @@ extension WorkflowAttentionReason {
     case .renderedTextInvalid: "rendered_text_invalid"
     case .actionFailed: "action_failed"
     case .persistFailed: "persist_failed"
+    case .deliveryIssues: "delivery_issues"
     case .timeout: "timeout"
     }
   }

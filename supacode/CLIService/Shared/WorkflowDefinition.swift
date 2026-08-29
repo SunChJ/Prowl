@@ -303,6 +303,9 @@ nonisolated public struct WorkflowExpectation: Equatable, Sendable {
   /// Hard cap in seconds; nil = wait as long as the agent works.
   public let timeoutSeconds: Int?
   public let onTimeout: WorkflowTimeoutPolicy?
+  /// `true`: a delivery that misses `sections`, `format`, or `verdict` is rejected. `false`
+  /// (default): it is kept as provisional and the run asks the user to accept, ask again, or skip.
+  public let strict: Bool
   public let location: WorkflowSourceLocation?
 
   public init(
@@ -312,6 +315,7 @@ nonisolated public struct WorkflowExpectation: Equatable, Sendable {
     verdict: [String]? = nil,
     timeoutSeconds: Int? = nil,
     onTimeout: WorkflowTimeoutPolicy? = nil,
+    strict: Bool = false,
     location: WorkflowSourceLocation? = nil
   ) {
     self.output = output
@@ -320,6 +324,7 @@ nonisolated public struct WorkflowExpectation: Equatable, Sendable {
     self.verdict = verdict
     self.timeoutSeconds = timeoutSeconds
     self.onTimeout = onTimeout
+    self.strict = strict
     self.location = location
   }
 }

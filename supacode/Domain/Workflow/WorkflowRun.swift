@@ -179,6 +179,8 @@ nonisolated enum WorkflowActivationState: String, Equatable, Sendable, Codable {
   case waiting
   /// A validated delivery is being written to the run directory; the record completes once it is.
   case persisting
+  /// The delivery is on disk but had issues a non-strict step tolerates; the user decides.
+  case provisional
   case delivered
   case skipped
   case revoked
@@ -281,6 +283,12 @@ nonisolated enum WorkflowAttentionAction: String, Equatable, Sendable, Codable, 
   case keepWaiting = "keep_waiting"
   case retry
   case relaunch
+  /// Keep a provisional delivery as it is.
+  case acceptDelivery = "accept_delivery"
+  /// Keep a provisional delivery and supply the verdict it lacks (one of the declared values).
+  case acceptWithVerdict = "accept_with_verdict"
+  /// Type the step's requirements into the role's pane again and keep waiting.
+  case askAgain = "ask_again"
   case skip
   case cancel
 }
@@ -294,7 +302,7 @@ nonisolated enum WorkflowAgentGoneReason: String, Equatable, Sendable, Codable {
 }
 
 /// Why an injection did not deliver the line.
-nonisolated enum WorkflowInjectionFailure: Equatable, Sendable, Codable {
+nonisolated enum WorkflowInjectionFailure: Equatable, Sendable {
   /// The role is working or blocked again; the step returns to its idle wait.
   case roleBusy
   case roleBlocked
@@ -305,7 +313,7 @@ nonisolated enum WorkflowInjectionFailure: Equatable, Sendable, Codable {
   case activationUnavailable(String)
 }
 
-nonisolated enum WorkflowAttentionReason: Equatable, Sendable, Codable {
+nonisolated enum WorkflowAttentionReason: Equatable, Sendable {
   case needsInput
   case idleWithoutDelivery
   case blocked
@@ -316,6 +324,8 @@ nonisolated enum WorkflowAttentionReason: Equatable, Sendable, Codable {
   case actionFailed(String)
   /// The validated output could not be written to the run directory.
   case persistFailed(String)
+  /// A non-strict delivery is on disk with these issues; the user accepts, asks again, or skips.
+  case deliveryIssues([WorkflowDeliveryIssue])
   case timeout
 }
 

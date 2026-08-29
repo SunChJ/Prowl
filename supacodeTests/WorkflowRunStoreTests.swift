@@ -88,6 +88,25 @@ struct WorkflowRunStoreTests {
     #expect(decoded.bindings["source"]?.pane == WorkflowRunMachineTests.authorPane)
     #expect(decoded.invocations.first?.activation?.output == "brief")
     #expect(decoded.run.status.attention?.actions == [.nudge, .keepWaiting, .skip, .cancel])
+    #expect(decoded.run.status.attention?.issues == nil)
+  }
+
+  @Test func recordCarriesTheIssueCodesOfAProvisionalDelivery() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var run = try makeRun(root: root)
+    let attention = WorkflowAttention(
+      reason: .deliveryIssues([.missingSections(["## Objective"]), .verdictMissing(allowed: ["a", "b"])]),
+      stepID: "brief", role: "source", ordinal: 1, actions: [.acceptWithVerdict, .askAgain, .skip, .cancel],
+      message: "m")
+    run.status = .needsAttention(attention)
+    let record = WorkflowRunRecord(run: run)
+    #expect(record.run.status.attention?.reason == "delivery_issues")
+    #expect(record.run.status.attention?.issues == ["missing_sections", "verdict_missing"])
+    let store = WorkflowRunStore(rootURL: root)
+    try store.ensureLayout(runID: run.id)
+    try store.writeRecord(record)
+    #expect(try store.readRecord(runID: run.id) == record)
   }
 
   @Test func recordKeepsInputNamesButNeverInputValues() throws {

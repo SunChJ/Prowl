@@ -150,6 +150,16 @@ nonisolated enum WorkflowTypedLine {
     try validated(prefix + "Read \(path) and follow it" + (completion?.typedSuffix ?? ""))
   }
 
+  /// The panel's "Ask again" after a provisional delivery: what was missing, and the command.
+  static func askAgain(
+    issues: [WorkflowDeliveryIssue], completion: WorkflowCompletionCommand
+  ) throws(WorkflowRenderedTextError) -> String {
+    let problems = issues.map(\.message).joined(separator: "; ")
+    return try validated(
+      prefix + "Your delivery for this step had \(problems). Deliver it again, complete, with: "
+        + completion.messageCommands.joined(separator: WorkflowCompletionCommand.commandSeparator))
+  }
+
   /// The watchdog's one automatic nudge (and the panel's "Nudge again").
   static func nudge(completion: WorkflowCompletionCommand) throws(WorkflowRenderedTextError) -> String {
     try validated(

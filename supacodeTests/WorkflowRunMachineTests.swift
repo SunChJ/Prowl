@@ -252,8 +252,6 @@ struct WorkflowRunMachineTests {
     #expect(
       machine.deliver(ordinal: 2, selector: .token("TOKEN-1"), body: "x", verdict: nil).result
         == .failure(.stepNotExpecting))
-    let invalid = machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope only", verdict: nil)
-    #expect(invalid.result.failureCode == "OUTPUT_INVALID")
     #expect(machine.run.phase == .waitingForDelivery(ordinal: 1))
 
     let (result, effects) = machine.deliver(
@@ -386,8 +384,20 @@ struct WorkflowRunMachineTests {
     #expect(machine.templateContext().roles["reviewer"]?.pane == "p2")
   }
 
-  @Test func verdictRequiredAndUndeclaredVerdictAreRejected() throws {
-    var (machine, _) = try makeMachine()
+  @Test func strictStepsRejectMissingSectionsAndVerdicts() throws {
+    let yaml = Self.adversarialReview
+      .replacing("timeout: 10m }", with: "timeout: 10m, strict: true }")
+      .replacing(
+        "verdict: [clean, issues] }\n  - id: rounds",
+        with: "verdict: [clean, issues], strict: true }\n  - id: rounds")
+    var (machine, _) = try makeMachine(yaml)
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    let invalid = machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope only", verdict: nil)
+    #expect(invalid.result.failureCode == "OUTPUT_INVALID")
+    #expect(machine.run.phase == .waitingForDelivery(ordinal: 1))
+    #expect(machine.run.invocations[0].activation?.state == .waiting)
+
     _ = machine.apply(.roleIdle(ordinal: 1))
     _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
     try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "## Scope\nx\n## Claims\ny")
@@ -398,6 +408,104 @@ struct WorkflowRunMachineTests {
     #expect(
       machine.deliver(ordinal: 2, selector: .token("TOKEN-2"), body: "## Findings\n## Verdict", verdict: "maybe").result
         .failureCode == "OUTPUT_INVALID")
+  }
+
+  @Test func provisionalDeliveryAsksTheUserAndAcceptContinues() throws {
+    var (machine, _) = try makeMachine()
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    let (result, _) = machine.deliver(
+      ordinal: 1, selector: .token("TOKEN-1"), body: "# Brief\n## Scope\nx", verdict: nil)
+    let receipt = try result.get()
+    #expect(receipt.issues == [.missingSections(["## Claims"])])
+    let persisted = machine.apply(.outputPersisted(ordinal: 1))
+    #expect(!persisted.contains { if case .completeActivation = $0 { return true } else { return false } })
+    #expect(machine.run.invocations[0].activation?.state == .provisional)
+    let attention = try #require(machine.run.status.attention)
+    #expect(attention.reason == .deliveryIssues([.missingSections(["## Claims"])]))
+    #expect(attention.actions == [.acceptDelivery, .askAgain, .skip, .cancel])
+    #expect(
+      attention.message
+        == "author (Claude Code) delivered brief, but: missing section(s) ## Claims. Accept it, ask again, or skip.")
+    #expect(machine.run.outputs.isEmpty)
+    #expect(machine.apply(.watchdog(ordinal: 1, .nudge)).isEmpty)
+    #expect(
+      machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "x", verdict: nil).result
+        == .failure(.stepNotExpecting))
+
+    let accepted = machine.apply(.user(.acceptDelivery(verdict: nil)))
+    #expect(
+      accepted.contains(
+        .completeActivation(dispatchID: "d1", summary: "Delivered output 'brief' for workflow step 'brief'.")))
+    #expect(machine.run.status == .running)
+    #expect(machine.run.outputs["brief"]?.ordinal == 1)
+    #expect(machine.run.invocations[0].activation?.state == .delivered)
+    #expect(machine.run.phase == .launching(ordinal: 2))
+  }
+
+  @Test func provisionalDeliveryWithoutAVerdictNeedsOneToBeAccepted() throws {
+    var (machine, _) = try makeMachine()
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "## Scope\nx\n## Claims\ny")
+    _ = machine.apply(.launched(ordinal: 2, pane: Self.reviewerPane, dispatchID: "d2"))
+    try deliverPersisted(&machine, ordinal: 2, token: "TOKEN-2", body: "## Findings\n- a\n## Verdict\nlooks clean")
+    let attention = try #require(machine.run.status.attention)
+    #expect(attention.reason == .deliveryIssues([.verdictMissing(allowed: ["clean", "issues"])]))
+    #expect(attention.actions == [.acceptWithVerdict, .askAgain, .skip, .cancel])
+    #expect(machine.apply(.user(.acceptDelivery(verdict: nil))).isEmpty)
+    #expect(machine.apply(.user(.acceptDelivery(verdict: "maybe"))).isEmpty)
+    #expect(machine.run.status.attention != nil)
+    _ = machine.apply(.user(.acceptDelivery(verdict: "clean")))
+    #expect(machine.run.outputs["findings"]?.verdict == "clean")
+    #expect(machine.run.loopCount == 0)
+    #expect(machine.run.phase == .runningAction(stepID: "context"))
+  }
+
+  @Test func askAgainReturnsTheActivationToWaitingWithTheSameToken() throws {
+    var (machine, _) = try makeMachine()
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "# Brief\n## Scope\nx")
+    let effects = machine.apply(.user(.askAgain))
+    #expect(machine.run.status == .running)
+    #expect(machine.run.invocations[0].activation?.state == .waiting)
+    #expect(machine.run.invocations[0].activation?.pendingDelivery == nil)
+    #expect(
+      effects.contains(
+        .typeLine(
+          role: "author", surfaceID: Self.authorPane.surfaceID,
+          line:
+            "[Prowl] Your delivery for this step had missing section(s) ## Claims. Deliver it again, complete, with: "
+            + "PROWL_WORKFLOW_TOKEN=TOKEN-1 prowl workflow done -")))
+    #expect(
+      effects.contains {
+        if case .armWatchdog(let request) = $0 {
+          return request.ordinal == 1 && !request.nudgedAlready
+        } else {
+          return false
+        }
+      })
+    #expect(machine.apply(.user(.askAgain)).isEmpty)
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "# Brief\n## Scope\nx\n## Claims\ny")
+    #expect(machine.run.phase == .launching(ordinal: 2))
+    #expect(machine.run.invocations.count == 2)
+  }
+
+  @Test func skipOfAProvisionalDeliveryAbandonsItsRecord() throws {
+    var (machine, _) = try makeMachine(
+      Self.handoff, roles: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)])
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "# Brief without the objective")
+    #expect(machine.run.status.attention?.actions == [.acceptDelivery, .askAgain, .skip, .cancel])
+    let effects = machine.apply(.user(.skip))
+    #expect(
+      effects.contains(
+        .abandonActivation(dispatchID: "d1", reason: "Workflow run \(Self.runID.uuidString): step 'brief' skipped.")))
+    #expect(machine.run.invocations[0].activation?.state == .skipped)
+    #expect(machine.run.skippedOutputs == ["brief": "brief"])
+    #expect(machine.run.phase == .runningAction(stepID: "transition"))
   }
 
   @Test func cleanVerdictBeforeTheLoopSkipsItAndFinishesTheRun() throws {

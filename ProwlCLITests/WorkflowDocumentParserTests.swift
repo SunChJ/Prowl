@@ -5,6 +5,20 @@ import XCTest
 final class WorkflowDocumentParserTests: XCTestCase {
   // MARK: - The spec example
 
+  func testExpectStrictParsesAndDefaultsToFalse() throws {
+    let yaml = WorkflowFixtures.minimal(
+      extraSteps: "  - id: a\n    message: author\n    text: x\n    expect: { output: a, strict: true }\n"
+        + "  - id: b\n    message: author\n    text: y\n    expect: { output: b }")
+    let workflow = try WorkflowFixtures.parse(yaml)
+    XCTAssertEqual(workflow.steps[1].action.expect?.strict, true)
+    XCTAssertEqual(workflow.steps[2].action.expect?.strict, false)
+    XCTAssertEqual(
+      WorkflowFixtures.codes(
+        WorkflowFixtures.minimal(
+          extraSteps: "  - id: a\n    message: author\n    text: x\n    expect: { strict: yes please }")),
+      ["type_mismatch"])
+  }
+
   func testParsesTheSpecExample() throws {
     let result = WorkflowDocumentParser.parse(WorkflowFixtures.adversarialReview)
     XCTAssertEqual(result.diagnostics, [])

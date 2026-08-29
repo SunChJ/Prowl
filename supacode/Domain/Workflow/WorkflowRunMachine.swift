@@ -35,13 +35,17 @@ nonisolated enum WorkflowWatchdogVerdict: Equatable, Sendable {
 
 // MARK: - Events and effects
 
-nonisolated enum WorkflowUserAction: String, Equatable, Sendable {
+nonisolated enum WorkflowUserAction: Equatable, Sendable {
   case retry
   case relaunch
   case skip
   case cancel
   case nudge
   case keepWaiting
+  /// Keep a provisional delivery; `verdict` supplies the declared value it lacked, if any.
+  case acceptDelivery(verdict: String?)
+  /// Type the requirements into the role's pane again and wait for a new delivery.
+  case askAgain
 }
 
 nonisolated enum WorkflowRunEvent: Equatable, Sendable {
@@ -118,6 +122,8 @@ nonisolated struct WorkflowDeliveryReceipt: Equatable, Sendable {
   let ordinal: Int
   let stepID: String
   let output: WorkflowOutputRecord
+  /// Non-empty when the delivery was accepted provisionally; the CLI reports them as warnings.
+  let issues: [WorkflowDeliveryIssue]
 }
 
 nonisolated enum WorkflowSkipConsequence: Equatable, Sendable {
@@ -415,6 +421,8 @@ nonisolated struct WorkflowRunMachine {
       $0.state = .persisting
       $0.pendingDelivery = validated
     }
+    let issueNote =
+      validated.issues.isEmpty ? "" : " with issues: " + validated.issues.map(\.message).joined(separator: "; ")
     run.status = .running
     run.updatedAt = now()
     // The watchdog supervises a *waiting* delivery: an accepted one is no longer its business,
@@ -423,11 +431,14 @@ nonisolated struct WorkflowRunMachine {
       .disarmWatchdog(ordinal: activation.ordinal),
       .log(
         "Step '\(activation.stepID)': output '\(activation.outputName)' accepted "
-          + "(invocation \(activation.ordinal)); persisting."),
+          + "(invocation \(activation.ordinal))\(issueNote); persisting."),
       .persistOutput(name: activation.outputName, ordinal: activation.ordinal, body: validated.body),
     ]
     return (
-      .success(WorkflowDeliveryReceipt(ordinal: activation.ordinal, stepID: activation.stepID, output: record)), effects
+      .success(
+        WorkflowDeliveryReceipt(
+          ordinal: activation.ordinal, stepID: activation.stepID, output: record, issues: validated.issues)),
+      effects
     )
   }
 
@@ -452,12 +463,29 @@ nonisolated struct WorkflowRunMachine {
       .persistFailed(reason), stepID: activation.stepID, role: activation.role, ordinal: ordinal, effects: &effects)
   }
 
-  /// The output is on disk: record it, complete the dispatch record, and advance.
+  /// The output is on disk: a clean delivery completes the dispatch record and advances; one
+  /// with issues stays provisional and asks the user (Accept / Accept with verdict / Ask again).
   private mutating func applyOutputPersisted(ordinal: Int, effects: inout [WorkflowRunEffect]) {
     guard case .waitingForDelivery(ordinal) = run.phase, let activation = run.activeActivation,
       activation.state == .persisting, let delivery = activation.pendingDelivery
     else { return }
-    let record = outputRecord(for: activation, verdict: delivery.verdict)
+    guard delivery.issues.isEmpty else {
+      updateActivation(ordinal: ordinal) { $0.state = .provisional }
+      raiseAttention(
+        .deliveryIssues(delivery.issues), stepID: activation.stepID, role: activation.role, ordinal: ordinal,
+        effects: &effects)
+      return
+    }
+    acceptDelivery(activation: activation, delivery: delivery, verdict: delivery.verdict, effects: &effects)
+  }
+
+  /// Records the delivery, completes the dispatch record, and advances.
+  private mutating func acceptDelivery(
+    activation: WorkflowActivation, delivery: WorkflowValidatedDelivery, verdict: String?,
+    effects: inout [WorkflowRunEffect]
+  ) {
+    let ordinal = activation.ordinal
+    let record = outputRecord(for: activation, verdict: verdict)
     run.outputs[activation.outputName] = record
     run.skippedOutputs[activation.outputName] = nil
     updateActivation(ordinal: ordinal) {
@@ -465,7 +493,7 @@ nonisolated struct WorkflowRunMachine {
       $0.pendingDelivery = nil
     }
     if let dispatchID = activation.dispatchID {
-      let verdictNote = delivery.verdict.map { " with verdict '\($0)'" } ?? ""
+      let verdictNote = verdict.map { " with verdict '\($0)'" } ?? ""
       effects.append(
         .completeActivation(
           dispatchID: dispatchID,
@@ -1031,20 +1059,13 @@ nonisolated struct WorkflowRunMachine {
       guard run.currentInvocation != nil || attention != nil else { return }
       skipCurrentStep(effects: &effects)
     case .keepWaiting:
-      guard let attention, attention.actions.contains(.keepWaiting), let ordinal = attention.ordinal else { return }
-      run.status = .running
-      guard !enforceExpiredDeadline(effects: &effects) else { return }
-      effects.append(.log("Step '\(attention.stepID)': keep waiting."))
-      armWatchdog(ordinal: ordinal, nudgedAlready: true, effects: &effects)
-      effects.append(.persist)
+      keepWaiting(effects: &effects)
     case .nudge:
-      guard let attention, attention.actions.contains(.nudge), let activation = run.currentActivation else { return }
-      run.status = .running
-      guard !enforceExpiredDeadline(effects: &effects) else { return }
-      typeNudge(activation, effects: &effects)
-      effects.append(.log("Step '\(attention.stepID)': nudged again by the user."))
-      armWatchdog(ordinal: activation.ordinal, nudgedAlready: true, effects: &effects)
-      effects.append(.persist)
+      nudgeAgain(effects: &effects)
+    case .acceptDelivery(let verdict):
+      acceptProvisionalDelivery(verdict: verdict, effects: &effects)
+    case .askAgain:
+      askAgain(effects: &effects)
     case .retry:
       guard let attention, attention.actions.contains(.retry) else { return }
       if case .persistFailed = attention.reason, let activation = run.activeActivation,
@@ -1060,6 +1081,74 @@ nonisolated struct WorkflowRunMachine {
       guard let attention, attention.actions.contains(.relaunch) else { return }
       relaunchCurrentStep(effects: &effects)
     }
+  }
+
+  private mutating func keepWaiting(effects: inout [WorkflowRunEffect]) {
+    guard let attention = run.status.attention, attention.actions.contains(.keepWaiting),
+      let ordinal = attention.ordinal
+    else { return }
+    run.status = .running
+    guard !enforceExpiredDeadline(effects: &effects) else { return }
+    effects.append(.log("Step '\(attention.stepID)': keep waiting."))
+    armWatchdog(ordinal: ordinal, nudgedAlready: true, effects: &effects)
+    effects.append(.persist)
+  }
+
+  private mutating func nudgeAgain(effects: inout [WorkflowRunEffect]) {
+    guard let attention = run.status.attention, attention.actions.contains(.nudge),
+      let activation = run.currentActivation
+    else { return }
+    run.status = .running
+    guard !enforceExpiredDeadline(effects: &effects) else { return }
+    typeNudge(activation, effects: &effects)
+    effects.append(.log("Step '\(attention.stepID)': nudged again by the user."))
+    armWatchdog(ordinal: activation.ordinal, nudgedAlready: true, effects: &effects)
+    effects.append(.persist)
+  }
+
+  /// "Accept as delivered" / "Accept with verdict": a declared verdict must be supplied when the
+  /// delivery lacked one, otherwise the accepted output could not drive `until` or templates.
+  private mutating func acceptProvisionalDelivery(verdict: String?, effects: inout [WorkflowRunEffect]) {
+    guard let attention = run.status.attention, let activation = run.activeActivation,
+      activation.state == .provisional, let delivery = activation.pendingDelivery
+    else { return }
+    let accepted: String?
+    if let allowed = activation.expect.verdict {
+      // The delivery's own valid verdict wins; otherwise the user must pick a declared one.
+      if let own = delivery.verdict {
+        accepted = own
+      } else {
+        guard attention.actions.contains(.acceptWithVerdict), let verdict, allowed.contains(verdict) else { return }
+        accepted = verdict
+      }
+    } else {
+      guard attention.actions.contains(.acceptDelivery) else { return }
+      accepted = nil
+    }
+    run.status = .running
+    let note = accepted.map { " with verdict '\($0)'" } ?? ""
+    effects.append(.log("Step '\(activation.stepID)': provisional delivery accepted by the user\(note)."))
+    acceptDelivery(activation: activation, delivery: delivery, verdict: accepted, effects: &effects)
+  }
+
+  /// "Ask again": the same activation (and token) goes back to waiting, the requirements are
+  /// typed into the role's pane, and the watchdog is re-armed with a fresh nudge.
+  private mutating func askAgain(effects: inout [WorkflowRunEffect]) {
+    guard let attention = run.status.attention, attention.actions.contains(.askAgain),
+      let activation = run.activeActivation, activation.state == .provisional,
+      let delivery = activation.pendingDelivery,
+      let surfaceID = run.bindings[activation.role]?.pane?.surfaceID,
+      let line = try? WorkflowTypedLine.askAgain(issues: delivery.issues, completion: activation.completion)
+    else { return }
+    updateActivation(ordinal: activation.ordinal) {
+      $0.state = .waiting
+      $0.pendingDelivery = nil
+    }
+    run.status = .running
+    effects.append(.log("Step '\(activation.stepID)': asked role '\(activation.role)' to deliver again."))
+    effects.append(.typeLine(role: activation.role, surfaceID: surfaceID, line: line))
+    armWatchdog(ordinal: activation.ordinal, nudgedAlready: false, effects: &effects)
+    effects.append(.persist)
   }
 
   /// A hard cap that already passed while the run sat in attention is applied now instead
@@ -1152,7 +1241,7 @@ nonisolated struct WorkflowRunMachine {
       effects.append(.cancelRoleWait(ordinal: ordinal))
     }
     guard let invocation = run.currentInvocation, let activation = invocation.activation else { return }
-    let open = activation.state == .waiting || activation.state == .persisting
+    let open = [.waiting, .persisting, .provisional].contains(activation.state)
     if open {
       updateActivation(ordinal: activation.ordinal) {
         $0.state = .revoked
@@ -1187,6 +1276,10 @@ nonisolated struct WorkflowRunMachine {
       case .launchFailed: [.retry, .skip, .cancel]
       case .renderedTextInvalid: [.skip, .cancel]
       case .actionFailed, .persistFailed: [.retry, .cancel]
+      case .deliveryIssues(let issues):
+        (issues.contains(where: Self.needsVerdict) ? [.acceptWithVerdict] : [.acceptDelivery]) + [
+          .askAgain, .skip, .cancel,
+        ]
       }
     let attention = WorkflowAttention(
       reason: reason, stepID: stepID, role: role, ordinal: ordinal, actions: actions,
@@ -1242,8 +1335,19 @@ nonisolated struct WorkflowRunMachine {
       return "Step '\(stepID)' failed: \(detail)"
     case .persistFailed(let detail):
       return "The delivered output of step '\(stepID)' could not be saved to the run directory: \(detail)"
+    case .deliveryIssues(let issues):
+      return "\(subject) delivered \(outputName), but: \(issues.map(\.message).joined(separator: "; "))."
+        + " Accept it, ask again, or skip."
     case .timeout:
       return "Step '\(stepID)' reached its timeout without a delivery from \(subject)."
+    }
+  }
+
+  /// A provisional delivery without a usable verdict can only be accepted together with one.
+  private static func needsVerdict(_ issue: WorkflowDeliveryIssue) -> Bool {
+    switch issue {
+    case .verdictMissing, .verdictUndeclared: true
+    case .missingSections, .unparsableJSON, .verdictUnexpected: false
     }
   }
 

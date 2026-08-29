@@ -335,6 +335,24 @@ struct WorkflowRunHarnessTests {
     #expect(try harness.store.readRecord(runID: harness.run.id).outputs["brief"]?.ordinal == 1)
   }
 
+  @Test func aProvisionalDeliveryIsKeptOnDiskUntilTheUserAcceptsIt() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let harness = try await makeHarness(root: root)
+    let result = try await harness.deliver(token: "TOKEN-1", body: "## Scope\nonly")
+    #expect(try result.get().issues == [.missingSections(["## Claims"])])
+    #expect(harness.run.status.attention?.reason.code == "delivery_issues")
+    #expect(harness.bridge.completed.isEmpty)
+    #expect(harness.launches.isEmpty)
+    let brief = harness.store.directory(for: harness.run.id).appending(path: "outputs/brief.md")
+    #expect(try String(contentsOf: brief, encoding: .utf8) == "## Scope\nonly\n")
+    #expect(try harness.store.readRecord(runID: harness.run.id).run.status.attention?.issues == ["missing_sections"])
+    try await harness.user(.acceptDelivery(verdict: nil))
+    #expect(harness.bridge.completed.map(\.dispatchID) == ["dispatch-1"])
+    #expect(harness.launches.count == 1)
+    #expect(try harness.store.readRecord(runID: harness.run.id).outputs["brief"]?.ordinal == 1)
+  }
+
   @Test func cancelAbandonsThePendingActivationAndKeepsDeliveredOutputs() async throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }

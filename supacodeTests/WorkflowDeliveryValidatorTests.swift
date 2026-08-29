@@ -34,7 +34,7 @@ struct WorkflowDeliveryValidatorTests {
   }
 
   @Test func sectionsMustBeHeadingsOutsideCodeFences() throws {
-    let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
+    let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"], strict: true)
     let fenced = "# Review\n```text\n## Findings\n```\n## Verdict\nclean"
     guard case .failure(let error) = validate(fenced, expect: expect) else {
       Issue.record("a heading inside a fence must not count")
@@ -57,14 +57,52 @@ struct WorkflowDeliveryValidatorTests {
     #expect(delivery.body == "## Findings\nx\n## Verdict\ny\n")
   }
 
-  @Test func missingSectionIsOutputInvalid() {
-    let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
-    guard case .failure(let error) = validate("## Findings\nnothing", expect: expect) else {
+  @Test func missingSectionIsAnIssueByDefaultAndARejectionUnderStrict() throws {
+    let lenient = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
+    let delivery = try validate("## Findings\nnothing", expect: lenient).get()
+    #expect(delivery.issues == [.missingSections(["## Verdict"])])
+    #expect(delivery.body == "## Findings\nnothing\n")
+
+    let strict = WorkflowExpectation(sections: ["## Findings", "## Verdict"], strict: true)
+    guard case .failure(let error) = validate("## Findings\nnothing", expect: strict) else {
       Issue.record("expected failure")
       return
     }
     #expect(error.code == "OUTPUT_INVALID")
     #expect(error.message.contains("## Verdict"))
+  }
+
+  @Test func sectionMatchingForgivesLevelAndCase() throws {
+    let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
+    let delivery = try validate("# Review\n### findings\n- a\n## VERDICT (draft)\nclean", expect: expect).get()
+    #expect(delivery.issues.isEmpty)
+  }
+
+  @Test func softIssuesCoverFormatAndVerdict() throws {
+    let json = try validate("{not json", expect: WorkflowExpectation(format: .json)).get()
+    #expect(json.issues == [.unparsableJSON])
+    #expect(json.body == "{not json")
+    guard
+      case .failure(let strictJSON) = validate("{not json", expect: WorkflowExpectation(format: .json, strict: true))
+    else {
+      Issue.record("expected failure")
+      return
+    }
+    #expect(strictJSON.code == "OUTPUT_INVALID")
+
+    let declared = WorkflowExpectation(verdict: ["clean", "issues"])
+    let missing = try validate("# ok\n", expect: declared).get()
+    #expect(missing.issues == [.verdictMissing(allowed: ["clean", "issues"])])
+    #expect(missing.verdict == nil)
+    let undeclared = try validate("# ok\n", verdict: "maybe", expect: declared).get()
+    #expect(undeclared.issues == [.verdictUndeclared("maybe", allowed: ["clean", "issues"])])
+    #expect(undeclared.verdict == nil)
+    let unexpected = try validate("# ok\n", verdict: "clean", expect: WorkflowExpectation()).get()
+    #expect(unexpected.issues == [.verdictUnexpected("clean")])
+    #expect(unexpected.verdict == nil)
+    let clean = try validate("# ok\n", verdict: "issues", expect: declared).get()
+    #expect(clean.issues.isEmpty)
+    #expect(clean.verdict == "issues")
   }
 
   @Test func emptyBodyIsOutputInvalidForEveryFormat() {
@@ -83,15 +121,16 @@ struct WorkflowDeliveryValidatorTests {
 
     let json = try validate("{\"ok\": true}\n", expect: WorkflowExpectation(format: .json)).get()
     #expect(json.body == "{\"ok\": true}\n")
-    guard case .failure(let error) = validate("{not json", expect: WorkflowExpectation(format: .json)) else {
+    guard case .failure(let error) = validate("{not json", expect: WorkflowExpectation(format: .json, strict: true))
+    else {
       Issue.record("expected failure")
       return
     }
     #expect(error.code == "OUTPUT_INVALID")
   }
 
-  @Test func verdictRulesFollowTheDeclaration() throws {
-    let declared = WorkflowExpectation(verdict: ["clean", "issues"])
+  @Test func verdictRulesFollowTheDeclarationUnderStrict() throws {
+    let declared = WorkflowExpectation(verdict: ["clean", "issues"], strict: true)
     guard case .failure(let required) = validate("# ok\n", expect: declared) else {
       Issue.record("expected VERDICT_REQUIRED")
       return
@@ -108,7 +147,9 @@ struct WorkflowDeliveryValidatorTests {
     let accepted = try validate("# ok\n", verdict: "issues", expect: declared).get()
     #expect(accepted.verdict == "issues")
 
-    guard case .failure(let unexpected) = validate("# ok\n", verdict: "clean", expect: WorkflowExpectation()) else {
+    guard
+      case .failure(let unexpected) = validate("# ok\n", verdict: "clean", expect: WorkflowExpectation(strict: true))
+    else {
       Issue.record("expected OUTPUT_INVALID for an undeclared verdict")
       return
     }

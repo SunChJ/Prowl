@@ -40,14 +40,24 @@ nonisolated public enum MarkdownArtifactNormalizer {
     return headings
   }
 
-  /// Whether every required section is present as a heading line outside fences; a heading
-  /// may carry trailing text after a space (`## Findings (2)`).
+  /// Whether every required section is present as a heading line outside fences. Matching is
+  /// forgiving about what does not change meaning: the heading level (`##` vs `###`), letter
+  /// case, and trailing text after a space (`## Findings (2)`).
   public static func hasSections(_ sections: [String], in text: String) -> Bool {
-    let headings = headings(outsideFences: text)
-    return sections.allSatisfy { section in
-      let wanted = section.trimmingCharacters(in: .whitespaces)
-      return headings.contains { $0 == wanted || $0.hasPrefix(wanted + " ") }
+    missingSections(sections, in: text).isEmpty
+  }
+
+  /// The required sections that no heading outside a fence satisfies, in declaration order.
+  public static func missingSections(_ sections: [String], in text: String) -> [String] {
+    let headings = headings(outsideFences: text).map(headingKey)
+    return sections.filter { section in
+      let wanted = headingKey(section)
+      return !headings.contains { $0 == wanted || $0.hasPrefix(wanted + " ") }
     }
+  }
+
+  private static func headingKey(_ heading: String) -> String {
+    heading.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.trimmingCharacters(in: .whitespaces).lowercased()
   }
 
   /// The heading text of a CommonMark ATX heading line: up to three spaces of indentation,

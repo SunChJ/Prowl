@@ -338,7 +338,7 @@ nonisolated public enum WorkflowDocumentParser {
     guard let expect = MappingReader(node: step.node(for: "expect"), collector: step.collector, path: "expect") else {
       return nil
     }
-    expect.checkKeys(["output", "format", "sections", "verdict", "timeout", "on_timeout"])
+    expect.checkKeys(["output", "format", "sections", "verdict", "timeout", "on_timeout", "strict"])
     let timeout = expect.string("timeout").flatMap { text -> Int? in
       guard let seconds = parseDuration(text) else {
         expect.collector.error(
@@ -360,6 +360,7 @@ nonisolated public enum WorkflowDocumentParser {
       verdict: expect.stringList("verdict"),
       timeoutSeconds: timeout,
       onTimeout: onTimeout,
+      strict: expect.bool("strict") ?? false,
       location: expect.location
     )
   }

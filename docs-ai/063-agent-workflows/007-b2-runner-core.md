@@ -40,6 +40,7 @@ Every row was either a default derivable from the code base (H1, H3, H9, H13) or
 | H11 | **Skip resolves its consequence immediately.** Skipping an activation (panel, `on_timeout: skip`, `--skip` at start) computes the §5 consequence from the remaining steps: a later template / `until` / required action input → the run ends `skipped(step, dependent)` at once; only optional action inputs continue (key absent). The same query (`WorkflowRun.skipConsequence(for:)`) feeds the panel's confirmation text. | Ending the run lazily when the consumer is reached (a `notify` or `close` between them would still run). |
 | H12 | **Native actions run through `WorkflowActionExecuting`**; `WorkflowNativeActionRunner` implements `handoff.transition` / `handoff.checkpoint` over `HandoffCoordinator` (archive-first; absent `briefing` → context-only; transition removes `current.md`) and `git.context` over `HandoffStore.save` (the existing `context.md` generator; outputs `path`, `branch`). `to`'s agent token is the frozen profile binding's agent; an invalid briefing file fails the action (Retry / Cancel). | A separate context generator writing under the run directory (a second generator for the same document). |
 | H13 | **The hard `expect.timeout` is scheduled by the watchdog driver** on the same injected clock; it fires `.timeout(policy)` into the machine. | A separate timer effect. |
+| H14 | **Delivery validation is a review gate, not a wall** (decided with onevcat after the PR was opened). Token, empty body, and the size cap always reject; `sections` / `format` / `verdict` findings are *issues*: the body is persisted as provisional, the CLI answers `ok` + `warnings`, and the run asks the user — Accept as delivered, Accept with verdict (when a declared verdict is missing or undeclared), Ask again (re-types the requirements, same token), Skip, Cancel. `expect.strict: true` restores the hard rejection for outputs a tool must be able to read. Section matching also forgives heading level and case. | Keeping the hard rejection as the default (an agent with weak instruction following gets bounced and may never retry; the user had no way to accept work that was actually done). Inferring the verdict from prose (rejected in the plan: termination must read a machine-declared verdict). |
 
 ## Design outline
 
@@ -202,6 +203,10 @@ Everything lives in `supacode/Domain/Workflow/` (app target) plus three Shared t
 - A delivery is two-phase: `deliver` validates and emits `.persistOutput`; the run advances
   and the dispatch record completes only on `.outputPersisted`. While `persisting`, a second
   `done` is `STEP_NOT_EXPECTING`; Skip / Cancel abandon the record as they would a waiting one.
+- A delivery with issues (H14) becomes `provisional` after persistence: the dispatch record
+  stays pending, `outputs[name]` is not set, and the run waits for Accept / Accept with verdict
+  / Ask again. Ask again returns the same activation to `waiting` and re-arms the watchdog with
+  a fresh nudge; `run.json` records the issue codes under `status.attention.issues`.
 - After the automatic nudge is spent (or after "Keep waiting"), a later `turn-ended` still earns
   `idle_grace` before the run asks for attention; only an `idle_grace` that expires idle
   escalates. `needs-input` and heuristic `blocked` raise attention but keep watching, so a
