@@ -249,7 +249,7 @@ dispatch record (the machine ignores events on terminal runs).
   first full run; the watchdog policy suite caught two real semantics errors on its first run
   (`sawActivity` not reset per heuristic window; a spent nudge escalating straight to
   attention on the next `turn-ended`), both fixed in the policy.
-- App suites (`xcodebuild test`, 157 workflow tests after three review rounds — together
+- App suites (`xcodebuild test`, 165 workflow tests after four review rounds and H14 — together
   with the handoff suites the normalizer change touches — all passing): `WorkflowLineRendererTests`,
   `WorkflowTemplateRendererTests`, `WorkflowDeliveryValidatorTests`, `WorkflowRunMachineTests`,
   `WorkflowRunStoreTests`, `WorkflowWatchdogPolicyTests`, `WorkflowWatchdogDriverTests`
@@ -257,8 +257,8 @@ dispatch record (the machine ignores events on terminal runs).
   `WorkflowBindingResolverTests`, `WorkflowRunHarnessTests`, plus the untouched
   `HandoffStoreTests` over the moved normalizer.
 - Gates: `make check` (swift-format + SwiftLint strict) clean; `make build-cli`;
-  `make test-cli-unit` (226 tests); `make test-cli-smoke`; `make test-cli-integration` (109
-  tests); `make build-app` (0 warnings in the changed files); full `make test` after each review round (2796 → 2808 → 2816 → 2819 tests, zero failures).
+  `make test-cli-unit` (227 tests); `make test-cli-smoke`; `make test-cli-integration` (109
+  tests); `make build-app` (0 warnings in the changed files); full `make test` after each review round and after H14 (2796 → 2808 → 2816 → 2819 → 2827 tests, zero failures).
 
 ## Review
 
