@@ -69,16 +69,16 @@ nonisolated public enum WorkflowDiscovery {
   public static let fileExtensions: Set<String> = ["yaml", "yml"]
 
   /// Parses and validates every workflow file directly inside `directory`, in file-name order.
+  /// A missing directory is an empty source; one that exists but cannot be read throws.
   public static func files(
     in directory: URL?,
     scope: WorkflowScope,
     context: WorkflowValidationContext,
     fileManager: FileManager = .default
-  ) -> [WorkflowSourceFile] {
-    guard let directory else { return [] }
-    let contents =
-      (try? fileManager.contentsOfDirectory(
-        at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])) ?? []
+  ) throws -> [WorkflowSourceFile] {
+    guard let directory, fileManager.fileExists(atPath: directory.path(percentEncoded: false)) else { return [] }
+    let contents = try fileManager.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
     return
       contents
       .filter { fileExtensions.contains($0.pathExtension.lowercased()) }
@@ -119,9 +119,9 @@ nonisolated public enum WorkflowDiscovery {
     sources: WorkflowSources,
     context: (WorkflowScope) -> WorkflowValidationContext,
     fileManager: FileManager = .default
-  ) -> [WorkflowCatalogEntry] {
+  ) throws -> [WorkflowCatalogEntry] {
     let files =
-      files(in: sources.bundle, scope: .bundle, context: context(.bundle), fileManager: fileManager)
+      try files(in: sources.bundle, scope: .bundle, context: context(.bundle), fileManager: fileManager)
       + files(in: sources.user, scope: .user, context: context(.user), fileManager: fileManager)
       + files(in: sources.repo, scope: .repo, context: context(.repo), fileManager: fileManager)
     var winners: [String: URL] = [:]

@@ -1175,7 +1175,15 @@ struct SupacodeApp: App {
         disabledWorkflowIDs: Set(settings.disabledWorkflowIDs),
         bundledSkillIDs: bundledSkills.map { Set($0.map(\.id)) },
         knownAgents: Set(DetectedAgent.allCases.map(\.rawValue)),
-        installedAgents: installedAgents
+        installedAgents: installedAgents,
+        enabledProfiles: settings.agentProfiles.filter(\.isEnabled).map { profile in
+          WorkflowProfileSuggestion(
+            agent: profile.runtime.agent.rawValue,
+            model: profile.model,
+            reasoningEffort: profile.reasoningEffort,
+            executionMode: profile.executionMode.rawValue
+          )
+        }
       )
     }
     return CLICommandRouter(

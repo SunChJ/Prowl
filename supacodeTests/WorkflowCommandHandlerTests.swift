@@ -74,7 +74,8 @@ struct WorkflowCommandHandlerTests {
         disabledWorkflowIDs: disabled,
         bundledSkillIDs: [],
         knownAgents: ["codex", "claude"],
-        installedAgents: nil
+        installedAgents: nil,
+        enabledProfiles: []
       )
     }
   }
@@ -143,6 +144,18 @@ struct WorkflowCommandHandlerTests {
     let (missing, _) = try await list(handler, target: .worktree("nope"))
     #expect(missing.ok == false)
     #expect(missing.error?.code == CLIErrorCode.targetNotFound)
+  }
+
+  @Test func unreadableSourceDirectoriesFailWithWorkflowFailed() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let path = fixture.userWorkflows.path(percentEncoded: false)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path) }
+    let handler = WorkflowCommandHandler { fixture.snapshot(focused: true) }
+    let (response, _) = try await list(handler)
+    #expect(response.ok == false)
+    #expect(response.error?.code == CLIErrorCode.workflowFailed)
   }
 
   @Test func disabledKeysCombineScopeAndID() {

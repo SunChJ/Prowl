@@ -29,8 +29,18 @@ final class WorkflowDiscoveryTests: XCTestCase {
     WorkflowValidationContext(scope: scope, bundledSkillIDs: ["prowl.adversarial-reviewer"])
   }
 
-  func testMissingDirectoriesYieldNoFiles() {
-    let catalog = WorkflowDiscovery.catalog(
+  func testUnreadableDirectoriesThrowInsteadOfHidingTheirFiles() throws {
+    let user = try directory("user")
+    try write(WorkflowFixtures.minimal(id: "demo"), to: user, name: "demo.yaml")
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: user.path(percentEncoded: false))
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: user.path(percentEncoded: false)) }
+    XCTAssertThrowsError(try WorkflowDiscovery.files(in: user, scope: .user, context: context(.user)))
+    XCTAssertThrowsError(
+      try WorkflowDiscovery.catalog(sources: WorkflowSources(bundle: nil, user: user, repo: nil), context: context))
+  }
+
+  func testMissingDirectoriesYieldNoFiles() throws {
+    let catalog = try WorkflowDiscovery.catalog(
       sources: WorkflowSources(bundle: nil, user: root.appending(path: "absent"), repo: nil), context: context)
     XCTAssertEqual(catalog, [])
   }
@@ -43,7 +53,7 @@ final class WorkflowDiscoveryTests: XCTestCase {
     try write("ignored", to: user, name: "notes.txt")
     try write(WorkflowFixtures.minimal(id: "hidden"), to: user, name: ".hidden.yaml")
 
-    let files = WorkflowDiscovery.files(in: user, scope: .user, context: context(.user))
+    let files = try WorkflowDiscovery.files(in: user, scope: .user, context: context(.user))
     XCTAssertEqual(files.map(\.url.lastPathComponent), ["alpha.yaml", "broken.yaml", "zeta.yml"])
     XCTAssertEqual(files.map(\.id), ["alpha", nil, "zeta"])
     XCTAssertEqual(files.map(\.isValid), [true, false, true])
@@ -54,7 +64,7 @@ final class WorkflowDiscoveryTests: XCTestCase {
   func testValidationDiagnosticsFollowParseDiagnostics() throws {
     let user = try directory("user")
     try write(WorkflowFixtures.minimal(id: "prowl.mine"), to: user, name: "mine.yaml")
-    let files = WorkflowDiscovery.files(in: user, scope: .user, context: context(.user))
+    let files = try WorkflowDiscovery.files(in: user, scope: .user, context: context(.user))
     XCTAssertEqual(files.map(\.isValid), [false])
     XCTAssertEqual(files[0].diagnostics.map(\.code), ["reserved_id"])
     XCTAssertNotNil(files[0].definition, "A file that parses keeps its definition even when validation fails")
@@ -72,7 +82,7 @@ final class WorkflowDiscoveryTests: XCTestCase {
     try write(WorkflowFixtures.adversarialReview, to: user, name: "override.yaml")
     try write(WorkflowFixtures.minimal(id: "demo"), to: repo, name: "demo.yaml")
 
-    let catalog = WorkflowDiscovery.catalog(
+    let catalog = try WorkflowDiscovery.catalog(
       sources: WorkflowSources(bundle: bundle, user: user, repo: repo), context: context)
     let rows = catalog.map { "\($0.file.id ?? "-") \($0.file.scope.rawValue) \($0.file.url.lastPathComponent) \($0.shadowed ? "shadowed" : ($0.file.isValid ? "wins" : "invalid"))" }
     XCTAssertEqual(
@@ -93,7 +103,7 @@ final class WorkflowDiscoveryTests: XCTestCase {
     let user = try directory("user")
     try write(WorkflowFixtures.minimal(id: "demo"), to: user, name: "b.yaml")
     try write(WorkflowFixtures.minimal(id: "demo"), to: user, name: "a.yaml")
-    let catalog = WorkflowDiscovery.catalog(
+    let catalog = try WorkflowDiscovery.catalog(
       sources: WorkflowSources(bundle: nil, user: user, repo: nil), context: context)
     XCTAssertEqual(catalog.map { "\($0.file.url.lastPathComponent) \($0.shadowed)" }, ["a.yaml false", "b.yaml true"])
   }
@@ -103,7 +113,7 @@ final class WorkflowDiscoveryTests: XCTestCase {
     let repo = try directory("repo")
     try write(WorkflowFixtures.minimal(id: "demo"), to: user, name: "demo.yaml")
     try write(WorkflowFixtures.minimal(id: "demo", extraSteps: "  - id: x\n    close: ghost"), to: repo, name: "demo.yaml")
-    let catalog = WorkflowDiscovery.catalog(
+    let catalog = try WorkflowDiscovery.catalog(
       sources: WorkflowSources(bundle: nil, user: user, repo: repo), context: context)
     XCTAssertEqual(
       catalog.map { "\($0.file.scope.rawValue) valid=\($0.file.isValid) shadowed=\($0.shadowed)" },

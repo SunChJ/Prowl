@@ -5,13 +5,24 @@
 import Foundation
 
 nonisolated public struct WorkflowActionInput: Equatable, Sendable {
+  public enum Kind: String, Equatable, Sendable {
+    /// Templated text.
+    case string
+    /// Templated path.
+    case path
+    /// A role name declared by the workflow; never templated.
+    case role
+  }
+
   public let name: String
   public let required: Bool
+  public let kind: Kind
   public let description: String
 
-  public init(name: String, required: Bool, description: String) {
+  public init(name: String, required: Bool, kind: Kind = .string, description: String) {
     self.name = name
     self.required = required
+    self.kind = kind
     self.description = description
   }
 }
@@ -56,9 +67,10 @@ nonisolated public enum WorkflowActionRegistry {
         "Archive-first `.prowl/handoff/` transition from one role to another; without a briefing "
         + "it becomes a context-only transition.",
       inputs: [
-        WorkflowActionInput(name: "briefing", required: false, description: "Path to the validated briefing"),
-        WorkflowActionInput(name: "from", required: true, description: "Outgoing role"),
-        WorkflowActionInput(name: "to", required: true, description: "Receiving role"),
+        WorkflowActionInput(
+          name: "briefing", required: false, kind: .path, description: "Path to the validated briefing"),
+        WorkflowActionInput(name: "from", required: true, kind: .role, description: "Outgoing role"),
+        WorkflowActionInput(name: "to", required: true, kind: .role, description: "Receiving role"),
         WorkflowActionInput(name: "note", required: false, description: "Log note"),
       ],
       outputs: [
@@ -71,7 +83,8 @@ nonisolated public enum WorkflowActionRegistry {
       id: "handoff.checkpoint",
       description: "Save progress for a later successor; regenerates `context.md`.",
       inputs: [
-        WorkflowActionInput(name: "briefing", required: false, description: "Path to the validated briefing"),
+        WorkflowActionInput(
+          name: "briefing", required: false, kind: .path, description: "Path to the validated briefing"),
         WorkflowActionInput(name: "note", required: false, description: "Log note"),
       ],
       outputs: [
@@ -83,7 +96,8 @@ nonisolated public enum WorkflowActionRegistry {
       id: "git.context",
       description: "Generate a markdown summary of the worktree's repository state.",
       inputs: [
-        WorkflowActionInput(name: "root", required: false, description: "Repository root; defaults to the worktree")
+        WorkflowActionInput(
+          name: "root", required: false, kind: .path, description: "Repository root; defaults to the worktree")
       ],
       outputs: [
         WorkflowActionOutput(name: "path", description: "Path to the generated markdown summary"),

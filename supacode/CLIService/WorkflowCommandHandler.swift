@@ -14,6 +14,8 @@ struct WorkflowRuntimeSnapshot {
   let bundledSkillIDs: Set<String>?
   let knownAgents: Set<String>
   let installedAgents: Set<String>?
+  /// Preset fields of the enabled Agent Profiles, for the `suggest` match warning.
+  let enabledProfiles: [WorkflowProfileSuggestion]
 }
 
 @MainActor
@@ -104,12 +106,13 @@ final class WorkflowCommandHandler: CommandHandler {
       WorkflowSources.repoDirectory(root: URL(filePath: $0.rootPath, directoryHint: .isDirectory))
     }
     let sources = WorkflowSources(bundle: snapshot.bundleWorkflowsURL, user: snapshot.userWorkflowsURL, repo: repoURL)
-    let catalog = WorkflowDiscovery.catalog(sources: sources) { scope in
+    let catalog = try WorkflowDiscovery.catalog(sources: sources) { scope in
       WorkflowValidationContext(
         scope: scope,
         bundledSkillIDs: snapshot.bundledSkillIDs,
         knownAgents: snapshot.knownAgents,
-        installedAgents: snapshot.installedAgents
+        installedAgents: snapshot.installedAgents,
+        enabledProfiles: snapshot.enabledProfiles
       )
     }
     let workflows = catalog.map { entry in

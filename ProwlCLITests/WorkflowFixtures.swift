@@ -114,10 +114,12 @@ enum WorkflowFixtures {
     scope: WorkflowScope = .user,
     bundledSkillIDs: Set<String>? = ["prowl.adversarial-reviewer"],
     knownAgents: Set<String>? = nil,
-    installedAgents: Set<String>? = nil
+    installedAgents: Set<String>? = nil,
+    enabledProfiles: [WorkflowProfileSuggestion]? = nil
   ) -> [WorkflowDiagnostic] {
     let context = WorkflowValidationContext(
-      scope: scope, bundledSkillIDs: bundledSkillIDs, knownAgents: knownAgents, installedAgents: installedAgents)
+      scope: scope, bundledSkillIDs: bundledSkillIDs, knownAgents: knownAgents, installedAgents: installedAgents,
+      enabledProfiles: enabledProfiles)
     return WorkflowDiscovery.parse(yaml, url: URL(filePath: "/fixture.yaml"), scope: scope, context: context)
       .diagnostics
   }
@@ -127,10 +129,12 @@ enum WorkflowFixtures {
     scope: WorkflowScope = .user,
     bundledSkillIDs: Set<String>? = ["prowl.adversarial-reviewer"],
     knownAgents: Set<String>? = nil,
-    installedAgents: Set<String>? = nil
+    installedAgents: Set<String>? = nil,
+    enabledProfiles: [WorkflowProfileSuggestion]? = nil
   ) -> [String] {
     diagnostics(
-      yaml, scope: scope, bundledSkillIDs: bundledSkillIDs, knownAgents: knownAgents, installedAgents: installedAgents
+      yaml, scope: scope, bundledSkillIDs: bundledSkillIDs, knownAgents: knownAgents, installedAgents: installedAgents,
+      enabledProfiles: enabledProfiles
     ).map(\.code)
   }
 }

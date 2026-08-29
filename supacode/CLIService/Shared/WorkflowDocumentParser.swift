@@ -51,7 +51,8 @@ nonisolated public enum WorkflowDocumentParser {
     let name = document.requiredString("name")
     let inputs = document.mapping("inputs").map(parseInputs) ?? []
     let roles = document.mapping("roles").map(parseRoles) ?? []
-    let steps = document.requiredSequence("steps").map { parseSteps($0, insideRepeat: false) } ?? []
+    let steps =
+      document.requiredSequence("steps").map { parseSteps($0, insideRepeat: false, at: document.location) } ?? []
     guard let id, let name else { return nil }
     return WorkflowDefinition(
       id: id,
@@ -170,8 +171,13 @@ nonisolated public enum WorkflowDocumentParser {
 
   private static let verbKeys = ["message", "launch", "action", "notify", "close", "repeat"]
 
-  private static func parseSteps(_ steps: SequenceReader, insideRepeat: Bool) -> [WorkflowStepDefinition] {
-    steps.mappings().compactMap { parseStep($0, insideRepeat: insideRepeat) }
+  private static func parseSteps(
+    _ steps: SequenceReader, insideRepeat: Bool, at location: WorkflowSourceLocation?
+  ) -> [WorkflowStepDefinition] {
+    if steps.isEmpty {
+      steps.collector.error("steps_empty", "'\(steps.path)' needs at least one step.", at: location)
+    }
+    return steps.mappings().compactMap { parseStep($0, insideRepeat: insideRepeat) }
   }
 
   private static func parseStep(_ step: MappingReader, insideRepeat: Bool) -> WorkflowStepDefinition? {
@@ -277,7 +283,7 @@ nonisolated public enum WorkflowDocumentParser {
     body.checkKeys(["max", "until"])
     let max = parseRepeatBound(body)
     let until = body.string("until").flatMap { parseUntil($0, at: body.location(of: "until"), body.collector) }
-    let steps = step.requiredSequence("steps").map { parseSteps($0, insideRepeat: true) }
+    let steps = step.requiredSequence("steps").map { parseSteps($0, insideRepeat: true, at: step.location) }
     guard let max, let steps else { return nil }
     return .repeat(max: max, until: until, steps: steps)
   }
@@ -360,11 +366,14 @@ nonisolated public enum WorkflowDocumentParser {
     guard let match = text.trimmingCharacters(in: .whitespaces).wholeMatch(of: /^(\d+)\s*([smh])$/),
       let amount = Int(match.1)
     else { return nil }
-    switch match.2 {
-    case "s": return amount
-    case "m": return amount * 60
-    default: return amount * 3600
-    }
+    let factor =
+      switch match.2 {
+      case "s": 1
+      case "m": 60
+      default: 3600
+      }
+    let (seconds, overflow) = amount.multipliedReportingOverflow(by: factor)
+    return overflow ? nil : seconds
   }
 }
 
@@ -462,8 +471,20 @@ nonisolated struct MappingReader {
     }
   }
 
+  /// A string-valued field. Unquoted scalars that YAML resolves to a number, boolean, or null are
+  /// type errors so that `id: 1` cannot masquerade as the string "1" (quote it to keep text).
   func string(_ key: String) -> String? {
     guard let node = mapping[key] else { return nil }
+    return strictText(node, key: key)
+  }
+
+  func strictText(_ node: Node, key: String) -> String? {
+    if node.isPlainScalar, node.int != nil || node.bool != nil || node.float != nil {
+      collector.error(
+        "type_mismatch", "'\(key)' in \(path) must be a string; quote the value to keep it as text.",
+        at: node.sourceLocation)
+      return nil
+    }
     return scalarText(node, key: key)
   }
 
@@ -527,7 +548,7 @@ nonisolated struct MappingReader {
       collector.error("type_mismatch", "'\(key)' in \(path) must be a list.", at: node.sourceLocation)
       return nil
     }
-    return sequence.compactMap { scalarText($0, key: key) }
+    return sequence.compactMap { strictText($0, key: key) }
   }
 
   func mapping(_ key: String) -> MappingReader? {
@@ -557,6 +578,8 @@ nonisolated struct SequenceReader {
     self.collector = collector
     self.path = path
   }
+
+  var isEmpty: Bool { sequence.isEmpty }
 
   func mappings() -> [MappingReader] {
     sequence.enumerated().compactMap { index, node in

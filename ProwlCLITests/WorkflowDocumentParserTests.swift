@@ -107,7 +107,7 @@ final class WorkflowDocumentParserTests: XCTestCase {
   func testMissingRequiredKeysAndUnsupportedSchema() {
     XCTAssertEqual(WorkflowFixtures.parseCodes("id: demo\nname: Demo\n"), ["missing_key", "missing_key"])
     XCTAssertEqual(
-      WorkflowFixtures.parseCodes("schema: prowl.workflow/v2\nid: demo\nname: Demo\nsteps: []\n"),
+      WorkflowFixtures.parseCodes("schema: prowl.workflow/v2\nid: demo\nname: Demo\nsteps:\n  - id: a\n    notify: hi\n"),
       ["unsupported_schema"])
   }
 
@@ -255,4 +255,35 @@ final class WorkflowDocumentParserTests: XCTestCase {
     let nested = WorkflowFixtures.minimal(extraSteps: "  - id: b\n    action: git.context\n    with: { root: [a] }")
     XCTAssertEqual(WorkflowFixtures.parseCodes(nested), ["type_mismatch"])
   }
+
+  // MARK: - Round 1 review findings
+
+  func testHugeDurationsDoNotOverflow() {
+    XCTAssertNil(WorkflowDocumentParser.parseDuration("9223372036854775807h"))
+    XCTAssertNil(WorkflowDocumentParser.parseDuration("99999999999999999999s"))
+    XCTAssertEqual(WorkflowDocumentParser.parseDuration("2562047788015215h"), 2562047788015215 * 3600)
+    let overflow = WorkflowFixtures.minimal(
+      extraSteps: "  - id: b\n    message: author\n    text: hi\n    expect: { timeout: 9223372036854775807h }")
+    XCTAssertEqual(WorkflowFixtures.parseCodes(overflow), ["timeout_syntax"])
+  }
+
+  func testStepsMustNotBeEmpty() {
+    XCTAssertEqual(
+      WorkflowFixtures.parseCodes("schema: prowl.workflow/v1\nid: demo\nname: Demo\nsteps: []\n"), ["steps_empty"])
+    let emptyBody = WorkflowFixtures.minimal(extraSteps: "  - id: loop\n    repeat: { max: 2 }\n    steps: []")
+    XCTAssertEqual(WorkflowFixtures.parseCodes(emptyBody), ["steps_empty"])
+  }
+
+  func testStringFieldsRejectTypedPlainScalars() {
+    XCTAssertEqual(
+      WorkflowFixtures.parseCodes("schema: prowl.workflow/v1\nid: 1\nname: Demo\nsteps:\n  - id: a\n    notify: hi\n"),
+      ["type_mismatch"])
+    XCTAssertEqual(
+      WorkflowFixtures.parseCodes("schema: prowl.workflow/v1\nid: demo\nname: 1.5\nsteps:\n  - id: a\n    notify: hi\n"),
+      ["type_mismatch"])
+    XCTAssertEqual(WorkflowFixtures.parseCodes(WorkflowFixtures.minimal(extraSteps: "  - id: b\n    notify: true")), ["type_mismatch"])
+    XCTAssertEqual(WorkflowFixtures.parseCodes(WorkflowFixtures.minimal(extraSteps: "  - id: b\n    notify: \"true\"")), [])
+    XCTAssertEqual(WorkflowFixtures.parseCodes(WorkflowFixtures.minimal(extraSteps: "  - id: b\n    notify: Round 1")), [])
+  }
 }
+

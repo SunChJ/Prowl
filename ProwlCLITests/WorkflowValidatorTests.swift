@@ -289,4 +289,113 @@ final class WorkflowValidatorTests: XCTestCase {
     XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role), installedAgents: ["codex"]), [])
     XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role)), [], "unknown catalogs skip the warnings")
   }
+
+  // MARK: - Round 1 review findings
+
+  func testControlCharactersIncludingTabsAreRejectedInTypedText() {
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal() + "inputs:\n  s: { type: string, default: \"has\\ttab\" }\n"),
+      ["input_default_multiline"])
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal(steps: "  - id: b\n    message: author\n    text: \"a\\tb\"")), ["text_multiline"])
+  }
+
+  func testRoleInputsOfNativeActionsMustNameDeclaredRoles() {
+    let missing = "  - id: t\n    action: handoff.transition\n    with: { from: missing, to: also-missing }"
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: missing)), ["unknown_role", "unknown_role"])
+    let templated = "  - id: t\n    action: handoff.transition\n    with: { from: \"{{ roles.author.name }}\", to: author }"
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: templated)), ["role_input_literal"])
+    let valid = "  - id: t\n    action: handoff.transition\n    with: { from: author, to: author }"
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: valid)), [])
+  }
+
+  func testVerdictReferencesFollowTheLatestProducer() {
+    let stale = """
+        - id: first
+          message: author
+          text: First
+          expect: { output: result, verdict: [clean, issues] }
+        - id: second
+          message: author
+          text: Second
+          expect: { output: result }
+        - id: report
+          notify: "{{ outputs.result.verdict }}"
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: stale)), ["unknown_variable"])
+    let refreshed = """
+        - id: first
+          message: author
+          text: First
+          expect: { output: result }
+        - id: second
+          message: author
+          text: Second
+          expect: { output: result, verdict: [clean, issues] }
+        - id: report
+          notify: "{{ outputs.result.verdict }}"
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: refreshed)), [])
+  }
+
+  func testOutputsProducedOnlyInsideASkippableLoopAreNotVisibleAfterIt() {
+    let skippable = """
+        - id: initial
+          message: author
+          text: Initial
+          expect: { output: verdict, verdict: [clean, issues] }
+        - id: retry
+          repeat: { max: 2, until: "outputs.verdict.verdict == clean" }
+          steps:
+            - id: produce
+              message: author
+              text: Retry
+              expect: { output: retry_result }
+        - id: report
+          notify: "{{ outputs.retry_result.path }}"
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: skippable)), ["unknown_variable"])
+    let unconditional = """
+        - id: retry
+          repeat: { max: 2 }
+          steps:
+            - id: produce
+              message: author
+              text: Retry
+              expect: { output: retry_result }
+        - id: report
+          notify: "{{ outputs.retry_result.path }}"
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: unconditional)), [])
+    let produced_before_and_inside = """
+        - id: initial
+          message: author
+          text: Initial
+          expect: { output: findings, verdict: [clean, issues] }
+        - id: loop
+          repeat: { max: 2, until: "outputs.findings.verdict == clean" }
+          steps:
+            - id: again
+              message: author
+              text: Again
+              expect: { output: findings }
+        - id: path
+          notify: "{{ outputs.findings.path }}"
+        - id: verdict
+          notify: "{{ outputs.findings.verdict }}"
+      """
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal(steps: produced_before_and_inside)), ["until_verdict_undeclared", "unknown_variable"],
+      "the in-loop producer declares no verdict: until cannot read it and neither can a later reference")
+  }
+
+  func testSuggestWarnsWhenNoEnabledProfileMatches() {
+    let role = "  r:\n    source: launch\n    suggest: { agent: codex, reasoning_effort: xhigh }"
+    let codexHigh = WorkflowProfileSuggestion(agent: "codex", model: "gpt-5", reasoningEffort: "xhigh", executionMode: "standard")
+    let claude = WorkflowProfileSuggestion(agent: "claude", model: nil, reasoningEffort: nil, executionMode: "standard")
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role), enabledProfiles: [claude]), ["suggest_unmatched"])
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role), enabledProfiles: [claude, codexHigh]), [])
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(roles: role)), [], "no profile catalog: no warning")
+  }
 }
+

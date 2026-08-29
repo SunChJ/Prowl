@@ -18,6 +18,8 @@ nonisolated public struct WorkflowValidationContext: Sendable {
   public let knownAgents: Set<String>?
   /// Agents installed locally; nil = the "nothing installed" warning is skipped.
   public let installedAgents: Set<String>?
+  /// Preset fields of the enabled Agent Profiles; nil = the `suggest` match warning is skipped.
+  public let enabledProfiles: [WorkflowProfileSuggestion]?
   public let actions: [WorkflowActionSchema]
 
   public init(
@@ -25,12 +27,14 @@ nonisolated public struct WorkflowValidationContext: Sendable {
     bundledSkillIDs: Set<String>? = nil,
     knownAgents: Set<String>? = nil,
     installedAgents: Set<String>? = nil,
+    enabledProfiles: [WorkflowProfileSuggestion]? = nil,
     actions: [WorkflowActionSchema] = WorkflowActionRegistry.all
   ) {
     self.scope = scope
     self.bundledSkillIDs = bundledSkillIDs
     self.knownAgents = knownAgents
     self.installedAgents = installedAgents
+    self.enabledProfiles = enabledProfiles
     self.actions = actions
   }
 }
@@ -49,8 +53,7 @@ nonisolated public enum WorkflowValidator {
 
   static func isSingleLine(_ text: String) -> Bool {
     !text.unicodeScalars.contains { scalar in
-      scalar == "\n" || scalar == "\r" || scalar == "\u{2028}" || scalar == "\u{2029}"
-        || (scalar.value < 0x20 && scalar != "\t") || (0x7F...0x9F).contains(scalar.value)
+      scalar == "\u{2028}" || scalar == "\u{2029}" || scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value)
     }
   }
 }
@@ -64,8 +67,17 @@ nonisolated private enum OutputConsumer {
   case optionalActionInput
 }
 
+nonisolated private struct OutputProducer {
+  let verdicts: Set<String>?
+  /// The `repeat` step whose body holds the producer; nil at the top level.
+  let loopID: String?
+}
+
 nonisolated private struct OutputInfo {
-  var verdicts: Set<String>?
+  var producers: [OutputProducer] = []
+  /// Verdict set of the producer whose delivery is the latest at this point of the walk; nil
+  /// when it declares none, or when a skippable loop leaves the latest producer ambiguous.
+  var latestVerdicts: Set<String>?
   var skipLocations: [WorkflowSourceLocation?] = []
 }
 
@@ -81,6 +93,7 @@ nonisolated private final class Walker {
   /// Action steps visible to the step being validated: outer sequences first, current last.
   private var actionScopes: [[String: WorkflowActionSchema]] = [[:]]
   private var insideRepeat = false
+  private var currentLoopID: String?
   private var loopSeen = false
 
   init(definition: WorkflowDefinition, context: WorkflowValidationContext) {
@@ -166,7 +179,27 @@ nonisolated private final class Walker {
           "No installed agent satisfies role '\(role.name)' (\(agents.joined(separator: ", "))).",
           at: role.location)
       }
+      if let suggest = launch.suggest, let profiles = context.enabledProfiles,
+        !profiles.contains(where: { Self.profile($0, matches: suggest) })
+      {
+        collector.warning(
+          "suggest_unmatched", "No enabled Agent Profile matches the suggestion for role '\(role.name)'.",
+          at: role.location)
+      }
     }
+  }
+
+  /// Every field the suggestion names must equal the profile's; absent fields do not constrain.
+  private static func profile(
+    _ profile: WorkflowProfileSuggestion, matches suggest: WorkflowProfileSuggestion
+  ) -> Bool {
+    for (wanted, actual) in [
+      (suggest.agent, profile.agent), (suggest.model, profile.model),
+      (suggest.reasoningEffort, profile.reasoningEffort), (suggest.executionMode, profile.executionMode),
+    ] where wanted != nil && wanted != actual {
+      return false
+    }
+    return true
   }
 
   private func checkAgentTokens(_ tokens: [String], role: WorkflowRoleDefinition) {
@@ -270,7 +303,19 @@ nonisolated private final class Walker {
         collector.error("unknown_action_input", "Action '\(id)' has no input '\(key)'.", at: step.location)
         continue
       }
-      checkTemplate(value, at: step.location, consumer: input.required ? .requiredActionInput : .optionalActionInput)
+      switch input.kind {
+      case .role:
+        if WorkflowTemplate.containsReference(value) {
+          collector.error(
+            "role_input_literal", "Action '\(id)' input '\(key)' must name a role literally, not a template.",
+            at: step.location)
+        } else if definition.role(named: value) == nil {
+          collector.error(
+            "unknown_role", "Action '\(id)' input '\(key)' names undefined role '\(value)'.", at: step.location)
+        }
+      case .string, .path:
+        checkTemplate(value, at: step.location, consumer: input.required ? .requiredActionInput : .optionalActionInput)
+      }
     }
     for input in schema.inputs where input.required && inputs[input.name] == nil {
       collector.error("missing_action_input", "Action '\(id)' requires input '\(input.name)'.", at: step.location)
@@ -283,15 +328,36 @@ nonisolated private final class Walker {
     body: [WorkflowStepDefinition]
   ) {
     checkRepeatBound(max, at: step.location)
-    let producedBefore = Set(outputs.keys)
+    let before = outputs
     insideRepeat = true
+    currentLoopID = step.id
     actionScopes.append([:])
     body.forEach(checkStep)
     actionScopes.removeLast()
     insideRepeat = false
+    currentLoopID = nil
     loopSeen = true
-    if let until {
-      checkUntil(until, producedBefore: producedBefore, at: until.location ?? step.location)
+    guard let until else { return }
+    checkUntil(until, loopID: step.id, before: before, at: until.location ?? step.location)
+    foldSkippableLoopOutputs(before: before)
+  }
+
+  /// A loop with `until` may run zero times: outputs first produced inside it are not visible
+  /// afterwards, and an output also produced before keeps only the verdicts both producers
+  /// declare.
+  private func foldSkippableLoopOutputs(before: [String: OutputInfo]) {
+    for (name, info) in outputs {
+      guard let earlier = before[name] else {
+        outputs[name] = nil
+        continue
+      }
+      var folded = info
+      if let outer = earlier.latestVerdicts, let inner = info.latestVerdicts {
+        folded.latestVerdicts = outer.intersection(inner)
+      } else {
+        folded.latestVerdicts = nil
+      }
+      outputs[name] = folded
     }
   }
 
@@ -314,8 +380,11 @@ nonisolated private final class Walker {
     }
   }
 
+  /// `until` reads the latest delivery of its output: before entry that is the last producer
+  /// before the loop, after each iteration any producer in the body — every one of them must
+  /// declare a verdict set that holds the literals.
   private func checkUntil(
-    _ until: WorkflowUntilCondition, producedBefore: Set<String>, at location: WorkflowSourceLocation?
+    _ until: WorkflowUntilCondition, loopID: String, before: [String: OutputInfo], at location: WorkflowSourceLocation?
   ) {
     guard let info = outputs[until.output] else {
       collector.error(
@@ -323,11 +392,16 @@ nonisolated private final class Walker {
         at: location)
       return
     }
-    _ = producedBefore
-    guard let verdicts = info.verdicts else {
+    var relevant = info.producers.filter { $0.loopID == loopID }
+    if let last = before[until.output]?.producers.last {
+      relevant.append(last)
+    }
+    let sets = relevant.compactMap(\.verdicts)
+    guard sets.count == relevant.count, let first = sets.first else {
       collector.error("until_verdict_undeclared", "Output '\(until.output)' declares no verdict.", at: location)
       return
     }
+    let verdicts = sets.dropFirst().reduce(first) { $0.intersection($1) }
     if until.values.isEmpty {
       collector.error("until_syntax", "'until' needs at least one verdict value.", at: location)
     }
@@ -356,9 +430,9 @@ nonisolated private final class Walker {
       collector.warning("timeout_long", "'timeout' above 2h; the watchdog already supervises waiting.", at: location)
     }
     var info = outputs[name] ?? OutputInfo()
-    if let verdict = expect.verdict {
-      info.verdicts = (info.verdicts ?? []).union(verdict)
-    }
+    let verdicts = expect.verdict.map(Set.init)
+    info.producers.append(OutputProducer(verdicts: verdicts, loopID: currentLoopID))
+    info.latestVerdicts = verdicts
     if expect.onTimeout == .skip {
       info.skipLocations.append(location)
     }
@@ -440,7 +514,7 @@ nonisolated private final class Walker {
     _ parts: [String], at location: WorkflowSourceLocation?, consumer: OutputConsumer
   ) -> Bool {
     guard let info = outputs[parts[1]], ["path", "verdict"].contains(parts[2]) else { return false }
-    if parts[2] == "verdict", info.verdicts == nil {
+    if parts[2] == "verdict", info.latestVerdicts == nil {
       return false
     }
     consumers[parts[1], default: []].append(consumer)
