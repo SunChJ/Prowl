@@ -3,6 +3,7 @@
 // `handoff.checkpoint` over the `.prowl/handoff/` coordinator, `git.context` over the same
 // context generator. Typed inputs and outputs follow `WorkflowActionRegistry`.
 
+import Darwin
 import Foundation
 
 nonisolated struct WorkflowActionContext: Sendable {
@@ -175,12 +176,7 @@ nonisolated struct WorkflowNativeActionRunner: WorkflowActionExecuting {
   ) throws -> HandoffPreparedBriefing {
     guard let path else { return .contextOnly }
     guard let url = try containedPath(path, context: context) else { return .contextOnly }
-    let text: String
-    do {
-      text = try String(contentsOf: url, encoding: .utf8)
-    } catch {
-      throw WorkflowActionError.unreadableBriefing(path: path)
-    }
+    let text = try Self.readRegularFile(url, reportedPath: path)
     do {
       return try coordinator.collectBriefing(.inline(text))
     } catch {
@@ -188,8 +184,9 @@ nonisolated struct WorkflowNativeActionRunner: WorkflowActionExecuting {
     }
   }
 
-  /// A path input resolved against the worktree root and required to stay inside it
-  /// (canonical comparison, so a symlink cannot point the action elsewhere).
+  /// A path input resolved against the worktree root and required to stay inside it. The
+  /// canonical (symlink-resolved) URL is what the action operates on, so the containment
+  /// that was checked is the containment that is used.
   private func containedPath(_ path: String?, context: WorkflowActionContext) throws -> URL? {
     guard let path, !path.isEmpty else { return nil }
     let url = URL(filePath: path, relativeTo: context.rootURL).standardizedFileURL
@@ -198,6 +195,26 @@ nonisolated struct WorkflowNativeActionRunner: WorkflowActionExecuting {
     guard canonical == base || AgentProfileLaunchPlanner.isContained(canonical, in: base) else {
       throw WorkflowActionError.unsafePath(path)
     }
-    return url
+    return canonical
+  }
+
+  /// Reads a briefing through an `O_NOFOLLOW` descriptor and requires a regular file, so a
+  /// link planted at the leaf between the containment check and the read is refused.
+  private static func readRegularFile(_ url: URL, reportedPath: String) throws -> String {
+    let descriptor = Darwin.open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW)
+    guard descriptor >= 0 else {
+      if errno == ELOOP { throw WorkflowActionError.unsafePath(reportedPath) }
+      throw WorkflowActionError.unreadableBriefing(path: reportedPath)
+    }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    defer { try? handle.close() }
+    var statistics = stat()
+    guard fstat(descriptor, &statistics) == 0, (statistics.st_mode & S_IFMT) == S_IFREG else {
+      throw WorkflowActionError.unreadableBriefing(path: reportedPath)
+    }
+    guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else {
+      throw WorkflowActionError.unreadableBriefing(path: reportedPath)
+    }
+    return text
   }
 }

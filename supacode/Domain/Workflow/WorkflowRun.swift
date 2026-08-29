@@ -177,6 +177,8 @@ nonisolated enum WorkflowRunPaths {
 
 nonisolated enum WorkflowActivationState: String, Equatable, Sendable, Codable {
   case waiting
+  /// A validated delivery is being written to the run directory; the record completes once it is.
+  case persisting
   case delivered
   case skipped
   case revoked
@@ -193,6 +195,11 @@ nonisolated struct WorkflowActivation: Equatable, Sendable {
   let outputName: String
   var dispatchID: String?
   var state: WorkflowActivationState
+  /// `expect.timeout` as an absolute deadline, fixed when the activation opened; a re-armed
+  /// watchdog receives the remaining time, never a fresh cap.
+  var deadline: Date?
+  /// The validated body while the delivery is being persisted (never written to `run.json`).
+  var pendingDelivery: WorkflowValidatedDelivery?
 
   var completion: WorkflowCompletionCommand {
     WorkflowCompletionCommand(token: token, verdicts: expect.verdict)
@@ -307,6 +314,8 @@ nonisolated enum WorkflowAttentionReason: Equatable, Sendable, Codable {
   case launchFailed(String)
   case renderedTextInvalid
   case actionFailed(String)
+  /// The validated output could not be written to the run directory.
+  case persistFailed(String)
   case timeout
 }
 
@@ -402,6 +411,11 @@ nonisolated struct WorkflowRun: Equatable, Sendable {
   var currentActivation: WorkflowActivation? {
     guard case .waitingForDelivery(let ordinal) = phase else { return nil }
     return invocations.first { $0.ordinal == ordinal }?.activation
+  }
+
+  /// The activation of the invocation in flight, whatever its state.
+  var activeActivation: WorkflowActivation? {
+    currentInvocation?.activation
   }
 
   func activation(forDispatchID dispatchID: String) -> WorkflowActivation? {

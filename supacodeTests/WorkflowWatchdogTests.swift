@@ -159,6 +159,22 @@ struct WorkflowWatchdogPolicyTests {
     #expect(policy.apply(.deadline(.blockedGrace, idle())) == [])
   }
 
+  @Test func idleAttentionKeepsTheHardTimeoutAlive() {
+    var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: 600, nudgedAlready: true)
+    #expect(policy.apply(.armed(exact)) == [.schedule(.timeout, .seconds(600))])
+    _ = policy.apply(.turnEnded)
+    #expect(policy.apply(.deadline(.turnGrace, idle())) == [.schedule(.idleGrace, .seconds(180))])
+    #expect(policy.apply(.deadline(.idleGrace, idle())) == [.emit(.attention(.idleWithoutDelivery))])
+    #expect(!policy.stopped)
+    #expect(policy.apply(.deadline(.timeout, idle())) == [.emit(.timeout), .stop])
+
+    var untimed = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: true)
+    _ = untimed.apply(.armed(exact))
+    _ = untimed.apply(.turnEnded)
+    _ = untimed.apply(.deadline(.turnGrace, idle()))
+    #expect(untimed.apply(.deadline(.idleGrace, idle())) == [.emit(.attention(.idleWithoutDelivery)), .stop])
+  }
+
   @Test func hardTimeoutFiresRegardlessOfMode() {
     var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: 600, nudgedAlready: false)
     #expect(policy.apply(.armed(exact)) == [.schedule(.timeout, .seconds(600))])

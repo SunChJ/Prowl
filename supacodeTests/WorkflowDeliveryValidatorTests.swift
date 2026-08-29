@@ -33,6 +33,24 @@ struct WorkflowDeliveryValidatorTests {
     #expect(delivery.verdict == nil)
   }
 
+  @Test func sectionsMustBeHeadingsOutsideCodeFences() throws {
+    let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
+    let fenced = "# Review\n```text\n## Findings\n```\n## Verdict\nclean"
+    guard case .failure(let error) = validate(fenced, expect: expect) else {
+      Issue.record("a heading inside a fence must not count")
+      return
+    }
+    #expect(error.message.contains("## Findings"))
+    #expect(!error.message.contains("## Verdict"))
+    let prose = "# Review\nsee ## Findings below\n## Verdict\nclean"
+    #expect(validate(prose, expect: expect).failureCode == "OUTPUT_INVALID")
+    let suffixed = "# Review\n## Findings (2)\n- a\n## Verdict\nclean"
+    #expect(throws: Never.self) { try validate(suffixed, expect: expect).get() }
+    #expect(validate("# Review\n## Findingsx\n## Verdict", expect: expect).failureCode == "OUTPUT_INVALID")
+    let tilde = "# Review\n~~~\n## Findings\n~~~\n## Findings\n## Verdict\nok"
+    #expect(throws: Never.self) { try validate(tilde, expect: expect).get() }
+  }
+
   @Test func missingSectionIsOutputInvalid() {
     let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
     guard case .failure(let error) = validate("## Findings\nnothing", expect: expect) else {

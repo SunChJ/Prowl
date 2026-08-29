@@ -83,10 +83,60 @@ struct WorkflowRunStoreTests {
 
     let decoded = try store.readRecord(runID: run.id)
     #expect(decoded == record)
+    #expect(decoded.inputs == [])
     #expect(decoded.bindings["receiver"]?.profile == WorkflowRunMachineTests.reviewerProfile)
     #expect(decoded.bindings["source"]?.pane == WorkflowRunMachineTests.authorPane)
     #expect(decoded.invocations.first?.activation?.output == "brief")
     #expect(decoded.run.status.attention?.actions == [.nudge, .keepWaiting, .skip, .cancel])
+  }
+
+  @Test func recordKeepsInputNamesButNeverInputValues() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let definition = try #require(WorkflowDocumentParser.parse(WorkflowRunMachineTests.adversarialReview).definition)
+    let started = try WorkflowRunMachine.start(
+      WorkflowRunStartRequest(
+        definition: definition,
+        runID: UUID(),
+        context: WorkflowRunContext(
+          scope: .user, definitionPath: nil,
+          worktree: WorkflowRunWorktree(id: "wt", name: "w", branch: "b", path: root.path(percentEncoded: false))),
+        bindings: [
+          "author": .current(WorkflowRunMachineTests.authorPane),
+          "reviewer": .launch(WorkflowRunMachineTests.reviewerProfile, pane: nil),
+        ],
+        inputs: ["focus": "hunter2-secret"]),
+      now: { Self.now })
+    let store = WorkflowRunStore(rootURL: root)
+    try store.ensureLayout(runID: started.machine.run.id)
+    try store.writeRecord(WorkflowRunRecord(run: started.machine.run))
+    let json = try String(
+      contentsOf: store.directory(for: started.machine.run.id).appending(path: "run.json"), encoding: .utf8)
+    #expect(!json.contains("hunter2-secret"))
+    #expect(try store.readRecord(runID: started.machine.run.id).inputs == ["focus", "max_rounds", "mode"])
+  }
+
+  @Test func symlinkedLogAndRecordLeavesAreRefused() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkflowRunStore(rootURL: root)
+    let runID = UUID()
+    try store.ensureLayout(runID: runID)
+    let victim = root.appending(path: "victim.txt")
+    try "original\n".write(to: victim, atomically: true, encoding: .utf8)
+    let log = store.directory(for: runID).appending(path: "log.md")
+    try FileManager.default.createSymbolicLink(at: log, withDestinationURL: victim)
+    #expect(throws: WorkflowRunStoreError.self) { try store.appendLog(runID: runID, line: "hi", now: Self.now) }
+    #expect(try String(contentsOf: victim, encoding: .utf8) == "original\n")
+    let record = store.directory(for: runID).appending(path: "run.json")
+    try FileManager.default.createSymbolicLink(at: record, withDestinationURL: victim)
+    #expect(throws: WorkflowRunStoreError.self) { try store.readRecord(runID: runID) }
+    let run = try makeRun(root: root)
+    try store.ensureLayout(runID: run.id)
+    try FileManager.default.createSymbolicLink(
+      at: store.directory(for: run.id).appending(path: "run.json"), withDestinationURL: victim)
+    #expect(throws: WorkflowRunStoreError.self) { try store.writeRecord(WorkflowRunRecord(run: run)) }
+    #expect(try String(contentsOf: victim, encoding: .utf8) == "original\n")
   }
 
   @Test func recordDecodingToleratesUnknownKeys() throws {

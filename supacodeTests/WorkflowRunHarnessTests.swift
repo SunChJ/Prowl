@@ -162,7 +162,13 @@ final class WorkflowRunHarness {
       case .disarmWatchdog(let ordinal):
         disarmed.append(ordinal)
       case .persistOutput(let name, let ordinal, let body):
-        try store.writeOutput(runID: runID, name: name, ordinal: ordinal, body: body)
+        do {
+          try store.writeOutput(runID: runID, name: name, ordinal: ordinal, body: body)
+        } catch {
+          try await apply(.outputPersistFailed(ordinal: ordinal, reason: "\(error)"))
+          continue
+        }
+        try await apply(.outputPersisted(ordinal: ordinal))
       case .persist:
         try store.writeRecord(WorkflowRunRecord(run: machine.run))
       case .log(let line):
@@ -306,6 +312,29 @@ struct WorkflowRunHarnessTests {
     #expect(try String(contentsOf: harness.store.runsDirectory.appending(path: ".gitignore"), encoding: .utf8) == "*\n")
   }
 
+  @Test func aFailingStoreLeavesTheDeliveryInAttentionUntilRetried() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let harness = try await makeHarness(root: root)
+    let outputs = harness.store.directory(for: harness.run.id).appending(path: "outputs", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: outputs)
+    let elsewhere = root.appending(path: "elsewhere", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: outputs, withDestinationURL: elsewhere)
+    let result = try await harness.deliver(token: "TOKEN-1", body: "## Scope\nx\n## Claims\ny")
+    #expect((try? result.get()) != nil)
+    #expect(harness.run.status.attention?.reason.code == "persist_failed")
+    #expect(harness.bridge.completed.isEmpty)
+    #expect(harness.launches.isEmpty)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path(percentEncoded: false)).isEmpty)
+    try FileManager.default.removeItem(at: outputs)
+    try FileManager.default.createDirectory(at: outputs, withIntermediateDirectories: true)
+    try await harness.user(.retry)
+    #expect(harness.bridge.completed.map(\.dispatchID) == ["dispatch-1"])
+    #expect(harness.launches.count == 1)
+    #expect(try harness.store.readRecord(runID: harness.run.id).outputs["brief"]?.ordinal == 1)
+  }
+
   @Test func cancelAbandonsThePendingActivationAndKeepsDeliveredOutputs() async throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -335,6 +364,10 @@ struct WorkflowRunHarnessTests {
     #expect(harness.typedLines.count == 2)
     #expect(harness.run.invocations.count == 3)
     #expect(harness.bridge.opened.map(\.dispatchID) == ["dispatch-1", "dispatch-2", "dispatch-3"])
+    #expect(harness.run.invocations[2].activation?.token == "TOKEN-3")
+    let delivered = try await harness.deliver(token: "TOKEN-3", body: "# Done")
+    #expect(try delivered.get().ordinal == 3)
+    #expect(harness.run.phase == .waitingForDelivery(ordinal: 4))
   }
 
   @Test func nudgeAndAttentionFlowThroughTheWatchdogVerdicts() async throws {

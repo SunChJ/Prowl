@@ -112,6 +112,22 @@ struct WorkflowRunMachineTests {
     }
   }
 
+  nonisolated final class NowBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ value: Date) { self.value = value }
+    var now: Date {
+      lock.lock()
+      defer { lock.unlock() }
+      return value
+    }
+    func advance(seconds: TimeInterval) {
+      lock.lock()
+      defer { lock.unlock() }
+      value = value.addingTimeInterval(seconds)
+    }
+  }
+
   private func definition(_ yaml: String) throws -> WorkflowDefinition {
     try #require(WorkflowDocumentParser.parse(yaml).definition)
   }
@@ -121,7 +137,8 @@ struct WorkflowRunMachineTests {
     roles: [String: WorkflowRoleBinding]? = nil,
     inputs: [String: String] = [:],
     skipped: Set<String> = [],
-    selfInitiated: Bool = false
+    selfInitiated: Bool = false,
+    now: NowBox = NowBox(start)
   ) throws -> (WorkflowRunMachine, [WorkflowRunEffect]) {
     let counter = TokenCounter()
     let bindings =
@@ -141,7 +158,7 @@ struct WorkflowRunMachineTests {
         inputs: inputs,
         skippedSteps: skipped,
         selfInitiated: selfInitiated),
-      now: { Self.start },
+      now: { now.now },
       makeToken: { counter.next() }
     )
     return (started.machine, started.effects)
@@ -149,18 +166,25 @@ struct WorkflowRunMachineTests {
 
   private var runDir: String { "/repo/.prowl/workflow-runs/\(Self.runID.uuidString)" }
 
+  /// A successful delivery followed by its persistence: the effects of both phases.
+  @discardableResult
+  private func deliverPersisted(
+    _ machine: inout WorkflowRunMachine, ordinal: Int, token: String, body: String, verdict: String? = nil
+  ) throws -> [WorkflowRunEffect] {
+    let (result, effects) = machine.deliver(ordinal: ordinal, selector: .token(token), body: body, verdict: verdict)
+    _ = try result.get()
+    return effects + machine.apply(.outputPersisted(ordinal: ordinal))
+  }
+
   /// Drives the fixture through `brief` → `launch` → findings delivery and returns the machine.
   private func machineAfterFindings(verdict: String, inputs: [String: String] = [:]) throws -> WorkflowRunMachine {
     var (machine, _) = try makeMachine(inputs: inputs)
     _ = machine.apply(.roleIdle(ordinal: 1))
     _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
-    let brief = machine.deliver(
-      ordinal: 1, selector: .token("TOKEN-1"), body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil)
-    _ = try brief.result.get()
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "# Brief\n## Scope\nx\n## Claims\ny")
     _ = machine.apply(.launched(ordinal: 2, pane: Self.reviewerPane, dispatchID: "d2"))
-    let findings = machine.deliver(
-      ordinal: 2, selector: .token("TOKEN-2"), body: "## Findings\n- a\n## Verdict\n\(verdict)", verdict: verdict)
-    _ = try findings.result.get()
+    try deliverPersisted(
+      &machine, ordinal: 2, token: "TOKEN-2", body: "## Findings\n- a\n## Verdict\n\(verdict)", verdict: verdict)
     return machine
   }
 
@@ -207,6 +231,7 @@ struct WorkflowRunMachineTests {
     #expect(machine.run.phase == .waitingForDelivery(ordinal: 1))
     #expect(machine.run.activation(forDispatchID: "d1")?.ordinal == 1)
     #expect(machine.run.currentActivation?.state == .waiting)
+    #expect(machine.run.currentActivation?.deadline == Self.start.addingTimeInterval(600))
     #expect(
       effects.contains(
         .armWatchdog(
@@ -215,7 +240,7 @@ struct WorkflowRunMachineTests {
             timeoutSeconds: 600, timeoutPolicy: .attention, nudgedAlready: false))))
   }
 
-  @Test func deliveryChecksTheTokenValidatesTheBodyAndAdvancesToTheLaunch() throws {
+  @Test func deliveryChecksTheTokenAndValidatesTheBodyBeforePersisting() throws {
     var (machine, _) = try makeMachine()
     _ = machine.apply(.roleIdle(ordinal: 1))
     _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
@@ -237,7 +262,28 @@ struct WorkflowRunMachineTests {
     #expect(receipt.output.name == "brief")
     #expect(receipt.output.path == "\(runDir)/outputs/brief.1.md")
     #expect(receipt.output.latestPath == "\(runDir)/outputs/brief.md")
-    #expect(effects.contains(.persistOutput(name: "brief", ordinal: 1, body: "# Brief\n## Scope\nx\n## Claims\ny\n")))
+    #expect(
+      effects == [
+        .log("Step 'brief': output 'brief' accepted (invocation 1); persisting."),
+        .persistOutput(name: "brief", ordinal: 1, body: "# Brief\n## Scope\nx\n## Claims\ny\n"),
+      ])
+    // Nothing advances until the output is on disk (dsl-spec §5: validate, persist, complete).
+    #expect(machine.run.phase == .waitingForDelivery(ordinal: 1))
+    #expect(machine.run.invocations[0].activation?.state == .persisting)
+    #expect(machine.run.outputs.isEmpty)
+    #expect(
+      machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "again", verdict: nil).result
+        == .failure(.stepNotExpecting))
+  }
+
+  @Test func persistedOutputCompletesTheActivationAndAdvancesToTheLaunch() throws {
+    var (machine, _) = try makeMachine()
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    _ = machine.deliver(
+      ordinal: 1, selector: .token("TOKEN-1"), body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil)
+    #expect(machine.apply(.outputPersisted(ordinal: 7)).isEmpty)
+    let effects = machine.apply(.outputPersisted(ordinal: 1))
     #expect(effects.contains(.disarmWatchdog(ordinal: 1)))
     #expect(
       effects.contains(
@@ -270,25 +316,46 @@ struct WorkflowRunMachineTests {
     #expect(!request.redelivery)
     #expect(machine.run.phase == .launching(ordinal: 2))
     #expect(machine.run.invocations[0].activation?.state == .delivered)
+    #expect(machine.run.invocations[0].activation?.pendingDelivery == nil)
     #expect(machine.run.outputs["brief"]?.ordinal == 1)
+  }
+
+  @Test func persistFailureRaisesAttentionAndRetryRePersists() throws {
+    var (machine, _) = try makeMachine()
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    _ = machine.deliver(
+      ordinal: 1, selector: .token("TOKEN-1"), body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil)
+    _ = machine.apply(.outputPersistFailed(ordinal: 1, reason: "disk full"))
+    let attention = try #require(machine.run.status.attention)
+    #expect(attention.reason == .persistFailed("disk full"))
+    #expect(attention.actions == [.retry, .cancel])
+    #expect(machine.run.phase == .waitingForDelivery(ordinal: 1))
+    let retry = machine.apply(.user(.retry))
+    #expect(retry.contains(.persistOutput(name: "brief", ordinal: 1, body: "# Brief\n## Scope\nx\n## Claims\ny\n")))
+    #expect(machine.run.status == .running)
+    #expect(machine.run.invocations[0].activation?.state == .persisting)
+    let cancel = machine.apply(.user(.cancel))
+    #expect(
+      cancel.contains(
+        .abandonActivation(dispatchID: "d1", reason: "Workflow run \(Self.runID.uuidString) cancelled at step 'brief'.")
+      ))
+    #expect(machine.run.status == .cancelled)
   }
 
   @Test func launchedBindsThePaneAndWaitsForTheFindings() throws {
     var (machine, _) = try makeMachine()
     _ = machine.apply(.roleIdle(ordinal: 1))
     _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
-    _ = machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "## Scope\nx\n## Claims\ny")
     let effects = machine.apply(.launched(ordinal: 2, pane: Self.reviewerPane, dispatchID: "d2"))
     #expect(machine.run.bindings["reviewer"]?.pane == Self.reviewerPane)
     #expect(machine.run.phase == .waitingForDelivery(ordinal: 2))
     #expect(machine.run.activation(forDispatchID: "d2")?.token == "TOKEN-2")
     #expect(
       effects.contains {
-        if case .armWatchdog(let request) = $0 {
-          return request.ordinal == 2 && request.dispatchID == "d2"
-        } else {
-          return false
-        }
+        if case .armWatchdog(let request) = $0 { return request.ordinal == 2 && request.dispatchID == "d2" }
+        return false
       })
     #expect(machine.templateContext().roles["reviewer"]?.pane == "p2")
   }
@@ -297,7 +364,7 @@ struct WorkflowRunMachineTests {
     var (machine, _) = try makeMachine()
     _ = machine.apply(.roleIdle(ordinal: 1))
     _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
-    _ = machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "## Scope\nx\n## Claims\ny")
     _ = machine.apply(.launched(ordinal: 2, pane: Self.reviewerPane, dispatchID: "d2"))
     #expect(
       machine.deliver(ordinal: 2, selector: .token("TOKEN-2"), body: "## Findings\n## Verdict", verdict: nil).result
@@ -339,28 +406,26 @@ struct WorkflowRunMachineTests {
             + "PROWL_WORKFLOW_TOKEN=TOKEN-3 prowl workflow done -",
           opensActivation: true)))
     _ = machine.apply(.injectionSucceeded(ordinal: 3, dispatchID: "d3"))
-    _ = try machine.deliver(ordinal: 3, selector: .token("TOKEN-3"), body: "# Done\nfixed", verdict: nil).result.get()
+    try deliverPersisted(&machine, ordinal: 3, token: "TOKEN-3", body: "# Done\nfixed")
 
     #expect(machine.run.phase == .waitingForRole(role: "reviewer", ordinal: 4))
     _ = machine.apply(.roleIdle(ordinal: 4))
     _ = machine.apply(.injectionSucceeded(ordinal: 4, dispatchID: "d4"))
-    let round1 = machine.deliver(ordinal: 4, selector: .token("TOKEN-4"), body: "# Findings\nstill", verdict: "issues")
-    let receipt = try round1.result.get()
-    #expect(receipt.output.path == "\(runDir)/outputs/findings.4.md")
-    #expect(round1.effects.contains(.persistOutput(name: "findings", ordinal: 4, body: "# Findings\nstill\n")))
+    let round1 = try deliverPersisted(
+      &machine, ordinal: 4, token: "TOKEN-4", body: "# Findings\nstill", verdict: "issues")
+    #expect(round1.contains(.persistOutput(name: "findings", ordinal: 4, body: "# Findings\nstill\n")))
     #expect(machine.run.outputs["findings"]?.ordinal == 4)
+    #expect(machine.run.outputs["findings"]?.path == "\(runDir)/outputs/findings.4.md")
     #expect(machine.run.loopCount == 1)
     #expect(machine.run.position.loop == WorkflowRunPosition.Loop(iteration: 2, bodyIndex: 0, max: 3))
     #expect(machine.templateContext().loop == WorkflowTemplateContext.Loop(index: 2, count: 1))
 
     _ = machine.apply(.roleIdle(ordinal: 5))
     _ = machine.apply(.injectionSucceeded(ordinal: 5, dispatchID: "d5"))
-    _ = try machine.deliver(ordinal: 5, selector: .token("TOKEN-5"), body: "# Done\nfixed again", verdict: nil).result
-      .get()
+    try deliverPersisted(&machine, ordinal: 5, token: "TOKEN-5", body: "# Done\nfixed again")
     _ = machine.apply(.roleIdle(ordinal: 6))
     _ = machine.apply(.injectionSucceeded(ordinal: 6, dispatchID: "d6"))
-    _ = try machine.deliver(ordinal: 6, selector: .token("TOKEN-6"), body: "# Findings\nnone", verdict: "clean").result
-      .get()
+    try deliverPersisted(&machine, ordinal: 6, token: "TOKEN-6", body: "# Findings\nnone", verdict: "clean")
     #expect(machine.run.loopCount == 2)
     #expect(machine.run.position.loop == nil)
     #expect(machine.run.phase == .runningAction(stepID: "context"))
@@ -373,12 +438,10 @@ struct WorkflowRunMachineTests {
     var machine = try machineAfterFindings(verdict: "issues", inputs: ["max_rounds": "1"])
     _ = machine.apply(.roleIdle(ordinal: 3))
     _ = machine.apply(.injectionSucceeded(ordinal: 3, dispatchID: "d3"))
-    _ = try machine.deliver(ordinal: 3, selector: .token("TOKEN-3"), body: "# Done", verdict: nil).result.get()
+    try deliverPersisted(&machine, ordinal: 3, token: "TOKEN-3", body: "# Done")
     _ = machine.apply(.roleIdle(ordinal: 4))
     _ = machine.apply(.injectionSucceeded(ordinal: 4, dispatchID: "d4"))
-    let (result, effects) = machine.deliver(
-      ordinal: 4, selector: .token("TOKEN-4"), body: "# Findings", verdict: "issues")
-    _ = try result.get()
+    let effects = try deliverPersisted(&machine, ordinal: 4, token: "TOKEN-4", body: "# Findings", verdict: "issues")
     #expect(machine.run.status == .maxRoundsReached)
     #expect(effects.last == .finished(.maxRoundsReached))
     #expect(machine.run.loopCount == 1)
@@ -416,6 +479,27 @@ struct WorkflowRunMachineTests {
     }
     #expect(throws: WorkflowRunStartError.skipNotAllowed(step: "brief", dependent: "launch")) {
       try makeMachine(skipped: ["brief"])
+    }
+  }
+
+  @Test func startRejectsSkipsOfStepsWithoutAnExpect() throws {
+    for step in ["transition", "launch", "done"] {
+      #expect(throws: WorkflowRunStartError.skipNotExpecting(step)) {
+        try makeMachine(
+          Self.handoff,
+          roles: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)],
+          skipped: [step])
+      }
+    }
+  }
+
+  @Test func startRejectsEnumValuesThatAreNotOneLine() throws {
+    let yaml = Self.adversarialReview.replacing("values: [strict, lenient]", with: "values: [strict, \"two\\nlines\"]")
+    #expect(
+      throws: WorkflowRunStartError.invalidInput(
+        name: "mode", reason: "the value must be one line without control characters.")
+    ) {
+      try makeMachine(yaml, inputs: ["mode": "two\nlines"])
     }
   }
 
@@ -457,13 +541,64 @@ struct WorkflowRunMachineTests {
     var machine = try machineAfterFindings(verdict: "issues")
     _ = machine.apply(.roleIdle(ordinal: 3))
     _ = machine.apply(.injectionSucceeded(ordinal: 3, dispatchID: "d3"))
-    _ = try machine.deliver(ordinal: 3, selector: .token("TOKEN-3"), body: "# Done", verdict: nil).result.get()
+    try deliverPersisted(&machine, ordinal: 3, token: "TOKEN-3", body: "# Done")
     #expect(machine.skipConsequence(forStep: "rereview") == .endsRun(dependent: "rounds"))
     #expect(machine.skipConsequence(forStep: "fix") == .endsRun(dependent: "rereview"))
     _ = machine.apply(.roleIdle(ordinal: 4))
     _ = machine.apply(.injectionSucceeded(ordinal: 4, dispatchID: "d4"))
     _ = machine.apply(.user(.skip))
     #expect(machine.run.status == .skipped(step: "rereview", dependent: "rounds"))
+  }
+
+  @Test func skipInTheFinalIterationWithoutUntilIgnoresReadersThatCannotRunAgain() throws {
+    let yaml = """
+      schema: prowl.workflow/v1
+      id: rounds-only
+      name: Rounds
+      roles:
+        author:
+          source: current
+      steps:
+        - id: seed
+          message: author
+          text: "seed"
+          expect: { output: x }
+        - id: rounds
+          repeat:
+            max: 2
+          steps:
+            - id: read
+              message: author
+              text: "read {{ outputs.x.path }}"
+            - id: produce
+              message: author
+              text: "produce"
+              expect: { output: x }
+        - id: after
+          notify: "after {{ outputs.x.path }}"
+      """
+    var (machine, _) = try makeMachine(yaml, roles: ["author": .current(Self.authorPane)])
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "# x")
+    // iteration 1: `read` (no expect) then `produce`
+    _ = machine.apply(.roleIdle(ordinal: 2))
+    _ = machine.apply(.injectionSucceeded(ordinal: 2, dispatchID: nil))
+    #expect(machine.run.phase == .waitingForRole(role: "author", ordinal: 3))
+    // Another iteration can follow: the earlier body reader still counts.
+    #expect(machine.skipConsequence(forStep: "produce") == .endsRun(dependent: "read"))
+    _ = machine.apply(.roleIdle(ordinal: 3))
+    _ = machine.apply(.injectionSucceeded(ordinal: 3, dispatchID: "d3"))
+    try deliverPersisted(&machine, ordinal: 3, token: "TOKEN-2", body: "# x2")
+    // iteration 2 (the last, no `until`): `read` ran, `produce` is current.
+    _ = machine.apply(.roleIdle(ordinal: 4))
+    _ = machine.apply(.injectionSucceeded(ordinal: 4, dispatchID: nil))
+    #expect(machine.run.position.loop == WorkflowRunPosition.Loop(iteration: 2, bodyIndex: 1, max: 2))
+    #expect(machine.skipConsequence(forStep: "produce") == .continues(optionalInputs: []))
+    _ = machine.apply(.roleIdle(ordinal: 5))
+    _ = machine.apply(.injectionSucceeded(ordinal: 5, dispatchID: "d5"))
+    _ = machine.apply(.user(.skip))
+    #expect(machine.run.status == .maxRoundsReached)
   }
 
   @Test func skipOfAnOptionalActionInputContinuesWithoutTheKey() throws {
@@ -541,13 +676,25 @@ struct WorkflowRunMachineTests {
     #expect(machine.run.invocations[1].activation?.token == "TOKEN-2")
   }
 
-  @Test func roleBusyReturnsTheStepToItsIdleWait() throws {
+  @Test func roleBusyReturnsTheStepToItsIdleWaitAndKeepsItsToken() throws {
     var (machine, _) = try makeMachine()
     _ = machine.apply(.roleIdle(ordinal: 1))
     let effects = machine.apply(.injectionFailed(ordinal: 1, .roleBusy))
     #expect(machine.run.status == .running)
     #expect(machine.run.phase == .waitingForRole(role: "author", ordinal: 1))
     #expect(effects.contains(.awaitRoleIdle(role: "author", surfaceID: Self.authorPane.surfaceID, ordinal: 1)))
+    let again = machine.apply(.roleIdle(ordinal: 1))
+    #expect(machine.run.invocations.count == 1)
+    #expect(machine.run.invocations[0].activation?.token == "TOKEN-1")
+    #expect(
+      again.contains {
+        if case .inject(_, _, 1, let line, true) = $0 { return line.contains("PROWL_WORKFLOW_TOKEN=TOKEN-1 ") }
+        return false
+      })
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    let (result, _) = machine.deliver(
+      ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
+    #expect((try? result.get()) != nil)
   }
 
   @Test func skipDuringTheIdleWaitCancelsTheWait() throws {
@@ -568,8 +715,8 @@ struct WorkflowRunMachineTests {
     #expect(
       nudge.contains(
         .typeLine(
-          role: "author", surfaceID: Self.authorPane.surfaceID, line: try WorkflowTypedLine.nudge(completion: command)))
-    )
+          role: "author", surfaceID: Self.authorPane.surfaceID, line: try WorkflowTypedLine.nudge(completion: command))
+      ))
     #expect(machine.run.status == .running)
 
     #expect(machine.apply(.watchdog(ordinal: 7, .attention(.idleWithoutDelivery))).isEmpty)
@@ -581,6 +728,7 @@ struct WorkflowRunMachineTests {
 
     let resumed = machine.apply(.user(.keepWaiting))
     #expect(machine.run.status == .running)
+    #expect(resumed.contains(.disarmWatchdog(ordinal: 1)))
     #expect(
       resumed.contains(
         .armWatchdog(
@@ -593,7 +741,34 @@ struct WorkflowRunMachineTests {
     let late = machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
     #expect((try? late.result.get()) != nil)
     #expect(machine.run.status == .running)
+    _ = machine.apply(.outputPersisted(ordinal: 1))
     #expect(machine.run.phase == .launching(ordinal: 2))
+  }
+
+  @Test func reArmedWatchdogsCarryTheRemainingHardTimeout() throws {
+    let now = NowBox(Self.start)
+    var (machine, _) = try makeMachine(now: now)
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    now.advance(seconds: 30)
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    #expect(machine.run.currentActivation?.deadline == Self.start.addingTimeInterval(630))
+    now.advance(seconds: 200)
+    _ = machine.apply(.watchdog(ordinal: 1, .attention(.idleWithoutDelivery)))
+    now.advance(seconds: 100)
+    let resumed = machine.apply(.user(.keepWaiting))
+    #expect(
+      resumed.contains {
+        if case .armWatchdog(let request) = $0 { return request.timeoutSeconds == 300 && request.nudgedAlready }
+        return false
+      })
+    now.advance(seconds: 400)
+    _ = machine.apply(.watchdog(ordinal: 1, .attention(.idleWithoutDelivery)))
+    let nudged = machine.apply(.user(.nudge))
+    #expect(
+      nudged.contains {
+        if case .armWatchdog(let request) = $0 { return request.timeoutSeconds == 1 }
+        return false
+      })
   }
 
   @Test func userNudgeTypesAgainAndReArmsWithTheNudgeSpent() throws {
@@ -663,7 +838,7 @@ struct WorkflowRunMachineTests {
     var machine = try machineAfterFindings(verdict: "issues")
     _ = machine.apply(.roleIdle(ordinal: 3))
     _ = machine.apply(.injectionSucceeded(ordinal: 3, dispatchID: "d3"))
-    _ = try machine.deliver(ordinal: 3, selector: .token("TOKEN-3"), body: "# Done", verdict: nil).result.get()
+    try deliverPersisted(&machine, ordinal: 3, token: "TOKEN-3", body: "# Done")
     _ = machine.apply(.roleIdle(ordinal: 4))
     _ = machine.apply(.injectionSucceeded(ordinal: 4, dispatchID: "d4"))
     _ = machine.apply(.watchdog(ordinal: 4, .attention(.agentGone(.sessionEnded))))
@@ -700,7 +875,7 @@ struct WorkflowRunMachineTests {
     #expect(
       machine.deliver(ordinal: 4, selector: .token("TOKEN-4"), body: "# Findings", verdict: "clean").result
         == .failure(.stepNotExpecting))
-    _ = try machine.deliver(ordinal: 5, selector: .token("TOKEN-5"), body: "# Findings", verdict: "clean").result.get()
+    try deliverPersisted(&machine, ordinal: 5, token: "TOKEN-5", body: "# Findings", verdict: "clean")
     #expect(machine.run.position.loop == nil)
   }
 
@@ -717,8 +892,7 @@ struct WorkflowRunMachineTests {
     var (machine, _) = try makeMachine()
     _ = machine.apply(.roleIdle(ordinal: 1))
     _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
-    _ = try machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
-      .result.get()
+    try deliverPersisted(&machine, ordinal: 1, token: "TOKEN-1", body: "## Scope\nx\n## Claims\ny")
     _ = machine.apply(.launchFailed(ordinal: 2, reason: "home provisioning failed"))
     let attention = try #require(machine.run.status.attention)
     #expect(attention.reason == .launchFailed("home provisioning failed"))
@@ -728,9 +902,8 @@ struct WorkflowRunMachineTests {
       retry.contains {
         if case .launch(let request) = $0 {
           return request.ordinal == 3 && request.environment["PROWL_WORKFLOW_TOKEN"] == "TOKEN-3"
-        } else {
-          return false
         }
+        return false
       })
     _ = machine.apply(.launchFailed(ordinal: 3, reason: "again"))
     #expect(machine.skipConsequence(forStep: "launch") == .endsRun(dependent: "rounds"))
@@ -791,6 +964,7 @@ struct WorkflowRunMachineTests {
         - id: launch
           launch: reviewer
           prompt: "Review."
+          expect: { output: ready }
         - id: ping
           message: reviewer
           text: "hello"
@@ -804,11 +978,8 @@ struct WorkflowRunMachineTests {
     let effects = machine.apply(.user(.relaunch))
     #expect(
       effects.contains {
-        if case .launch(let request) = $0 {
-          return request.redelivery && request.prompt.hasPrefix("hello\n\n---\n")
-        } else {
-          return false
-        }
+        if case .launch(let request) = $0 { return request.redelivery && request.prompt.hasPrefix("hello\n\n---\n") }
+        return false
       })
   }
 }

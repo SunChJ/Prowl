@@ -172,6 +172,12 @@ nonisolated private final class Walker {
       if Set(input.values).count != input.values.count {
         collector.error("enum_values_duplicate", "Enum input '\(input.name)' repeats a value.", at: input.location)
       }
+      if input.values.contains(where: { !WorkflowValidator.isSingleLine($0) }) {
+        collector.error(
+          "enum_value_multiline",
+          "Enum input '\(input.name)' values must be one line without control characters.",
+          at: input.location)
+      }
       if case .string(let value)? = input.defaultValue, !input.values.contains(value) {
         collector.error(
           "enum_default", "Enum input '\(input.name)' default '\(value)' is not one of its values.", at: input.location)

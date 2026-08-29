@@ -52,6 +52,10 @@ nonisolated enum WorkflowRunEvent: Equatable, Sendable {
   case launchFailed(ordinal: Int, reason: String)
   case actionCompleted(stepID: String, outputs: [String: String])
   case actionFailed(stepID: String, reason: String)
+  /// The `.persistOutput` effect of a delivery succeeded / failed (dsl-spec §5: validate,
+  /// persist, then complete the record).
+  case outputPersisted(ordinal: Int)
+  case outputPersistFailed(ordinal: Int, reason: String)
   case watchdog(ordinal: Int, WorkflowWatchdogVerdict)
   case user(WorkflowUserAction)
 }
@@ -130,6 +134,8 @@ nonisolated enum WorkflowRunStartError: Error, Equatable, Sendable {
   case unsafePath(String)
   case invalidRepeatBound(step: String)
   case unknownSkipStep(String)
+  /// `--skip` names a step without an `expect`; only awaited outputs can be skipped at start.
+  case skipNotExpecting(String)
   case skipNotAllowed(step: String, dependent: String)
   case missingBinding(role: String)
 }
@@ -212,7 +218,8 @@ nonisolated struct WorkflowRunMachine {
     )
     let flattened = definition.flattenedSteps
     for stepID in skippedSteps.sorted() {
-      guard flattened.contains(where: { $0.id == stepID }) else { throw .unknownSkipStep(stepID) }
+      guard let step = flattened.first(where: { $0.id == stepID }) else { throw .unknownSkipStep(stepID) }
+      guard step.action.expect != nil else { throw .skipNotExpecting(stepID) }
     }
     for stepID in skippedSteps.sorted() {
       if case .endsRun(let dependent) = Self.skipConsequence(forStep: stepID, in: run, fromStart: true) {
@@ -260,6 +267,9 @@ nonisolated struct WorkflowRunMachine {
           throw .invalidInput(
             name: input.name, reason: "'\(value)' is not one of \(input.values.joined(separator: ", ")).")
         }
+        guard WorkflowRenderedText.isSingleLine(value) else {
+          throw .invalidInput(name: input.name, reason: "the value must be one line without control characters.")
+        }
         resolved[input.name] = value
       }
     }
@@ -305,14 +315,15 @@ nonisolated struct WorkflowRunMachine {
     case .launched(let ordinal, let pane, let dispatchID):
       applyLaunched(ordinal: ordinal, pane: pane, dispatchID: dispatchID, effects: &effects)
     case .launchFailed(let ordinal, let reason):
-      guard case .launching(ordinal) = run.phase, let invocation = invocation(ordinal) else { return [] }
-      raiseAttention(
-        .launchFailed(reason), stepID: invocation.stepID, role: invocation.role, ordinal: ordinal, effects: &effects)
+      applyLaunchFailed(ordinal: ordinal, reason: reason, effects: &effects)
     case .actionCompleted(let stepID, let outputs):
       applyActionCompleted(stepID: stepID, outputs: outputs, effects: &effects)
     case .actionFailed(let stepID, let reason):
-      guard case .runningAction(stepID) = run.phase, run.currentStep?.id == stepID else { return [] }
-      raiseAttention(.actionFailed(reason), stepID: stepID, role: nil, ordinal: nil, effects: &effects)
+      applyActionFailed(stepID: stepID, reason: reason, effects: &effects)
+    case .outputPersisted(let ordinal):
+      applyOutputPersisted(ordinal: ordinal, effects: &effects)
+    case .outputPersistFailed(let ordinal, let reason):
+      applyOutputPersistFailed(ordinal: ordinal, reason: reason, effects: &effects)
     case .watchdog(let ordinal, let verdict):
       applyWatchdog(ordinal: ordinal, verdict: verdict, effects: &effects)
     case .user(let action):
@@ -346,6 +357,17 @@ nonisolated struct WorkflowRunMachine {
     run.bindings[invocation.role] = binding.binding(pane: pane)
     effects.append(.log("Step '\(invocation.stepID)': role '\(invocation.role)' launched in \(pane.handle)."))
     openWaiting(ordinal: ordinal, dispatchID: dispatchID, effects: &effects)
+  }
+
+  private mutating func applyLaunchFailed(ordinal: Int, reason: String, effects: inout [WorkflowRunEffect]) {
+    guard case .launching(ordinal) = run.phase, let invocation = invocation(ordinal) else { return }
+    raiseAttention(
+      .launchFailed(reason), stepID: invocation.stepID, role: invocation.role, ordinal: ordinal, effects: &effects)
+  }
+
+  private mutating func applyActionFailed(stepID: String, reason: String, effects: inout [WorkflowRunEffect]) {
+    guard case .runningAction(stepID) = run.phase, run.currentStep?.id == stepID else { return }
+    raiseAttention(.actionFailed(reason), stepID: stepID, role: nil, ordinal: nil, effects: &effects)
   }
 
   private mutating func applyActionCompleted(
@@ -388,7 +410,26 @@ nonisolated struct WorkflowRunMachine {
     case .success(let delivery):
       validated = delivery
     }
-    let record = WorkflowOutputRecord(
+    let record = outputRecord(for: activation, verdict: validated.verdict)
+    updateActivation(ordinal: activation.ordinal) {
+      $0.state = .persisting
+      $0.pendingDelivery = validated
+    }
+    run.status = .running
+    run.updatedAt = now()
+    let effects: [WorkflowRunEffect] = [
+      .log(
+        "Step '\(activation.stepID)': output '\(activation.outputName)' accepted "
+          + "(invocation \(activation.ordinal)); persisting."),
+      .persistOutput(name: activation.outputName, ordinal: activation.ordinal, body: validated.body),
+    ]
+    return (
+      .success(WorkflowDeliveryReceipt(ordinal: activation.ordinal, stepID: activation.stepID, output: record)), effects
+    )
+  }
+
+  private func outputRecord(for activation: WorkflowActivation, verdict: String?) -> WorkflowOutputRecord {
+    WorkflowOutputRecord(
       name: activation.outputName,
       ordinal: activation.ordinal,
       path: WorkflowRunPaths.path(
@@ -396,18 +437,33 @@ nonisolated struct WorkflowRunMachine {
           runDirectory: run.runDirectory, name: activation.outputName, ordinal: activation.ordinal)),
       latestPath: WorkflowRunPaths.path(
         WorkflowRunPaths.outputURL(runDirectory: run.runDirectory, name: activation.outputName, ordinal: nil)),
-      verdict: validated.verdict,
+      verdict: verdict,
       deliveredAt: now()
     )
+  }
+
+  private mutating func applyOutputPersistFailed(ordinal: Int, reason: String, effects: inout [WorkflowRunEffect]) {
+    guard let activation = run.activeActivation, activation.ordinal == ordinal, activation.state == .persisting
+    else { return }
+    raiseAttention(
+      .persistFailed(reason), stepID: activation.stepID, role: activation.role, ordinal: ordinal, effects: &effects)
+  }
+
+  /// The output is on disk: record it, complete the dispatch record, and advance.
+  private mutating func applyOutputPersisted(ordinal: Int, effects: inout [WorkflowRunEffect]) {
+    guard case .waitingForDelivery(ordinal) = run.phase, let activation = run.activeActivation,
+      activation.state == .persisting, let delivery = activation.pendingDelivery
+    else { return }
+    let record = outputRecord(for: activation, verdict: delivery.verdict)
     run.outputs[activation.outputName] = record
     run.skippedOutputs[activation.outputName] = nil
-    updateActivation(ordinal: activation.ordinal) { $0.state = .delivered }
-    var effects: [WorkflowRunEffect] = [
-      .persistOutput(name: activation.outputName, ordinal: activation.ordinal, body: validated.body),
-      .disarmWatchdog(ordinal: activation.ordinal),
-    ]
+    updateActivation(ordinal: ordinal) {
+      $0.state = .delivered
+      $0.pendingDelivery = nil
+    }
+    effects.append(.disarmWatchdog(ordinal: ordinal))
     if let dispatchID = activation.dispatchID {
-      let verdictNote = validated.verdict.map { " with verdict '\($0)'" } ?? ""
+      let verdictNote = delivery.verdict.map { " with verdict '\($0)'" } ?? ""
       effects.append(
         .completeActivation(
           dispatchID: dispatchID,
@@ -415,14 +471,10 @@ nonisolated struct WorkflowRunMachine {
         ))
     }
     effects.append(
-      .log(
-        "Step '\(activation.stepID)': output '\(activation.outputName)' delivered (invocation \(activation.ordinal))."))
+      .log("Step '\(activation.stepID)': output '\(activation.outputName)' delivered (invocation \(ordinal))."))
     run.status = .running
     completeCurrentStep(effects: &effects)
     advance(effects: &effects)
-    return (
-      .success(WorkflowDeliveryReceipt(ordinal: activation.ordinal, stepID: activation.stepID, output: record)), effects
-    )
   }
 
   // MARK: Skip consequence
@@ -446,11 +498,23 @@ nonisolated struct WorkflowRunMachine {
     var loopID: String?
     if fromStart {
       remaining = steps
-    } else if run.position.loop != nil, case .repeat(_, let until, let body) = steps[run.position.index].action {
-      remaining = body
+    } else if let loop = run.position.loop, case .repeat(_, let until, let body) = steps[run.position.index].action {
+      // Readers later in this iteration always count; readers earlier in the body only when
+      // another iteration can follow; steps after the loop only when an `until` can exit it
+      // (without one the loop ends the run as `max_rounds_reached`).
+      if let index = body.firstIndex(where: { $0.id == stepID }) {
+        remaining = Array(body[(index + 1)...])
+        if loop.iteration < loop.max {
+          remaining += body[..<index]
+        }
+      } else {
+        remaining = body
+      }
       loopUntil = until
       loopID = steps[run.position.index].id
-      remaining += steps[(run.position.index + 1)...]
+      if until != nil {
+        remaining += steps[(run.position.index + 1)...]
+      }
     } else {
       remaining = Array(steps[(run.position.index + 1)...])
     }
@@ -719,10 +783,17 @@ nonisolated struct WorkflowRunMachine {
     guard let rendered = render(content.body, step: step, effects: &effects) else { return nil }
     var completion: WorkflowCompletionCommand?
     if let expect, let outputName = step.outputName {
-      let activation = WorkflowActivation(
-        ordinal: ordinal, stepID: step.id, role: invocation.role, token: makeToken(), expect: expect,
-        outputName: outputName, dispatchID: nil, state: .waiting)
-      updateInvocation(ordinal: ordinal) { $0.activation = activation }
+      // A `roleBusy` refusal returns the same invocation to its idle wait: the activation and its
+      // token survive, so the command the run already rendered stays valid (dsl-spec §5).
+      let activation: WorkflowActivation
+      if let existing = invocation.activation, existing.state == .waiting {
+        activation = existing
+      } else {
+        activation = WorkflowActivation(
+          ordinal: ordinal, stepID: step.id, role: invocation.role, token: makeToken(), expect: expect,
+          outputName: outputName, dispatchID: nil, state: .waiting)
+        updateInvocation(ordinal: ordinal) { $0.activation = activation }
+      }
       completion = activation.completion
     }
     do {
@@ -872,7 +943,11 @@ nonisolated struct WorkflowRunMachine {
       advance(effects: &effects)
       return
     }
-    updateActivation(ordinal: ordinal) { $0.dispatchID = dispatchID }
+    let deadline = activation.expect.timeoutSeconds.map { now().addingTimeInterval(TimeInterval($0)) }
+    updateActivation(ordinal: ordinal) {
+      $0.dispatchID = dispatchID
+      if $0.deadline == nil { $0.deadline = deadline }
+    }
     run.phase = .waitingForDelivery(ordinal: ordinal)
     effects.append(.persist)
     effects.append(
@@ -885,11 +960,16 @@ nonisolated struct WorkflowRunMachine {
     guard let invocation = invocation(ordinal), let activation = invocation.activation,
       let surfaceID = run.bindings[invocation.role]?.pane?.surfaceID
     else { return }
+    // The hard cap is an absolute deadline: a re-armed watchdog gets what is left of it.
+    let remaining = activation.deadline.map { max(1, Int($0.timeIntervalSince(now()).rounded(.up))) }
+    if nudgedAlready {
+      effects.append(.disarmWatchdog(ordinal: ordinal))
+    }
     effects.append(
       .armWatchdog(
         WorkflowWatchdogRequest(
           ordinal: ordinal, stepID: invocation.stepID, role: invocation.role, surfaceID: surfaceID,
-          dispatchID: activation.dispatchID, timeoutSeconds: activation.expect.timeoutSeconds,
+          dispatchID: activation.dispatchID, timeoutSeconds: remaining,
           timeoutPolicy: activation.expect.onTimeout ?? .attention, nudgedAlready: nudgedAlready)))
   }
 
@@ -957,6 +1037,14 @@ nonisolated struct WorkflowRunMachine {
       effects.append(.persist)
     case .retry:
       guard let attention, attention.actions.contains(.retry) else { return }
+      if case .persistFailed = attention.reason, let activation = run.activeActivation,
+        let delivery = activation.pendingDelivery
+      {
+        run.status = .running
+        effects.append(.log("Step '\(activation.stepID)': retrying to persist output '\(activation.outputName)'."))
+        effects.append(.persistOutput(name: activation.outputName, ordinal: activation.ordinal, body: delivery.body))
+        return
+      }
       retryCurrentStep(effects: &effects)
     case .relaunch:
       guard let attention, attention.actions.contains(.relaunch) else { return }
@@ -1043,12 +1131,16 @@ nonisolated struct WorkflowRunMachine {
       effects.append(.cancelRoleWait(ordinal: ordinal))
     }
     guard let invocation = run.currentInvocation, let activation = invocation.activation else { return }
-    if activation.state == .waiting {
-      updateActivation(ordinal: activation.ordinal) { $0.state = .revoked }
+    let open = activation.state == .waiting || activation.state == .persisting
+    if open {
+      updateActivation(ordinal: activation.ordinal) {
+        $0.state = .revoked
+        $0.pendingDelivery = nil
+      }
     }
     let endedAt = now()
     updateInvocation(ordinal: activation.ordinal) { $0.endedAt = endedAt }
-    if let dispatchID = activation.dispatchID, activation.state == .waiting {
+    if let dispatchID = activation.dispatchID, open {
       effects.append(.abandonActivation(dispatchID: dispatchID, reason: reason))
     }
     if case .waitingForDelivery = run.phase {
@@ -1073,7 +1165,7 @@ nonisolated struct WorkflowRunMachine {
       case .injectionFailed: [.retry, .skip, .cancel]
       case .launchFailed: [.retry, .skip, .cancel]
       case .renderedTextInvalid: [.skip, .cancel]
-      case .actionFailed: [.retry, .cancel]
+      case .actionFailed, .persistFailed: [.retry, .cancel]
       }
     let attention = WorkflowAttention(
       reason: reason, stepID: stepID, role: role, ordinal: ordinal, actions: actions,
@@ -1127,6 +1219,8 @@ nonisolated struct WorkflowRunMachine {
       return "The rendered line of step '\(stepID)' is not a single terminal line; nothing was typed."
     case .actionFailed(let detail):
       return "Step '\(stepID)' failed: \(detail)"
+    case .persistFailed(let detail):
+      return "The delivered output of step '\(stepID)' could not be saved to the run directory: \(detail)"
     case .timeout:
       return "Step '\(stepID)' reached its timeout without a delivery from \(subject)."
     }

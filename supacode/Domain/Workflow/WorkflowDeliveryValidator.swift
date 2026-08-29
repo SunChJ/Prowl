@@ -94,7 +94,11 @@ nonisolated enum WorkflowDeliveryValidator {
       guard !normalized.isEmpty else {
         return .failure(.outputInvalid(reason: "the body is empty."))
       }
-      let missing = expect.sections.filter { !normalized.contains($0) }
+      let headings = Self.headings(outsideFences: normalized)
+      let missing = expect.sections.filter { section in
+        let wanted = section.trimmingCharacters(in: .whitespaces)
+        return !headings.contains { $0 == wanted || $0.hasPrefix(wanted + " ") }
+      }
       guard missing.isEmpty else {
         return .failure(
           .outputInvalid(reason: "missing required section(s): \(missing.joined(separator: ", "))."))
@@ -110,5 +114,27 @@ nonisolated enum WorkflowDeliveryValidator {
       }
       return .success(WorkflowValidatedDelivery(body: body, verdict: verdict))
     }
+  }
+
+  /// Heading lines (`#…`) outside fenced code blocks, trimmed; a heading quoted inside a
+  /// fence does not satisfy a required section.
+  static func headings(outsideFences text: String) -> [String] {
+    var headings: [String] = []
+    var fence: String?
+    for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+      let line = rawLine.trimmingCharacters(in: .whitespaces)
+      if let open = fence {
+        if line.hasPrefix(open) { fence = nil }
+        continue
+      }
+      if line.hasPrefix("```") || line.hasPrefix("~~~") {
+        fence = String(line.prefix(3))
+        continue
+      }
+      if line.hasPrefix("#") {
+        headings.append(line)
+      }
+    }
+    return headings
   }
 }

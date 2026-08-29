@@ -213,7 +213,16 @@ nonisolated struct WorkflowWatchdogPolicy: Equatable, Sendable {
     } else if deadline == .turnGrace {
       schedule(.idleGrace, settings.idleGrace, &commands)
     } else {
-      finish(with: .attention(.idleWithoutDelivery), &commands)
+      // Attention is a UI state, never a deadline: the grace timers stop, but an explicit
+      // `expect.timeout` keeps counting so `on_timeout: skip | cancel` still acts (H13).
+      commands.append(.emit(.attention(.idleWithoutDelivery)))
+      if pending.contains(.timeout) {
+        for grace in [WorkflowWatchdogDeadline.turnGrace, .idleGrace, .blockedGrace] {
+          cancel(grace, &commands)
+        }
+      } else {
+        stopAll(&commands)
+      }
     }
   }
 

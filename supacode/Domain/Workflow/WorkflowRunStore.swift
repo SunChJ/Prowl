@@ -112,7 +112,8 @@ nonisolated struct WorkflowRunRecord: Codable, Equatable, Sendable {
   let version: Int
   let run: WorkflowRunRecordInfo
   let worktree: WorkflowRunWorktree
-  let inputs: [String: String]
+  /// Input names only: values are workflow-defined text and may be anything the user typed.
+  let inputs: [String]
   let bindings: [String: Binding]
   let invocations: [WorkflowRunRecordInvocation]
   let outputs: [String: WorkflowOutputRecord]
@@ -149,7 +150,7 @@ nonisolated struct WorkflowRunRecord: Codable, Equatable, Sendable {
       finishedAt: run.finishedAt
     )
     worktree = run.context.worktree
-    inputs = run.inputs
+    inputs = run.inputs.keys.sorted()
     bindings = run.bindings.mapValues { Binding(source: $0.source, profile: $0.profile, pane: $0.pane) }
     invocations = run.invocations.map { invocation in
       WorkflowRunRecordInvocation(
@@ -263,6 +264,7 @@ extension WorkflowAttentionReason {
     case .launchFailed: "launch_failed"
     case .renderedTextInvalid: "rendered_text_invalid"
     case .actionFailed: "action_failed"
+    case .persistFailed: "persist_failed"
     case .timeout: "timeout"
     }
   }
@@ -345,12 +347,14 @@ nonisolated struct WorkflowRunStore: Sendable {
   func writeRecord(_ record: WorkflowRunRecord) throws {
     let runDirectory = try containedRunDirectory(runID: record.run.id)
     let data = try WorkflowRunRecord.makeEncoder().encode(record)
+    try requireNotSymbolicLink(runDirectory.appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory))
     try data.write(
       to: runDirectory.appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory), options: .atomic)
   }
 
   func readRecord(runID: UUID) throws -> WorkflowRunRecord {
     let url = directory(for: runID).appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory)
+    try requireNotSymbolicLink(url)
     return try Self.decodeRecord(at: url)
   }
 
@@ -370,17 +374,30 @@ nonisolated struct WorkflowRunStore: Sendable {
 
   // MARK: log.md
 
+  /// Appends through an `O_NOFOLLOW` descriptor: a `log.md` swapped for a symbolic link is
+  /// refused instead of followed, so the run can never append to a file outside its directory.
   func appendLog(runID: UUID, line: String, now: Date) throws {
     let runDirectory = try containedRunDirectory(runID: runID)
     let logURL = runDirectory.appending(path: Self.logFileName, directoryHint: .notDirectory)
-    let fileManager = FileManager.default
-    if !fileManager.fileExists(atPath: logURL.path(percentEncoded: false)) {
-      try "# Workflow run \(runID.uuidString)\n\n".write(to: logURL, atomically: true, encoding: .utf8)
+    let path = logURL.path(percentEncoded: false)
+    try requireNotSymbolicLink(logURL)
+    let descriptor = Darwin.open(path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+    guard descriptor >= 0 else {
+      let code = errno
+      if code == ELOOP { throw WorkflowRunStoreError.symbolicLink(path) }
+      throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
     }
-    let entry = "- \(Self.timestamp(now))  \(line.replacing("\n", with: " "))\n"
-    let handle = try FileHandle(forWritingTo: logURL)
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     defer { try? handle.close() }
-    try handle.seekToEnd()
+    var statistics = stat()
+    guard fstat(descriptor, &statistics) == 0, (statistics.st_mode & S_IFMT) == S_IFREG else {
+      throw WorkflowRunStoreError.unsafePath(path)
+    }
+    var entry = ""
+    if statistics.st_size == 0 {
+      entry += "# Workflow run \(runID.uuidString)\n\n"
+    }
+    entry += "- \(Self.timestamp(now))  \(line.replacing("\n", with: " "))\n"
     try handle.write(contentsOf: Data(entry.utf8))
   }
 
@@ -392,6 +409,7 @@ nonisolated struct WorkflowRunStore: Sendable {
     guard WorkflowSchema.isSlug(stepID), ordinal > 0 else { throw WorkflowRunStoreError.unsafePath(stepID) }
     let url = WorkflowRunPaths.instructionURL(runDirectory: runDirectory, stepID: stepID, ordinal: ordinal)
     try requireNotSymbolicLink(url.deletingLastPathComponent())
+    try requireNotSymbolicLink(url)
     try text.write(to: url, atomically: true, encoding: .utf8)
     return url
   }
@@ -405,6 +423,8 @@ nonisolated struct WorkflowRunStore: Sendable {
     let versioned = WorkflowRunPaths.outputURL(runDirectory: runDirectory, name: name, ordinal: ordinal)
     let latest = WorkflowRunPaths.outputURL(runDirectory: runDirectory, name: name, ordinal: nil)
     try requireNotSymbolicLink(versioned.deletingLastPathComponent())
+    try requireNotSymbolicLink(versioned)
+    try requireNotSymbolicLink(latest)
     let data = Data(body.utf8)
     try data.write(to: versioned, options: .atomic)
     let temporary = latest.deletingLastPathComponent()

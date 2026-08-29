@@ -140,6 +140,34 @@ struct WorkflowNativeActionsTests {
     }
   }
 
+  @Test func briefingLinksAreResolvedAndMustStayInsideTheWorktree() async throws {
+    let root = try makeRepo()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let briefingURL = root.appending(path: "brief.md")
+    try briefing.write(to: briefingURL, atomically: true, encoding: .utf8)
+    let inside = root.appending(path: "link-inside.md")
+    try FileManager.default.createSymbolicLink(at: inside, withDestinationURL: briefingURL)
+    let outputs = try await WorkflowNativeActionRunner().execute(
+      actionID: "handoff.checkpoint", inputs: ["briefing": inside.path(percentEncoded: false)],
+      context: context(root: root))
+    #expect(outputs["has_briefing"] == "true")
+
+    let outside = root.appending(path: "link-outside.md")
+    try FileManager.default.createSymbolicLink(at: outside, withDestinationURL: URL(filePath: "/etc/hosts"))
+    await #expect(throws: WorkflowActionError.unsafePath(outside.path(percentEncoded: false))) {
+      try await WorkflowNativeActionRunner().execute(
+        actionID: "handoff.checkpoint", inputs: ["briefing": outside.path(percentEncoded: false)],
+        context: context(root: root))
+    }
+    let directory = root.appending(path: "dir", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    await #expect(throws: WorkflowActionError.unreadableBriefing(path: directory.path(percentEncoded: false))) {
+      try await WorkflowNativeActionRunner().execute(
+        actionID: "handoff.checkpoint", inputs: ["briefing": directory.path(percentEncoded: false)],
+        context: context(root: root))
+    }
+  }
+
   @Test func checkpointKeepsAnEarlierBriefingWithoutANewOne() async throws {
     let root = try makeRepo()
     defer { try? FileManager.default.removeItem(at: root) }
