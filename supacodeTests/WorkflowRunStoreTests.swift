@@ -246,6 +246,38 @@ struct WorkflowRunStoreTests {
     #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path(percentEncoded: false)).isEmpty)
   }
 
+  @Test func restartScanRefusesALinkedBaseAndSkipsForeignVersionsWithoutDecodingThem() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let elsewhere = root.appending(path: "elsewhere/workflow-runs", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: root.appending(path: ".prowl", directoryHint: .isDirectory),
+      withDestinationURL: root.appending(path: "elsewhere", directoryHint: .isDirectory))
+    #expect(throws: WorkflowRunStoreError.self) {
+      try WorkflowRunStore(rootURL: root).markInterruptedRuns(now: Self.now)
+    }
+
+    let clean = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: clean) }
+    let store = WorkflowRunStore(rootURL: clean)
+    let foreignID = UUID()
+    try store.ensureLayout(runID: foreignID)
+    try "{\"version\": 2, \"run\": {\"status\": {\"state\": \"running\"}}, \"future\": true}".write(
+      to: store.directory(for: foreignID).appending(path: "run.json"), atomically: true, encoding: .utf8)
+    let headerlessID = UUID()
+    try store.ensureLayout(runID: headerlessID)
+    try "{\"version\": 1}".write(
+      to: store.directory(for: headerlessID).appending(path: "run.json"), atomically: true, encoding: .utf8)
+    let result = try store.markInterruptedRuns(now: Self.now)
+    #expect(result.interrupted.isEmpty)
+    #expect(
+      result.unreadable == [store.directory(for: headerlessID).appending(path: "run.json").path(percentEncoded: false)])
+    #expect(
+      try String(contentsOf: store.directory(for: foreignID).appending(path: "run.json"), encoding: .utf8).contains(
+        "\"future\": true"))
+  }
+
   @Test func aLinkedRunDirectoryIsNeverReadEither() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }

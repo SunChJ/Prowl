@@ -183,6 +183,29 @@ struct WorkflowWatchdogPolicyTests {
     #expect(policy.stopped)
   }
 
+  @Test func armingWithoutADetectedAgentWaitsTheAppearanceGraceThenReportsItGone() {
+    let absent = WorkflowWatchdogSnapshot(
+      state: "absent", liveChannelCoversTurnEnded: false, liveChannelCoversSessionEnd: false)
+    var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: false)
+    #expect(policy.apply(.armed(absent)) == [.schedule(.appearanceGrace, .seconds(10))])
+    #expect(policy.apply(.deadline(.appearanceGrace, absent)) == [.emit(.attention(.agentGone(.processGone))), .stop])
+
+    var appearing = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: false)
+    _ = appearing.apply(.armed(absent))
+    #expect(appearing.apply(.detector(state: "working")) == [.cancel(.appearanceGrace)])
+    #expect(!appearing.stopped)
+
+    var settled = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: false)
+    _ = settled.apply(.armed(absent))
+    #expect(settled.apply(.deadline(.appearanceGrace, idle(false))) == [.schedule(.idleGrace, .seconds(180))])
+
+    var exact = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: false)
+    _ = exact.apply(
+      .armed(
+        WorkflowWatchdogSnapshot(state: "absent", liveChannelCoversTurnEnded: true, liveChannelCoversSessionEnd: true)))
+    #expect(exact.apply(.deadline(.appearanceGrace, working())) == [])
+  }
+
   @Test func hardTimeoutFiresRegardlessOfMode() {
     var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: 600, nudgedAlready: false)
     #expect(policy.apply(.armed(exact)) == [.schedule(.timeout, .seconds(600))])
@@ -379,6 +402,41 @@ struct WorkflowWatchdogDriverTests {
     await settle()
     await clock.advance(by: .seconds(400))
     #expect(!watchdog.isRunning)
+  }
+
+  @Test func observerOverflowsAreRetriedUntilTheStreamDelivers() async throws {
+    let clock = TestClock()
+    let box = SnapshotBox(
+      WorkflowWatchdogSnapshot(state: "idle", liveChannelCoversTurnEnded: false, liveChannelCoversSessionEnd: false))
+    let (dispatchStream, _) = AgentDispatchObservationStream.makeStream()
+    let attempts = Counter()
+    let watchdog = WorkflowWatchdog(
+      request: Self.request,
+      settings: WorkflowWatchdogSettings(),
+      sources: WorkflowWatchdog.Sources(
+        observeAgent: {
+          attempts.increment()
+          if attempts.value <= 4 {
+            return AgentObservationStream { $0.finish(throwing: AgentObservationError.bufferOverflow) }
+          }
+          return AgentObservationStream { continuation in
+            continuation.yield(.removed)
+            continuation.finish()
+          }
+        },
+        observeDispatch: { dispatchStream },
+        snapshot: { box.snapshot }),
+      clock: clock)
+    var verdicts = watchdog.start().makeAsyncIterator()
+    #expect(await verdicts.next() == .attention(.agentGone(.processGone)))
+    #expect(await verdicts.next() == nil)
+    #expect(attempts.value == 5)
+  }
+
+  @MainActor
+  final class Counter {
+    private(set) var value = 0
+    func increment() { value += 1 }
   }
 
   @Test func inputMappingCoversEveryObservation() {

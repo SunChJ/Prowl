@@ -52,6 +52,18 @@ final class MarkdownArtifactNormalizerTests: XCTestCase {
     XCTAssertFalse(MarkdownArtifactNormalizer.hasSections(["## Vis"], in: text))
   }
 
+  func testFenceClosersMustBeBareRunsOfAtLeastTheOpeningLength() {
+    let fake = "# Handoff\n```text\n```still code\n## Objective\n## Current State\n## Next Steps\n```\n"
+    XCTAssertEqual(MarkdownArtifactNormalizer.headings(outsideFences: fake), ["# Handoff"])
+    XCTAssertFalse(MarkdownArtifactNormalizer.hasSections(["## Objective"], in: fake))
+    let longer = "# Doc\n````\n```\n## Hidden\n```\n````\n## Shown\n"
+    XCTAssertEqual(MarkdownArtifactNormalizer.headings(outsideFences: longer), ["# Doc", "## Shown"])
+    let wrapped = "````markdown\n# Doc\n```swift\nlet x = 1\n```\n````\ntrailer"
+    XCTAssertEqual(MarkdownArtifactNormalizer.normalized(wrapped), "# Doc\n```swift\nlet x = 1\n```")
+    let mismatched = "```markdown\n# Doc\n~~~\nbye"
+    XCTAssertEqual(MarkdownArtifactNormalizer.normalized(mismatched), "# Doc\n~~~\nbye")
+  }
+
   func testEmptyInputStaysEmpty() {
     XCTAssertEqual(MarkdownArtifactNormalizer.normalized("   \n  "), "")
   }

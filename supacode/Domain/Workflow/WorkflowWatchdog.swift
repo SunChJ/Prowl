@@ -16,11 +16,20 @@ nonisolated struct WorkflowWatchdogSettings: Equatable, Sendable {
   let turnGrace: Duration
   let idleGrace: Duration
   let blockedGrace: Duration
+  /// How long a pane without a detected agent at arm time may take to show one (a launch
+  /// that has not settled yet) before it counts as gone — the CLI wait's appearance grace.
+  let appearanceGrace: Duration
 
-  init(turnGrace: Duration = .seconds(15), idleGrace: Duration = .seconds(180), blockedGrace: Duration = .seconds(30)) {
+  init(
+    turnGrace: Duration = .seconds(15),
+    idleGrace: Duration = .seconds(180),
+    blockedGrace: Duration = .seconds(30),
+    appearanceGrace: Duration = .seconds(10)
+  ) {
     self.turnGrace = max(turnGrace, Self.turnGraceFloor)
     self.idleGrace = idleGrace
     self.blockedGrace = blockedGrace
+    self.appearanceGrace = appearanceGrace
   }
 }
 
@@ -28,6 +37,7 @@ nonisolated enum WorkflowWatchdogDeadline: String, Equatable, Sendable {
   case turnGrace
   case idleGrace
   case blockedGrace
+  case appearanceGrace
   case timeout
 }
 
@@ -107,12 +117,19 @@ nonisolated struct WorkflowWatchdogPolicy: Equatable, Sendable {
       if let timeout {
         schedule(.timeout, timeout, &commands)
       }
-      if mode == .heuristic {
+      // No agent on a live surface: either a launch that has not settled or a process that
+      // already exited to the shell. The appearance grace tells them apart at its expiry.
+      if snapshot.state == "absent" {
+        schedule(.appearanceGrace, settings.appearanceGrace, &commands)
+      } else if mode == .heuristic {
         applyDetectorLevel(snapshot.state, &commands)
       }
     case .detector(let state):
       if state == "working" {
         sawActivity = true
+      }
+      if state != "absent" {
+        cancel(.appearanceGrace, &commands)
       }
       if mode == .heuristic {
         applyDetectorLevel(state, &commands)
@@ -203,6 +220,17 @@ nonisolated struct WorkflowWatchdogPolicy: Equatable, Sendable {
       if snapshot.state == "blocked" {
         commands.append(.emit(.attention(.blocked)))
       }
+    case .appearanceGrace:
+      switch snapshot.state {
+      case "absent":
+        finish(with: .attention(.agentGone(.processGone)), &commands)
+      case "gone":
+        finish(with: .attention(.agentGone(.paneClosed)), &commands)
+      default:
+        if mode == .heuristic {
+          applyDetectorLevel(snapshot.state, &commands)
+        }
+      }
     case .timeout:
       finish(with: .timeout, &commands)
     }
@@ -223,7 +251,7 @@ nonisolated struct WorkflowWatchdogPolicy: Equatable, Sendable {
       // `expect.timeout` keeps counting so `on_timeout: skip | cancel` still acts (H13).
       commands.append(.emit(.attention(.idleWithoutDelivery)))
       if pending.contains(.timeout) {
-        for grace in [WorkflowWatchdogDeadline.turnGrace, .idleGrace, .blockedGrace] {
+        for grace in [WorkflowWatchdogDeadline.turnGrace, .idleGrace, .blockedGrace, .appearanceGrace] {
           cancel(grace, &commands)
         }
       } else {
@@ -368,18 +396,18 @@ final class WorkflowWatchdog {
     let sources = sources
     readerTasks.append(
       Task { @MainActor in
-        // A buffer overflow finishes the observer stream with an error; re-subscribe and let the
-        // fresh snapshot re-establish the level, as `agents wait` does.
-        for _ in 0..<3 {
-          var overflowed = false
+        // A buffer overflow finishes the observer stream with an error; re-subscribe for as long
+        // as the watchdog runs and let the fresh snapshot re-establish the level, as `agents
+        // wait` does. A stream that finishes without an error (surface closed) ends the reader.
+        while !Task.isCancelled {
           do {
             for try await state in sources.observeAgent() {
               continuation.yield(Self.input(for: state))
             }
+            return
           } catch {
-            overflowed = true
+            await Task.yield()
           }
-          guard overflowed, !Task.isCancelled else { return }
         }
       })
     guard let dispatchStream = sources.observeDispatch() else { return }

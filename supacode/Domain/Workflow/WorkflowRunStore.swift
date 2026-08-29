@@ -270,6 +270,22 @@ extension WorkflowAttentionReason {
   }
 }
 
+/// The restart scan's view of a record: enough to tell version and state, nothing else.
+nonisolated private struct WorkflowRunRecordHeaderStatus: Decodable {
+  let state: String
+}
+
+nonisolated private struct WorkflowRunRecordHeader: Decodable {
+  struct Run: Decodable {
+    let status: WorkflowRunRecordHeaderStatus
+  }
+
+  let version: Int
+  let run: Run
+
+  var isTerminal: Bool { run.status.state != "running" && run.status.state != "needs_attention" }
+}
+
 // MARK: - Store
 
 nonisolated enum WorkflowRunStoreError: Error, Equatable, Sendable {
@@ -467,34 +483,54 @@ nonisolated struct WorkflowRunStore: Sendable {
   // MARK: Restart
 
   /// V1 has no resume: every run left `running` / `needs_attention` on disk becomes
-  /// `interrupted`. Records that cannot be read or decoded are reported and left alone.
+  /// `interrupted`. Only a small header (`version`, `run.status.state`) is read before a run is
+  /// selected, so a record of another version is left alone; a v1 record that cannot be decoded
+  /// or a run directory that fails the containment gate is reported and left untouched.
   func markInterruptedRuns(now: Date) throws -> WorkflowInterruptedRuns {
     let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: runsDirectory.path(percentEncoded: false)) else {
       return WorkflowInterruptedRuns(interrupted: [], unreadable: [])
     }
+    try requireOwnedBase()
     let entries = try fileManager.contentsOfDirectory(
       at: runsDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
     var interrupted: [UUID] = []
     var unreadable: [String] = []
     for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
       guard let runID = UUID(uuidString: entry.lastPathComponent) else { continue }
-      let recordURL = directory(for: runID).appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory)
+      let runDirectory: URL
+      do {
+        runDirectory = try containedRunDirectory(runID: runID)
+      } catch {
+        unreadable.append(AgentProfileLaunchPlanner.pathString(directory(for: runID)))
+        continue
+      }
+      let recordURL = runDirectory.appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory)
       guard fileManager.fileExists(atPath: recordURL.path(percentEncoded: false)) else { continue }
+      let recordPath = recordURL.path(percentEncoded: false)
+      guard let header = try? Self.decodeHeader(at: recordURL) else {
+        unreadable.append(recordPath)
+        continue
+      }
+      guard header.version == WorkflowRunRecord.currentVersion, !header.isTerminal else { continue }
       let record: WorkflowRunRecord
       do {
         record = try Self.decodeRecord(at: recordURL)
-        _ = try containedRunDirectory(runID: runID)
       } catch {
-        unreadable.append(recordURL.path(percentEncoded: false))
+        unreadable.append(recordPath)
         continue
       }
-      guard record.version == WorkflowRunRecord.currentVersion, !record.run.status.isTerminal else { continue }
       try writeRecord(record.interrupted(at: now))
       try appendLog(runID: runID, line: "Run marked interrupted at app launch (no resume in V1).", now: now)
       interrupted.append(runID)
     }
     return WorkflowInterruptedRuns(interrupted: interrupted, unreadable: unreadable)
+  }
+
+  private static func decodeHeader(at url: URL) throws -> WorkflowRunRecordHeader {
+    try requireNotSymbolicLinkStatic(url)
+    let data = try Data(contentsOf: url)
+    return try JSONDecoder().decode(WorkflowRunRecordHeader.self, from: data)
   }
 
   // MARK: Helpers
@@ -510,6 +546,10 @@ nonisolated struct WorkflowRunStore: Sendable {
   }
 
   private func requireNotSymbolicLink(_ url: URL) throws {
+    try Self.requireNotSymbolicLinkStatic(url)
+  }
+
+  private static func requireNotSymbolicLinkStatic(_ url: URL) throws {
     let path = AgentProfileLaunchPlanner.pathString(url)
     if let attributes = try? FileManager.default.attributesOfItem(atPath: path),
       attributes[.type] as? FileAttributeType == .typeSymbolicLink
