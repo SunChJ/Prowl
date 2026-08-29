@@ -34,7 +34,7 @@ say when each is cut:
 | Release | State | Next action |
 | --- | --- | --- |
 | R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
-| R2a | In progress | B1 #740, #726 T0 #739, #733 #741 merged; B2 implemented on `feat/workflow-runner-core-b2` (record [063.007](007-b2-runner-core.md)); B3 next |
+| R2a | In progress | B1 #740, #726 T0 #739, #733 #741 merged; B2 = #743 (review; record [063.007](007-b2-runner-core.md)); B3 next |
 | R2b | Planned | after R2a ships |
 | R3 | Planned | after R2b ships |
 
@@ -192,7 +192,7 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
-- 2026-08-29 — B2 implemented on `feat/workflow-runner-core-b2` after a grill session that
+- 2026-08-29 — B2 implemented on `feat/workflow-runner-core-b2` and opened as #743 after a grill session that
   settled the runner shape (pure reducer + effects, token check in the machine, per-activation
   watchdog streams, `run.json` v1 without tokens, Relaunch for launch roles only, immediate Skip
   consequence, pure binding resolver); the DSL spec was clarified in the same PR. Record:

@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feat/workflow-runner-core-b2` (2026-08-29), opened as a PR against the fork.
+Implemented on `feat/workflow-runner-core-b2` (2026-08-29); PR [#743](https://github.com/onevcat/Prowl/pull/743).
 The decisions below were grilled with onevcat on 2026-08-29 before code (H2, H4, H5, H6, H8,
 H10, H11, H12, H7 each settled on the recommended option); "Delivered", "Verification", and
 "Review" record what landed after four adversarial rounds.
