@@ -252,7 +252,7 @@ dispatch record (the machine ignores events on terminal runs).
   `WorkflowBindingResolverTests`, `WorkflowRunHarnessTests`, plus the untouched
   `HandoffStoreTests` over the moved normalizer.
 - Gates: `make check` (swift-format + SwiftLint strict) clean; `make build-cli`;
-  `make test-cli-unit` (224 tests); `make test-cli-smoke`; `make test-cli-integration` (109
+  `make test-cli-unit` (226 tests); `make test-cli-smoke`; `make test-cli-integration` (109
   tests); `make build-app` (0 warnings in the changed files); full `make test` after each review round (2796 → 2808 → 2816 → 2819 tests, zero failures).
 
 ## Review
