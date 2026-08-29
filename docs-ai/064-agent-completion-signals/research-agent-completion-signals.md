@@ -3,7 +3,12 @@
 > Living document for [064](000-plan.md): which deterministic "turn complete / needs
 > input / session start-end" channels each recognized agent CLI offers, how they can be
 > enabled per launch, what the payload carries, and what is not achievable. Update rows in
-> place when a CLI changes; record the version and verification method per row.
+> place when a CLI changes; record the version and verification method per row. The tier-A
+> versions the managed-hook contract is attested against live in
+> [agent-attestation.json](agent-attestation.json), which generates the line below; the dated
+> re-attestation paragraphs are history.
+
+**Tier-A attestation** (generated from [agent-attestation.json](agent-attestation.json) by `scripts/agent_versions.py --write-matrix`; `make test-scripts` fails when this line drifts): claude 2.1.245 · codex 0.149.1 · copilot 1.0.80 · droid 0.203.0 · qodercli 1.1.29 · pi 0.84.3 · omp 18.0.6 · opencode 1.18.23 — last live sweep 2026-08-26 ([011-s3c-action.md](011-s3c-action.md)).
 
 **S3c re-attestation (2026-08-26):** Pi 0.84.3 · Oh My Pi 18.0.6 · OpenCode 1.18.23 (all upgraded first;
 see [010-s3c-plan.md](010-s3c-plan.md) for the measured lifecycles).
