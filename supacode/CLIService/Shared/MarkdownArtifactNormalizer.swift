@@ -17,23 +17,24 @@ nonisolated public enum MarkdownArtifactNormalizer {
     return text
   }
 
-  /// Heading lines (`#…`) outside fenced code blocks, trimmed. A heading quoted inside a
-  /// fence is code, not structure, so it never satisfies a required section.
+  /// ATX heading lines outside fenced code blocks, trimmed (`## Findings (2)`). A heading
+  /// quoted inside a fence — or indented four spaces, which is code — is not structure and
+  /// never satisfies a required section.
   public static func headings(outsideFences text: String) -> [String] {
     var headings: [String] = []
     var open: Fence?
     for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-      let line = rawLine.trimmingCharacters(in: .whitespaces)
+      let line = String(rawLine)
       if let fence = open {
-        if closes(line, fence) { open = nil }
+        if closes(line.trimmingCharacters(in: .whitespaces), fence) { open = nil }
         continue
       }
-      if let fence = fence(opening: line) {
+      if let fence = fence(opening: line.trimmingCharacters(in: .whitespaces)) {
         open = fence
         continue
       }
-      if line.hasPrefix("#") {
-        headings.append(line)
+      if let heading = atxHeading(line) {
+        headings.append(heading)
       }
     }
     return headings
@@ -49,19 +50,35 @@ nonisolated public enum MarkdownArtifactNormalizer {
     }
   }
 
+  /// The heading text of a CommonMark ATX heading line: up to three spaces of indentation,
+  /// one to six `#`, then a space or the end of the line. Four spaces of indentation is code.
+  static func atxHeading(_ line: String) -> String? {
+    let indentation = line.prefix { $0 == " " }.count
+    guard indentation <= 3 else { return nil }
+    let body = line.dropFirst(indentation)
+    let hashes = body.prefix { $0 == "#" }.count
+    guard (1...6).contains(hashes) else { return nil }
+    let rest = body.dropFirst(hashes)
+    guard rest.isEmpty || rest.first == " " || rest.first == "\t" else { return nil }
+    return body.trimmingCharacters(in: .whitespaces)
+  }
+
   /// A fenced-code delimiter: the fence character and the length of its run (CommonMark: at
   /// least three backticks or tildes; the closer uses the same character, at least as long,
   /// and carries nothing but whitespace after the run).
   private struct Fence: Equatable {
     let character: Character
     let length: Int
+    /// The line carried an info string (```` ```swift ````); a bare run has none.
+    let hasInfoString: Bool
   }
 
   private static func fence(opening line: String) -> Fence? {
     guard let first = line.first, first == "`" || first == "~" else { return nil }
     let length = line.prefix { $0 == first }.count
     guard length >= 3 else { return nil }
-    return Fence(character: first, length: length)
+    let info = line.dropFirst(length)
+    return Fence(character: first, length: length, hasInfoString: !info.allSatisfy(\.isWhitespace))
   }
 
   private static func closes(_ line: String, _ fence: Fence) -> Bool {
@@ -76,13 +93,17 @@ nonisolated public enum MarkdownArtifactNormalizer {
     return closes(line, fence)
   }
 
+  private static func isHeading(_ line: Substring) -> Bool {
+    atxHeading(String(line)) != nil
+  }
+
   /// A reply may put chatter *before* the fence that wraps the document ("Sure, here it is:"
   /// then "```markdown"). When a fence line precedes the first heading, everything up to that
   /// fence is preamble and the fence becomes the opening fence.
   private static func droppingPreambleBeforeOpeningFence(_ text: String) -> String {
-    guard fence(opening: text.firstLine) == nil, !text.hasPrefix("#") else { return text }
+    guard fence(opening: text.firstLine) == nil, !isHeading(Substring(text.firstLine)) else { return text }
     let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-    guard let heading = lines.firstIndex(where: { $0.hasPrefix("# ") || $0.hasPrefix("## ") }),
+    guard let heading = lines.firstIndex(where: isHeading),
       let fenceIndex = lines.firstIndex(where: { fence(opening: String($0)) != nil }), fenceIndex < heading
     else { return text }
     return lines[fenceIndex...].joined(separator: "\n")
@@ -97,33 +118,53 @@ nonisolated public enum MarkdownArtifactNormalizer {
 
   /// Drops chat preamble ahead of the document ("Sure, here's the file: …").
   private static func droppingPreamble(_ text: String) -> String {
-    guard !text.hasPrefix("#") else { return text }
     let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-    guard let start = lines.firstIndex(where: { $0.hasPrefix("# ") || $0.hasPrefix("## ") }) else {
-      return text
-    }
+    guard let first = lines.first, !isHeading(first) else { return text }
+    guard let start = lines.firstIndex(where: isHeading) else { return text }
     return lines[start...].joined(separator: "\n")
   }
 
-  /// Drops a trailing fence line left over after preamble removal. When the reply opened
-  /// with a fence, the *last* line that closes that fence is the wrapper's closer, so any
-  /// chatter after it is also discarded — embedded code blocks inside the document close in
-  /// pairs before it. Without an opening fence only an exact trailing bare fence line is
-  /// removed, so a fence inside a document body is never a cut point.
+  /// Drops the wrapper's closing fence and the chatter after it. With an opening wrapper fence
+  /// the candidates are the bare runs that match it while no inner block opened with an info
+  /// string (```` ```swift ````) is still open. Agents also embed *bare* code blocks, so the cut
+  /// is the last candidate — unless a block with an info string opens after a candidate, which
+  /// is a code block in the trailer: then the last candidate before it closes the wrapper.
+  /// Without an opening fence only an exact trailing bare fence line is removed, so a fence
+  /// inside a document body is never a cut point.
   private static func droppingClosingFence(_ text: String, openingFence: Fence?) -> String {
     var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-    let isCloser: (Substring) -> Bool = { line in
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if let openingFence { return closes(trimmed, openingFence) }
-      return isBareFence(trimmed)
+    guard let openingFence else {
+      if let last = lines.last, isBareFence(last.trimmingCharacters(in: .whitespaces)) {
+        lines.removeLast()
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      return text
     }
-    guard let lastFence = lines.lastIndex(where: isCloser) else { return text }
-    if lastFence == lines.indices.last {
-      lines.removeLast()
-      return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    var depth = 0
+    var candidates: [Int] = []
+    var trailerStart: Int?
+    for (index, rawLine) in lines.enumerated() {
+      let line = rawLine.trimmingCharacters(in: .whitespaces)
+      if closes(line, openingFence) {
+        if depth == 0 {
+          candidates.append(index)
+        } else {
+          depth -= 1
+        }
+      } else if let inner = fence(opening: line) {
+        if inner.hasInfoString {
+          if depth == 0, !candidates.isEmpty, trailerStart == nil {
+            trailerStart = index
+          }
+          depth += 1
+        } else if depth > 0 {
+          depth -= 1
+        }
+      }
     }
-    guard openingFence != nil else { return text }
-    return lines[..<lastFence].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    let cut = trailerStart.map { start in candidates.last { $0 < start } } ?? candidates.last
+    guard let cut else { return text }
+    return lines[..<cut].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
   }
 }
 

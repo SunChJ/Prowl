@@ -64,6 +64,22 @@ final class MarkdownArtifactNormalizerTests: XCTestCase {
     XCTAssertEqual(MarkdownArtifactNormalizer.normalized(mismatched), "# Doc\n~~~\nbye")
   }
 
+  func testHeadingsFollowATXSyntaxAndIndentedCodeIsNotAHeading() {
+    let indented = "# Handoff\n    ## Objective\n    ## Current State\n    ## Next Steps\n"
+    XCTAssertEqual(MarkdownArtifactNormalizer.headings(outsideFences: indented), ["# Handoff"])
+    XCTAssertFalse(MarkdownArtifactNormalizer.hasSections(["## Objective"], in: indented))
+    XCTAssertEqual(MarkdownArtifactNormalizer.headings(outsideFences: "   ## Three spaces\n#nospace\n####### seven\n#\n"), ["## Three spaces", "#"])
+    let wrapped = "Intro\n```markdown\n   ## Objective\ntext\n```\n"
+    XCTAssertEqual(MarkdownArtifactNormalizer.normalized(wrapped), "## Objective\ntext")
+  }
+
+  func testWrapperClosesAtItsFirstMatchingCloserOutsideInnerBlocks() {
+    let reply = "```markdown\n# Handoff\n## Objective\nShip.\n```\nExample command:\n```sh\necho trailer\n```"
+    XCTAssertEqual(MarkdownArtifactNormalizer.normalized(reply), "# Handoff\n## Objective\nShip.")
+    let nested = "```markdown\n# Doc\n```swift\nlet x = 1\n```\n## More\n```\nbye"
+    XCTAssertEqual(MarkdownArtifactNormalizer.normalized(nested), "# Doc\n```swift\nlet x = 1\n```\n## More")
+  }
+
   func testEmptyInputStaysEmpty() {
     XCTAssertEqual(MarkdownArtifactNormalizer.normalized("   \n  "), "")
   }
