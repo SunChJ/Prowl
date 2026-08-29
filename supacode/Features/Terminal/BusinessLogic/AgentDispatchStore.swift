@@ -115,6 +115,9 @@ nonisolated enum AgentDispatchStoreError: Error, Equatable, Sendable {
   case sourceMismatch
   case alreadyCompleted
   case alreadyTerminal
+  /// The surface already holds a pending record; a second one would let two assignments
+  /// race for the same receipt.
+  case surfacePending
 }
 
 typealias AgentDispatchObservationStream = AsyncStream<AgentDispatchObservation>
@@ -189,12 +192,44 @@ final class AgentDispatchStore {
       guard existing == binding else { throw AgentDispatchStoreError.alreadyBound }
       return
     }
+    guard pendingDispatchID(surfaceID: binding.surfaceID) == nil else {
+      throw AgentDispatchStoreError.surfacePending
+    }
     entry.snapshot = AgentDispatchSnapshot(record: entry.snapshot.record, binding: binding)
     entries[dispatchID] = entry
   }
 
   func snapshot(dispatchID: String) -> AgentDispatchSnapshot? {
     entries[dispatchID]?.snapshot
+  }
+
+  /// The one pending record bound to the surface, if any.
+  func pendingSnapshot(surfaceID: UUID) -> AgentDispatchSnapshot? {
+    pendingDispatchID(surfaceID: surfaceID).flatMap { entries[$0]?.snapshot }
+  }
+
+  /// Completes the caller pane's current pending record. Without one, the pane's most
+  /// recently issued record answers instead so an identical retry replays its receipt and
+  /// a conflicting one is rejected exactly as an id-addressed completion would be.
+  func complete(
+    surfaceID: UUID,
+    outcome: DispatchCompletionOutcome,
+    summary: String
+  ) throws -> AgentDispatchMutationResult {
+    guard let dispatchID = pendingDispatchID(surfaceID: surfaceID) ?? latestDispatchID(surfaceID: surfaceID)
+    else { throw AgentDispatchStoreError.notFound }
+    return try complete(dispatchID: dispatchID, outcome: outcome, summary: summary, callerSurfaceID: surfaceID)
+  }
+
+  private func pendingDispatchID(surfaceID: UUID) -> String? {
+    issuanceOrder.first { dispatchID in
+      guard let entry = entries[dispatchID] else { return false }
+      return entry.snapshot.record.state == .pending && entry.snapshot.binding?.surfaceID == surfaceID
+    }
+  }
+
+  private func latestDispatchID(surfaceID: UUID) -> String? {
+    issuanceOrder.last { entries[$0]?.snapshot.binding?.surfaceID == surfaceID }
   }
 
   func complete(

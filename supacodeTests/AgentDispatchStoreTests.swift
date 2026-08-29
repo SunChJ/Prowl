@@ -263,6 +263,62 @@ struct AgentDispatchStoreTests {
     #expect(await waiter.next() == .changed(completed.snapshot))
   }
 
+  @Test func oneSurfaceHoldsAtMostOnePendingRecord() throws {
+    let store = makeStore(ids: ["d1", "d2"])
+    let surfaceID = UUID()
+    let binding = binding(surfaceID: surfaceID)
+    _ = try store.issue()
+    try store.bind(dispatchID: "d1", binding: binding)
+    #expect(store.pendingSnapshot(surfaceID: surfaceID)?.record.id == "d1")
+    #expect(store.pendingSnapshot(surfaceID: UUID()) == nil)
+
+    _ = try store.issue()
+    #expect(throws: AgentDispatchStoreError.surfacePending) {
+      try store.bind(dispatchID: "d2", binding: binding)
+    }
+    #expect(store.pendingSnapshot(surfaceID: surfaceID)?.record.id == "d1")
+    #expect(store.snapshot(dispatchID: "d2")?.binding == nil)
+    // Rebinding the pending record itself stays idempotent.
+    try store.bind(dispatchID: "d1", binding: binding)
+
+    _ = try store.complete(dispatchID: "d1", outcome: .succeeded, summary: "Done", callerSurfaceID: surfaceID)
+    #expect(store.pendingSnapshot(surfaceID: surfaceID) == nil)
+    try store.bind(dispatchID: "d2", binding: binding)
+    #expect(store.pendingSnapshot(surfaceID: surfaceID)?.record.id == "d2")
+  }
+
+  @Test func completionBySurfaceResolvesThePendingRecordThenReplaysTheLatestOne() throws {
+    let store = makeStore(ids: ["d1", "d2"])
+    let surfaceID = UUID()
+    let binding = binding(surfaceID: surfaceID)
+    _ = try store.issue()
+    try store.bind(dispatchID: "d1", binding: binding)
+    #expect(throws: AgentDispatchStoreError.notFound) {
+      try store.complete(surfaceID: UUID(), outcome: .succeeded, summary: "Done")
+    }
+
+    let first = try store.complete(surfaceID: surfaceID, outcome: .succeeded, summary: "Round one")
+    #expect(first.snapshot.record.id == "d1")
+    #expect(!first.replayed)
+    // With no pending record left, a retry replays the pane's latest receipt and a
+    // conflicting retry is still rejected.
+    let replay = try store.complete(surfaceID: surfaceID, outcome: .succeeded, summary: "Round one")
+    #expect(replay.replayed)
+    #expect(throws: AgentDispatchStoreError.alreadyCompleted) {
+      try store.complete(surfaceID: surfaceID, outcome: .failed, summary: "Different")
+    }
+
+    _ = try store.issue()
+    try store.bind(
+      dispatchID: "d2",
+      binding: AgentDispatchBinding(surfaceID: surfaceID, target: Self.target, evidenceEpoch: UUID())
+    )
+    let second = try store.complete(surfaceID: surfaceID, outcome: .failed, summary: "Round two")
+    #expect(second.snapshot.record.id == "d2")
+    #expect(!second.replayed)
+    #expect(store.snapshot(dispatchID: "d1")?.record.state == .completed)
+  }
+
   @Test func storeResetIsAppLifetimeReset() throws {
     let first = makeStore(ids: ["d1"])
     _ = try first.issue()

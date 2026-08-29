@@ -39,7 +39,11 @@ public struct DispatchCompleteInput: Codable, Sendable {
   nonisolated public static let environmentKey = "PROWL_DISPATCH_ID"
   public static let maximumSummaryBytes = 32 * 1_024
 
-  public let dispatchID: String
+  /// The launch-scoped `PROWL_DISPATCH_ID` when the caller still carries one. The app
+  /// resolves the receipt from the caller pane's current pending dispatch, so this value
+  /// is compatibility diagnostics only: a process launched with an older id still
+  /// completes the pane's current record.
+  public let dispatchID: String?
   public let outcome: DispatchCompletionOutcome
   public let summary: String
 
@@ -49,19 +53,57 @@ public struct DispatchCompleteInput: Codable, Sendable {
     case summary
   }
 
-  public init(dispatchID: String, outcome: DispatchCompletionOutcome, summary: String) {
+  public init(dispatchID: String?, outcome: DispatchCompletionOutcome, summary: String) {
     self.dispatchID = dispatchID
     self.outcome = outcome
     self.summary = summary
   }
 
   public var validationErrorMessage: String? {
-    CLIInputTextValidator.validateDispatchID(dispatchID, name: DispatchCompleteInput.environmentKey)
+    dispatchID.flatMap {
+      CLIInputTextValidator.validateDispatchID($0, name: DispatchCompleteInput.environmentKey)
+    }
       ?? CLIInputTextValidator.validate(
         summary,
         name: "--summary",
         maximumBytes: Self.maximumSummaryBytes
       )
+  }
+}
+
+/// `prowl agents dispatch <pane> --prompt -`: a new pending dispatch for an agent that
+/// already runs in an existing pane. The prompt reaches the runtime through the pane's
+/// input path as one bracketed paste followed by Enter, so newlines and tabs survive but
+/// every other control character would be stripped or reinterpreted before delivery.
+public struct DispatchInput: Codable, Sendable, Equatable {
+  public static let maximumPromptUTF8ByteCount = CreateLaunchInput.maximumPromptUTF8ByteCount
+
+  public let pane: String
+  public let prompt: String
+
+  public init(pane: String, prompt: String) {
+    self.pane = pane
+    self.prompt = prompt
+  }
+
+  public var validationErrorMessage: String? {
+    guard !pane.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return "agents dispatch requires a pane handle (pN) or pane UUID."
+    }
+    guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return "The dispatch prompt is empty."
+    }
+    guard prompt.utf8.count <= Self.maximumPromptUTF8ByteCount else {
+      return "The dispatch prompt exceeds the 256 KiB UTF-8 limit."
+    }
+    guard !prompt.unicodeScalars.contains(where: Self.isDisallowedScalar) else {
+      return "The dispatch prompt must not contain control characters other than newlines and tabs."
+    }
+    return nil
+  }
+
+  private static func isDisallowedScalar(_ scalar: Unicode.Scalar) -> Bool {
+    scalar != "\n" && scalar != "\t" && CharacterSet.controlCharacters.contains(scalar)
   }
 }
 

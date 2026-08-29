@@ -581,6 +581,15 @@ nonisolated enum AgentProfileLaunchPlanner {
 
 nonisolated enum AgentDispatchPrompt {
   static let protocolVersion = 1
+  /// Origin marker on text Prowl types into a live agent, shared with `HandoffInjection`.
+  static let injectedPrefix = "[Prowl] "
+
+  /// The text `agents dispatch` types into an existing agent pane: the same prompt and
+  /// protocol block a prompted launch passes through argv, behind the origin marker so the
+  /// agent (and a person reading the transcript) can tell Prowl authored the line.
+  static func renderInjected(userPrompt: String) -> String {
+    injectedPrefix + render(userPrompt: userPrompt)
+  }
 
   static func render(userPrompt: String) -> String {
     """

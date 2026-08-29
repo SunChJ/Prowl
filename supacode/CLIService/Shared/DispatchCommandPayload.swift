@@ -311,6 +311,40 @@ public struct AgentSignalsPayload: Codable, Equatable, Sendable {
   }
 }
 
+/// `agents.dispatch` success: the immutable target snapshot and the new pending record,
+/// shaped like the `create` response so coordinators consume both the same way.
+public struct AgentDispatchCommandPayload: Codable, Equatable, Sendable {
+  public let target: TabTarget
+  public let dispatch: DispatchPendingRecord
+
+  public init(target: TabTarget, dispatch: DispatchPendingRecord) {
+    self.target = target
+    self.dispatch = dispatch
+  }
+}
+
+/// Governed `error.details` for a refused `agents.dispatch`: `record` carries the pane's
+/// current pending dispatch (`DISPATCH_PENDING`); `observation` and `signals` carry the
+/// evidence that made the pane busy or agent-less.
+public struct AgentDispatchErrorDetails: Codable, Equatable, Sendable {
+  public let target: TabTarget
+  public let record: DispatchRecordPayload?
+  public let observation: AgentWaitObservation?
+  public let signals: AgentSignalsPayload?
+
+  public init(
+    target: TabTarget,
+    record: DispatchRecordPayload? = nil,
+    observation: AgentWaitObservation? = nil,
+    signals: AgentSignalsPayload? = nil
+  ) {
+    self.target = target
+    self.record = record
+    self.observation = observation
+    self.signals = signals
+  }
+}
+
 public struct DispatchCompleteCommandPayload: Codable, Equatable, Sendable {
   public let target: TabTarget
   public let receipt: DispatchCompletedRecord
