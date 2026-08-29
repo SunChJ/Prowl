@@ -183,6 +183,35 @@ the `Resources/workflows` staging in the Makefile (ships with the first bundled 
 - No app-side `installedAgents` when the availability probe has not run yet (nil skips the
   warning rather than reporting everything as not installed).
 
+## Review
+
+Adversarial review with a `Pi Reviewer` Profile in a split beside the implementing pane
+(`prowl create pane … --profile "Pi Reviewer" --prompt -` → `agents wait --dispatch`, briefs
+and findings under `/tmp/prowl-b1-review/`), read-only and SwiftPM-only so it could run beside
+the app builds.
+
+- **Round 1 — 7 findings, all real, fixed test-first in `51460efe`.** P0: a duration such as
+  `9223372036854775807h` overflowed `amount * 3600` and trapped the CLI (now
+  `multipliedReportingOverflow` → `timeout_syntax`). P1: `handoff.transition`'s `from`/`to`
+  were free strings (now `WorkflowActionInput.Kind.role`, literal declared roles only). P1:
+  output metadata accumulated monotonically — a later producer without a verdict still let
+  `{{ outputs.x.verdict }}` validate, and outputs first produced inside a loop with `until`
+  stayed visible after a loop that may run zero times (now per-producer tracking with
+  `latestVerdicts`, and `foldSkippableLoopOutputs` after a skippable loop). P2: `steps: []` and
+  `id: 1` passed the parser but not the published schema (`steps_empty`, `strictText`); a tab
+  passed `isSingleLine` (all C0/C1 controls rejected now); the "no enabled profile matches
+  `suggest`" warning had no data (`WorkflowValidationContext.enabledProfiles`, fed by the app);
+  an unreadable source directory listed as empty (discovery throws → `WORKFLOW_FAILED`).
+- **Round 2 — 1 P1 + 4 P2, all real, fixed test-first.** P1: `until` intersected every producer
+  in the loop body although only the body's final delivery is read after an iteration (now the
+  final in-body producer plus the folded pre-loop `latestVerdicts`, which also fixes a later
+  skippable loop reading a skipped loop's historical producer). P2: folding dropped
+  `on_timeout: skip` metadata (`skipOutputs` tracked apart from the output table); blank
+  `name`, agent tokens, and enum values were accepted against the schema's `minLength`
+  (`name_empty`, `agent_token_empty`, `enum_value_empty`); a directory or dangling link named
+  `*.yaml` was listed as `unreadable` (discovery keeps regular files and links to them only).
+- Round 3: pending at the time of writing; recorded below when closed.
+
 ## Open items
 
 - The `Resources/workflows` staging (Makefile + folder reference) ships with the first

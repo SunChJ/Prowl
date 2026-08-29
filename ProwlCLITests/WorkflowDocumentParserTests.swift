@@ -285,5 +285,16 @@ final class WorkflowDocumentParserTests: XCTestCase {
     XCTAssertEqual(WorkflowFixtures.parseCodes(WorkflowFixtures.minimal(extraSteps: "  - id: b\n    notify: \"true\"")), [])
     XCTAssertEqual(WorkflowFixtures.parseCodes(WorkflowFixtures.minimal(extraSteps: "  - id: b\n    notify: Round 1")), [])
   }
+
+  func testUntilAndTimeoutFollowTheSchemaPatternsExactly() {
+    XCTAssertNil(WorkflowDocumentParser.parseDuration(" 10m"))
+    XCTAssertNil(WorkflowDocumentParser.parseDuration("10m "))
+    let paddedTimeout = WorkflowFixtures.minimal(
+      extraSteps: "  - id: b\n    message: author\n    text: hi\n    expect: { timeout: \" 10m\" }")
+    XCTAssertEqual(WorkflowFixtures.parseCodes(paddedTimeout), ["timeout_syntax"])
+    let paddedUntil = WorkflowFixtures.minimal(
+      extraSteps: "  - id: loop\n    repeat: { max: 2, until: \" outputs.f.verdict == clean\" }\n    steps:\n      - id: x\n        notify: hi")
+    XCTAssertEqual(WorkflowFixtures.parseCodes(paddedUntil), ["until_syntax"])
+  }
 }
 

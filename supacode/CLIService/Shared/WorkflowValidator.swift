@@ -67,6 +67,19 @@ nonisolated private enum OutputConsumer {
   case optionalActionInput
 }
 
+/// Where an output is read or skipped: the step's walk ordinal and the loop body it sits in.
+nonisolated private struct OutputUse {
+  let consumer: OutputConsumer
+  let ordinal: Int
+  let loopID: String?
+}
+
+nonisolated private struct SkipRecord {
+  let name: String
+  let use: OutputUse
+  let location: WorkflowSourceLocation?
+}
+
 nonisolated private struct OutputProducer {
   let verdicts: Set<String>?
   /// The `repeat` step whose body holds the producer; nil at the top level.
@@ -88,7 +101,9 @@ nonisolated private final class Walker {
   private var stepIDs: Set<String> = []
   private var launchedRoles: Set<String> = []
   private var outputs: [String: OutputInfo] = [:]
-  private var consumers: [String: [OutputConsumer]] = [:]
+  private var consumers: [String: [OutputUse]] = [:]
+  /// Walk position of the step being checked; 0 before the first step.
+  private var ordinal = 0
   /// Action steps visible to the step being validated: outer sequences first, current last.
   private var actionScopes: [[String: WorkflowActionSchema]] = [[:]]
   private var insideRepeat = false
@@ -96,7 +111,7 @@ nonisolated private final class Walker {
   private var loopSeen = false
   /// `on_timeout: skip` expectations, kept apart from `outputs` so folding a skippable loop
   /// cannot lose them before the consumers are reported.
-  private var skipOutputs: [(name: String, location: WorkflowSourceLocation?)] = []
+  private var skipOutputs: [SkipRecord] = []
 
   init(definition: WorkflowDefinition, context: WorkflowValidationContext) {
     self.definition = definition
@@ -224,6 +239,7 @@ nonisolated private final class Walker {
   // MARK: Steps
 
   private func checkStep(_ step: WorkflowStepDefinition) {
+    ordinal += 1
     if !WorkflowSchema.isSlug(step.id) {
       collector.error("step_id_slug", "Step id '\(step.id)' is not a valid slug.", at: step.location)
     }
@@ -425,7 +441,9 @@ nonisolated private final class Walker {
       collector.error(
         "until_verdict_literal", "'\(value)' is not a declared verdict of output '\(until.output)'.", at: location)
     }
-    consumers[until.output, default: []].append(.until)
+    // `until` reads the output before entry and after every iteration: a skip anywhere in
+    // the loop body feeds it, so it counts as a reader inside that loop.
+    consumers[until.output, default: []].append(OutputUse(consumer: .until, ordinal: ordinal, loopID: loopID))
   }
 
   // MARK: Expect
@@ -450,7 +468,9 @@ nonisolated private final class Walker {
     info.producers.append(OutputProducer(verdicts: verdicts, loopID: currentLoopID))
     info.latestVerdicts = verdicts
     if expect.onTimeout == .skip {
-      skipOutputs.append((name, location))
+      skipOutputs.append(
+        SkipRecord(
+          name: name, use: OutputUse(consumer: .template, ordinal: ordinal, loopID: currentLoopID), location: location))
     }
     outputs[name] = info
   }
@@ -467,9 +487,15 @@ nonisolated private final class Walker {
     }
   }
 
+  /// A skipped delivery ends the run only when a non-optional reader comes after it — later in
+  /// document order, or anywhere in the same loop body, which the next iteration reads again.
   private func reportSkipConsumers() {
-    for (name, location) in skipOutputs {
-      let blocking = (consumers[name] ?? []).contains { $0 != .optionalActionInput }
+    for record in skipOutputs {
+      let (name, skip, location) = (record.name, record.use, record.location)
+      let blocking = (consumers[name] ?? []).contains { use in
+        use.consumer != .optionalActionInput
+          && (use.ordinal > skip.ordinal || (use.loopID != nil && use.loopID == skip.loopID))
+      }
       guard blocking else { continue }
       collector.warning(
         "skip_ends_run",
@@ -531,7 +557,7 @@ nonisolated private final class Walker {
     if parts[2] == "verdict", info.latestVerdicts == nil {
       return false
     }
-    consumers[parts[1], default: []].append(consumer)
+    consumers[parts[1], default: []].append(OutputUse(consumer: consumer, ordinal: ordinal, loopID: currentLoopID))
     return true
   }
 

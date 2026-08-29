@@ -131,6 +131,8 @@ final class WorkflowDiscoveryTests: XCTestCase {
     try FileManager.default.createSymbolicLink(
       at: user.appending(path: "dangling.yaml"), withDestinationURL: elsewhere.appending(path: "missing.yaml"))
 
+    XCTAssertEqual(mkfifo(user.appending(path: "pipe.yaml").path(percentEncoded: false), 0o644), 0)
+
     let files = try WorkflowDiscovery.files(in: user, scope: .user, context: context(.user))
     XCTAssertEqual(files.map(\.url.lastPathComponent), ["link.yaml", "real.yaml"])
     XCTAssertEqual(files.map(\.id), ["linked", "real"])

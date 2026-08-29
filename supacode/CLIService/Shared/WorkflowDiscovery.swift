@@ -89,9 +89,9 @@ nonisolated public enum WorkflowDiscovery {
   /// Regular files and symlinks that resolve to one; directories and dangling links are not
   /// definitions even when named `*.yaml`.
   private static func isRegularFile(_ url: URL, _ fileManager: FileManager) -> Bool {
-    var isDirectory: ObjCBool = false
     let path = url.resolvingSymlinksInPath().path(percentEncoded: false)
-    return fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
+    let type = (try? fileManager.attributesOfItem(atPath: path))?[.type] as? FileAttributeType
+    return type == .typeRegular
   }
 
   /// Parses and validates one file. A file that cannot be read is an `unreadable` error.

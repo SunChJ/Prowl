@@ -311,7 +311,7 @@ nonisolated public enum WorkflowDocumentParser {
     _ text: String, at location: WorkflowSourceLocation?, _ collector: DiagnosticCollector
   ) -> WorkflowUntilCondition? {
     let pattern = /^outputs\.([A-Za-z0-9_.-]+)\.verdict\s*(?:==\s*([^\s\[\]]+)|in\s*\[([^\]]*)\])$/
-    guard let match = text.trimmingCharacters(in: .whitespaces).wholeMatch(of: pattern) else {
+    guard let match = text.wholeMatch(of: pattern) else {
       collector.error(
         "until_syntax",
         "'until' must be 'outputs.<name>.verdict == <value>' or 'outputs.<name>.verdict in [<values>]'.",
@@ -363,7 +363,7 @@ nonisolated public enum WorkflowDocumentParser {
   }
 
   public static func parseDuration(_ text: String) -> Int? {
-    guard let match = text.trimmingCharacters(in: .whitespaces).wholeMatch(of: /^(\d+)\s*([smh])$/),
+    guard let match = text.wholeMatch(of: /^(\d+)\s*([smh])$/),
       let amount = Int(match.1)
     else { return nil }
     let factor =

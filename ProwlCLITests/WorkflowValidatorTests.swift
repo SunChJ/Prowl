@@ -473,5 +473,41 @@ final class WorkflowValidatorTests: XCTestCase {
     XCTAssertEqual(
       WorkflowFixtures.codes(minimal() + "inputs:\n  m: { type: enum, values: [\"\", b] }\n"), ["enum_value_empty"])
   }
+
+  // MARK: - Round 3 review findings
+
+  func testSkipWarningsRespectProducerAndConsumerOrder() {
+    let consumedBefore = """
+        - id: first
+          message: author
+          text: First
+          expect: { output: brief }
+        - id: use
+          notify: "{{ outputs.brief.path }}"
+        - id: second
+          message: author
+          text: Second
+          expect: { output: brief, timeout: 5m, on_timeout: skip }
+      """
+    XCTAssertEqual(WorkflowFixtures.codes(minimal(steps: consumedBefore)), [], "nothing after the skip depends on it")
+    let loopCarried = """
+        - id: seed
+          message: author
+          text: Seed
+          expect: { output: draft, verdict: [go, stop] }
+        - id: loop
+          repeat: { max: 3, until: "outputs.draft.verdict == stop" }
+          steps:
+            - id: use
+              notify: "{{ outputs.draft.path }}"
+            - id: redo
+              message: author
+              text: Redo
+              expect: { output: draft, verdict: [go, stop], timeout: 5m, on_timeout: skip }
+      """
+    XCTAssertEqual(
+      WorkflowFixtures.codes(minimal(steps: loopCarried)), ["skip_ends_run"],
+      "the next iteration and the until check read the skipped output")
+  }
 }
 
