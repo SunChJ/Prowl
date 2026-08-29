@@ -2,9 +2,10 @@
 
 ## Status
 
-In progress on `feat/workflow-runner-core-b2` (2026-08-29). The decisions below were grilled with
-onevcat on 2026-08-29 before code (H2, H4, H5, H6, H8, H10, H11, H12, H7 each settled on the
-recommended option); the "Delivered" section is written when the slice lands.
+Implemented on `feat/workflow-runner-core-b2` (2026-08-29), opened as a PR against the fork.
+The decisions below were grilled with onevcat on 2026-08-29 before code (H2, H4, H5, H6, H8,
+H10, H11, H12, H7 each settled on the recommended option); "Delivered", "Verification", and
+"Review" record what landed after four adversarial rounds.
 
 ## Context
 
@@ -251,8 +252,8 @@ dispatch record (the machine ignores events on terminal runs).
   `WorkflowBindingResolverTests`, `WorkflowRunHarnessTests`, plus the untouched
   `HandoffStoreTests` over the moved normalizer.
 - Gates: `make check` (swift-format + SwiftLint strict) clean; `make build-cli`;
-  `make test-cli-unit` (223 tests); `make test-cli-smoke`; `make test-cli-integration` (109
-  tests); `make build-app` (0 warnings in the changed files); full `make test` after each review round (2796 → 2808 → 2816 tests, zero failures).
+  `make test-cli-unit` (224 tests); `make test-cli-smoke`; `make test-cli-integration` (109
+  tests); `make build-app` (0 warnings in the changed files); full `make test` after each review round (2796 → 2808 → 2816 → 2819 tests, zero failures).
 
 ## Review
 
@@ -312,10 +313,23 @@ SwiftPM-only so it could run beside the app builds; briefs and findings under
   character, at least the opening length, whitespace only after the run); the observer reader
   gave up after three buffer overflows (it re-subscribes while the watchdog runs). Fresh pass
   over the binding resolver, the template renderer, and the harness found nothing at P0–P2.
+- **Round 4 (verification) — round-3 fixes verified; 0 P0, 0 P1, 2 P2, both fixed.** The
+  heading scan treated any trimmed `#` line as a heading (four-space-indented code satisfied a
+  section) and missed a validly indented heading inside a wrapper; and a code block in a
+  reply's trailer kept the wrapper closer and the trailer in the persisted artifact. The
+  normalizer now parses CommonMark ATX headings and closes a wrapper at the last matching bare
+  run before a trailer code block opens — the embedded bare code blocks the handoff tests pin
+  still survive. The loop is closed here: nothing at P0–P2 remains.
 
 ## Open items
 
 - B3 verifies live what B2 cannot (listed above); the bundled `prowl.adversarial-review` and
   the reviewer skill are D2.
-- Watchdog grace values are constructor settings; the Settings › Workflows page (D1) will
-  feed them from `@Shared`.
+- Watchdog grace values (including the 10 s appearance grace) are constructor settings; the
+  Settings › Workflows page (D1) will feed them from `@Shared`.
+- `HandoffStore` still performs ordinary path-based writes under `<root>/.prowl/handoff/`
+  (the pre-existing handoff contract); moving it to descriptor-rooted I/O would close the
+  remaining check-then-use window that `git.context` inherits from it. Recorded as a follow-up
+  for D3, when the handoff actions become the shipped path.
+- B3 must answer `prowl workflow done` only after `.outputPersisted`, cancel a run's watchdog
+  on acceptance, and abandon the dispatch of a `.launched` that arrives after the run ended.
