@@ -198,6 +198,9 @@ Everything lives in `supacode/Domain/Workflow/` (app target) plus three Shared t
   §4 says; it never falls through to the steps after it.
 - `roleBusy` from the bridge (the #733 refusal) is not attention: the step returns to
   `waitingForRole` with the same invocation and token.
+- A delivery is two-phase: `deliver` validates and emits `.persistOutput`; the run advances
+  and the dispatch record completes only on `.outputPersisted`. While `persisting`, a second
+  `done` is `STEP_NOT_EXPECTING`; Skip / Cancel abandon the record as they would a waiting one.
 - After the automatic nudge is spent (or after "Keep waiting"), a later `turn-ended` still earns
   `idle_grace` before the run asks for attention; only an `idle_grace` that expires idle
   escalates. `needs-input` and heuristic `blocked` raise attention but keep watching, so a
@@ -218,7 +221,9 @@ Everything lives in `supacode/Domain/Workflow/` (app target) plus three Shared t
 `launch` → plan the frozen profile with `.prompt`, attach the environment values as child-only
 carriers (like `attachingDispatch`), issue the dispatch when `expectsDelivery`, then `.launched`;
 `runAction` → `WorkflowNativeActionRunner`; `armWatchdog` → one `WorkflowWatchdog` per request,
-`disarmWatchdog` → `cancel()`; `persist` / `persistOutput` / `log` → `WorkflowRunStore`;
+`disarmWatchdog` → `cancel()`; `persist` / `log` → `WorkflowRunStore`; `persistOutput` → `WorkflowRunStore.writeOutput`
+then `.outputPersisted(ordinal)` (or `.outputPersistFailed`), and the CLI `done` response is
+sent only after that event;
 `abandonActivation` / `completeActivation` → the bridge; `cancelRoleWait` → stop the idle wait;
 `finished` → tear down. A `.launched` that arrives after the run ended must abandon its
 dispatch record (the machine ignores events on terminal runs).
@@ -232,7 +237,7 @@ dispatch record (the machine ignores events on terminal runs).
   first full run; the watchdog policy suite caught two real semantics errors on its first run
   (`sawActivity` not reset per heuristic window; a spent nudge escalating straight to
   attention on the next `turn-ended`), both fixed in the policy.
-- App suites (`xcodebuild test`, 132 tests, all passing): `WorkflowLineRendererTests`,
+- App suites (`xcodebuild test`, 144 tests after the review round, all passing): `WorkflowLineRendererTests`,
   `WorkflowTemplateRendererTests`, `WorkflowDeliveryValidatorTests`, `WorkflowRunMachineTests`,
   `WorkflowRunStoreTests`, `WorkflowWatchdogPolicyTests`, `WorkflowWatchdogDriverTests`
   (TestClock), `WorkflowNativeActionsTests` (temp git repositories),
@@ -244,7 +249,32 @@ dispatch record (the machine ignores events on terminal runs).
 
 ## Review
 
-(adversarial rounds recorded below as they complete)
+Adversarial review with the `Pi Reviewer` Profile in a split beside the implementing pane
+(`prowl create pane … --profile "Pi Reviewer" --prompt -` for round 1, `prowl agents dispatch`
+into the same pane for round 2, awaited with `agents wait --dispatch`), read-only and
+SwiftPM-only so it could run beside the app builds; briefs and findings under
+`/tmp/prowl-b2-review/`.
+
+- **Round 1 — 10 findings (1 P0, 6 P1, 3 P2), all accepted and fixed.** P0: `appendLog` and
+  `readRecord` followed a symbolic-link leaf (now `O_NOFOLLOW` + `fstat` on the log, and every
+  leaf the store writes or reads refuses a link). P1: a `roleBusy` refusal re-rendered the same
+  invocation with a *second* token (the `.waiting` activation is reused now); `--skip` was
+  accepted for steps without an `expect` (`skipNotExpecting`); `deliver` advanced before the
+  output was on disk (delivery is two-phase now — `deliver` validates and emits
+  `.persistOutput`, `.outputPersisted` completes the dispatch record and advances,
+  `.outputPersistFailed` raises `persist_failed` with Retry / Cancel; B3 answers the CLI only
+  after persistence); an idle-grace attention cancelled the explicit `expect.timeout` (the
+  policy keeps the timeout deadline alive and the machine re-arms with the *remaining* time
+  of an absolute deadline); native-action paths were check-then-use (the canonical URL is
+  what the action uses, the briefing is read through `O_NOFOLLOW` + regular-file check;
+  `HandoffStore`'s own writes under `.prowl/handoff/` stay on the pre-existing handoff trust
+  model); `run.json` persisted input values (names only now). P2: required sections were
+  matched with `contains` (heading lines outside fences now); enum inputs skipped the
+  rendered-text boundary at start (checked, and the validator rejects multi-line enum values
+  with `enum_value_multiline`); the Skip consequence inside a loop scanned readers that could
+  never run again (position-aware now: later in the iteration, earlier only when another
+  iteration follows, after the loop only when an `until` can exit it). Every fix carries a
+  regression test; the two-phase delivery reshaped the machine tests (`deliverPersisted`).
 
 ## Open items
 
