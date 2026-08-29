@@ -182,7 +182,7 @@ hooks.
 | **S2** | 063-A2, S1 | One atomic paired-dispatch path: every CLI `create tab|pane --profile --prompt` appends the completion protocol and returns `dispatch_id`; cooperative `dispatch-complete --outcome succeeded|failed --summary`; 256-entry non-destructive in-memory receipts; ID-only strict `prowl agents wait --dispatch`; generic `wait --until` with automatic overflow resnapshot and honest heuristic fallback; `agents` current evidence field; `--include-screen`; skill rubric. Route B becomes usable without polling or stale completion. |
 | **S3 wave 1** | S2, research matrix | Launch-scoped hook injection (adapter `signalHooks`, self-check) for tier A of the research matrix (flag/env per launch, live-verified): Claude Code `--settings`, Codex `-c notify=[…]` (native `agent-turn-complete` maps to `turn-ended`; hook trust bypass is never passed), Copilot `--plugin-dir`, Droid `--settings`, Qoder `--settings`, Pi `-e`, OMP `--hook`, OpenCode `OPENCODE_CONFIG_CONTENT`. `agents wait` becomes deterministic for Prowl-launched agents on these runtimes. This is the complete S3 hook scope, delivered as S3a–S3c in [006-s3-wave1-plan.md](006-s3-wave1-plan.md). |
 | **S4** | S1 | Transcript file-watch and OSC producers — layer 2 without hooks. |
-| **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-ended` without `done`, immediate attention on `needs-input`) — ships with 063-D2; later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
+| **S5** | 063 C1 (part), S3/S4 + 063 V2 (rest) | 063's watchdog consumes exact signals (nudge on `turn-ended` without `done`, immediate attention on `needs-input`) — ships with 063-B2 (moved from D2 on 2026-08-29); later: 063 V2 observe mode (`expect.status` + `agents read` / hook `last_assistant_message`) and `on_attention: ask <role>`. Recorded in 063 amendments. |
 
 ### Verification
 
@@ -246,6 +246,11 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-29 (063 B1 kickoff): 063's `expect` activations are records in this entry's
+  dispatch store (`launch` via the S2 prompted-launch path, `message` via #733's re-dispatch),
+  and S5's watchdog part ships with 063-B2 instead of D2. #733 therefore lands before 063-B3.
+  See [063 dsl-spec §5/§10](../063-agent-workflows/dsl-spec.md) and
+  [063.006](../063-agent-workflows/006-b1-definitions.md).
 - Updated 2026-08-29: shipped in v2026.8.29 with 063's R1. Two follow-ups are scheduled as
   slices in the shared [release plan](../063-agent-workflows/release-plan.md): #733
   (`prowl agents dispatch <pane> --prompt -`, one pending dispatch per surface, completion
