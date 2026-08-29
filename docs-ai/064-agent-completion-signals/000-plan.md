@@ -246,6 +246,12 @@ opencode; partial for qodercli/qwen/amp; docs/bundle for the rest). Key conclusi
 
 ## Amendments
 
+- Updated 2026-08-29 (#726 T0): [agent-attestation.json](agent-attestation.json) now records the
+  version each tier-A runtime last passed a live sweep against (all eight from
+  [011-s3c-action.md](011-s3c-action.md)); `make agent-versions` compares the installed binaries
+  against it and warns on newer builds, and the research matrix's tier-A line is generated from
+  the record with `make test-scripts` guarding drift. See
+  [015-t0-version-attestation.md](015-t0-version-attestation.md). T1 stays in R2b.
 - Updated 2026-08-29 (063 B1 kickoff): 063's `expect` activations are records in this entry's
   dispatch store (`launch` via the S2 prompted-launch path, `message` via #733's re-dispatch),
   and S5's watchdog part ships with 063-B2 instead of D2. #733 therefore lands before 063-B3.
