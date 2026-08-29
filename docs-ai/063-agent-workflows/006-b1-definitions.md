@@ -94,14 +94,38 @@ the `Resources/workflows` staging in the Makefile (ships with the first bundled 
 - CLI: `validate` / `schema` executor tests (JSON and text), `list` socket round trip with a
   stubbed handler, contract schema conformance for every payload shape.
 
-## Verification
+## Verification (2026-08-29, all run)
 
-`make check`, `make build-cli`, `make test-cli-unit`, `make test-cli-smoke`,
-`make test-cli-integration`, `make build-app`, the new Swift Testing suites; then the
-end-to-end pass required by the release plan's cadence rules: against an isolated Debug
-instance, drop the §4 example into a scratch user `~/.prowl/workflows/`, run `prowl workflow
-list --json`, `validate` on the example and on a deliberately broken copy, and `schema`,
-driven from the bundled `prowl-cli` skill recipe.
+- Red first: the parser and validator suites were written against the spec and failed on
+  the first run for real reasons (`MappingReader` double-reported a non-mapping document,
+  `notify`/`close` rejected `expect` as an unknown key instead of `expect_not_allowed`, the
+  minimal fixture lacked a trailing newline, catalog ordering put an invalid repo file
+  before the valid user winner, `JSONEncoder` escaped `/`); each fix is pinned by the test
+  that caught it.
+- Gates: `make check` (swift-format, SwiftLint strict, 44 script tests), `make build-cli`,
+  `make test-cli-unit` (194), `make test-cli-smoke`, `make test-cli-integration` (106, four
+  new `workflow` cases: real `prowl` process for `validate`/`schema`, mock socket for `list`),
+  `make build-app`, and the full `make test` (2671 passed, 0 failed) including
+  `WorkflowCommandHandlerTests` (6) and the router test.
+- Live, against an isolated Debug instance of this build (`CFFIXED_USER_HOME` scratch home,
+  own `PROWL_CLI_SOCKET`, a scratch Git repo opened with `prowl open`, the bundled CLI from the
+  copied app; script kept in the session scratchpad as `e2e/b1-live.sh`):
+  `workflow list --json` from outside any pane resolved the focused worktree and listed the
+  repo `demo` as the winner, the user `demo` as shadowed, the user `prowl.mine` and the repo
+  `prowl.adversarial-review` as invalid (reserved id; `skill_not_found` against the real
+  bundle, which ships only `prowl-cli`), and an unparsable `broken.yaml` as `(unparsed)`;
+  `list main` and `list <pane UUID>` resolved the same worktree; `list nope` returned
+  `TARGET_NOT_FOUND`; the bundled CLI's `validate --scope bundle` on the §4 example failed
+  only on the unbundled skill (a `swift build` CLI reports `skill_unchecked` instead, as
+  documented); `validate` on the broken file returned `WORKFLOW_INVALID` with a positioned
+  `yaml_syntax` diagnostic; `schema` printed the definition schema; and `prowl send` of
+  `workflow list --json` into the pane resolved the **caller's own pane** to the worktree
+  without any selector. The instance was ended with SIGKILL — quitting through AppleScript
+  hit a two-minute AppleEvent timeout, which is unrelated to this slice.
+- A crash report that arrived during this verification (`ProwlApp-2026-08-29-112626.ips`)
+  belongs to a different isolated instance: its binary UUID matches the #733 worktree build
+  (`apps/new`), launched before this slice's E2E started. It was handed to that branch for
+  investigation.
 
 ## Delivered
 
