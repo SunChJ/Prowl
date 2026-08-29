@@ -51,6 +51,12 @@ struct WorkflowDeliveryValidatorTests {
     #expect(throws: Never.self) { try validate(tilde, expect: expect).get() }
   }
 
+  @Test func tildeWrappedRepliesPersistWithoutTheWrapper() throws {
+    let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
+    let delivery = try validate("~~~markdown\n## Findings\nx\n## Verdict\ny\n~~~\nchat trailer", expect: expect).get()
+    #expect(delivery.body == "## Findings\nx\n## Verdict\ny\n")
+  }
+
   @Test func missingSectionIsOutputInvalid() {
     let expect = WorkflowExpectation(sections: ["## Findings", "## Verdict"])
     guard case .failure(let error) = validate("## Findings\nnothing", expect: expect) else {

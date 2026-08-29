@@ -175,6 +175,14 @@ struct WorkflowWatchdogPolicyTests {
     #expect(untimed.apply(.deadline(.idleGrace, idle())) == [.emit(.attention(.idleWithoutDelivery)), .stop])
   }
 
+  @Test func armingOnAGonePaneRaisesAttentionAtOnce() {
+    var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: 600, nudgedAlready: false)
+    let gone = WorkflowWatchdogSnapshot(
+      state: "gone", liveChannelCoversTurnEnded: false, liveChannelCoversSessionEnd: false)
+    #expect(policy.apply(.armed(gone)) == [.emit(.attention(.agentGone(.paneClosed))), .stop])
+    #expect(policy.stopped)
+  }
+
   @Test func hardTimeoutFiresRegardlessOfMode() {
     var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: 600, nudgedAlready: false)
     #expect(policy.apply(.armed(exact)) == [.schedule(.timeout, .seconds(600))])

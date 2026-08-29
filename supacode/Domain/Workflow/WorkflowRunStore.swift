@@ -310,7 +310,9 @@ nonisolated struct WorkflowRunStore: Sendable {
   /// that the run directory is physically inside the runs directory (no symlink leaf).
   func ensureLayout(runID: UUID) throws {
     let fileManager = FileManager.default
+    try requireOwnedBase()
     try fileManager.createDirectory(at: runsDirectory, withIntermediateDirectories: true)
+    try requireOwnedBase()
     let ignoreURL = runsDirectory.appending(path: Self.ignoreFileName, directoryHint: .notDirectory)
     if !fileManager.fileExists(atPath: ignoreURL.path(percentEncoded: false)) {
       try "*\n".write(to: ignoreURL, atomically: true, encoding: .utf8)
@@ -327,6 +329,7 @@ nonisolated struct WorkflowRunStore: Sendable {
   /// The run directory after the containment gate (`AgentProfileHomeProvisioner` pattern):
   /// lexical containment, no symlink leaf, canonical parent + leaf inside the canonical base.
   func containedRunDirectory(runID: UUID) throws -> URL {
+    try requireOwnedBase()
     let runDirectory = directory(for: runID)
     let path = AgentProfileLaunchPlanner.pathString(runDirectory)
     guard AgentProfileLaunchPlanner.isContained(runDirectory, in: runsDirectory) else {
@@ -353,7 +356,8 @@ nonisolated struct WorkflowRunStore: Sendable {
   }
 
   func readRecord(runID: UUID) throws -> WorkflowRunRecord {
-    let url = directory(for: runID).appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory)
+    let runDirectory = try containedRunDirectory(runID: runID)
+    let url = runDirectory.appending(path: WorkflowRunRecord.fileName, directoryHint: .notDirectory)
     try requireNotSymbolicLink(url)
     return try Self.decodeRecord(at: url)
   }
@@ -494,6 +498,16 @@ nonisolated struct WorkflowRunStore: Sendable {
   }
 
   // MARK: Helpers
+
+  /// `<root>/.prowl` and `<root>/.prowl/workflow-runs` are Prowl-owned directories: a link in
+  /// their place (which a repository can ship) would move every run artifact elsewhere, so
+  /// both are refused when they are symbolic links. Static links are the threat this closes;
+  /// a concurrent local process swapping directories between check and use is outside the
+  /// model (it already runs as the user).
+  private func requireOwnedBase() throws {
+    try requireNotSymbolicLink(rootURL.appending(path: ".prowl", directoryHint: .isDirectory))
+    try requireNotSymbolicLink(runsDirectory)
+  }
 
   private func requireNotSymbolicLink(_ url: URL) throws {
     let path = AgentProfileLaunchPlanner.pathString(url)

@@ -98,6 +98,12 @@ nonisolated struct WorkflowWatchdogPolicy: Equatable, Sendable {
       mode =
         snapshot.liveChannelCoversTurnEnded
         ? .exact(coversSessionEnd: snapshot.liveChannelCoversSessionEnd) : .heuristic
+      // The arm-time state decides on its own (dsl-spec §10): a pane that is already gone never
+      // produces a later event to wait for.
+      if snapshot.state == "gone" {
+        finish(with: .attention(.agentGone(.paneClosed)), &commands)
+        return commands
+      }
       if let timeout {
         schedule(.timeout, timeout, &commands)
       }

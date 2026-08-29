@@ -417,7 +417,10 @@ nonisolated struct WorkflowRunMachine {
     }
     run.status = .running
     run.updatedAt = now()
+    // The watchdog supervises a *waiting* delivery: an accepted one is no longer its business,
+    // so it is disarmed before the output is even written and queued verdicts are ignored.
     let effects: [WorkflowRunEffect] = [
+      .disarmWatchdog(ordinal: activation.ordinal),
       .log(
         "Step '\(activation.stepID)': output '\(activation.outputName)' accepted "
           + "(invocation \(activation.ordinal)); persisting."),
@@ -461,7 +464,6 @@ nonisolated struct WorkflowRunMachine {
       $0.state = .delivered
       $0.pendingDelivery = nil
     }
-    effects.append(.disarmWatchdog(ordinal: ordinal))
     if let dispatchID = activation.dispatchID {
       let verdictNote = delivery.verdict.map { " with verdict '\($0)'" } ?? ""
       effects.append(
@@ -497,7 +499,12 @@ nonisolated struct WorkflowRunMachine {
     var loopUntil: WorkflowUntilCondition?
     var loopID: String?
     if fromStart {
-      remaining = steps
+      // Nothing after a `repeat` without `until` can run: it ends the run as `max_rounds_reached`.
+      remaining = []
+      for step in steps {
+        remaining.append(step)
+        if case .repeat(_, nil, _) = step.action { break }
+      }
     } else if let loop = run.position.loop, case .repeat(_, let until, let body) = steps[run.position.index].action {
       // Readers later in this iteration always count; readers earlier in the body only when
       // another iteration can follow; steps after the loop only when an `until` can exit it
@@ -976,7 +983,8 @@ nonisolated struct WorkflowRunMachine {
   private mutating func applyWatchdog(
     ordinal: Int, verdict: WorkflowWatchdogVerdict, effects: inout [WorkflowRunEffect]
   ) {
-    guard let activation = run.currentActivation, activation.ordinal == ordinal else { return }
+    guard let activation = run.currentActivation, activation.ordinal == ordinal, activation.state == .waiting
+    else { return }
     switch verdict {
     case .nudge:
       typeNudge(activation, effects: &effects)
@@ -1025,12 +1033,14 @@ nonisolated struct WorkflowRunMachine {
     case .keepWaiting:
       guard let attention, attention.actions.contains(.keepWaiting), let ordinal = attention.ordinal else { return }
       run.status = .running
+      guard !enforceExpiredDeadline(effects: &effects) else { return }
       effects.append(.log("Step '\(attention.stepID)': keep waiting."))
       armWatchdog(ordinal: ordinal, nudgedAlready: true, effects: &effects)
       effects.append(.persist)
     case .nudge:
       guard let attention, attention.actions.contains(.nudge), let activation = run.currentActivation else { return }
       run.status = .running
+      guard !enforceExpiredDeadline(effects: &effects) else { return }
       typeNudge(activation, effects: &effects)
       effects.append(.log("Step '\(attention.stepID)': nudged again by the user."))
       armWatchdog(ordinal: activation.ordinal, nudgedAlready: true, effects: &effects)
@@ -1050,6 +1060,17 @@ nonisolated struct WorkflowRunMachine {
       guard let attention, attention.actions.contains(.relaunch) else { return }
       relaunchCurrentStep(effects: &effects)
     }
+  }
+
+  /// A hard cap that already passed while the run sat in attention is applied now instead
+  /// of being re-armed for another second; true when the timeout policy ran.
+  private mutating func enforceExpiredDeadline(effects: inout [WorkflowRunEffect]) -> Bool {
+    guard let activation = run.currentActivation, activation.state == .waiting, let deadline = activation.deadline,
+      deadline <= now()
+    else { return false }
+    effects.append(.log("Step '\(activation.stepID)': the timeout already passed; applying its policy."))
+    applyWatchdog(ordinal: activation.ordinal, verdict: .timeout, effects: &effects)
+    return true
   }
 
   private mutating func cancel(effects: inout [WorkflowRunEffect]) {

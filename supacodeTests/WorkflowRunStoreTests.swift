@@ -223,6 +223,46 @@ struct WorkflowRunStoreTests {
     #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path(percentEncoded: false)).isEmpty)
   }
 
+  @Test func aLinkedProwlDirectoryOrRunsDirectoryIsRefused() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let elsewhere = root.appending(path: "elsewhere", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: root.appending(path: ".prowl", directoryHint: .isDirectory), withDestinationURL: elsewhere)
+    let store = WorkflowRunStore(rootURL: root)
+    #expect(throws: WorkflowRunStoreError.self) { try store.ensureLayout(runID: UUID()) }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path(percentEncoded: false)).isEmpty)
+
+    let second = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: second) }
+    try FileManager.default.createDirectory(
+      at: second.appending(path: ".prowl", directoryHint: .isDirectory), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: second.appending(path: ".prowl/workflow-runs", directoryHint: .isDirectory), withDestinationURL: elsewhere)
+    let secondStore = WorkflowRunStore(rootURL: second)
+    #expect(throws: WorkflowRunStoreError.self) { try secondStore.ensureLayout(runID: UUID()) }
+    #expect(throws: WorkflowRunStoreError.self) { try secondStore.appendLog(runID: UUID(), line: "x", now: Self.now) }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path(percentEncoded: false)).isEmpty)
+  }
+
+  @Test func aLinkedRunDirectoryIsNeverReadEither() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkflowRunStore(rootURL: root)
+    let genuine = try makeRun(root: root)
+    try store.ensureLayout(runID: genuine.id)
+    try store.writeRecord(WorkflowRunRecord(run: genuine))
+    let external = root.appending(path: "external", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: store.directory(for: genuine.id).appending(path: "run.json"), to: external.appending(path: "run.json"))
+    let linkedID = UUID()
+    try FileManager.default.createSymbolicLink(at: store.directory(for: linkedID), withDestinationURL: external)
+    #expect(throws: WorkflowRunStoreError.self) { try store.readRecord(runID: linkedID) }
+    #expect(try store.markInterruptedRuns(now: Self.now).unreadable.count == 1)
+  }
+
   @Test func symlinkedOutputsDirectoryIsRejected() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }

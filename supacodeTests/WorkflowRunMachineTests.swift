@@ -264,6 +264,7 @@ struct WorkflowRunMachineTests {
     #expect(receipt.output.latestPath == "\(runDir)/outputs/brief.md")
     #expect(
       effects == [
+        .disarmWatchdog(ordinal: 1),
         .log("Step 'brief': output 'brief' accepted (invocation 1); persisting."),
         .persistOutput(name: "brief", ordinal: 1, body: "# Brief\n## Scope\nx\n## Claims\ny\n"),
       ])
@@ -284,7 +285,7 @@ struct WorkflowRunMachineTests {
       ordinal: 1, selector: .token("TOKEN-1"), body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil)
     #expect(machine.apply(.outputPersisted(ordinal: 7)).isEmpty)
     let effects = machine.apply(.outputPersisted(ordinal: 1))
-    #expect(effects.contains(.disarmWatchdog(ordinal: 1)))
+    #expect(!effects.contains(.disarmWatchdog(ordinal: 1)))
     #expect(
       effects.contains(
         .completeActivation(dispatchID: "d1", summary: "Delivered output 'brief' for workflow step 'brief'.")))
@@ -318,6 +319,31 @@ struct WorkflowRunMachineTests {
     #expect(machine.run.invocations[0].activation?.state == .delivered)
     #expect(machine.run.invocations[0].activation?.pendingDelivery == nil)
     #expect(machine.run.outputs["brief"]?.ordinal == 1)
+  }
+
+  @Test func watchdogVerdictsAreIgnoredOnceADeliveryWasAccepted() throws {
+    let skipYAML = Self.handoff.replacing(
+      "expect: { output: brief, sections: [\"## Objective\"] }",
+      with: "expect: { output: brief, timeout: 1m, on_timeout: skip }")
+    var (machine, _) = try makeMachine(
+      skipYAML, roles: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)])
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    let (result, effects) = machine.deliver(
+      ordinal: 1, selector: .token("TOKEN-1"), body: "# Brief\n## Objective\nx", verdict: nil)
+    _ = try result.get()
+    #expect(effects.first == .disarmWatchdog(ordinal: 1))
+    #expect(machine.apply(.watchdog(ordinal: 1, .timeout)).isEmpty)
+    #expect(machine.apply(.watchdog(ordinal: 1, .attention(.agentGone(.sessionEnded)))).isEmpty)
+    #expect(machine.apply(.watchdog(ordinal: 1, .nudge)).isEmpty)
+    #expect(machine.run.status == .running)
+    #expect(machine.run.invocations[0].activation?.state == .persisting)
+    let persisted = machine.apply(.outputPersisted(ordinal: 1))
+    #expect(
+      persisted.contains(
+        .completeActivation(dispatchID: "d1", summary: "Delivered output 'brief' for workflow step 'brief'.")))
+    #expect(!persisted.contains(.disarmWatchdog(ordinal: 1)))
+    #expect(machine.run.phase == .runningAction(stepID: "transition"))
   }
 
   @Test func persistFailureRaisesAttentionAndRetryRePersists() throws {
@@ -601,6 +627,42 @@ struct WorkflowRunMachineTests {
     #expect(machine.run.status == .maxRoundsReached)
   }
 
+  @Test func startTimeSkipIgnoresReadersAfterALoopWithoutUntil() throws {
+    let yaml = """
+      schema: prowl.workflow/v1
+      id: seed-rounds
+      name: Seed rounds
+      roles:
+        author:
+          source: current
+      steps:
+        - id: seed
+          message: author
+          text: "seed"
+          expect: { output: x }
+        - id: rounds
+          repeat:
+            max: 1
+          steps:
+            - id: work
+              message: author
+              text: "work"
+        - id: after
+          notify: "after {{ outputs.x.path }}"
+      """
+    let (machine, _) = try makeMachine(yaml, roles: ["author": .current(Self.authorPane)], skipped: ["seed"])
+    #expect(machine.run.phase == .waitingForRole(role: "author", ordinal: 1))
+    let reading = yaml.replacing("text: \"work\"", with: "text: \"work {{ outputs.x.path }}\"")
+    #expect(throws: WorkflowRunStartError.skipNotAllowed(step: "seed", dependent: "work")) {
+      try makeMachine(reading, roles: ["author": .current(Self.authorPane)], skipped: ["seed"])
+    }
+    let exiting = yaml.replacing("      max: 1\n", with: "      max: 1\n      until: outputs.x.verdict == ok\n")
+      .replacing("expect: { output: x }", with: "expect: { output: x, verdict: [ok, bad] }")
+    #expect(throws: WorkflowRunStartError.skipNotAllowed(step: "seed", dependent: "rounds")) {
+      try makeMachine(exiting, roles: ["author": .current(Self.authorPane)], skipped: ["seed"])
+    }
+  }
+
   @Test func skipOfAnOptionalActionInputContinuesWithoutTheKey() throws {
     var (machine, _) = try makeMachine(
       Self.handoff,
@@ -763,12 +825,35 @@ struct WorkflowRunMachineTests {
       })
     now.advance(seconds: 400)
     _ = machine.apply(.watchdog(ordinal: 1, .attention(.idleWithoutDelivery)))
+    // The deadline (start + 630 s) has passed: Nudge applies the timeout policy instead of
+    // buying another window.
     let nudged = machine.apply(.user(.nudge))
+    #expect(!nudged.contains { if case .armWatchdog = $0 { return true } else { return false } })
+    #expect(!nudged.contains { if case .typeLine = $0 { return true } else { return false } })
+    #expect(machine.run.status.attention?.reason == .timeout)
+  }
+
+  @Test func anExpiredDeadlineOnKeepWaitingAppliesTheTimeoutPolicy() throws {
+    let skipYAML = Self.handoff.replacing(
+      "expect: { output: brief, sections: [\"## Objective\"] }",
+      with: "expect: { output: brief, timeout: 1m, on_timeout: skip }")
+    let now = NowBox(Self.start)
+    var (machine, _) = try makeMachine(
+      skipYAML, roles: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)],
+      now: now)
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
+    _ = machine.apply(.watchdog(ordinal: 1, .attention(.idleWithoutDelivery)))
+    now.advance(seconds: 61)
+    let effects = machine.apply(.user(.keepWaiting))
     #expect(
-      nudged.contains {
-        if case .armWatchdog(let request) = $0 { return request.timeoutSeconds == 1 }
-        return false
-      })
+      effects.contains(
+        .abandonActivation(dispatchID: "d1", reason: "Workflow run \(Self.runID.uuidString): step 'brief' skipped.")))
+    #expect(!effects.contains { if case .armWatchdog = $0 { return true } else { return false } })
+    #expect(machine.run.phase == .runningAction(stepID: "transition"))
+    #expect(
+      machine.deliver(ordinal: 1, selector: .token("TOKEN-1"), body: "# B\n## Objective", verdict: nil).result
+        == .failure(.stepNotExpecting))
   }
 
   @Test func userNudgeTypesAgainAndReArmsWithTheNudgeSpent() throws {

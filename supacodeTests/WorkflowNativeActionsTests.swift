@@ -168,6 +168,21 @@ struct WorkflowNativeActionsTests {
     }
   }
 
+  @Test func briefingSectionsInsideFencesAreNotAccepted() async throws {
+    let root = try makeRepo()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fencedURL = root.appending(path: "fenced.md")
+    try "# Handoff\n```text\n## Objective\n## Current State\n## Next Steps\n```\n".write(
+      to: fencedURL, atomically: true, encoding: .utf8)
+    #expect(HandoffStore.validatedBriefing(from: try String(contentsOf: fencedURL, encoding: .utf8)) == nil)
+    await #expect(throws: WorkflowActionError.invalidBriefing(path: fencedURL.path(percentEncoded: false))) {
+      try await WorkflowNativeActionRunner().execute(
+        actionID: "handoff.checkpoint", inputs: ["briefing": fencedURL.path(percentEncoded: false)],
+        context: context(root: root))
+    }
+    #expect(!HandoffStore(rootURL: root).hasCurrentArtifact)
+  }
+
   @Test func checkpointKeepsAnEarlierBriefingWithoutANewOne() async throws {
     let root = try makeRepo()
     defer { try? FileManager.default.removeItem(at: root) }

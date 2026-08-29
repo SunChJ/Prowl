@@ -195,7 +195,7 @@ nonisolated struct HandoffStore: Sendable {
   static func validatedBriefing(from text: String) -> String? {
     let text = MarkdownArtifactNormalizer.normalized(text)
     let requiredSections = ["## Objective", "## Current State", "## Next Steps"]
-    guard !text.isEmpty, requiredSections.allSatisfy(text.contains) else { return nil }
+    guard !text.isEmpty, MarkdownArtifactNormalizer.hasSections(requiredSections, in: text) else { return nil }
     return text + "\n"
   }
 

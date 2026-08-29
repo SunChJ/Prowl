@@ -150,7 +150,12 @@ nonisolated struct WorkflowNativeActionRunner: WorkflowActionExecuting {
   /// The handoff context generator: writes `<root>/.prowl/handoff/context.md` and appends one
   /// line to the handoff log; `root` defaults to the worktree and must stay inside it.
   private func gitContext(inputs: [String: String], context: WorkflowActionContext) async throws -> [String: String] {
-    let root = try containedPath(inputs["root"], context: context) ?? context.rootURL
+    let root = try containedPath(inputs["root"], context: context) ?? context.rootURL.resolvingSymlinksInPath()
+    // The handoff store works on paths; re-walk the root without following links right before
+    // it starts so a link planted after the containment check is refused (the residual window
+    // inside the store's own writes stays on the pre-existing handoff trust model).
+    let rootDescriptor = try Self.openContainedDirectory(root, root: context.rootURL.resolvingSymlinksInPath())
+    _ = Darwin.close(rootDescriptor)
     let store = HandoffStore(rootURL: root)
     do {
       let save = try await Task.detached {
@@ -176,7 +181,7 @@ nonisolated struct WorkflowNativeActionRunner: WorkflowActionExecuting {
   ) throws -> HandoffPreparedBriefing {
     guard let path else { return .contextOnly }
     guard let url = try containedPath(path, context: context) else { return .contextOnly }
-    let text = try Self.readRegularFile(url, reportedPath: path)
+    let text = try Self.readRegularFile(url, root: context.rootURL.resolvingSymlinksInPath(), reportedPath: path)
     do {
       return try coordinator.collectBriefing(.inline(text))
     } catch {
@@ -198,10 +203,35 @@ nonisolated struct WorkflowNativeActionRunner: WorkflowActionExecuting {
     return canonical
   }
 
-  /// Reads a briefing through an `O_NOFOLLOW` descriptor and requires a regular file, so a
-  /// link planted at the leaf between the containment check and the read is refused.
-  private static func readRegularFile(_ url: URL, reportedPath: String) throws -> String {
-    let descriptor = Darwin.open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW)
+  /// Opens `directory` (a canonical path inside `root`) by walking every component from the
+  /// root with `O_NOFOLLOW | O_DIRECTORY`, so a component swapped for a link after the
+  /// containment check is refused rather than followed. Returns an owned descriptor.
+  private static func openContainedDirectory(_ directory: URL, root: URL) throws -> Int32 {
+    let rootPath = AgentProfileLaunchPlanner.pathString(root)
+    var descriptor = Darwin.open(rootPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+    guard descriptor >= 0 else { throw WorkflowActionError.unsafePath(rootPath) }
+    let rootComponents = root.standardizedFileURL.pathComponents
+    let components = directory.standardizedFileURL.pathComponents
+    guard components.count >= rootComponents.count, Array(components.prefix(rootComponents.count)) == rootComponents
+    else {
+      _ = Darwin.close(descriptor)
+      throw WorkflowActionError.unsafePath(AgentProfileLaunchPlanner.pathString(directory))
+    }
+    for component in components.dropFirst(rootComponents.count) {
+      let next = openat(descriptor, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+      _ = Darwin.close(descriptor)
+      guard next >= 0 else { throw WorkflowActionError.unsafePath(AgentProfileLaunchPlanner.pathString(directory)) }
+      descriptor = next
+    }
+    return descriptor
+  }
+
+  /// Reads a briefing by walking its directory from the worktree root without following links
+  /// and opening the leaf with `O_NOFOLLOW`; requires a regular file.
+  private static func readRegularFile(_ url: URL, root: URL, reportedPath: String) throws -> String {
+    let directoryDescriptor = try openContainedDirectory(url.deletingLastPathComponent(), root: root)
+    let descriptor = openat(directoryDescriptor, url.lastPathComponent, O_RDONLY | O_NOFOLLOW)
+    _ = Darwin.close(directoryDescriptor)
     guard descriptor >= 0 else {
       if errno == ELOOP { throw WorkflowActionError.unsafePath(reportedPath) }
       throw WorkflowActionError.unreadableBriefing(path: reportedPath)
