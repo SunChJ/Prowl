@@ -7,32 +7,7 @@ final class AgentWaitCommandHandler: CommandHandler {
       String
     ) -> Result<AgentDispatchObservationStream, AgentDispatchStoreError>
   typealias ObserveCondition = @MainActor (UUID) -> AgentObservationStream
-  struct ConditionSnapshot: Sendable {
-    let agent: ActiveAgentEntry?
-    /// Active terminal evidence for idle, blocked, and exit conditions.
-    let signal: AgentSignal?
-    /// Latest current-epoch signal used only to detect a post-baseline change.
-    let changedSignal: AgentSignal?
-    let revision: UInt64
-    let isLive: Bool
-    let signals: AgentSignalsPayload
-
-    init(
-      agent: ActiveAgentEntry?,
-      signal: AgentSignal?,
-      changedSignal: AgentSignal? = nil,
-      revision: UInt64,
-      isLive: Bool,
-      signals: AgentSignalsPayload
-    ) {
-      self.agent = agent
-      self.signal = signal
-      self.changedSignal = changedSignal ?? signal
-      self.revision = revision
-      self.isLive = isLive
-      self.signals = signals
-    }
-  }
+  typealias ConditionSnapshot = AgentConditionSnapshot
 
   nonisolated private enum DispatchOutcome: Sendable {
     case terminal(AgentDispatchSnapshot)
@@ -326,38 +301,11 @@ final class AgentWaitCommandHandler: CommandHandler {
     }
   }
 
-  private struct ConditionBaseline {
-    let revision: UInt64
-    let changedSignal: AgentSignal?
-    /// Terminal evidence that already existed when the wait was armed; it satisfies `idle` or
-    /// `blocked` only with detector corroboration, so a stale level cannot end a fresh wait.
-    let terminalSignal: AgentSignal?
-    let state: String
-  }
+  private typealias ConditionBaseline = AgentConditionEvidence.Baseline
 
   private enum AgentAppearance {
     case appeared(ConditionSnapshot, elapsedMilliseconds: Int)
     case failed(CommandResponse)
-  }
-
-  /// Tracks how long a heuristic candidate state has been unchanged; `auto` accepts it only
-  /// after two seconds so a transient screen never resolves a wait.
-  private struct HeuristicStabilizer {
-    private var state: String?
-    private var sinceMilliseconds = 0
-
-    mutating func observe(candidate: String?, elapsedMilliseconds: Int) -> Bool {
-      guard let candidate else {
-        state = nil
-        return false
-      }
-      if state != candidate {
-        state = candidate
-        sinceMilliseconds = elapsedMilliseconds
-        return false
-      }
-      return elapsedMilliseconds - sinceMilliseconds >= 2_000
-    }
   }
 
   private func waitForCondition(_ input: AgentWaitInput) async -> CommandResponse {
@@ -404,12 +352,7 @@ final class AgentWaitCommandHandler: CommandHandler {
         elapsedMilliseconds = waited
       }
     }
-    let baseline = ConditionBaseline(
-      revision: initial.revision,
-      changedSignal: initial.changedSignal,
-      terminalSignal: initial.signal,
-      state: normalizedState(initial)
-    )
+    let baseline = ConditionBaseline(snapshot: initial)
     let observationPump = AgentWaitObservationPump()
     observationPump.start(surfaceID: surfaceID, observe: observeCondition)
     defer { observationPump.cancel() }
@@ -440,7 +383,7 @@ final class AgentWaitCommandHandler: CommandHandler {
   ) async -> CommandResponse {
     let minimumConfidence = input.minimumConfidence ?? .auto
     var elapsedMilliseconds = startMilliseconds
-    var stabilizer = HeuristicStabilizer()
+    var stabilizer = AgentConditionEvidence.HeuristicStabilizer()
     while elapsedMilliseconds <= timeoutMilliseconds {
       if Task.isCancelled {
         return failure(code: CLIErrorCode.timeout, message: "The wait was cancelled.")
@@ -465,8 +408,9 @@ final class AgentWaitCommandHandler: CommandHandler {
       )
       if observation == nil {
         let candidate =
-          allowsHeuristic(minimumConfidence, condition: condition, snapshot: snapshot)
-          && heuristicMatches(condition: condition, snapshot: snapshot, normalizedState: state, baseline: baseline)
+          AgentConditionEvidence.allowsHeuristic(minimumConfidence, condition: condition, snapshot: snapshot)
+          && AgentConditionEvidence.heuristicMatches(
+            condition: condition, snapshot: snapshot, normalizedState: state, baseline: baseline)
         if stabilizer.observe(candidate: candidate ? state : nil, elapsedMilliseconds: elapsedMilliseconds) {
           observation = heuristicObservation(snapshot, state: state)
         }
@@ -560,9 +504,14 @@ final class AgentWaitCommandHandler: CommandHandler {
     baseline: ConditionBaseline,
     minimumConfidence: AgentWaitMinimumConfidence
   ) -> AgentWaitObservation? {
-    let signal = condition == .changed ? snapshot.changedSignal : snapshot.signal
-    guard let signal,
-      accepts(signal.confidence, minimum: minimumConfidence)
+    guard
+      let signal = AgentConditionEvidence.exactMatch(
+        condition: condition,
+        snapshot: snapshot,
+        normalizedState: normalizedState,
+        baseline: baseline,
+        minimumConfidence: minimumConfidence
+      )
     else {
       if condition == .exit, !snapshot.isLive {
         return AgentWaitObservation(
@@ -576,18 +525,6 @@ final class AgentWaitCommandHandler: CommandHandler {
       }
       return nil
     }
-    let isPreArmLevel = condition != .changed && signal == baseline.terminalSignal
-    let matches =
-      switch condition {
-      case .idle:
-        signal.event == .turnEnded && (!isPreArmLevel || detectorReports(.idle, normalizedState: normalizedState))
-      case .blocked:
-        signal.event == .needsInput
-          && (!isPreArmLevel || detectorReports(.blocked, normalizedState: normalizedState))
-      case .changed: snapshot.revision > baseline.revision && signal != baseline.changedSignal
-      case .exit: signal.event == .sessionEnd
-      }
-    guard matches else { return nil }
     return AgentWaitObservation(
       status: status(for: snapshot.agent, fallback: condition == .blocked ? .blocked : .done),
       rawState: snapshot.agent?.rawState.rawValue ?? "gone",
@@ -598,89 +535,12 @@ final class AgentWaitCommandHandler: CommandHandler {
     )
   }
 
-  /// Whether the screen detector currently reports the requested `idle` or `blocked` condition.
-  private func detectorReports(_ condition: AgentWaitCondition, normalizedState: String) -> Bool {
-    switch condition {
-    case .idle:
-      normalizedState == AgentsCommandStatus.idle.rawValue || normalizedState == AgentsCommandStatus.done.rawValue
-    case .blocked:
-      normalizedState == AgentsCommandStatus.blocked.rawValue
-    case .changed, .exit:
-      false
-    }
-  }
-  private func accepts(
-    _ confidence: AgentSignal.Confidence,
-    minimum: AgentWaitMinimumConfidence
-  ) -> Bool {
-    switch minimum {
-    case .auto, .high: confidence == .exact || confidence == .high
-    case .exact: confidence == .exact
-    case .heuristic: true
-    }
-  }
-
-  /// Whether `auto` may fall back to the stabilized screen detector. A covering `verified_live`
-  /// channel reports the next edge itself (`changed`) and its own `session-end` (`exit`), so
-  /// those never fall back; a channel that cannot report `session-end` (Codex's notifier,
-  /// OpenCode's relay) leaves `exit` to the detector, the only exit evidence once `/quit` has
-  /// returned the shell on a still-live surface. For `idle` and `blocked` the channel is
-  /// authoritative while it holds
-  /// any terminal level: the condition's own event resolves through the exact path, and an
-  /// opposite event means the runtime disagrees with the screen, which a stabilized detector
-  /// view must not override. Only a channel with no terminal level yet — a freshly launched,
-  /// unprompted Profile that has reported `session-start` alone — leaves the current state to
-  /// the detector.
-  private func allowsHeuristic(
-    _ minimum: AgentWaitMinimumConfidence,
-    condition: AgentWaitCondition,
-    snapshot: ConditionSnapshot
-  ) -> Bool {
-    switch minimum {
-    case .exact, .high:
-      return false
-    case .heuristic:
-      return true
-    case .auto:
-      let coveredEvent: AgentSignalEvent =
-        switch condition {
-        case .idle: .turnEnded
-        case .blocked: .needsInput
-        case .exit: .sessionEnd
-        case .changed: .progress
-        }
-      let liveChannelCovers = snapshot.signals.channels.contains {
-        $0.state == .verifiedLive && (condition == .changed || $0.events.contains(coveredEvent))
-      }
-      guard liveChannelCovers else { return true }
-      switch condition {
-      case .changed, .exit:
-        return false
-      case .idle, .blocked:
-        return snapshot.signal == nil
-      }
-    }
-  }
-
-  private func heuristicMatches(
-    condition: AgentWaitCondition,
-    snapshot: ConditionSnapshot,
-    normalizedState: String,
-    baseline: ConditionBaseline
-  ) -> Bool {
-    switch condition {
-    case .idle, .blocked: detectorReports(condition, normalizedState: normalizedState)
-    case .changed: snapshot.revision > baseline.revision && normalizedState != baseline.state
-    case .exit: !snapshot.isLive || snapshot.agent == nil
-    }
-  }
   private func normalizedState(_ snapshot: ConditionSnapshot) -> String {
-    guard snapshot.isLive else { return "gone" }
-    return snapshot.agent.map { status(for: $0, fallback: .idle).rawValue } ?? "absent"
+    AgentConditionEvidence.normalizedState(snapshot)
   }
 
   private func status(for agent: ActiveAgentEntry?, fallback: AgentsCommandStatus) -> AgentsCommandStatus {
-    agent.flatMap { AgentsCommandStatus(rawValue: $0.displayState.rawValue) } ?? fallback
+    AgentConditionEvidence.status(for: agent, fallback: fallback)
   }
 
   private func heuristicObservation(_ snapshot: ConditionSnapshot, state: String) -> AgentWaitObservation? {

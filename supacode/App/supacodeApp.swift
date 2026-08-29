@@ -755,14 +755,13 @@ struct SupacodeApp: App {
     )
     let dispatchCompleteHandler = AgentDispatchCompleteCommandHandler(
       resolveCaller: resolveAgentSignalCaller,
-      complete: { dispatchID, outcome, summary, surfaceID in
+      complete: { surfaceID, outcome, summary in
         do {
           return .success(
             try terminalManager.completeAgentDispatch(
-              dispatchID: dispatchID,
+              surfaceID: surfaceID,
               outcome: outcome,
-              summary: summary,
-              callerSurfaceID: surfaceID
+              summary: summary
             ))
         } catch let error as AgentDispatchStoreError {
           return .failure(error)
@@ -914,6 +913,24 @@ struct SupacodeApp: App {
       }
       return resolver.resolveLifecycleTarget(selector)
     }
+    let agentConditionSnapshot: @MainActor (TabResolvedTarget) -> AgentConditionSnapshot = { target in
+      guard let surfaceID = UUID(uuidString: target.paneID) else {
+        return .init(agent: nil, signal: nil, revision: 0, isLive: false, signals: .empty)
+      }
+      let observed = terminalManager.agentObservationSnapshot(surfaceID: surfaceID)
+      let agent = appStore.state.repositories.activeAgents.entries.first {
+        $0.surfaceID == surfaceID
+      }
+      let signalEvidence = terminalManager.currentAgentSignalEvidence(surfaceID: surfaceID)
+      return .init(
+        agent: agent,
+        signal: signalEvidence.activeTerminal,
+        changedSignal: signalEvidence.latest,
+        revision: observed?.revision ?? 0,
+        isLive: terminalManager.isSurfaceLive(surfaceID),
+        signals: terminalManager.agentSignalsPayload(surfaceID: surfaceID)
+      )
+    }
     let agentWaitHandler = AgentWaitCommandHandler(
       observeDispatch: { dispatchID in
         do {
@@ -930,24 +947,7 @@ struct SupacodeApp: App {
       resolveConditionTarget: { pane in
         resolveTabTarget(.pane(pane))
       },
-      conditionSnapshot: { target in
-        guard let surfaceID = UUID(uuidString: target.paneID) else {
-          return .init(agent: nil, signal: nil, revision: 0, isLive: false, signals: .empty)
-        }
-        let observed = terminalManager.agentObservationSnapshot(surfaceID: surfaceID)
-        let agent = appStore.state.repositories.activeAgents.entries.first {
-          $0.surfaceID == surfaceID
-        }
-        let signalEvidence = terminalManager.currentAgentSignalEvidence(surfaceID: surfaceID)
-        return .init(
-          agent: agent,
-          signal: signalEvidence.activeTerminal,
-          changedSignal: signalEvidence.latest,
-          revision: observed?.revision ?? 0,
-          isLive: terminalManager.isSurfaceLive(surfaceID),
-          signals: terminalManager.agentSignalsPayload(surfaceID: surfaceID)
-        )
-      },
+      conditionSnapshot: agentConditionSnapshot,
       signalsProvider: { target in
         guard let surfaceID = UUID(uuidString: target.pane.id) else { return .empty }
         return terminalManager.agentSignalsPayload(surfaceID: surfaceID)
@@ -960,6 +960,37 @@ struct SupacodeApp: App {
           return nil
         }
         return surface.readActiveContentsForCLI()
+      }
+    )
+    let dispatchHandler = AgentDispatchCommandHandler(
+      resolveTarget: { pane in
+        resolveTabTarget(.pane(pane))
+      },
+      pendingDispatch: { target in
+        UUID(uuidString: target.paneID).flatMap { terminalManager.pendingAgentDispatchSnapshot(surfaceID: $0) }
+      },
+      conditionSnapshot: agentConditionSnapshot,
+      issueDispatch: { target in
+        do {
+          return .success(try terminalManager.issueAgentDispatch(boundTo: target))
+        } catch let error as AgentDispatchStoreError {
+          return .failure(error)
+        } catch {
+          return .failure(.bindingMissing)
+        }
+      },
+      deliverPrompt: { target, text in
+        // The same input path as `prowl send`: one committed-text paste, then Enter.
+        guard let surfaceID = UUID(uuidString: target.paneID),
+          let state = terminalManager.stateIfExists(for: target.worktreeID),
+          state.insertCommittedText(text, in: surfaceID)
+        else {
+          return false
+        }
+        return state.submitLine(in: surfaceID)
+      },
+      cancelDispatch: { dispatchID in
+        terminalManager.cancelAgentDispatchIssuance(dispatchID: dispatchID)
       }
     )
     let createTab: TabCommandHandler.CreateTabProvider = { target, path in
@@ -1163,6 +1194,7 @@ struct SupacodeApp: App {
       agentsReadHandler: agentReadHandler,
       agentsSignalHandler: agentSignalHandler,
       agentsHookHandler: agentHookHandler,
+      agentsDispatchHandler: dispatchHandler,
       agentsDispatchCompleteHandler: dispatchCompleteHandler,
       agentsDispatchAbandonHandler: dispatchAbandonHandler,
       agentsWaitHandler: agentWaitHandler,

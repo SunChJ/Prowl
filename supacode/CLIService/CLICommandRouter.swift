@@ -11,6 +11,7 @@ final class CLICommandRouter {
   private let agentsReadHandler: any CommandHandler
   private let agentsSignalHandler: any CommandHandler
   private let agentsHookHandler: any CommandHandler
+  private let agentsDispatchHandler: any CommandHandler
   private let agentsDispatchCompleteHandler: any CommandHandler
   private let agentsDispatchAbandonHandler: any CommandHandler
   private let agentsWaitHandler: any CommandHandler
@@ -32,6 +33,7 @@ final class CLICommandRouter {
     agentsReadHandler: any CommandHandler = StubCommandHandler(command: "agents.read"),
     agentsSignalHandler: any CommandHandler = StubCommandHandler(command: "agents.signal"),
     agentsHookHandler: any CommandHandler = StubCommandHandler(command: "agents._hook"),
+    agentsDispatchHandler: any CommandHandler = StubCommandHandler(command: "agents.dispatch"),
     agentsDispatchCompleteHandler: any CommandHandler = StubCommandHandler(command: "agents.dispatch-complete"),
     agentsDispatchAbandonHandler: any CommandHandler = StubCommandHandler(command: "agents.dispatch-abandon"),
     agentsWaitHandler: any CommandHandler = StubCommandHandler(command: "agents.wait"),
@@ -52,6 +54,7 @@ final class CLICommandRouter {
     self.agentsReadHandler = agentsReadHandler
     self.agentsSignalHandler = agentsSignalHandler
     self.agentsHookHandler = agentsHookHandler
+    self.agentsDispatchHandler = agentsDispatchHandler
     self.agentsDispatchCompleteHandler = agentsDispatchCompleteHandler
     self.agentsDispatchAbandonHandler = agentsDispatchAbandonHandler
     self.agentsWaitHandler = agentsWaitHandler
@@ -81,6 +84,7 @@ final class CLICommandRouter {
     case .agentsRead: handler = agentsReadHandler
     case .agentsSignal: handler = agentsSignalHandler
     case .agentsHook: handler = agentsHookHandler
+    case .agentsDispatch: handler = agentsDispatchHandler
     case .agentsDispatchComplete: handler = agentsDispatchCompleteHandler
     case .agentsDispatchAbandon: handler = agentsDispatchAbandonHandler
     case .agentsWait: handler = agentsWaitHandler
