@@ -295,6 +295,11 @@ final class WorkflowDocumentParserTests: XCTestCase {
     let paddedUntil = WorkflowFixtures.minimal(
       extraSteps: "  - id: loop\n    repeat: { max: 2, until: \" outputs.f.verdict == clean\" }\n    steps:\n      - id: x\n        notify: hi")
     XCTAssertEqual(WorkflowFixtures.parseCodes(paddedUntil), ["until_syntax"])
+    for until in ["outputs.Brief.verdict == clean", "outputs.brief.verdict == Clean", "outputs.a.b.verdict == x"] {
+      let yaml = WorkflowFixtures.minimal(
+        extraSteps: "  - id: loop\n    repeat: { max: 2, until: \"\(until)\" }\n    steps:\n      - id: x\n        notify: hi")
+      XCTAssertEqual(WorkflowFixtures.parseCodes(yaml), ["until_syntax"], until)
+    }
   }
 }
 

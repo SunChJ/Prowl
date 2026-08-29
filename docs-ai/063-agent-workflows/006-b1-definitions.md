@@ -210,7 +210,16 @@ the app builds.
   `name`, agent tokens, and enum values were accepted against the schema's `minLength`
   (`name_empty`, `agent_token_empty`, `enum_value_empty`); a directory or dangling link named
   `*.yaml` was listed as `unreadable` (discovery keeps regular files and links to them only).
-- Round 3: pending at the time of writing; recorded below when closed.
+- **Round 3 — 3 P2, all real, fixed test-first in `90bd561b`.** `skip_ends_run` ignored
+  reader order (now `OutputUse{ordinal, loopID}`: a reader after the skip, or anywhere in the
+  same loop body including the loop's `until`, blocks; an earlier reader does not); a FIFO
+  named `*.yaml` passed the regular-file check (`FileAttributeType.typeRegular` after
+  resolving links); `until`/`timeout` trimmed surrounding whitespace the schema rejects.
+- **Round 4 — 1 P2 (grammar only), fixed test-first.** `parseUntil` accepted non-slug output
+  names and `==` values that the schema's `until` pattern rejects; the validator caught them
+  semantically (`until_output` / `until_verdict_literal`), so behavior was safe but the
+  parser and schema grammars differed. The parser now uses the schema's slug tokens. Nothing
+  at P0–P1 remained after round 2; the loop is closed here.
 
 ## Open items
 

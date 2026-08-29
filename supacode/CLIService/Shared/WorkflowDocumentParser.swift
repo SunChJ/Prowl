@@ -310,7 +310,9 @@ nonisolated public enum WorkflowDocumentParser {
   private static func parseUntil(
     _ text: String, at location: WorkflowSourceLocation?, _ collector: DiagnosticCollector
   ) -> WorkflowUntilCondition? {
-    let pattern = /^outputs\.([A-Za-z0-9_.-]+)\.verdict\s*(?:==\s*([^\s\[\]]+)|in\s*\[([^\]]*)\])$/
+    // The same grammar as the published schema's `until` pattern: slug tokens only.
+    let pattern =
+      /^outputs\.([a-z0-9][a-z0-9_-]{0,63})\.verdict\s*(?:==\s*([a-z0-9][a-z0-9_-]{0,63})|in\s*\[([^\]]*)\])$/
     guard let match = text.wholeMatch(of: pattern) else {
       collector.error(
         "until_syntax",
