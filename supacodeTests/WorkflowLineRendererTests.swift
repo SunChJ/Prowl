@@ -42,7 +42,7 @@ struct WorkflowLineRendererTests {
     let command = WorkflowCompletionCommand(token: token, verdicts: ["clean", "issues"])
     let block = command.protocolBlock(
       runID: "RUN-1", workflowName: "Adversarial Review", role: "reviewer", stepTitle: "Reviewer starting round 1",
-      sections: ["## Findings", "## Verdict"], format: .markdown)
+      expect: WorkflowExpectation(sections: ["## Findings", "## Verdict"]))
     #expect(block.contains("Prowl workflow completion protocol v1"))
     #expect(block.contains("RUN-1"))
     #expect(block.contains("Adversarial Review"))
@@ -109,7 +109,7 @@ struct WorkflowLineRendererTests {
   @Test func launchPromptAppendsProtocolBlockAfterASeparator() {
     let command = WorkflowCompletionCommand(token: token, verdicts: nil)
     let block = command.protocolBlock(
-      runID: "R", workflowName: "W", role: "reviewer", stepTitle: nil, sections: [], format: .markdown)
+      runID: "R", workflowName: "W", role: "reviewer", stepTitle: nil, expect: WorkflowExpectation())
     let prompt = WorkflowLaunchPrompt.render(userPrompt: "Review it.", protocolBlock: block)
     #expect(prompt.hasPrefix("Review it.\n\n---\n"))
     #expect(prompt.hasSuffix(block))

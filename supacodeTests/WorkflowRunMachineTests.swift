@@ -130,16 +130,17 @@ struct WorkflowRunMachineTests {
         "reviewer": .launch(Self.reviewerProfile, pane: nil),
       ]
     let started = try WorkflowRunMachine.start(
-      definition: definition(yaml),
-      runID: Self.runID,
-      context: WorkflowRunContext(
-        scope: .repo(repositoryID: "repo-1"),
-        definitionPath: "/repo/.prowl/workflows/review.yaml",
-        worktree: WorkflowRunWorktree(id: "wt", name: "feature", branch: "feat/x", path: "/repo")),
-      bindings: bindings,
-      inputs: inputs,
-      skippedSteps: skipped,
-      selfInitiated: selfInitiated,
+      WorkflowRunStartRequest(
+        definition: definition(yaml),
+        runID: Self.runID,
+        context: WorkflowRunContext(
+          scope: .repo(repositoryID: "repo-1"),
+          definitionPath: "/repo/.prowl/workflows/review.yaml",
+          worktree: WorkflowRunWorktree(id: "wt", name: "feature", branch: "feat/x", path: "/repo")),
+        bindings: bindings,
+        inputs: inputs,
+        skippedSteps: skipped,
+        selfInitiated: selfInitiated),
       now: { Self.start },
       makeToken: { counter.next() }
     )
@@ -421,13 +422,13 @@ struct WorkflowRunMachineTests {
   @Test func startRejectsAWorktreePathThatIsNotOneLine() throws {
     #expect(throws: WorkflowRunStartError.unsafePath("/re\npo")) {
       try WorkflowRunMachine.start(
-        definition: definition(Self.handoff),
-        runID: Self.runID,
-        context: WorkflowRunContext(
-          scope: .user, definitionPath: nil,
-          worktree: WorkflowRunWorktree(id: "wt", name: "w", branch: "b", path: "/re\npo")),
-        bindings: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)],
-        inputs: [:],
+        WorkflowRunStartRequest(
+          definition: definition(Self.handoff),
+          runID: Self.runID,
+          context: WorkflowRunContext(
+            scope: .user, definitionPath: nil,
+            worktree: WorkflowRunWorktree(id: "wt", name: "w", branch: "b", path: "/re\npo")),
+          bindings: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)]),
         now: { Self.start })
     }
   }

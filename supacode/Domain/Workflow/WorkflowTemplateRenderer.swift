@@ -104,54 +104,69 @@ extension WorkflowTemplate {
     throws(WorkflowTemplateError) -> String
   {
     let parts = reference.components
-    switch (parts.first, parts.count) {
-    case ("run", 2):
-      switch parts[1] {
-      case "id": return context.run.id
-      case "dir": return context.run.directory
-      default: break
+    let value: String? =
+      switch (parts.first, parts.count) {
+      case ("run", 2): runValue(parts[1], context: context)
+      case ("worktree", 2): worktreeValue(parts[1], context: context)
+      case ("inputs", 2): context.inputs[parts[1]]
+      case ("loop", 2): loopValue(parts[1], context: context)
+      case ("roles", 3): try roleValue(parts[1], field: parts[2], context: context)
+      case ("outputs", 3): try outputValue(parts[1], field: parts[2], context: context)
+      case ("actions", 3): context.actions[parts[1]]?[parts[2]]
+      default: nil
       }
-    case ("worktree", 2):
-      switch parts[1] {
-      case "path": return context.worktree.path
-      case "name": return context.worktree.name
-      case "branch": return context.worktree.branch
-      default: break
-      }
-    case ("inputs", 2):
-      if let value = context.inputs[parts[1]] { return value }
-    case ("loop", 2):
-      switch parts[1] {
-      case "index":
-        if let index = context.loop.index { return String(index) }
-      case "count":
-        return String(context.loop.count)
-      default: break
-      }
-    case ("roles", 3):
-      if let role = context.roles[parts[1]] {
-        switch parts[2] {
-        case "name": return role.name
-        case "agent": return role.agent
-        case "pane":
-          guard let pane = role.pane else { throw .paneUnavailable(role: parts[1]) }
-          return pane
-        default: break
-        }
-      }
-    case ("outputs", 3):
-      guard ["path", "verdict"].contains(parts[2]) else { break }
-      guard !context.skippedOutputs.contains(parts[1]), let output = context.outputs[parts[1]] else {
-        throw .missingOutput(name: parts[1])
-      }
-      if parts[2] == "path" { return output.path }
-      guard let verdict = output.verdict else { throw .verdictUnavailable(output: parts[1]) }
-      return verdict
-    case ("actions", 3):
-      if let value = context.actions[parts[1]]?[parts[2]] { return value }
-    default:
-      break
+    guard let value else { throw .unknownVariable(reference.path) }
+    return value
+  }
+
+  private nonisolated static func runValue(_ field: String, context: WorkflowTemplateContext) -> String? {
+    switch field {
+    case "id": context.run.id
+    case "dir": context.run.directory
+    default: nil
     }
-    throw .unknownVariable(reference.path)
+  }
+
+  private nonisolated static func worktreeValue(_ field: String, context: WorkflowTemplateContext) -> String? {
+    switch field {
+    case "path": context.worktree.path
+    case "name": context.worktree.name
+    case "branch": context.worktree.branch
+    default: nil
+    }
+  }
+
+  private nonisolated static func loopValue(_ field: String, context: WorkflowTemplateContext) -> String? {
+    switch field {
+    case "index": context.loop.index.map(String.init)
+    case "count": String(context.loop.count)
+    default: nil
+    }
+  }
+
+  private nonisolated static func roleValue(
+    _ role: String, field: String, context: WorkflowTemplateContext
+  ) throws(WorkflowTemplateError) -> String? {
+    guard let binding = context.roles[role] else { return nil }
+    switch field {
+    case "name": return binding.name
+    case "agent": return binding.agent
+    case "pane":
+      guard let pane = binding.pane else { throw .paneUnavailable(role: role) }
+      return pane
+    default: return nil
+    }
+  }
+
+  private nonisolated static func outputValue(
+    _ name: String, field: String, context: WorkflowTemplateContext
+  ) throws(WorkflowTemplateError) -> String? {
+    guard ["path", "verdict"].contains(field) else { return nil }
+    guard !context.skippedOutputs.contains(name), let output = context.outputs[name] else {
+      throw .missingOutput(name: name)
+    }
+    if field == "path" { return output.path }
+    guard let verdict = output.verdict else { throw .verdictUnavailable(output: name) }
+    return verdict
   }
 }

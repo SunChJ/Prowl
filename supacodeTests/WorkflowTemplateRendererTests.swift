@@ -25,7 +25,7 @@ struct WorkflowTemplateRendererTests {
     )
   }
 
-  @Test func rendersEveryWhitelistedVariable() throws {
+  @Test func rendersEveryAllowedVariable() throws {
     let context = makeContext()
     let text = """
       {{ run.id }}|{{ run.dir }}|{{ worktree.path }}|{{ worktree.name }}|{{ worktree.branch }}|\

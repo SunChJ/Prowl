@@ -82,9 +82,9 @@ nonisolated struct WorkflowCompletionCommand: Equatable, Sendable {
     workflowName: String,
     role: String,
     stepTitle: String?,
-    sections: [String],
-    format: WorkflowOutputFormat
+    expect: WorkflowExpectation
   ) -> String {
+    let (sections, format) = (expect.sections, expect.format)
     var lines = [
       "Prowl workflow completion protocol v\(Self.protocolVersion):",
       "You are the \"\(role)\" role of the Prowl workflow run \(runID) (\(workflowName)).",

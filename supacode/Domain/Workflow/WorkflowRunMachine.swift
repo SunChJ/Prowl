@@ -134,6 +134,40 @@ nonisolated enum WorkflowRunStartError: Error, Equatable, Sendable {
   case missingBinding(role: String)
 }
 
+/// Everything `WorkflowRunMachine.start` needs: the validated definition, the frozen context
+/// and bindings, and the start-sheet / CLI choices.
+nonisolated struct WorkflowRunStartRequest: Sendable {
+  let definition: WorkflowDefinition
+  let runID: UUID
+  let context: WorkflowRunContext
+  let bindings: [String: WorkflowRoleBinding]
+  let inputs: [String: String]
+  let skippedSteps: Set<String>
+  /// The run was started from the pane that is the `current` role (dsl-spec §9).
+  let selfInitiated: Bool
+  let limits: WorkflowDeliveryLimits
+
+  init(
+    definition: WorkflowDefinition,
+    runID: UUID,
+    context: WorkflowRunContext,
+    bindings: [String: WorkflowRoleBinding],
+    inputs: [String: String] = [:],
+    skippedSteps: Set<String> = [],
+    selfInitiated: Bool = false,
+    limits: WorkflowDeliveryLimits = WorkflowDeliveryLimits()
+  ) {
+    self.definition = definition
+    self.runID = runID
+    self.context = context
+    self.bindings = bindings
+    self.inputs = inputs
+    self.skippedSteps = skippedSteps
+    self.selfInitiated = selfInitiated
+    self.limits = limits
+  }
+}
+
 // MARK: - Machine
 
 nonisolated struct WorkflowRunMachine {
@@ -146,20 +180,17 @@ nonisolated struct WorkflowRunMachine {
 
   /// Freezes the run and enters step 1. Throws the start-time validation failures the CLI
   /// maps to `INVALID_ARGUMENT` / `UNSAFE_PATH`.
-  // swiftlint:disable:next function_parameter_count
   static func start(
-    definition: WorkflowDefinition,
-    runID: UUID,
-    context: WorkflowRunContext,
-    bindings: [String: WorkflowRoleBinding],
-    inputs providedInputs: [String: String],
-    skippedSteps: Set<String> = [],
-    selfInitiated: Bool = false,
-    limits: WorkflowDeliveryLimits = WorkflowDeliveryLimits(),
+    _ request: WorkflowRunStartRequest,
     now: @escaping @Sendable () -> Date,
     makeToken: @escaping @Sendable () -> String = { UUID().uuidString }
   ) throws(WorkflowRunStartError) -> (machine: WorkflowRunMachine, effects: [WorkflowRunEffect]) {
-    let inputs = try resolveInputs(definition: definition, provided: providedInputs)
+    let definition = request.definition
+    let context = request.context
+    let bindings = request.bindings
+    let skippedSteps = request.skippedSteps
+    let runID = request.runID
+    let inputs = try resolveInputs(definition: definition, provided: request.inputs)
     guard WorkflowRenderedText.isSingleLine(context.worktree.path) else {
       throw .unsafePath(context.worktree.path)
     }
@@ -188,11 +219,11 @@ nonisolated struct WorkflowRunMachine {
         throw .skipNotAllowed(step: stepID, dependent: dependent)
       }
     }
-    var machine = WorkflowRunMachine(run: run, limits: limits, now: now, makeToken: makeToken)
+    var machine = WorkflowRunMachine(run: run, limits: request.limits, now: now, makeToken: makeToken)
     var effects: [WorkflowRunEffect] = [
       .log("Run \(runID.uuidString) of workflow '\(definition.id)' started."), .persist,
     ]
-    machine.enterCurrentStep(selfInitiated: selfInitiated, effects: &effects)
+    machine.enterCurrentStep(selfInitiated: request.selfInitiated, effects: &effects)
     return (machine, effects)
   }
 
@@ -270,37 +301,17 @@ nonisolated struct WorkflowRunMachine {
       guard case .injecting(ordinal) = run.phase else { return [] }
       openWaiting(ordinal: ordinal, dispatchID: dispatchID, effects: &effects)
     case .injectionFailed(let ordinal, let failure):
-      guard case .injecting(ordinal) = run.phase, let invocation = invocation(ordinal) else { return [] }
-      if failure == .roleBusy {
-        guard let surfaceID = run.bindings[invocation.role]?.pane?.surfaceID else { return [] }
-        run.phase = .waitingForRole(role: invocation.role, ordinal: ordinal)
-        effects.append(.awaitRoleIdle(role: invocation.role, surfaceID: surfaceID, ordinal: ordinal))
-        effects.append(
-          .log("Step '\(invocation.stepID)': role '\(invocation.role)' is busy again; waiting for it to be idle."))
-        return effects
-      }
-      raiseAttention(
-        .injectionFailed(failure), stepID: invocation.stepID, role: invocation.role, ordinal: ordinal, effects: &effects
-      )
+      applyInjectionFailed(ordinal: ordinal, failure: failure, effects: &effects)
     case .launched(let ordinal, let pane, let dispatchID):
-      guard case .launching(ordinal) = run.phase, let invocation = invocation(ordinal),
-        let binding = run.bindings[invocation.role]
-      else { return [] }
-      run.bindings[invocation.role] = binding.binding(pane: pane)
-      effects.append(.log("Step '\(invocation.stepID)': role '\(invocation.role)' launched in \(pane.handle)."))
-      openWaiting(ordinal: ordinal, dispatchID: dispatchID, effects: &effects)
+      applyLaunched(ordinal: ordinal, pane: pane, dispatchID: dispatchID, effects: &effects)
     case .launchFailed(let ordinal, let reason):
       guard case .launching(ordinal) = run.phase, let invocation = invocation(ordinal) else { return [] }
       raiseAttention(
         .launchFailed(reason), stepID: invocation.stepID, role: invocation.role, ordinal: ordinal, effects: &effects)
     case .actionCompleted(let stepID, let outputs):
-      guard case .runningAction(stepID) = run.phase, let step = run.currentStep, step.id == stepID else { return [] }
-      run.actionOutputs[stepID] = outputs
-      completeCurrentStep(effects: &effects)
-      effects.append(.log("Step '\(stepID)': action completed."))
-      advance(effects: &effects)
+      applyActionCompleted(stepID: stepID, outputs: outputs, effects: &effects)
     case .actionFailed(let stepID, let reason):
-      guard case .runningAction(stepID) = run.phase, let step = run.currentStep, step.id == stepID else { return [] }
+      guard case .runningAction(stepID) = run.phase, run.currentStep?.id == stepID else { return [] }
       raiseAttention(.actionFailed(reason), stepID: stepID, role: nil, ordinal: nil, effects: &effects)
     case .watchdog(let ordinal, let verdict):
       applyWatchdog(ordinal: ordinal, verdict: verdict, effects: &effects)
@@ -308,6 +319,43 @@ nonisolated struct WorkflowRunMachine {
       applyUser(action, effects: &effects)
     }
     return effects
+  }
+
+  private mutating func applyInjectionFailed(
+    ordinal: Int, failure: WorkflowInjectionFailure, effects: inout [WorkflowRunEffect]
+  ) {
+    guard case .injecting(ordinal) = run.phase, let invocation = invocation(ordinal) else { return }
+    if failure == .roleBusy {
+      guard let surfaceID = run.bindings[invocation.role]?.pane?.surfaceID else { return }
+      run.phase = .waitingForRole(role: invocation.role, ordinal: ordinal)
+      effects.append(.awaitRoleIdle(role: invocation.role, surfaceID: surfaceID, ordinal: ordinal))
+      effects.append(
+        .log("Step '\(invocation.stepID)': role '\(invocation.role)' is busy again; waiting for it to be idle."))
+      return
+    }
+    raiseAttention(
+      .injectionFailed(failure), stepID: invocation.stepID, role: invocation.role, ordinal: ordinal, effects: &effects)
+  }
+
+  private mutating func applyLaunched(
+    ordinal: Int, pane: WorkflowPaneIdentity, dispatchID: String?, effects: inout [WorkflowRunEffect]
+  ) {
+    guard case .launching(ordinal) = run.phase, let invocation = invocation(ordinal),
+      let binding = run.bindings[invocation.role]
+    else { return }
+    run.bindings[invocation.role] = binding.binding(pane: pane)
+    effects.append(.log("Step '\(invocation.stepID)': role '\(invocation.role)' launched in \(pane.handle)."))
+    openWaiting(ordinal: ordinal, dispatchID: dispatchID, effects: &effects)
+  }
+
+  private mutating func applyActionCompleted(
+    stepID: String, outputs: [String: String], effects: inout [WorkflowRunEffect]
+  ) {
+    guard case .runningAction(stepID) = run.phase, run.currentStep?.id == stepID else { return }
+    run.actionOutputs[stepID] = outputs
+    completeCurrentStep(effects: &effects)
+    effects.append(.log("Step '\(stepID)': action completed."))
+    advance(effects: &effects)
   }
 
   // MARK: Deliveries
@@ -475,65 +523,88 @@ nonisolated struct WorkflowRunMachine {
         return
       }
       if run.preSkippedSteps.contains(step.id) {
-        recordStep(step, state: .skipped, ordinal: nil)
-        if let name = step.outputName {
-          run.skippedOutputs[name] = step.id
-        }
-        effects.append(.log("Step '\(step.id)': skipped at start."))
-        moveNext()
+        skipAtStart(step, effects: &effects)
         continue
       }
       switch step.action {
-      case .message(let role, let content, let expect):
-        enterMessage(
-          step, role: role, content: content, expect: expect, selfInitiated: selfInitiated, effects: &effects)
+      case .message:
+        enterMessage(step, selfInitiated: selfInitiated, effects: &effects)
         return
-      case .launch(let role, let prompt, let skill, let expect):
-        enterLaunch(step, role: role, prompt: prompt, skill: skill, expect: expect, effects: &effects)
+      case .launch:
+        enterLaunch(step, effects: &effects)
         return
       case .action(let id, let inputs):
         enterAction(step, id: id, inputs: inputs, effects: &effects)
         return
       case .notify(let text):
-        guard let rendered = render(text, step: step, effects: &effects) else { return }
-        recordStep(step, state: .completed, ordinal: nil)
-        effects.append(.notify(rendered))
-        effects.append(.log("Step '\(step.id)': notified \"\(rendered)\"."))
-        moveNext()
+        guard enterNotify(step, text: text, effects: &effects) else { return }
       case .close(let role):
-        recordStep(step, state: .completed, ordinal: nil)
-        if let surfaceID = run.bindings[role]?.pane?.surfaceID {
-          effects.append(.close(role: role, surfaceID: surfaceID))
-          effects.append(.log("Step '\(step.id)': close requested for role '\(role)'."))
-        } else {
-          effects.append(.log("Step '\(step.id)': role '\(role)' has no pane to close."))
-        }
-        moveNext()
+        enterClose(step, role: role, effects: &effects)
       case .repeat(_, let until, _):
-        guard run.position.loop == nil else {
-          // Unreachable: a loop position always resolves to a body step or the iteration end.
-          moveNext()
-          continue
-        }
-        run.loopCount = 0
-        switch evaluate(until) {
-        case .satisfied:
-          recordStep(step, state: .skipped, ordinal: nil)
-          effects.append(.log("Step '\(step.id)': 'until' already satisfied; loop skipped."))
-          moveNext()
-        case .notSatisfied:
-          guard let max = run.repeatBounds[step.id] else {
-            finish(.cancelled, effects: &effects)
-            return
-          }
-          run.position.loop = WorkflowRunPosition.Loop(iteration: 1, bodyIndex: 0, max: max)
-          effects.append(.log("Step '\(step.id)': round 1 of at most \(max)."))
-        case .skippedOutput(let skippedStep):
-          finish(.skipped(step: skippedStep, dependent: step.id), effects: &effects)
-          return
-        }
+        guard enterRepeat(step, until: until, effects: &effects) else { return }
       }
     }
+  }
+
+  private mutating func skipAtStart(_ step: WorkflowStepDefinition, effects: inout [WorkflowRunEffect]) {
+    recordStep(step, state: .skipped, ordinal: nil)
+    if let name = step.outputName {
+      run.skippedOutputs[name] = step.id
+    }
+    effects.append(.log("Step '\(step.id)': skipped at start."))
+    moveNext()
+  }
+
+  /// False when rendering ended the run.
+  private mutating func enterNotify(_ step: WorkflowStepDefinition, text: String, effects: inout [WorkflowRunEffect])
+    -> Bool
+  {
+    guard let rendered = render(text, step: step, effects: &effects) else { return false }
+    recordStep(step, state: .completed, ordinal: nil)
+    effects.append(.notify(rendered))
+    effects.append(.log("Step '\(step.id)': notified \"\(rendered)\"."))
+    moveNext()
+    return true
+  }
+
+  private mutating func enterClose(_ step: WorkflowStepDefinition, role: String, effects: inout [WorkflowRunEffect]) {
+    recordStep(step, state: .completed, ordinal: nil)
+    if let surfaceID = run.bindings[role]?.pane?.surfaceID {
+      effects.append(.close(role: role, surfaceID: surfaceID))
+      effects.append(.log("Step '\(step.id)': close requested for role '\(role)'."))
+    } else {
+      effects.append(.log("Step '\(step.id)': role '\(role)' has no pane to close."))
+    }
+    moveNext()
+  }
+
+  /// Evaluates `until` before entry (while-loop semantics); false when the run ended.
+  private mutating func enterRepeat(
+    _ step: WorkflowStepDefinition, until: WorkflowUntilCondition?, effects: inout [WorkflowRunEffect]
+  ) -> Bool {
+    guard run.position.loop == nil else {
+      // Unreachable: a loop position always resolves to a body step or the iteration end.
+      moveNext()
+      return true
+    }
+    run.loopCount = 0
+    switch evaluate(until) {
+    case .satisfied:
+      recordStep(step, state: .skipped, ordinal: nil)
+      effects.append(.log("Step '\(step.id)': 'until' already satisfied; loop skipped."))
+      moveNext()
+    case .notSatisfied:
+      guard let max = run.repeatBounds[step.id] else {
+        finish(.cancelled, effects: &effects)
+        return false
+      }
+      run.position.loop = WorkflowRunPosition.Loop(iteration: 1, bodyIndex: 0, max: max)
+      effects.append(.log("Step '\(step.id)': round 1 of at most \(max)."))
+    case .skippedOutput(let skippedStep):
+      finish(.skipped(step: skippedStep, dependent: step.id), effects: &effects)
+      return false
+    }
+    return true
   }
 
   private mutating func finishIteration(effects: inout [WorkflowRunEffect]) {
@@ -587,13 +658,9 @@ nonisolated struct WorkflowRunMachine {
   // MARK: Step entry
 
   private mutating func enterMessage(
-    _ step: WorkflowStepDefinition,
-    role: String,
-    content: WorkflowMessageContent,
-    expect: WorkflowExpectation?,
-    selfInitiated: Bool,
-    effects: inout [WorkflowRunEffect]
+    _ step: WorkflowStepDefinition, selfInitiated: Bool, effects: inout [WorkflowRunEffect]
   ) {
+    guard case .message(let role, let content, let expect) = step.action else { return }
     let ordinal = mintOrdinal()
     run.invocations.append(
       WorkflowInvocation(
@@ -680,14 +747,8 @@ nonisolated struct WorkflowRunMachine {
     }
   }
 
-  private mutating func enterLaunch(
-    _ step: WorkflowStepDefinition,
-    role: String,
-    prompt: String,
-    skill: String?,
-    expect: WorkflowExpectation?,
-    effects: inout [WorkflowRunEffect]
-  ) {
+  private mutating func enterLaunch(_ step: WorkflowStepDefinition, effects: inout [WorkflowRunEffect]) {
+    guard case .launch(let role, let prompt, let skill, let expect) = step.action else { return }
     let ordinal = mintOrdinal()
     run.invocations.append(
       WorkflowInvocation(
@@ -695,21 +756,25 @@ nonisolated struct WorkflowRunMachine {
     )
     recordStep(step, state: .active, ordinal: ordinal)
     guard let rendered = render(prompt, step: step, effects: &effects) else { return }
-    launch(
-      step: step, ordinal: ordinal, role: role, userPrompt: rendered, skill: skill, expect: expect, redelivery: false,
-      effects: &effects)
+    let plan = LaunchPlan(
+      step: step, ordinal: ordinal, role: role, userPrompt: rendered, skill: skill, expect: expect, redelivery: false)
+    launch(plan, effects: &effects)
   }
 
-  private mutating func launch(
-    step: WorkflowStepDefinition,
-    ordinal: Int,
-    role: String,
-    userPrompt: String,
-    skill: String?,
-    expect: WorkflowExpectation?,
-    redelivery: Bool,
-    effects: inout [WorkflowRunEffect]
-  ) {
+  private struct LaunchPlan {
+    let step: WorkflowStepDefinition
+    let ordinal: Int
+    let role: String
+    let userPrompt: String
+    let skill: String?
+    let expect: WorkflowExpectation?
+    let redelivery: Bool
+  }
+
+  private mutating func launch(_ plan: LaunchPlan, effects: inout [WorkflowRunEffect]) {
+    let (step, ordinal, role, userPrompt, skill, expect, redelivery) = (
+      plan.step, plan.ordinal, plan.role, plan.userPrompt, plan.skill, plan.expect, plan.redelivery
+    )
     guard let profile = run.bindings[role]?.profile, let requirements = run.definition.role(named: role)?.launch else {
       run.phase = .launching(ordinal: ordinal)
       raiseAttention(
@@ -730,8 +795,7 @@ nonisolated struct WorkflowRunMachine {
       environment[WorkflowSchema.tokenEnvironmentKey] = activation.token
       let title = step.title.flatMap { try? WorkflowTemplate.render($0, context: templateContext()) }
       protocolBlock = activation.completion.protocolBlock(
-        runID: run.id.uuidString, workflowName: run.definition.name, role: role, stepTitle: title,
-        sections: expect.sections, format: expect.format)
+        runID: run.id.uuidString, workflowName: run.definition.name, role: role, stepTitle: title, expect: expect)
     }
     let prompt = WorkflowLaunchPrompt.render(userPrompt: userPrompt, protocolBlock: protocolBlock)
     do {
@@ -965,7 +1029,8 @@ nonisolated struct WorkflowRunMachine {
       recordStep(step, state: .active, ordinal: ordinal)
       guard let rendered = render(content.body, step: step, effects: &effects) else { return }
       launch(
-        step: step, ordinal: ordinal, role: role, userPrompt: rendered, skill: nil, expect: expect, redelivery: true,
+        LaunchPlan(
+          step: step, ordinal: ordinal, role: role, userPrompt: rendered, skill: nil, expect: expect, redelivery: true),
         effects: &effects)
     default:
       return
@@ -1018,6 +1083,8 @@ nonisolated struct WorkflowRunMachine {
     effects.append(.persist)
   }
 
+  // One case per attention reason: the copy table is deliberately exhaustive (decision H7).
+  // swiftlint:disable:next cyclomatic_complexity
   private func attentionMessage(_ reason: WorkflowAttentionReason, stepID: String, role: String?) -> String {
     let subject: String
     if let role, let binding = run.bindings[role] {
