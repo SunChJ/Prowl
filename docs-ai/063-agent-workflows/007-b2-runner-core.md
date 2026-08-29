@@ -243,8 +243,8 @@ dispatch record (the machine ignores events on terminal runs).
   first full run; the watchdog policy suite caught two real semantics errors on its first run
   (`sawActivity` not reset per heuristic window; a spent nudge escalating straight to
   attention on the next `turn-ended`), both fixed in the policy.
-- App suites (`xcodebuild test`, 152 workflow tests after two review rounds — 182 together
-  with the three handoff suites the normalizer change touches — all passing): `WorkflowLineRendererTests`,
+- App suites (`xcodebuild test`, 157 workflow tests after three review rounds — together
+  with the handoff suites the normalizer change touches — all passing): `WorkflowLineRendererTests`,
   `WorkflowTemplateRendererTests`, `WorkflowDeliveryValidatorTests`, `WorkflowRunMachineTests`,
   `WorkflowRunStoreTests`, `WorkflowWatchdogPolicyTests`, `WorkflowWatchdogDriverTests`
   (TestClock), `WorkflowNativeActionsTests` (temp git repositories),
@@ -300,6 +300,18 @@ SwiftPM-only so it could run beside the app builds; briefs and findings under
   path-based writes under `.prowl/handoff/` keep the pre-existing handoff trust model, and a
   concurrent local process racing directory swaps is outside B2's threat model (it already
   runs as the user) — static links from a repository are what the gates close.
+- **Round 3 — 5 findings (0 P0, 2 P1, 3 P2), all accepted and fixed; round-2 fixes verified.**
+  P1: the launch-time restart scan enumerated and decoded records through a linked base before
+  the new gate (it now checks the owned base first and gates every run directory); an
+  activation armed on a live pane without a detected agent (`absent`) still waited forever
+  (a 10 s `appearanceGrace` now ends in `agent_gone:process_gone`, while a launch that has not
+  settled gets time to appear — immediate attention was rejected for that reason). P2: the
+  restart scan decoded whole records instead of the header H5 promised (a `version` /
+  `run.status.state` header is read first and other versions are left untouched); the fence
+  scanner accepted a fake closer such as `` ```still code `` (CommonMark closers now: same
+  character, at least the opening length, whitespace only after the run); the observer reader
+  gave up after three buffer overflows (it re-subscribes while the watchdog runs). Fresh pass
+  over the binding resolver, the template renderer, and the harness found nothing at P0–P2.
 
 ## Open items
 
