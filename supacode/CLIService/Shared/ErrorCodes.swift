@@ -3,7 +3,7 @@
 
 import Foundation
 
-public enum CLIErrorCode {
+nonisolated public enum CLIErrorCode {
   // Common
   public static let appNotRunning = "APP_NOT_RUNNING"
   public static let invalidArgument = "INVALID_ARGUMENT"
@@ -102,6 +102,23 @@ public enum CLIErrorCode {
   public static let workflowNotFound = "WORKFLOW_NOT_FOUND"
   /// The file parsed or validated with errors; `details` carries the validate payload.
   public static let workflowInvalid = "WORKFLOW_INVALID"
+  // Run-time codes of the workflow runner (dsl-spec §9); emitted by `workflow run/done` from B3 on.
+  public static let runNotFound = "RUN_NOT_FOUND"
+  public static let paneBusy = "PANE_BUSY"
+  public static let roleMismatch = "ROLE_MISMATCH"
+  public static let stepNotExpecting = "STEP_NOT_EXPECTING"
+  public static let tokenRequired = "TOKEN_REQUIRED"
+  public static let tokenInvalid = "TOKEN_INVALID"
+  public static let outputInvalid = "OUTPUT_INVALID"
+  public static let outputTooLarge = "OUTPUT_TOO_LARGE"
+  public static let verdictRequired = "VERDICT_REQUIRED"
+  /// A rendered `text` / pointer / `--input` value would not survive as one terminal line.
+  public static let renderedTextInvalid = "RENDERED_TEXT_INVALID"
+  public static let unsafePath = "UNSAFE_PATH"
+  /// A rendered `launch` prompt above 32 KiB.
+  public static let promptTooLarge = "PROMPT_TOO_LARGE"
+  /// `agents dispatch-complete` from a pane whose pending record is a workflow activation.
+  public static let workflowDeliveryRequired = "WORKFLOW_DELIVERY_REQUIRED"
 
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"
