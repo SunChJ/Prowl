@@ -78,7 +78,7 @@ struct WorkflowTemplateRendererTests {
     #expect(throws: WorkflowTemplateError.unknownVariable("loop.index")) {
       var context = makeContext()
       context.loop = WorkflowTemplateContext.Loop(index: nil, count: 0)
-      try WorkflowTemplate.render("{{ loop.index }}", context: context)
+      _ = try WorkflowTemplate.render("{{ loop.index }}", context: context)
     }
     #expect(throws: WorkflowTemplateError.malformed(.unbalanced)) {
       try WorkflowTemplate.render("{{ run.id", context: makeContext())
