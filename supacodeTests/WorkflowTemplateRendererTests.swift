@@ -13,8 +13,10 @@ struct WorkflowTemplateRendererTests {
         "reviewer": WorkflowTemplateContext.Role(name: "Pi Reviewer", agent: "pi", pane: nil),
       ],
       outputs: [
-        "findings": WorkflowTemplateContext.Output(path: "/repo/.prowl/workflow-runs/RUN-1/outputs/findings.md", verdict: "issues"),
-        "brief": WorkflowTemplateContext.Output(path: "/repo/.prowl/workflow-runs/RUN-1/outputs/brief.md", verdict: nil),
+        "findings": WorkflowTemplateContext.Output(
+          path: "/repo/.prowl/workflow-runs/RUN-1/outputs/findings.md", verdict: "issues"),
+        "brief": WorkflowTemplateContext.Output(
+          path: "/repo/.prowl/workflow-runs/RUN-1/outputs/brief.md", verdict: nil),
       ],
       skippedOutputs: ["disposition"],
       actions: ["transition": ["kickoff_prompt": "Take over.", "has_briefing": "true"]],

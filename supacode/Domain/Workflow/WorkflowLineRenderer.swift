@@ -100,7 +100,8 @@ nonisolated struct WorkflowCompletionCommand: Equatable, Sendable {
     delivery += "."
     lines.append(delivery)
     if launchCommands.count > 1 {
-      lines.append("When your work for this step is fully complete, make exactly one of these commands your final tool action:")
+      lines.append(
+        "When your work for this step is fully complete, make exactly one of these commands your final tool action:")
     } else {
       lines.append("When your work for this step is fully complete, make this command your final tool action:")
     }
@@ -143,13 +144,16 @@ nonisolated enum WorkflowTypedLine {
   }
 
   /// `instruction` → `[Prowl] Read <absolute path> and follow it[ — finish with: …]`.
-  static func pointer(to path: String, completion: WorkflowCompletionCommand?) throws(WorkflowRenderedTextError) -> String {
+  static func pointer(to path: String, completion: WorkflowCompletionCommand?) throws(WorkflowRenderedTextError)
+    -> String
+  {
     try validated(prefix + "Read \(path) and follow it" + (completion?.typedSuffix ?? ""))
   }
 
   /// The watchdog's one automatic nudge (and the panel's "Nudge again").
   static func nudge(completion: WorkflowCompletionCommand) throws(WorkflowRenderedTextError) -> String {
-    try validated(prefix + nudgeText + completion.messageCommands.joined(separator: WorkflowCompletionCommand.commandSeparator))
+    try validated(
+      prefix + nudgeText + completion.messageCommands.joined(separator: WorkflowCompletionCommand.commandSeparator))
   }
 
   private static func validated(_ line: String) throws(WorkflowRenderedTextError) -> String {

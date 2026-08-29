@@ -76,7 +76,9 @@ nonisolated enum WorkflowTemplateError: Error, Equatable, Sendable {
 }
 
 extension WorkflowTemplate {
-  nonisolated static func render(_ text: String, context: WorkflowTemplateContext) throws(WorkflowTemplateError) -> String {
+  nonisolated static func render(_ text: String, context: WorkflowTemplateContext) throws(WorkflowTemplateError)
+    -> String
+  {
     guard containsReference(text) else { return text }
     let references: [Reference]
     do {
@@ -98,7 +100,9 @@ extension WorkflowTemplate {
     return rendered
   }
 
-  nonisolated static func value(for reference: Reference, context: WorkflowTemplateContext) throws(WorkflowTemplateError) -> String {
+  nonisolated static func value(for reference: Reference, context: WorkflowTemplateContext)
+    throws(WorkflowTemplateError) -> String
+  {
     let parts = reference.components
     switch (parts.first, parts.count) {
     case ("run", 2):

@@ -23,7 +23,8 @@ struct WorkflowLineRendererTests {
       verdicts.typedSuffix
         == " — finish with: PROWL_WORKFLOW_TOKEN=\(token) prowl workflow done --verdict clean -"
         + "  or  PROWL_WORKFLOW_TOKEN=\(token) prowl workflow done --verdict issues -")
-    #expect(verdicts.launchCommands == ["prowl workflow done --verdict clean -", "prowl workflow done --verdict issues -"])
+    #expect(
+      verdicts.launchCommands == ["prowl workflow done --verdict clean -", "prowl workflow done --verdict issues -"])
   }
 
   @Test func nudgeLineUsesThePrefixAndTheSameCommands() throws {
@@ -67,14 +68,17 @@ struct WorkflowLineRendererTests {
 
   @Test func textLineIsPrefixedAndSuffixed() throws {
     let command = WorkflowCompletionCommand(token: token, verdicts: nil)
-    #expect(try WorkflowTypedLine.text("Findings: /r/outputs/findings.md", completion: nil) == "[Prowl] Findings: /r/outputs/findings.md")
+    #expect(
+      try WorkflowTypedLine.text("Findings: /r/outputs/findings.md", completion: nil)
+        == "[Prowl] Findings: /r/outputs/findings.md")
     #expect(
       try WorkflowTypedLine.text("Fix each item.", completion: command)
         == "[Prowl] Fix each item. — finish with: PROWL_WORKFLOW_TOKEN=\(token) prowl workflow done -")
   }
 
   @Test func pointerLineNamesTheAbsolutePath() throws {
-    let line = try WorkflowTypedLine.pointer(to: "/repo/.prowl/workflow-runs/R/instructions/brief.1.md", completion: nil)
+    let line = try WorkflowTypedLine.pointer(
+      to: "/repo/.prowl/workflow-runs/R/instructions/brief.1.md", completion: nil)
     #expect(line == "[Prowl] Read /repo/.prowl/workflow-runs/R/instructions/brief.1.md and follow it")
   }
 
