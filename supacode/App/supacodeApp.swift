@@ -1156,6 +1156,28 @@ struct SupacodeApp: App {
       }
 
     )
+    let workflowHandler = WorkflowCommandHandler {
+      @Shared(.userGlobalSettings) var settings
+      @Shared(.agentRuntimeAvailabilityProbeResults) var probeResults
+      let bundledSkills = Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) }
+      let installedAgents =
+        probeResults.isEmpty
+        ? nil
+        : Set(probeResults.filter { $0.value.isAvailable }.keys.map { $0.agent.rawValue })
+      return WorkflowRuntimeSnapshot(
+        resolution: TargetResolutionSnapshotBuilder.makeSnapshot(
+          repositoriesState: appStore.state.repositories,
+          terminalManager: terminalManager
+        ),
+        paneByShellPID: terminalManager.paneByShellPID(),
+        bundleWorkflowsURL: SupacodePaths.bundledWorkflowsURL,
+        userWorkflowsURL: WorkflowSources.userDirectory(home: FileManager.default.homeDirectoryForCurrentUser),
+        disabledWorkflowIDs: Set(settings.disabledWorkflowIDs),
+        bundledSkillIDs: bundledSkills.map { Set($0.map(\.id)) },
+        knownAgents: Set(DetectedAgent.allCases.map(\.rawValue)),
+        installedAgents: installedAgents
+      )
+    }
     return CLICommandRouter(
       openHandler: openHandler,
       listHandler: listHandler,
@@ -1175,7 +1197,8 @@ struct SupacodeApp: App {
       closeHandler: lifecycleHandler,
       tabHandler: tabHandler,
       paneHandler: paneHandler,
-      handoffHandler: handoffHandler
+      handoffHandler: handoffHandler,
+      workflowHandler: workflowHandler
     )
   }
 

@@ -431,6 +431,52 @@ Settings › Agents › CLI & Skills › **Agent Skills** offers the same user-s
 from the GUI (Install / Remove / Repair / Replace per skill × detected target) and shows
 the same status as `prowl skills list` — see [settings](settings.md#agent-skills).
 
+### `prowl workflow`
+Discover, validate, and describe Agent Workflow definitions — YAML files
+(`schema: prowl.workflow/v1`) that declare a multi-agent flow Prowl runs. Definitions come
+from three sources, later ones winning for the same id: the app bundle
+(`Prowl.app/Contents/Resources/workflows/`, ids `prowl.*` are reserved for it) <
+`~/.prowl/workflows/*.yaml` < `<repo>/.prowl/workflows/*.yaml`. `validate` and `schema` run
+**locally** and work with Prowl closed; `list` needs the app.
+
+```bash
+prowl workflow list [target] [--json]                   # every definition visible to a worktree, with status
+prowl workflow validate <file> [--scope bundle|user|repo] [--json]   # parse + validate one file; exit 1 on errors
+prowl workflow schema [--json]                          # JSON Schema (Draft 2020-12) of a workflow file
+```
+
+- `list` searches the repo source of one worktree: the caller's own pane's worktree, else the
+  focused worktree, or any target (`pN`/`tN`/UUID/worktree id/name/path, or `--worktree`,
+  `--tab`, `--pane`, `--target`). Without a resolvable worktree only the bundle and user
+  sources are searched. Each `.data.workflows[]` item carries `id`, `name`, `description`,
+  `scope` (`bundle` | `user` | `repo`), `path`, `enabled`, `valid`, `errors`, `warnings`, and
+  `shadowed` (a higher-precedence source defines the same id, so this file is not the one
+  that runs). A file that does not parse is listed with `valid: false` and no `id`. Invalid
+  files never shadow valid ones.
+- `validate` prints every diagnostic as `path:line:column: error[code]: message` (warnings
+  likewise) and ends with `OK <id> (<name>)` or `INVALID …`. Errors make the command fail
+  with `WORKFLOW_INVALID`; in JSON the full validate payload (`path`, `valid`, `workflow`,
+  `diagnostics[]` with `severity`, `code`, `message`, optional `line`/`column`) is under
+  `.error.details`, and a valid file returns it under `.data`. The scope decides whether a
+  `prowl.*` id is allowed; it is inferred from the file's directory (`~/.prowl/workflows` →
+  user, any other `.prowl/workflows` → repo, elsewhere → user) unless `--scope` says
+  otherwise. When the `prowl` binary is not inside an app bundle (a development build with
+  `PROWL_SKILLS_DIR` unset), `skill:` references cannot be checked and are reported as
+  `skill_unchecked` warnings instead of errors.
+- `schema` prints the machine-readable definition schema for editors and authoring agents
+  (`--json` wraps it as `.data.schema`). Structural rules live in the schema; cross-reference
+  rules (undefined roles, premature `{{ outputs.* }}`, `until` verdicts, …) are enforced by
+  `validate` only.
+
+```bash
+prowl workflow validate .prowl/workflows/review.yaml
+prowl workflow list --json | jq '.data.workflows[] | select(.valid) | .id'
+prowl workflow schema > /tmp/workflow.schema.json
+```
+
+JSON is `prowl.cli.workflow.v1` with `data.action` = `list` | `validate` | `schema`.
+Running a workflow (`prowl workflow run`, `status`, `done`, `cancel`) is not available yet.
+
 ### `prowl read [target]`
 Read a pane's content.
 
@@ -731,6 +777,8 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `INSTALL_CONFLICT` | A real file or directory occupies a skill link slot, or a project-scope target folder is a symlink leading outside the repository; nothing was changed. Remove or fix it manually, or choose other targets. |
 | `BUNDLE_NOT_FOUND` | The `prowl` binary is not inside a Prowl app bundle and `PROWL_SKILLS_DIR` is unset or invalid — run the installed `prowl` or set the override. |
 | `INVALID_SKILL_FRONTMATTER` | A bundled (or `PROWL_SKILLS_DIR`) skill's `SKILL.md` frontmatter is malformed — fix the override skill, or reinstall Prowl if the bundle itself is damaged. |
+| `WORKFLOW_INVALID` | `workflow validate` found errors; the full diagnostics are in `.error.details` (JSON) or on stdout (text). Fix the file and re-run. |
+| `WORKFLOW_NOT_FOUND` | No workflow definition with that id is visible to the worktree — re-run `workflow list`. |
 | `NO_ACTIVE_PANE` | No pane for focused-target; pass an explicit `--pane`. |
 | `EMPTY_INPUT` | `send` got neither argv nor stdin (or both). |
 | `INVALID_ARGUMENT` | Bad flag/combo (e.g. `--capture --no-wait`) or out-of-range value. |
@@ -740,7 +788,7 @@ artifacts and terminal excerpts do not appear in `git status`.
 | `PATH_NOT_FOUND` / `PATH_NOT_DIRECTORY` / `PATH_NOT_ALLOWED` | Fix the `open`/`create tab` path, or the `skills --scope project` start point (`--path` and the current directory must lie inside a Git repository). |
 | `LAUNCH_FAILED` | App launch or socket wait failed; the message includes the last socket diagnostic when available. |
 | `TRANSPORT_FAILED` | Socket transport failed for a reason other than app availability or permission, such as `ENOTSOCK` or an invalid `PROWL_CLI_SOCKET` path. |
-| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `PROFILES_FAILED`, `SKILLS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`) | The action itself failed. |
+| `*_FAILED` (`LIST_FAILED`, `AGENTS_FAILED`, `PROFILES_FAILED`, `SKILLS_FAILED`, `FOCUS_FAILED`, `SEND_FAILED`, `READ_FAILED`, `CREATE_FAILED`, `CLOSE_FAILED`, `TAB_FAILED`, `PANE_FAILED`, `OPEN_FAILED`, `HANDOFF_FAILED`, `WORKFLOW_FAILED`) | The action itself failed. |
 
 ## Safety & self-targeting
 

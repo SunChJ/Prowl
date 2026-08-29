@@ -34,7 +34,7 @@ say when each is cut:
 | Release | State | Next action |
 | --- | --- | --- |
 | R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
-| R2a | Next | B1 ∥ #733 ∥ #726 T0 on three branches from `main`; B1 starts with a grilled slice record |
+| R2a | In progress | B1 implemented on `feat/workflow-definitions-b1` (PR TBD); #726 T0 = #739 (review pending); #733 in progress on `feat/agent-redispatch` |
 | R2b | Planned | after R2a ships |
 | R3 | Planned | after R2b ships |
 

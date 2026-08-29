@@ -2,9 +2,10 @@
 
 ## Status
 
-Planned (2026-08-29) — first R2a slice. Owner decisions were settled in a grill session on
-2026-08-29 (below) after a re-read of [dsl-spec.md](dsl-spec.md) against what R1 shipped; the
-spec's §4/§5/§9/§10/§12 were amended in the same change. Implementation PR: TBD.
+Implemented on `feat/workflow-definitions-b1` (2026-08-29); PR: TBD. Owner decisions were settled
+in a grill session on 2026-08-29 (below) after a re-read of [dsl-spec.md](dsl-spec.md) against what
+R1 shipped; the spec's §4/§5/§9/§10/§12 were amended in #738. The "Delivered" section records
+what landed and where it deviates from the scope below.
 
 ## Context
 
@@ -102,9 +103,63 @@ instance, drop the §4 example into a scratch user `~/.prowl/workflows/`, run `p
 list --json`, `validate` on the example and on a deliberately broken copy, and `schema`,
 driven from the bundled `prowl-cli` skill recipe.
 
+## Delivered
+
+- **Yams 6.2.2** pinned exactly in `Package.swift` (`ProwlCLIShared` and the test target) and as
+  an `XCRemoteSwiftPackageReference` on the app target. Every new Shared declaration is
+  `nonisolated` because the app target defaults to MainActor isolation — the first two app
+  builds failed on exactly that, and on an `Equatable` conformance of `WorkflowInput` that
+  pulled in `TargetSelector`'s main-actor conformance (dropped; the input needs no equality).
+- **Model + parser** (`WorkflowDefinition.swift`, `WorkflowDocumentParser.swift`): Yams
+  `compose` into a positioned `Node` tree read by `MappingReader` / `SequenceReader`, so every
+  diagnostic carries the YAML line/column (1-based) and unknown keys are errors. Plain scalars
+  are typed (`max: 5` is an integer, `max: "5"` a string); durations are `\d+[smh]`; `until` is
+  parsed into `(output, values)`; `repeat.max` keeps either the literal or the raw template.
+  Structural rules that the spec lists under validation but that need no cross-reference
+  (`kind: headless`, `expect` on `action`/`notify`/`close`, nested `repeat`, `launch` inside
+  `repeat`, missing `max`) are parser diagnostics, so a file with them yields no definition.
+- **Validator** (`WorkflowValidator.swift`): one `Walker` pass in document order with a
+  `repeat`-scoped action table; `outputs.*` references need an earlier producer anywhere
+  (loop bodies included), `actions.*` references need a producer in the same or an enclosing
+  sequence, `roles.<r>.pane` needs the role launched, `loop.index` needs a loop, `loop.count`
+  a loop before or around. `until` accepts a producer before the loop or inside its body (the
+  pre-entry check then simply reads "not satisfied"; B2 owns that rule). Warnings:
+  `skill_unchecked` (no bundle), `unknown_agent` / `agents_not_installed` (only when the
+  catalogs are supplied), `timeout_long`, `spells_completion_command`, `skip_ends_run`,
+  `direction_ignored`. Diagnostic codes are the contract; messages are not.
+- **Action registry** (`WorkflowActionRegistry.swift`): `handoff.transition`,
+  `handoff.checkpoint`, `git.context` with typed inputs/outputs for the validator and schema.
+- **JSON Schema** (`WorkflowJSONSchema.swift` + `ProwlCLIContracts/Resources/
+  workflow-definition-schema.json`): hand-written Draft 2020-12, `oneOf` per step shape and
+  per role source, loop steps exclude `launch`/`repeat`; a test pins the resource to the Swift
+  constant and validates the spec example (via Yams → JSON) plus six structural negatives.
+- **Discovery** (`WorkflowDiscovery.swift`): `WorkflowSources` (bundle/user/repo URLs),
+  per-directory `files`, and `catalog` with precedence and shadowing; the bundle directory
+  (`SupacodePaths.bundledWorkflowsURL`) is absent until D2 and tolerated.
+- **CLI** (`WorkflowCommand.swift`, `WorkflowCommandExecutor.swift`,
+  `OutputRenderer+Workflow.swift`): `validate <file> [--scope]` and `schema` local;
+  `list [target]` over the socket with `WorkflowInput { action: list, target }` and the new
+  `Command.workflow` case. An invalid file returns `ok: false` / `WORKFLOW_INVALID` with the
+  validate payload in `error.details` and exit status 1; text mode prints
+  `path:line:column: severity[code]: message` lines and an `OK` / `INVALID` summary.
+- **App** (`WorkflowCommandHandler.swift`, router + `supacodeApp` wiring): caller pane →
+  focused worktree → explicit selector resolution, then discovery with the bundle's skill ids,
+  the `DetectedAgent` catalog, and the availability probe as `installedAgents`. The enabled
+  set is `UserGlobalSettings.disabledWorkflowIDs` (`<scope>/<id>`, sorted, deduplicated;
+  opt-out so new files are enabled).
+- **Contracts and docs**: `cli-output-schema.json` gained `workflowResponse` (+ nine defs),
+  `docs-ai/013-prowl-cli/contracts/workflow.md`, the coverage row in `schema.md`, and a
+  `prowl workflow` section plus error rows in `docs/components/cli.md`. The `prowl-cli` skill
+  is unchanged until B3.
+
+### Deviations from the scope above
+
+- `list --json` reports `errors` / `warnings` counts only; diagnostics stay with `validate`
+  (the second open item, resolved as the default).
+- No app-side `installedAgents` when the availability probe has not run yet (nil skips the
+  warning rather than reporting everything as not installed).
+
 ## Open items
 
-- Yams version pin and the xcodeproj package reference (first shared third-party dependency).
-- Whether `list --json` should include per-file validation diagnostics inline or only a
-  status plus a pointer to `validate` (default: status + counts; diagnostics stay with
-  `validate`).
+- The `Resources/workflows` staging (Makefile + folder reference) ships with the first
+  bundled definition (D2); discovery already tolerates the missing folder.

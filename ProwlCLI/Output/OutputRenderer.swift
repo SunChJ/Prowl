@@ -127,6 +127,14 @@ enum OutputRenderer {
         return
       }
 
+      if response.command == "workflow",
+         let data = response.data,
+         let payload = try? data.decode(as: WorkflowCommandPayload.self)
+      {
+        renderWorkflow(payload)
+        return
+      }
+
       if response.command == "focus",
          let data = response.data,
          let payload = try? data.decode(as: FocusCommandPayload.self)

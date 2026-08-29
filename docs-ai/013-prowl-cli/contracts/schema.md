@@ -18,6 +18,7 @@ The bundle has one versioned success-or-error response schema for every wire com
 | `agents.signal` | `#/$defs/agentsSignalResponse` |
 | `profiles` | `#/$defs/profilesResponse` |
 | `skills` (local-only) | `#/$defs/skillsResponse` |
+| `workflow` (`list` over the socket; `validate`/`schema` local-only) | `#/$defs/workflowResponse` |
 | `focus` | `#/$defs/focusResponse` |
 | `send` | `#/$defs/sendResponse` |
 | `key` | `#/$defs/keyResponse` |
@@ -29,8 +30,10 @@ The bundle has one versioned success-or-error response schema for every wire com
 | `handoff` | `#/$defs/handoffResponse` |
 
 The bundle root is a `oneOf` across these responses and is valid for any complete
-socket response. `skills` never crosses the socket; its responses are produced locally by
-the CLI on the same envelope and are validated from real command runs.
+socket response. `skills` never crosses the socket, and neither do `workflow validate` / `workflow schema`;
+their responses are produced locally by the CLI on the same envelope and are validated from
+real command runs. The workflow *definition* schema (`workflow-definition-schema.json`, printed
+by `prowl workflow schema`) sits beside the bundle and is pinned to its Swift copy by a test.
 
 ## Executable verification
 

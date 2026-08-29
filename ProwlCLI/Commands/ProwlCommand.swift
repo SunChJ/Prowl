@@ -22,6 +22,7 @@ struct ProwlCommand: ParsableCommand {
       AgentsCommand.self,
       ProfilesCommand.self,
       SkillsCommand.self,
+      WorkflowCommand.self,
       FocusCommand.self,
       SendCommand.self,
       KeyCommand.self,
