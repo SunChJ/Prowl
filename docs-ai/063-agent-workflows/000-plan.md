@@ -420,13 +420,13 @@ attaches hooks through A2's launch boundary.
 | **A1** | A | 060 | `prowl create pane` (#699) + target-surface split primitive returning the surface id; CLI four layers. Foundation for every `launch` into a split. |
 | **A1b** | A | A1 | `PROWL_PANE_ID` injected into every pane's environment (beside `PROWL_WORKTREE_PATH` / `PROWL_ROOT_PATH`), documented in `docs/components/cli.md`, and the `prowl-cli` skill's self-identification rewritten around it. Convenience identity only — trusted attribution (064 `agents signal`, `workflow done`) stays on caller-PID resolution. |
 | **A2** | A | A1 | Profile launch boundary (`.prompt`, placement override, anchor, background, synchronous `LaunchedSurface` result) + `prowl create tab/pane --profile --prompt -` + `prowl profiles list`; exposes the seam 064-S3 uses for launch-scoped hooks. Unlocks the CLI-driven route; the runner's `launch` boundary. |
-| **B1** | B | — | Definitions: Yams, `AgentWorkflow` model + validator + JSON Schema, three-source discovery, `prowl workflow list/validate/schema`. Makes the DSL concrete and authorable (no user-facing surface until R2). |
-| **B2** | B | B1 | Runner core (pure): run state machine incl. `repeat`, run store, template renderer, `WorkflowRequestRegistry`, action registry, watchdog with injected clock — tested against fake boundaries. |
-| **B3** | B | A2, 064-S1, B2 | Runner wiring: `WorkflowRunsFeature` effects, observer consumption via `AppFeature`, CLI preflight, `prowl workflow run/status/done/cancel` + contracts. Engine first powered on. |
+| **B1** | B | — | Definitions: Yams, `AgentWorkflow` model + validator + JSON Schema, three-source discovery, `prowl workflow list/validate/schema`. Makes the DSL concrete and authorable (no user-facing surface until R2). Lives in `ProwlCLIShared` so `validate`/`schema` run without the app; `list` goes through the socket and reads a hidden enabled set (`@Shared`, all enabled until D1's page). Record: [006](006-b1-definitions.md). |
+| **B2** | B | B1 | Runner core (pure): run state machine incl. `repeat`, run store, template renderer, action registry, watchdog with injected clock that consumes exact signals first (064-S5's watchdog part, moved here 2026-08-29) — tested against fake boundaries. Activations live in the shared dispatch store; there is no separate `WorkflowRequestRegistry` (decision 2026-08-29). |
+| **B3** | B | A2, 064-S1, B2, #733 | Runner wiring: `WorkflowRunsFeature` effects, observer consumption via `AppFeature`, CLI preflight, `prowl workflow run/status/done/cancel` + contracts. Engine first powered on. |
 | **C1** | C | B3 | Status center fifth state + run panel + attention triggers + notifications (061 visual verification). Runs become visible. |
 | **C2** | C | B3 | Start sheet (bindings, suggestion-based profile creation, don't-ask-again, `--skip` equivalent) + entry points (capsule popover, palette, Active Agents context menu). GUI-initiated runs. |
 | **D1** | D | B1, C2, 065-K1 | `prowl-workflows` authoring skill (registered by adding it to `skills/`; embedding and the registry come from [065](../065-bundled-agent-skills/000-plan.md)), `docs/components/workflows.md`, Settings › Workflows page (enable/validate/Reveal/New/Ask-agent/per-workflow auto) added to the Agents group. Distribution and docs. |
-| **D2** | D | A2, C2, D1, 064-S3 wave 1, #733, #726 T1 | `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification; the watchdog consumes exact signals (064-S5 part). Proves the engine on a fresh flow before touching shipped behavior. |
+| **D2** | D | A2, C2, D1, 064-S3 wave 1, #733, #726 T1 | `prowl.adversarial-review` built-in + reviewer skill + E2E self-verification (the exact-signal watchdog's first proof in a real flow). Proves the engine on a fresh flow before touching shipped behavior. |
 | **D3** | D | D2 | `prowl.handoff` + `prowl.handoff-checkpoint` built-ins + `handoff.transition`/`handoff.checkpoint` actions; `prowl handoff to\|save` → `HANDOFF_RETIRED` stubs; remove `HandoffHudFeature`, `HandoffCommandHandler`, `HandoffRequestRegistry`; rewrite `docs/components/handoff.md` and the `prowl-cli` skill. Migrate the shipped feature last. |
 | **V2** | — | — | observe mode (`expect.status` + `agents read` / hook `last_assistant_message`), `on_attention: ask <role>`, fan-out (`count`, `wait all`), run persistence/resume, retention, cross-worktree roles, GUI editor. |
 
@@ -596,6 +596,20 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-29 (B1 kickoff, grilled): the DSL spec was aligned with what R1 shipped.
+  (1) `expect` activations are records in the shared dispatch store — `launch` via the S2
+  prompted-launch path, `message` via #733's re-dispatch — and `workflow done` is the
+  body-validating completion of that record; the per-activation token stays for correlation
+  only, and the `WorkflowRequestRegistry` of the execution-model section is not built.
+  (2) Model, validator, JSON Schema, and discovery live in `ProwlCLIShared`; `validate`/`schema`
+  work without the app. (3) The watchdog consumes exact signals first (064-S5's watchdog part
+  moves from D2 to B2; `turn_grace` 15 s, floor 5 s, re-check at expiry). (4) `launch.prompt`
+  may be multi-line (A2's prompt carrier; 32 KiB cap); the appended protocol block is the
+  workflow one and `dispatch-complete` on an activation is `WORKFLOW_DELIVERY_REQUIRED`.
+  (5) A `message` step injects only into an idle role (`waitingForRole`); early injection
+  needs a `turn-start` signal and is V2. (6) B1 includes `list` over the socket with a hidden
+  enabled set. Spec: [dsl-spec.md](dsl-spec.md) §4/§5/§9/§10/§12; record:
+  [006-b1-definitions.md](006-b1-definitions.md).
 - Updated 2026-08-29: R1 shipped in v2026.8.29. R2 is split into R2a (B1–C1) and R2b (C2–D2);
   #733 (re-dispatch into an existing pane) and #726 T0 (version attestation) are scheduled in
   R2a as D2 prerequisites, #726 T1 precedes D2 in R2b, and the working cadence is recorded in

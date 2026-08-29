@@ -4,7 +4,9 @@
 > and the CLI participant protocol. Updated in place as the design settles and the
 > implementation lands; history and rationale live in [000-plan.md](000-plan.md).
 >
-> Status: **draft** (2026-08-21) — not yet implemented. Sections marked *TBD* are open.
+> Status: **draft, revised 2026-08-29** after R1 shipped — B1 (definitions) is next; §4, §5, §9,
+> §10, and §12 were aligned with the shipped dispatch model (064-S2/S3, #733) on 2026-08-29
+> (decisions in [006-b1-definitions.md](006-b1-definitions.md)). Sections marked *TBD* are open.
 
 ## 1. Principles
 
@@ -140,8 +142,8 @@ steps:
 
 | Verb | Payload keys | Allowed target | Notes |
 | --- | --- | --- | --- |
-| `message: <role>` | `text` (single line, typed verbatim) **or** `instruction` (multi-line, materialized + pointer) | live interactive role (`current`, `pick`, or a `launch` role already launched) | Injection is gated: `blocked` → not typed, run → `needsAttention`; `working` → the line is accepted by the agent runtime's own input queue (Prowl keeps none), shown in the panel. |
-| `launch: <role>` | `prompt` (kickoff, templated), optional `skill` (an id from the embedded skill registry — same pattern as a workflow id, e.g. `prowl.adversarial-reviewer`; it must resolve to a bundled skill, unknown ids are validation errors; custom skills are V2) | `launch` role, at most once per run (V1) | Profile plan with `AgentStartIntent.prompt`. The single-/multi-line decision is made on the *rendered* prompt: one line → passed verbatim (after the §10 rendered-text check); otherwise materialized, and the kickoff becomes the pointer line. |
+| `message: <role>` | `text` (single line, typed verbatim) **or** `instruction` (multi-line, materialized + pointer) | live interactive role (`current`, `pick`, or a `launch` role already launched) | Injection is gated: `blocked` → not typed, run → `needsAttention`; `working` → not typed either — the step waits in `waitingForRole` until the role is idle/done (064.012 corroboration rules), then injects and opens its activation, so an activation is only ever created against an idle agent (§5). The panel shows what it is waiting for. |
+| `launch: <role>` | `prompt` (kickoff, templated), optional `skill` (an id from the embedded skill registry — same pattern as a workflow id, e.g. `prowl.adversarial-reviewer`; it must resolve to a bundled skill, unknown ids are validation errors; custom skills are V2) | `launch` role, at most once per run (V1) | Profile plan with `AgentStartIntent.prompt`. The rendered prompt is passed whole through the launch boundary's prompt carrier (A2's `PROWL_LAUNCH_PROMPT`; no PTY line limit): multi-line prompts are allowed, NUL is rejected, and a rendered prompt above 32 KiB is `PROMPT_TOO_LARGE`. Materialization applies to `message` only. When the step has an `expect`, the runner appends the workflow completion protocol block (below) in place of S2's plain dispatch protocol. |
 | `action: <id>` | `with` (templated map) | — | V1 registry: `handoff.transition` (inputs `briefing?`, `from`, `to`; performs archive-first `.prowl/handoff/` transition; outputs `kickoff_prompt`, `artifact_path`, `has_briefing`), `handoff.checkpoint`, `git.context`. Every registered action declares a typed schema for its `with` inputs (required/optional) and its output keys; `prowl workflow schema` prints them. |
 | `notify: <text>` | — | — | Bell pipeline; click focuses the `current` role's pane, or — when the workflow has no `current` role — the source worktree (status panel). |
 | `close: <role>` | — | `launch` roles | Never implicit; cancel never closes panes. |
@@ -165,6 +167,16 @@ and every re-delivery after Relaunch, so no path ever shows a token-less or
 verdict-less command. Authors never spell the command (the validator warns when
 `text`/`instruction` contains `prowl workflow done`).
 
+**Where the token travels.** For a `message` step the token is part of the typed line
+(`PROWL_WORKFLOW_TOKEN=<token> …`, the same environment-prefix technique as today's
+`PROWL_HANDOFF_REQUEST_ID`). For a `launch` step it is placed in the launched surface's
+environment exactly like `PROWL_DISPATCH_ID`, and the **workflow protocol block** the runner
+appends to the kickoff prompt spells the command without a prefix: it names the run, the
+role, the expected sections, and one complete `prowl workflow done [--verdict <v>] -` command
+per allowed verdict. A `prowl agents dispatch-complete` issued from a pane whose pending
+record is a workflow activation is rejected with `WORKFLOW_DELIVERY_REQUIRED`, whose message
+carries the exact replacement command — it never completes the step with a missing output.
+
 **V1 native action schemas** (normative summary; `prowl workflow schema` prints the full
 JSON Schema):
 
@@ -186,6 +198,18 @@ expect:
   on_timeout: attention     # only with `timeout`: attention (default) | skip | cancel
 ```
 
+- **Activation = dispatch (decision 2026-08-29).** Every activation is a record in the shared
+  dispatch store (`AgentDispatchStore`, 064-S2): a `launch` step creates it through the
+  prompted-launch path, a `message` step through #733's re-dispatch into an existing surface.
+  One pending record per surface; it is created only while the role is idle (§4), so exactly
+  one runtime turn belongs to it and a `turn-ended` without a delivery is the `incomplete`
+  evidence the watchdog consumes (§10). `prowl workflow done` resolves the caller pane to that
+  pane's current pending record (kernel peer PID + process ancestry, as `dispatch-complete`
+  does) and additionally requires the activation token to match — correlation, not trust —
+  then validates the body, persists the output, and completes the record. Skip / Cancel /
+  Relaunch abandon the record (the reason names run and step). The `run` response and
+  `workflow status` expose each activation's dispatch id, so `prowl agents wait --dispatch`
+  works on workflow activations too; there is no separate `WorkflowRequestRegistry`.
 - **Invocation and activation identity.** Every execution of a `message` or `launch` step
   — once for a plain step, once per iteration inside `repeat`, again after Relaunch —
   mints a run-global, monotonic **invocation ordinal** (1, 2, 3, … across all steps and
@@ -299,9 +323,11 @@ prowl workflow schema                                         # JSON Schema / re
 
 **Resolution of `done`.** Two independent facts must agree: the **caller pane** (socket
 peer PID → process ancestry → shell PID → pane) identifies the run and role, and the
-**delivery token** (`PROWL_WORKFLOW_TOKEN`, read from the environment of the `prowl`
-process exactly like `PROWL_HANDOFF_REQUEST_ID` today, or `--token`) identifies the awaited
-step. Prowl mints the token when the step starts waiting, embeds it in the typed hint, and
+**delivery token** (`PROWL_WORKFLOW_TOKEN` — set in the launch environment for a `launch`
+step's activation exactly like `PROWL_DISPATCH_ID`, carried as the typed line's environment
+prefix for a `message` step's activation exactly like `PROWL_HANDOFF_REQUEST_ID` today, or
+`--token`) identifies the awaited step. Prowl mints the token when the step starts waiting,
+embeds it in the typed hint, and
 revokes it on Skip / Cancel / Relaunch; a stale or duplicated `done` from a pane that has
 moved on to another step is therefore rejected instead of misattributed. A pane belongs
 to at most one run at a time, so no run/step ids are needed in the typed command. Explicit
@@ -310,7 +336,7 @@ to at most one run at a time, so no run/step ids are needed in the typed command
 attributed to that activation's delivery role; if the step is not currently waiting the
 result is `STEP_NOT_EXPECTING`. If caller pane and explicit ids disagree,
 `ROLE_MISMATCH` unless `--force`. Launched surfaces may additionally carry
-`PROWL_WORKFLOW_RUN` / `PROWL_WORKFLOW_ROLE` as a cross-check hint; the registry is the
+`PROWL_WORKFLOW_RUN` / `PROWL_WORKFLOW_ROLE` as a cross-check hint; the dispatch store is the
 authority.
 
 **`--role` grammar** (source-specific; duplicate overrides for one role and overrides for
@@ -344,13 +370,18 @@ Error codes: `WORKFLOW_NOT_FOUND`, `WORKFLOW_INVALID`, `RUN_NOT_FOUND`, `PANE_BU
 `OUTPUT_INVALID` (sections/format/verdict), `OUTPUT_TOO_LARGE`, `VERDICT_REQUIRED`,
 `PROFILE_NOT_FOUND`, `PROFILE_NOT_UNIQUE`, `SKILL_NOT_FOUND`, `RENDERED_TEXT_INVALID`
 (a rendered `text`/pointer/`--input` value would not survive as one terminal line),
-`UNSAFE_PATH`. (`AGENT_GONE` and `WAIT_TIMEOUT` belong to the `agents wait` contract, not
-to `prowl workflow`.)
+`UNSAFE_PATH`, `PROMPT_TOO_LARGE` (a rendered `launch` prompt above 32 KiB),
+`WORKFLOW_DELIVERY_REQUIRED` (`agents dispatch-complete` from a pane whose pending record is a
+workflow activation; the message carries the exact `prowl workflow done` replacement).
+(`AGENT_GONE` and `WAIT_TIMEOUT` belong to the `agents wait` contract, not to
+`prowl workflow`.)
 
 Companion primitives for CLI-driven orchestration (same boundaries as the runner):
 `prowl create pane <pane> --direction <dir> [--profile <name|uuid> --prompt -]`,
 `prowl create tab <worktree> [--profile … --prompt -]`, `prowl profiles list`,
-`prowl agents wait <pane> --until idle|done|blocked|changed [--timeout]`, `prowl send`,
+`prowl agents wait <pane> --until idle|blocked|changed|exit [--timeout]`,
+`prowl agents wait --dispatch <id>`, `prowl agents dispatch <pane> --prompt -` (#733 — the
+re-dispatch that `message` + `expect` rides on), `prowl agents signal`, `prowl send`,
 `prowl agents read`. `agents wait` (and `agents signal`) are specified in
 [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md); they consume
 the typed per-surface observer (`ObservedAgentState`: `snapshot` first, then `changed` /
@@ -365,11 +396,11 @@ changed` / `exit` was requested.
 | --- | --- |
 | Start | Resolve bindings, freeze plans, create run dir, write `run.json`, then execute step 1. `current` role must not already be in a run (`PANE_BUSY`). |
 | Advance | A step completes when its `expect` is satisfied (or it has none and its effect succeeded). `repeat` evaluates `until` before entry and after each iteration; `max` reached with `until` still false ends the run as `max_rounds_reached`. |
-| Message delivery | Injection is synchronous (`insertCommittedText` + submit, treated as one operation); Prowl keeps no queue — a `working` agent holds the line in its own input queue, and the panel says so. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). If the insert succeeded but the submit failed, the attention text says that the line may still sit unsubmitted in the pane's input (Focus pane lets the user press Enter there). **Retry** re-executes the step as a new invocation: it mints a new ordinal (and, when the step has an `expect`, revokes the previous activation's token and mints a new one) and injects the freshly rendered line. At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
+| Message delivery | A `message` step first waits for its role to be idle/done (`waitingForRole`; a `working` role is never injected into — §4, §5 activation rule; a later `turn-start` signal may relax this, §12), then injects synchronously (`insertCommittedText` + submit, treated as one operation) and opens the activation. A `message` step advances only after a successful injection; a `blocked` role, a missing surface, or a failed injection leaves the step active in `needsAttention` (Retry / Skip / Cancel). If the insert succeeded but the submit failed, the attention text says that the line may still sit unsubmitted in the pane's input (Focus pane lets the user press Enter there). **Retry** re-executes the step as a new invocation: it mints a new ordinal (and, when the step has an `expect`, revokes the previous activation's token and mints a new one) and injects the freshly rendered line. At most one pending injection per role; Cancel / Skip / Relaunch drop it. |
 | Binding scope | As defined in §3 (four-tuple key with the canonical role-requirements digest); §3 is normative. |
 | Invocation / activation | Defined in §5: every `message`/`launch` execution mints a run-global invocation ordinal (artifact naming); a waiting invocation is an activation with its own token; one delivery per activation; revocation is per activation; outputs and instructions are versioned by ordinal. |
 | Rendered-text boundary | Every string that reaches `insertCommittedText` + submit — rendered `text`, pointer lines, completion commands, nudges — is validated after template substitution: no line terminators (`\n`, `\r`, U+2028/2029) and no C0/C1 control characters; violations stop the step with `RENDERED_TEXT_INVALID` (`needsAttention`, never a partial injection). String inputs and `--input` values are validated the same way at start; a worktree path that cannot be rendered on one line is rejected at start (`UNSAFE_PATH`). Multi-line content always goes through `instruction` / materialized files. |
-| Watchdog | Driven by the periodic detection events (`agentEntryChanged` / `agentEntryRemoved`, forwarded to the runner by `AppFeature`'s single terminal-event subscription — `WorktreeTerminalManager.eventStream()` is single-consumer) plus an injected clock. When a step starts waiting the watchdog reads the role's current state first and schedules cancellable grace deadlines; it never depends on a later event alone. Every trigger has a grace period because detection is heuristic and a wrong guess must be harmless. Awaited role `blocked` ≥ `blocked_grace` (default 30 s) → `needsAttention` (Focus pane / Cancel). Awaited role `idle`/`done` ≥ `idle_grace` (default 3 min) without `done` → one automatic nudge (`[Prowl] When your work for this step is fully complete, finish with: <the active activation's completion command, from the §4 renderer — token and verdict choices included>`, harmless if the agent is still working because the runtime merely queues the line), then `needsAttention` after another `idle_grace` (Nudge again / Keep waiting / Skip / Cancel). Awaited role's agent process gone → `needsAttention` (Relaunch role / Skip / Cancel). `working` never triggers anything. Grace values are global settings. |
+| Watchdog | Exact signals first, heuristics as fallback (decision 2026-08-29; 064-S5's watchdog part). The runner subscribes to the role's surface through `TerminalClient.observeAgentState` (064-S1 multicast: `snapshot` first, then `changed` / `removed` / `surfaceClosed` / `.signal`) and to the activation through `observeAgentDispatch`, plus an injected clock. When a step starts waiting the watchdog reads the current state first and schedules cancellable deadlines; it never depends on a later event alone. With a `verified_live` channel: `needs-input` → `needsAttention` immediately (Focus pane / Cancel); `turn-ended` without a delivery → `turn_grace` (default 15 s, floor 5 s; at expiry the state is re-read, and a role that is `working` again or has since reported `session-start` / `progress` re-arms instead of nudging) → one automatic nudge (`[Prowl] When your work for this step is fully complete, finish with: <the active activation's completion command, from the §4 renderer — token and verdict choices included>`) → `idle_grace` (default 3 min) → `needsAttention` (Nudge again / Keep waiting / Skip / Cancel); `session-end` or agent process gone → `needsAttention` (Relaunch role / Skip / Cancel). Without a channel (manually launched or tier-B runtimes) the heuristic rules apply, using 064.012's corroboration for arm-time state: `blocked` ≥ `blocked_grace` (default 30 s) → `needsAttention`; `idle`/`done` ≥ `idle_grace` without a delivery → nudge, then `needsAttention` after another `idle_grace`. `working` never triggers anything. Grace values are global settings. |
 | `needsAttention` | A UI state (orange status slot + notification), never a deadline: a late `done` is still accepted; only an explicit Skip marks the output missing and rejects later deliveries. |
 | Explicit `timeout` | Only when an author sets `expect.timeout`: `attention` (default) enters `needsAttention`; `skip` / `cancel` act automatically. |
 | Cancel | Stops advancing and injecting; keeps all panes and outputs; logs. |
@@ -412,4 +443,7 @@ headless` roles backed by a specified `HeadlessAgentExecutor` (cwd/env, stdout/s
 bounds, exit/cancel/timeout semantics, per-runtime trusted result extraction), `worktree:`
 on roles (cross-repo review), run resume, output retention policy, nested `repeat`,
 `outputs.<name>.json` field access, custom (non-bundled) `skill:` sources with their own
-rooted discovery and containment rules, `expect … from: <role>` on native actions.
+rooted discovery and containment rules, `expect … from: <role>` on native actions, a
+`turn-start` runtime signal (Claude `UserPromptSubmit`, Pi/OMP `agent_start`) that would let a
+`message` step inject into a `working` role early while still binding the activation to the
+right turn (V1 waits for idle instead).

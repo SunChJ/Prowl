@@ -102,16 +102,16 @@ User-visible result: onevcat's daily CLI-driven orchestration is first-class
 | Order | Slice | Entry | Depends | Outcome |
 | --- | --- | --- | --- | --- |
 | 1 | **B1** definitions (Yams, model, validator, JSON Schema, three-source discovery, `workflow list/validate/schema`) | 063 | — | DSL authorable and validatable; dormant until B3 |
-| 1 | **#733** `prowl agents dispatch <pane> --prompt -`: a new pending dispatch bound to an existing surface, one pending per surface, `dispatch-complete` resolved from the caller's ancestry to the pane's current record, refused while the agent is working or blocked | 064 | S2, 064.012 | a reviewer launched once takes N assignments, each with its own receipt — the shape `prowl.adversarial-review` (D2) needs, and usable from the CLI recipe as soon as it merges |
+| 1 | **#733** `prowl agents dispatch <pane> --prompt -`: a new pending dispatch bound to an existing surface, one pending per surface, `dispatch-complete` resolved from the caller's ancestry to the pane's current record, refused while the agent is working or blocked | 064 | S2, 064.012 | a reviewer launched once takes N assignments, each with its own receipt — the transport B3's `message` + `expect` rides on (decision 2026-08-29), and usable from the CLI recipe as soon as it merges |
 | 1 | **#726 T0** version attestation: per-runtime attested version record beside the research matrix + `make agent-versions` | 064 | S3 wave 1 | an installed runtime newer than its attested contract warns before a release |
-| 2 | **B2** runner core (pure state machine, run store, templates, registry, watchdog) | 063 | B1 | — |
-| 3 | **B3** runner wiring + `workflow run/status/done/cancel` | 063 | A2, S1, B2 | engine powered on |
+| 2 | **B2** runner core (pure state machine, run store, templates, registry, watchdog) | 063 | B1 | watchdog on exact signals (064-S5 watchdog part, moved from D2) |
+| 3 | **B3** runner wiring + `workflow run/status/done/cancel` | 063 | A2, S1, B2, #733 | engine powered on |
 | 4 | **C1** status center + run panel + notifications | 063 | B3 | runs visible |
 
 User-visible result: a workflow file runs from the CLI (`prowl workflow run`), its steps and
 attention states show in the status center, and a coordinating agent can re-dispatch into a
 reviewer it already launched. Parallelism: B1 ∥ #733 ∥ #726 T0 (the two 064 slices do not
-touch B1's files). Docs: `workflows.md` (CLI part), `cli.md`, `prowl-cli` skill.
+touch B1's files); #733 must merge before B3 starts. Docs: `workflows.md` (CLI part), `cli.md`, `prowl-cli` skill.
 
 ### R2b — Workflow GUI, docs, and the first built-in
 
@@ -120,7 +120,7 @@ touch B1's files). Docs: `workflows.md` (CLI part), `cli.md`, `prowl-cli` skill.
 | 1 | **C2** start sheet + entry points (capsule popover, palette, Active Agents) | 063 | B3 | GUI-initiated runs |
 | 2 | **D1** `prowl-workflows` authoring skill (skills embedding from 065), `docs/components/workflows.md`, Settings › Workflows page, CLI reachability status (deferred from C0) | 063 | B1, C2, 065-K1 | custom workflows, agent-assisted authoring |
 | 3 | **#726 T1** headless contract tests against the real tier-A binaries through the production renderers/decoder (`make test-agent-contracts`, passing runs update T0) | 064 | #726 T0, S3 wave 1 | hook contracts fail loudly on binary drift before D2's E2E leans on them |
-| 4 | **D2** `prowl.adversarial-review` built-in + reviewer skill + E2E; watchdog consumes exact signals (064-S5 part) | 063 + 064 | A2, C2, D1, S3 wave 1, #733, #726 T1 | first built-in workflow |
+| 4 | **D2** `prowl.adversarial-review` built-in + reviewer skill + E2E | 063 | A2, C2, D1, S3 wave 1, #733, #726 T1 | first built-in workflow |
 
 The shipped handoff (HUD + `prowl handoff`) stays untouched through R2a and R2b. The split
 replaces the earlier "one R2" default (decision 2026-08-29): R2's seven slices outweigh R1's
@@ -182,7 +182,7 @@ R1:  C0            A1 ──► A1b                         (shipped v2026.8.29)
                                ├──► S2 ──► S3w1 ──► #732 ──► #736
                           S1 ──┘
      065-S0/K1 ──► 065-K2 ──► 065-K3
-R2a: B1 ──► B2 ──► B3 (◄ A2, S1) ──► C1
+R2a: B1 ──► B2 ──► B3 (◄ A2, S1, #733) ──► C1
      #733 (◄ S2)        #726-T0 (◄ S3w1)
 R2b: C2 (◄ B3) ──► D1 (◄ B1, 065-K1) ──► D2 (◄ S3w1, #733, #726-T1)
      #726-T1 (◄ #726-T0)
@@ -192,6 +192,10 @@ R3+: V2 / S5 rest;  delete HANDOFF_RETIRED stubs
 
 ## Change log
 
+- 2026-08-29 — B1 kickoff: the DSL spec was aligned with the shipped dispatch model (grilled
+  decisions in [063.006](006-b1-definitions.md)). #733 becomes a hard prerequisite of B3
+  (activations ride on re-dispatch), and 064-S5's watchdog part moves from D2 into B2 so the
+  runner never ships a heuristic-only watchdog. Order inside R2a is unchanged.
 - 2026-08-29 — R1 shipped in v2026.8.29 (tag `5ba8aacd`), including three unplanned tail PRs
   found by end-to-end passes over the `prowl-cli` skill: #732 (064.012 evidence semantics),
   #735 (Settings page renamed CLI & Skills), #736 (064.013 idle evidence fallback). R2 is
