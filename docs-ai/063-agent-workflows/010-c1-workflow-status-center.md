@@ -143,8 +143,10 @@ workflow input was removed; persisted local run records remain under the self-ig
   - the workflow popover stays mounted while a toast overlays it, preserving pinned panel state;
   - selected-worktree `skipped` and `maxRoundsReached` outcomes now receive warning toasts, while
     successful completion keeps the success toast.
-- One duplicate-edge reducer test now turns exhaustive TestStore checking on for the no-action
-  assertion, closing an earlier test-honesty gap.
+- The duplicate-edge reducer test now keeps exhaustive TestStore checking enabled through the next
+  action, so an unexpected duplicate notice cannot be discarded before the assertion boundary.
+- The toolbar still summarizes the newest run, but a run needing attention is now the default panel
+  selection and VoiceOver label target, avoiding an extra hunt in multi-run panels.
 - One or more additional neighboring-agent adversarial review rounds, with accepted fixes and
   evidence recorded on the PR.
 - Final reviewed-head live E2E across the full action/attention matrix, multiple runs,

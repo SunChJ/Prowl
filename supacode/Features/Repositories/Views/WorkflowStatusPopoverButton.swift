@@ -66,7 +66,7 @@ struct WorkflowStatusPopoverButton: View {
         return
       }
       if selectedRunID.map({ !runIDs.contains($0) }) == true {
-        selectedRunID = runIDs.first
+        selectedRunID = defaultRunID
       }
     }
     .onChange(of: isToolbarVisible) { _, visible in
@@ -94,7 +94,7 @@ struct WorkflowStatusPopoverButton: View {
   }
 
   private var accessibilityLabel: String {
-    guard let run = presentation.primary else { return "Workflow status" }
+    guard let run = presentation.attentionRun ?? presentation.primary else { return "Workflow status" }
     let prefix = presentation.hasAttention ? "Workflow needs attention" : "Workflow running"
     let count = presentation.activeRunCount > 1 ? ", \(presentation.activeRunCount) active runs" : ""
     return "\(prefix): \(run.currentStepTitle)\(count)"
@@ -106,7 +106,7 @@ struct WorkflowStatusPopoverButton: View {
       return
     }
     closeTask?.cancel()
-    selectedRunID = selectedRunID ?? presentation.primary?.id
+    selectedRunID = selectedRunID ?? defaultRunID
     pinPresentation()
   }
 
@@ -119,7 +119,7 @@ struct WorkflowStatusPopoverButton: View {
   private func updatePresentation() {
     if isPinnedOpen || isHoveringButton || isHoveringPopover {
       closeTask?.cancel()
-      selectedRunID = selectedRunID ?? presentation.primary?.id
+      selectedRunID = selectedRunID ?? defaultRunID
       isPresented = true
       return
     }
@@ -136,6 +136,10 @@ struct WorkflowStatusPopoverButton: View {
     closeTask?.cancel()
     isPinnedOpen = false
     isPresented = false
+  }
+
+  private var defaultRunID: UUID? {
+    presentation.attentionRun?.id ?? presentation.primary?.id
   }
 }
 
@@ -504,7 +508,7 @@ private struct WorkflowRunPanelView: View {
   private func selectFirstRunIfNeeded() {
     let ids = presentation.runs.map(\.id)
     if selectedRunID == nil || selectedRunID.map({ !ids.contains($0) }) == true {
-      selectedRunID = ids.first
+      selectedRunID = presentation.attentionRun?.id ?? ids.first
     }
   }
 

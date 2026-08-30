@@ -125,6 +125,7 @@ struct WorkflowStatusCenterPresentationTests {
     )
 
     #expect(presentation.primary?.id == newerRunning.run.id)
+    #expect(presentation.attentionRun?.id == olderAttention.run.id)
     #expect(presentation.hasAttention)
   }
 

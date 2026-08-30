@@ -544,7 +544,8 @@ prowl workflow schema [--json]                          # JSON Schema (Draft 202
   Accept with a declared verdict, Ask Again, Skip Step, and Cancel Run as applicable. Skip shows
   whether the workflow continues or ends before confirmation. Successful completion uses the
   toolbar success toast; background attention/completion also enters Notifications and focuses the
-  relevant pane when selected, but stays quiet when that worktree is already being viewed.
+  relevant pane when selected. When that worktree is already being viewed, the existing active-
+  surface notification preference decides whether external delivery stays quiet.
 - `cancel <run-id>` stops a live run: it stops advancing and injecting, abandons the pending
   activation, keeps every pane and output, and reports the ended run. Attention states a run
   reaches (an agent that went idle without delivering, a blocked or vanished pane, a

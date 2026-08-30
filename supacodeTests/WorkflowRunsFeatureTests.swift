@@ -1059,8 +1059,10 @@ struct WorkflowRunsFeatureTests {
     // A late event while the same attention state is active is ignored and emits no duplicate.
     store.exhaustivity = .on
     await store.send(.event(runID: runID, .injectionFailed(ordinal: 1, .surfaceMissing)))
-    store.exhaustivity = .off(showSkippedAssertions: false)
-    await store.send(.userAction(runID: runID, .cancel))
+    _ = expectedMachine.apply(.user(.cancel))
+    await store.send(.userAction(runID: runID, .cancel)) {
+      $0.sessions[runID]?.run = expectedMachine.run
+    }
     await store.finish(timeout: Self.timeout)
   }
 
