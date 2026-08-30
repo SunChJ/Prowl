@@ -390,6 +390,7 @@ struct WorkflowRunsFeatureTests {
           percentEncoded: false)))
     let reviewerPane = try #require(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane)
     #expect(reviewerPane.handle == "p11")
+    #expect(store.state.paneOwners[reviewerPane.surfaceID] == runID, "a launch take-up records the owner")
     #expect(fixture.armed.map(\.ordinal) == [1, 2])
     let key = try #require(session.bindingMemoryKeys["reviewer"])
     let remembered = withDependencies {
@@ -806,27 +807,54 @@ struct WorkflowRunsFeatureTests {
   }
 
   /// The boundary's ownership rule: the pane belongs to the run that bound it most recently —
-  /// also once that run has ended and kept it — never to an earlier run whose close is still
-  /// queued.
-  @Test func theLatestBinderOwnsAPaneWhateverItsStatus() throws {
+  /// recorded at admission and at launch take-up, never read from a clock — also once that run
+  /// has ended and kept it, never to an earlier run whose close is still queued.
+  @Test(.dependencies) func theMostRecentBindingOwnsAPaneWhateverTheClockSays() async throws {
     let fixture = try Fixture()
     defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
     let pane = WorkflowRunMachineTests.reviewerPane
     var earlier = try fixture.session().0
     earlier.run.bindings["reviewer"] = .launch(Self.reviewerProfile, pane: pane)
-    earlier.run.status = .completed
-    var later = try fixture.session(startedAt: Self.now.addingTimeInterval(1)).0
+    await store.send(.started(earlier, effects: [])) {
+      $0.paneOwners[pane.surfaceID] = earlier.run.id
+    }
+    // A later admission whose clock reading is *earlier* still takes the pane over.
+    var later = try fixture.session(startedAt: Self.now.addingTimeInterval(-60)).0
     later.run.bindings["author"] = .current(pane)
-    var state = WorkflowRunsFeature.State()
-    state.sessions[earlier.run.id] = earlier
-    #expect(state.latestBinder(of: pane.surfaceID)?.run.id == earlier.run.id)
-    state.sessions[later.run.id] = later
-    #expect(state.latestBinder(of: pane.surfaceID)?.run.id == later.run.id)
-    #expect(state.activeSession(boundTo: pane.surfaceID)?.run.id == later.run.id)
-    later.run.status = .cancelled
-    state.sessions[later.run.id] = later
-    #expect(state.activeSession(boundTo: pane.surfaceID) == nil, "an ended run is no longer busy")
-    #expect(state.latestBinder(of: pane.surfaceID)?.run.id == later.run.id, "but the pane stays its")
+    await store.send(.started(later, effects: [])) {
+      $0.paneOwners[pane.surfaceID] = later.run.id
+    }
+    await store.send(.userAction(runID: later.run.id, .cancel))
+    await store.send(.userAction(runID: earlier.run.id, .cancel))
+    await store.finish(timeout: Self.timeout)
+    #expect(store.state.activeSession(boundTo: pane.surfaceID) == nil, "an ended run is no longer busy")
+    #expect(
+      store.state.paneOwners[pane.surfaceID] == later.run.id,
+      "the later run keeps the pane it ended with; the earlier run never gets it back")
+  }
+
+  /// A fence that lands before the executor even reaches the action's batch skips it at the
+  /// batch check, and the run log still records that the action was not started.
+  @Test(.dependencies) func anActionSkippedAtTheBatchCheckIsLoggedAsNotStarted() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = FencingQueue(fenceOnCheck: 1)
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session(Self.actionFirst)
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await queue.reached()
+    #expect(store.state.sessions[runID]?.run.phase == .runningAction(stepID: "context"))
+    await store.send(.userAction(runID: runID, .cancel)) {
+      $0.sessions[runID]?.run.status = .cancelled
+    }
+    await store.finish(timeout: Self.timeout)
+    let log = try String(
+      contentsOf: session.store.directory(for: runID).appending(path: "log.md"), encoding: .utf8)
+    #expect(log.contains("Step 'context': native action 'git.context' not started; the run had moved on."))
+    #expect(!log.contains("finished after the run moved on"))
   }
 
   /// Brief delivered, reviewer launched, findings delivered: the run is at `cleanup` (a queued

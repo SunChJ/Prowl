@@ -56,7 +56,7 @@ start sheet and interactive binding picker.
 | W4 | A non-strict delivery with validation issues persists and becomes `needsAttention`; B3 reports `delivery.state = provisional`, warnings, and the attention vocabulary through `status`, but does not silently accept it. | H14 requires a user decision. C1 supplies Accept / Ask again / Skip / Retry / Relaunch controls; B3 intentionally has only `status` and `cancel` as public lifecycle controls. Before C1, a provisional delivery (and every other attention state) is cancel-only; it cannot be re-delivered because the activation is no longer waiting. R2a is not released with B3 but without C1. |
 | W5 | `status` reads an active run from reducer state when available and otherwise reads a v1 record from its indexed worktree root. No run is reconstructed from disk. | Status and `agents wait --dispatch` remain useful after an app restart without accidentally implementing V2 resume. |
 | W6 | CLI launch roles use only frozen profile launch plans. `PROWL_WORKFLOW_TOKEN`, `PROWL_WORKFLOW_RUN`, and `PROWL_WORKFLOW_ROLE` are child-only surface environment values, not `run.json` or response data. | Retains B2's privacy rule and prevents a workflow token from leaking to unrelated processes or persisted metadata. |
-| W7 | A `close` step closes the pane the run launched without a confirmation (`closeSurface(confirmation: .skip)`); the effect is revocable (a cancel that beats it keeps the pane), and the boundary closes only when the run is still the pane's *most recent* binder (`WorkflowRunsFeature.State.latestBinder(of:)`, whatever that binder's status — a later run that ended keeps the pane). The plan's "protected close" wording is superseded. | Ghostty's protected close asks whenever the pane's process is alive, which an idle agent's process always is — every workflow cleanup would pop a modal from the executor. The author asked for the close explicitly and the run owns the pane; the two real hazards (a cancel racing the close, a pane re-bound after the run ended) are what the guards cover. |
+| W7 | A `close` step closes the pane the run launched without a confirmation (`closeSurface(confirmation: .skip)`); the effect is revocable (a cancel that beats it keeps the pane), and the boundary closes only when the run is still the pane's *most recent* binder (`WorkflowRunsFeature.State.paneOwners`, recorded at admission and at launch take-up — never from a clock — whatever that binder's status: a later run that ended keeps the pane). The plan's "protected close" wording is superseded. | Ghostty's protected close asks whenever the pane's process is alive, which an idle agent's process always is — every workflow cleanup would pop a modal from the executor. The author asked for the close explicitly and the run owns the pane; the two real hazards (a cancel racing the close, a pane re-bound after the run ended) are what the guards cover. |
 
 ## Tests and verification
 
@@ -204,11 +204,13 @@ unchanged except for one seam.
   - Restart: the isolated app was killed while `b3-idle` was `running`; after relaunch
     `status <run-id>` answered from `run.json` (`source: record`, `interrupted`, no activation)
     and `log.md` gained "Run marked interrupted at app launch (no resume in V1)".
-  - Re-run after review round 2 (fenced bookkeeping, in-`deliverLine` liveness guard,
-    reservations): `b3-review` from a launched author pane again completed in 230 s — brief
-    delivered by caller ancestry, reviewer launched, `fix` and `rereview` re-dispatched through
-    the #733 idle wait, `until` exited on `clean` after one round, `notify` fired, `close`
-    removed the reviewer pane; no dispatch record was left pending on either pane.
+  - Re-run after each review round that touched the live path (round 2: fenced bookkeeping and
+    the in-`deliverLine` liveness guard; round 3: revocable `close`; round 4: latest-binder
+    ownership at the close boundary): `b3-review` from a launched author pane completed each
+    time (230 s, 260 s, 100 s) — brief delivered by caller ancestry, reviewer launched, `fix`
+    and `rereview` re-dispatched through the #733 idle wait, `until` exited on `clean` after
+    one round, `notify` fired, `close` removed the reviewer pane; no dispatch record was left
+    pending on either pane.
 
 ## Review
 
@@ -287,6 +289,14 @@ whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` 
   across a cancel. Also fixed here: `markInterruptedRuns` read the `date` dependency for every
   scan, which failed `AppFeatureTerminalLayoutRestoreTests` (no clock override) — the clock is
   read only for a record that is marked.
+- **Round 5 (verification) — round-4 fixes confirmed; 2 findings (0 P0, 1 P1, 1 P2), both
+  accepted and fixed.** P1: the round-4 owner rule ordered bindings by `run.startedAt`, which
+  is neither monotonic nor total (an equal reading or a clock step backwards could hand the
+  pane back to the earlier run) — the reducer now records the owner itself, in `paneOwners`,
+  when a run is admitted and when a launch is taken up, and the boundary compares run ids
+  only. P2: an action the executor skipped at the *batch* check (the fence rose before its
+  batch was reached) left no "not started" line in `log.md`, only an app log — the batch
+  check writes the same definitive line now.
 
 ## Non-goals
 

@@ -80,6 +80,11 @@ struct WorkflowRunsFeature {
     var pendingStarts: [UUID: UUID] = [:]
     /// Worktree roots whose leftover runs were marked `interrupted` at load (dsl-spec §10 Restart).
     var scannedWorktreeRoots: Set<String> = []
+    /// The run that bound each pane most recently, whatever that run's status — recorded when a
+    /// run is admitted (`current` / `pick` bind then) and when a launch is taken up, never from
+    /// a clock. A pane a later run took over is not an earlier run's to close, even after the
+    /// later run ended and kept it.
+    var paneOwners: [UUID: UUID] = [:]
 
     var activeSessions: [WorkflowRunSession] {
       sessions.values.filter { !$0.run.status.isTerminal }
@@ -88,14 +93,6 @@ struct WorkflowRunsFeature {
     /// The active run a pane belongs to, if any.
     func activeSession(boundTo surfaceID: UUID) -> WorkflowRunSession? {
       activeSessions.first { $0.boundSurfaceIDs.contains(surfaceID) }
-    }
-    /// The run that bound the pane most recently, whatever its status: a pane a later run took
-    /// over is never an earlier run's to close, even after that later run ended. `current` and
-    /// `pick` roles bind at admission and a `launch` role binds a pane no earlier run can have
-    /// held, so the start time orders the bindings.
-    func latestBinder(of surfaceID: UUID) -> WorkflowRunSession? {
-      sessions.values.filter { $0.boundSurfaceIDs.contains(surfaceID) }
-        .max { $0.run.startedAt < $1.run.startedAt }
     }
   }
 
@@ -126,6 +123,9 @@ struct WorkflowRunsFeature {
       case .started(let session, let effects, let requestID):
         let runID = session.run.id
         state.sessions[runID] = session
+        for surfaceID in session.boundSurfaceIDs {
+          state.paneOwners[surfaceID] = runID
+        }
         if let requestID {
           state.pendingStarts[requestID] = runID
         }
@@ -150,6 +150,10 @@ struct WorkflowRunsFeature {
         state.sessions[runID] = session
         if case .launched = event {
           rememberLaunchedBindings(previous: previous, current: session)
+          let previouslyBound = Set(previous.bindings.values.compactMap { $0.pane?.surfaceID })
+          for surfaceID in session.boundSurfaceIDs.subtracting(previouslyBound) {
+            state.paneOwners[surfaceID] = runID
+          }
         }
         fenceIfStale(runID: runID, previous: previous, current: session.run)
         return .merge(
@@ -423,6 +427,11 @@ struct WorkflowRunsFeature {
           // left (`WorkflowRunEffect.isRevocable`), effect by effect.
           if effect.isRevocable, await queue.isStale(runID, batch.sequence) {
             Self.logger.info("[Workflow] Skipped stale effect of run \(runID): \(effect)")
+            if case .runAction(let stepID, let actionID, _) = effect {
+              await appendLog(
+                "Step '\(stepID)': native action '\(actionID)' not started; the run had moved on.",
+                store: batch.session.store, runID: runID)
+            }
             continue
           }
           let outcome = await perform(
