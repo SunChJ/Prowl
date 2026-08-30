@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkflowStatusPopoverButton: View {
   let presentation: WorkflowStatusCenterPresentation
+  let isToolbarVisible: Bool
   let onIntent: (WorkflowRunPanelIntent) -> Void
 
   @State private var isPresented = false
@@ -17,7 +18,7 @@ struct WorkflowStatusPopoverButton: View {
     } label: {
       if let run = presentation.primary {
         HStack(spacing: 6) {
-          statusIcon(for: run)
+          statusIcon()
           Text(run.currentStepTitle)
             .lineLimit(1)
           if presentation.activeRunCount > 1 {
@@ -40,10 +41,14 @@ struct WorkflowStatusPopoverButton: View {
       isHoveringButton = hovering
       updatePresentation()
     }
+    .opacity(isToolbarVisible ? 1 : 0)
+    .allowsHitTesting(isToolbarVisible)
+    .accessibilityHidden(!isToolbarVisible)
     .popover(isPresented: $isPresented) {
       WorkflowRunPanelView(
         presentation: presentation,
         selectedRunID: $selectedRunID,
+        onInteraction: pinPresentation,
         onIntent: onIntent
       )
       .onHover { hovering in
@@ -64,28 +69,33 @@ struct WorkflowStatusPopoverButton: View {
         selectedRunID = runIDs.first
       }
     }
+    .onChange(of: isToolbarVisible) { _, visible in
+      if !visible, !isPinnedOpen {
+        isHoveringButton = false
+        updatePresentation()
+      }
+    }
     .onDisappear {
       closeTask?.cancel()
     }
   }
 
   @ViewBuilder
-  private func statusIcon(for run: WorkflowRunPresentation) -> some View {
-    switch run.status {
-    case .running:
-      ProgressView()
-        .controlSize(.small)
-        .accessibilityHidden(true)
-    case .needsAttention:
+  private func statusIcon() -> some View {
+    if presentation.hasAttention {
       Image(systemName: "exclamationmark.triangle.fill")
         .foregroundStyle(.orange)
+        .accessibilityHidden(true)
+    } else {
+      ProgressView()
+        .controlSize(.small)
         .accessibilityHidden(true)
     }
   }
 
   private var accessibilityLabel: String {
     guard let run = presentation.primary else { return "Workflow status" }
-    let prefix = run.status.isAttention ? "Workflow needs attention" : "Workflow running"
+    let prefix = presentation.hasAttention ? "Workflow needs attention" : "Workflow running"
     let count = presentation.activeRunCount > 1 ? ", \(presentation.activeRunCount) active runs" : ""
     return "\(prefix): \(run.currentStepTitle)\(count)"
   }
@@ -97,6 +107,11 @@ struct WorkflowStatusPopoverButton: View {
     }
     closeTask?.cancel()
     selectedRunID = selectedRunID ?? presentation.primary?.id
+    pinPresentation()
+  }
+
+  private func pinPresentation() {
+    closeTask?.cancel()
     isPinnedOpen = true
     isPresented = true
   }
@@ -127,6 +142,7 @@ struct WorkflowStatusPopoverButton: View {
 private struct WorkflowRunPanelView: View {
   let presentation: WorkflowStatusCenterPresentation
   @Binding var selectedRunID: UUID?
+  let onInteraction: () -> Void
   let onIntent: (WorkflowRunPanelIntent) -> Void
 
   @State private var pendingConfirmation: PendingConfirmation?
@@ -183,6 +199,7 @@ private struct WorkflowRunPanelView: View {
           .padding(.bottom, 2)
         ForEach(presentation.runs) { run in
           Button {
+            onInteraction()
             selectedRunID = run.id
           } label: {
             HStack(alignment: .top, spacing: 8) {
@@ -263,6 +280,7 @@ private struct WorkflowRunPanelView: View {
       HStack(spacing: 6) {
         ForEach(run.roles) { role in
           Button {
+            onInteraction()
             guard let surfaceID = role.surfaceID else { return }
             onIntent(.focusPane(worktreeID: run.worktreeID, surfaceID: surfaceID))
           } label: {
@@ -401,6 +419,9 @@ private struct WorkflowRunPanelView: View {
       } label: {
         Label(control.label, systemImage: control.systemImage)
       }
+      .onHover { hovering in
+        if hovering { onInteraction() }
+      }
       .help("Accept the delivery with a declared verdict")
     } else {
       Button {
@@ -416,15 +437,18 @@ private struct WorkflowRunPanelView: View {
   private func footer(_ run: WorkflowRunPresentation) -> some View {
     HStack(spacing: 10) {
       Button("Reveal Run Folder", systemImage: "folder") {
+        onInteraction()
         onIntent(.revealRunFolder(run.runDirectory))
       }
       .help("Reveal this workflow run in Finder")
       Button("Open Log", systemImage: "doc.text") {
+        onInteraction()
         onIntent(.openLog(run.logURL))
       }
       .help("Open this workflow run's log")
       Spacer(minLength: 0)
       Button("Cancel Run", role: .destructive) {
+        onInteraction()
         requestConfirmation(
           intent: .userAction(runID: run.id, action: .cancel),
           label: "Cancel Run",
@@ -442,6 +466,7 @@ private struct WorkflowRunPanelView: View {
     run: WorkflowRunPresentation,
     verdict: String? = nil
   ) {
+    onInteraction()
     guard
       let intent = control.intent(
         runID: run.id,
@@ -493,11 +518,6 @@ private struct WorkflowRunPanelView: View {
 }
 
 extension WorkflowRunPresentation.Status {
-  fileprivate var isAttention: Bool {
-    if case .needsAttention = self { return true }
-    return false
-  }
-
   fileprivate var label: String {
     isAttention ? "Needs Attention" : "Running"
   }

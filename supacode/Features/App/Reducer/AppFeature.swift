@@ -1036,12 +1036,17 @@ struct AppFeature {
             }
           )
         }
-        if notice.kind == .completed,
-          state.repositories.selectedWorktreeID == notice.worktreeID
-        {
-          effects.append(
-            .send(.repositories(.showToast(.success("\(notice.workflowName) completed"))))
-          )
+        if state.repositories.selectedWorktreeID == notice.worktreeID {
+          switch notice.kind {
+          case .completed:
+            effects.append(
+              .send(.repositories(.showToast(.success("\(notice.workflowName) completed"))))
+            )
+          case .skipped, .maxRoundsReached:
+            effects.append(.send(.repositories(.showToast(.warning(notice.title)))))
+          case .needsAttention:
+            break
+          }
         }
         return .merge(effects)
 

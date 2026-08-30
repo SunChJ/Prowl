@@ -8,12 +8,20 @@ struct ToolbarStatusView: View {
   let onWorkflowIntent: (WorkflowRunPanelIntent) -> Void
 
   var body: some View {
-    Group {
-      switch ToolbarStatusSelection(
-        toast: toast,
-        workflow: workflow,
-        pullRequest: pullRequest
-      ) {
+    let selection = ToolbarStatusSelection(
+      toast: toast,
+      workflow: workflow,
+      pullRequest: pullRequest
+    )
+    ZStack {
+      if !workflow.runs.isEmpty {
+        WorkflowStatusPopoverButton(
+          presentation: workflow,
+          isToolbarVisible: selection.isWorkflow,
+          onIntent: onWorkflowIntent
+        )
+      }
+      switch selection {
       case .toast(.inProgress(let message)):
         HStack(spacing: 6) {
           ProgressView()
@@ -43,12 +51,8 @@ struct ToolbarStatusView: View {
             .foregroundStyle(.secondary)
         }
         .transition(.opacity)
-      case .workflow(let presentation):
-        WorkflowStatusPopoverButton(
-          presentation: presentation,
-          onIntent: onWorkflowIntent
-        )
-        .transition(.opacity)
+      case .workflow:
+        EmptyView()
       case .pullRequest(let model):
         PullRequestStatusButton(model: model, codeHost: codeHost)
           .transition(.opacity)
@@ -68,6 +72,11 @@ enum ToolbarStatusSelection: Equatable {
   case workflow(WorkflowStatusCenterPresentation)
   case pullRequest(PullRequestStatusModel)
   case motivational
+
+  var isWorkflow: Bool {
+    if case .workflow = self { return true }
+    return false
+  }
 
   init(
     toast: RepositoriesFeature.StatusToast?,

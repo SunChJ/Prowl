@@ -90,6 +90,44 @@ struct WorkflowStatusCenterPresentationTests {
     #expect(presentation.runs.map(\.id) == [newerUpdate.run.id, higherID.run.id, lowerID.run.id])
   }
 
+  @Test func anyRunNeedingAttentionIsVisibleWithoutChangingThePrimaryRun() throws {
+    var olderAttention = try makeSession(
+      id: UUID(14),
+      worktreeID: "selected",
+      startedAt: Self.now.addingTimeInterval(-120),
+      updatedAt: Self.now
+    )
+    olderAttention.run.status = .needsAttention(
+      WorkflowAttention(
+        reason: .blocked,
+        stepID: "brief",
+        role: "author",
+        ordinal: olderAttention.run.currentInvocation?.ordinal,
+        actions: [.focusPane, .keepWaiting, .cancel],
+        message: "The older run needs attention."
+      ))
+    let newerRunning = try makeSession(
+      id: UUID(15),
+      worktreeID: "selected",
+      startedAt: Self.now.addingTimeInterval(-30),
+      updatedAt: Self.now
+    )
+    var state = WorkflowRunsFeature.State()
+    state.sessions = [
+      olderAttention.run.id: olderAttention,
+      newerRunning.run.id: newerRunning,
+    ]
+
+    let presentation = WorkflowStatusCenterPresentation(
+      state: state,
+      selectedWorktreeID: "selected",
+      now: Self.now
+    )
+
+    #expect(presentation.primary?.id == newerRunning.run.id)
+    #expect(presentation.hasAttention)
+  }
+
   @Test func attentionControlsExhaustivelyMapEveryMachineAction() throws {
     var session = try makeSession(id: UUID(5), worktreeID: "selected", updatedAt: Self.now)
     let ordinal = try #require(session.run.currentInvocation?.ordinal)

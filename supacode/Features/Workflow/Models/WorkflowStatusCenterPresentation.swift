@@ -26,6 +26,7 @@ struct WorkflowStatusCenterPresentation: Equatable {
 
   var primary: WorkflowRunPresentation? { runs.first }
   var activeRunCount: Int { runs.count }
+  var hasAttention: Bool { runs.contains { $0.status.isAttention } }
 }
 
 nonisolated struct WorkflowRunPresentation: Equatable, Sendable, Identifiable {
@@ -239,6 +240,13 @@ nonisolated struct WorkflowRunPresentation: Equatable, Sendable, Identifiable {
       }
     }
     return items
+  }
+}
+
+nonisolated extension WorkflowRunPresentation.Status {
+  var isAttention: Bool {
+    if case .needsAttention = self { return true }
+    return false
   }
 }
 

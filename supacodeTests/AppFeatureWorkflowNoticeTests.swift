@@ -103,11 +103,42 @@ struct AppFeatureWorkflowNoticeTests {
     #expect(store.state.repositories.statusToast == .success("Review completed"))
   }
 
+  @Test(arguments: [WorkflowRunNotice.Kind.skipped, .maxRoundsReached])
+  func selectedNonSuccessTerminalOutcomeShowsAWarning(kind: WorkflowRunNotice.Kind) async {
+    let worktree = makeWorktree(id: "selected")
+    var repositories = RepositoriesFeature.State(
+      repositories: [makeRepository(worktrees: [worktree])]
+    )
+    repositories.snapshotPersistencePhase = .active
+    repositories.selection = .worktree(worktree.id)
+    let notice = makeNotice(kind: kind, worktree: worktree)
+    let store = TestStore(
+      initialState: AppFeature.State(repositories: repositories)
+    ) {
+      AppFeature()
+    } withDependencies: {
+      $0.workflowRuntimeClient.notify = { _, _ in }
+    }
+    store.exhaustivity = .off
+
+    await store.send(.workflowRuns(.delegate(.notice(notice))))
+    await store.receive(\.repositories.showToast)
+    await store.finish()
+
+    #expect(store.state.repositories.statusToast == .warning(notice.title))
+  }
+
   private func makeNotice(
     kind: WorkflowRunNotice.Kind,
     worktree: Worktree
   ) -> WorkflowRunNotice {
-    let title = kind == .needsAttention ? "Review needs attention" : "Review completed"
+    let title =
+      switch kind {
+      case .needsAttention: "Review needs attention"
+      case .completed: "Review completed"
+      case .skipped: "Review ended after a skipped step"
+      case .maxRoundsReached: "Review reached its round limit"
+      }
     return WorkflowRunNotice(
       kind: kind,
       runID: UUID(),

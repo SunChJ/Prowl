@@ -43,18 +43,18 @@ nonisolated struct WorkflowRuntimeNotification: Equatable, Sendable {
   let title: String
   let body: String
   let targetSurfaceID: UUID?
-  let suppressExternalWhenWorktreeSelected: Bool
+  let treatAsViewedWhenWorktreeIsVisible: Bool
 
   init(
     title: String,
     body: String,
     targetSurfaceID: UUID?,
-    suppressExternalWhenWorktreeSelected: Bool = true
+    treatAsViewedWhenWorktreeIsVisible: Bool = true
   ) {
     self.title = title
     self.body = body
     self.targetSurfaceID = targetSurfaceID
-    self.suppressExternalWhenWorktreeSelected = suppressExternalWhenWorktreeSelected
+    self.treatAsViewedWhenWorktreeIsVisible = treatAsViewedWhenWorktreeIsVisible
   }
 }
 

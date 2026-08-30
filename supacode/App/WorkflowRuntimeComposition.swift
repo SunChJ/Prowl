@@ -226,14 +226,16 @@ extension SupacodeApp {
             title: notification.title,
             body: notification.body,
             surfaceId: surfaceID,
-            suppressExternalWhenWorktreeSelected: notification.suppressExternalWhenWorktreeSelected
+            treatAsViewedWhenWorktreeIsVisible: notification.treatAsViewedWhenWorktreeIsVisible
           )
           return
         }
-        guard terminalManager.selectedWorktreeID != worktree.id,
-          let appStore = storeBox.store,
-          appStore.state.settings.systemNotificationsEnabled
-        else { return }
+        guard let appStore = storeBox.store else { return }
+        let settings = appStore.state.settings
+        let isViewed = notification.treatAsViewedWhenWorktreeIsVisible && state?.isViewingWorktree() == true
+        guard !(settings.muteNotificationsForActiveSurface && isViewed), settings.systemNotificationsEnabled else {
+          return
+        }
         @Dependency(SystemNotificationClient.self) var notifications
         Task { @MainActor in
           await notifications.send(

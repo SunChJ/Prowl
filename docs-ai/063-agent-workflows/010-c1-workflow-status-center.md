@@ -24,8 +24,9 @@ worktree:
   every machine-authorized attention action, and Cancel / Reveal Run Folder / Open Log;
 - role and Focus Pane controls select the worktree and focus the exact bound pane;
 - successful completion reuses the toolbar success toast. Attention and terminal run transitions
-  enter the existing notification pipeline with a pane target, but stay quiet when the user is
-  already viewing that worktree.
+  enter the existing notification pipeline with a pane target. When the user is already viewing
+  that worktree, the existing `muteNotificationsForActiveSurface` setting decides whether external
+  delivery is suppressed; the sidebar notification event is still emitted.
 
 The runner remains the authority for action availability. The presentation layer must render the
 `WorkflowAttention.actions` list exhaustively and must not reconstruct recovery policy from the
@@ -131,8 +132,20 @@ workflow input was removed; persisted local run records remain under the self-ig
 
 ### Remaining merge gates
 
-- PR and self-review disposition.
-- Two or more neighboring-agent adversarial review rounds, with accepted fixes and evidence
-  recorded on the PR.
+- A first neighboring-agent adversarial review found five material interaction/notification gaps;
+  all were accepted and fixed test-first:
+  - selected-worktree workflow notices now use the existing active-surface mute preference instead
+    of treating selection alone as proof that the run is viewed;
+  - the toolbar reports attention from any active run while retaining the newest run as the primary
+    summary;
+  - interacting with panel controls pins the hover-open panel so confirmation menus cannot vanish
+    on pointer exit;
+  - the workflow popover stays mounted while a toast overlays it, preserving pinned panel state;
+  - selected-worktree `skipped` and `maxRoundsReached` outcomes now receive warning toasts, while
+    successful completion keeps the success toast.
+- One duplicate-edge reducer test now turns exhaustive TestStore checking on for the no-action
+  assertion, closing an earlier test-honesty gap.
+- One or more additional neighboring-agent adversarial review rounds, with accepted fixes and
+  evidence recorded on the PR.
 - Final reviewed-head live E2E across the full action/attention matrix, multiple runs,
   notifications, focus/reveal/log controls, accessibility, and display sleep.
