@@ -56,7 +56,7 @@ start sheet and interactive binding picker.
 | W4 | A non-strict delivery with validation issues persists and becomes `needsAttention`; B3 reports `delivery.state = provisional`, warnings, and the attention vocabulary through `status`, but does not silently accept it. | H14 requires a user decision. C1 supplies Accept / Ask again / Skip / Retry / Relaunch controls; B3 intentionally has only `status` and `cancel` as public lifecycle controls. Before C1, a provisional delivery (and every other attention state) is cancel-only; it cannot be re-delivered because the activation is no longer waiting. R2a is not released with B3 but without C1. |
 | W5 | `status` reads an active run from reducer state when available and otherwise reads a v1 record from its indexed worktree root. No run is reconstructed from disk. | Status and `agents wait --dispatch` remain useful after an app restart without accidentally implementing V2 resume. |
 | W6 | CLI launch roles use only frozen profile launch plans. `PROWL_WORKFLOW_TOKEN`, `PROWL_WORKFLOW_RUN`, and `PROWL_WORKFLOW_ROLE` are child-only surface environment values, not `run.json` or response data. | Retains B2's privacy rule and prevents a workflow token from leaking to unrelated processes or persisted metadata. |
-| W7 | A `close` step closes the pane the run launched without a confirmation (`closeSurface(confirmation: .skip)`); the effect is revocable (a cancel that beats it keeps the pane), and the boundary refuses to close a pane another *active* run has bound since. The plan's "protected close" wording is superseded. | Ghostty's protected close asks whenever the pane's process is alive, which an idle agent's process always is — every workflow cleanup would pop a modal from the executor. The author asked for the close explicitly and the run owns the pane; the two real hazards (a cancel racing the close, a pane re-bound after the run ended) are what the guards cover. |
+| W7 | A `close` step closes the pane the run launched without a confirmation (`closeSurface(confirmation: .skip)`); the effect is revocable (a cancel that beats it keeps the pane), and the boundary closes only when the run is still the pane's *most recent* binder (`WorkflowRunsFeature.State.latestBinder(of:)`, whatever that binder's status — a later run that ended keeps the pane). The plan's "protected close" wording is superseded. | Ghostty's protected close asks whenever the pane's process is alive, which an idle agent's process always is — every workflow cleanup would pop a modal from the executor. The author asked for the close explicitly and the run owns the pane; the two real hazards (a cancel racing the close, a pane re-bound after the run ended) are what the guards cover. |
 
 ## Tests and verification
 
@@ -273,6 +273,20 @@ whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` 
   the reducer supplied. Also cleaned up while there: `store.send { $0.x == y }` closures that
   asserted nothing (assignments or `#expect` now) and the spurious `await`s on synchronous
   main-actor closures in the executor.
+- **Round 4 (verification) — round-3 fixes confirmed (incl. the fence-before-enqueue ordering
+  that keeps a completing batch's `close` live); 2 findings (0 P0, 1 P1, 1 P2), both accepted
+  and fixed.** P1: the ownership check consulted only *active* runs, so once a later run that
+  had taken the pane ended (keeping it, as cancel promises), the earlier run's still-queued close
+  saw no owner and closed it — the boundary now closes only when the run is the pane's most
+  recent binder, whatever that binder's status (`latestBinder(of:)`; W7 amended). P2: the
+  round-3 cancel log claimed the native action "keeps running" merely because the phase was
+  `runningAction`, which is also the state when the pre-start guard stopped it — the machine no
+  longer guesses; the executor writes the definitive line itself ("not started; the run had
+  moved on" from the guard, "finished / failed after the run moved on; result discarded" after
+  a late return), through an injected `workflowActionExecutor` so a test can hold an action open
+  across a cancel. Also fixed here: `markInterruptedRuns` read the `date` dependency for every
+  scan, which failed `AppFeatureTerminalLayoutRestoreTests` (no clock override) — the clock is
+  read only for a record that is marked.
 
 ## Non-goals
 

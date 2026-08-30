@@ -274,7 +274,7 @@ struct WorkflowRunStoreTests {
       at: root.appending(path: ".prowl", directoryHint: .isDirectory),
       withDestinationURL: root.appending(path: "elsewhere", directoryHint: .isDirectory))
     #expect(throws: WorkflowRunStoreError.self) {
-      try WorkflowRunStore(rootURL: root).markInterruptedRuns(now: Self.now)
+      try WorkflowRunStore(rootURL: root).markInterruptedRuns(now: { Self.now })
     }
 
     let clean = try makeRoot()
@@ -288,7 +288,7 @@ struct WorkflowRunStoreTests {
     try store.ensureLayout(runID: headerlessID)
     try "{\"version\": 1}".write(
       to: store.directory(for: headerlessID).appending(path: "run.json"), atomically: true, encoding: .utf8)
-    let result = try store.markInterruptedRuns(now: Self.now)
+    let result = try store.markInterruptedRuns(now: { Self.now })
     #expect(result.interrupted.isEmpty)
     #expect(
       result.unreadable == [store.directory(for: headerlessID).appending(path: "run.json").path(percentEncoded: false)])
@@ -311,7 +311,7 @@ struct WorkflowRunStoreTests {
     let linkedID = UUID()
     try FileManager.default.createSymbolicLink(at: store.directory(for: linkedID), withDestinationURL: external)
     #expect(throws: WorkflowRunStoreError.self) { try store.readRecord(runID: linkedID) }
-    #expect(try store.markInterruptedRuns(now: Self.now).unreadable.count == 1)
+    #expect(try store.markInterruptedRuns(now: { Self.now }).unreadable.count == 1)
   }
 
   @Test func symlinkedOutputsDirectoryIsRejected() throws {
@@ -365,7 +365,8 @@ struct WorkflowRunStoreTests {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let store = WorkflowRunStore(rootURL: root)
-    #expect(try store.markInterruptedRuns(now: Self.now) == WorkflowInterruptedRuns(interrupted: [], unreadable: []))
+    #expect(
+      try store.markInterruptedRuns(now: { Self.now }) == WorkflowInterruptedRuns(interrupted: [], unreadable: []))
 
     let running = try makeRun(root: root)
     let attention = try makeRun(
@@ -382,7 +383,7 @@ struct WorkflowRunStoreTests {
     try "{ not json".write(
       to: store.directory(for: brokenID).appending(path: "run.json"), atomically: true, encoding: .utf8)
     let later = Self.now.addingTimeInterval(60)
-    let result = try store.markInterruptedRuns(now: later)
+    let result = try store.markInterruptedRuns(now: { later })
     #expect(Set(result.interrupted) == [running.id, attention.id])
     #expect(
       result.unreadable == [store.directory(for: brokenID).appending(path: "run.json").path(percentEncoded: false)])
@@ -393,7 +394,7 @@ struct WorkflowRunStoreTests {
     #expect(try store.readRecord(runID: cancelled.id).run.status.state == "cancelled")
     let log = try String(contentsOf: store.directory(for: running.id).appending(path: "log.md"), encoding: .utf8)
     #expect(log.contains("marked interrupted"))
-    #expect(try store.markInterruptedRuns(now: later).interrupted.isEmpty)
+    #expect(try store.markInterruptedRuns(now: { later }).interrupted.isEmpty)
   }
 }
 

@@ -89,6 +89,14 @@ struct WorkflowRunsFeature {
     func activeSession(boundTo surfaceID: UUID) -> WorkflowRunSession? {
       activeSessions.first { $0.boundSurfaceIDs.contains(surfaceID) }
     }
+    /// The run that bound the pane most recently, whatever its status: a pane a later run took
+    /// over is never an earlier run's to close, even after that later run ended. `current` and
+    /// `pick` roles bind at admission and a `launch` role binds a pane no earlier run can have
+    /// held, so the start time orders the bindings.
+    func latestBinder(of surfaceID: UUID) -> WorkflowRunSession? {
+      sessions.values.filter { $0.boundSurfaceIDs.contains(surfaceID) }
+        .max { $0.run.startedAt < $1.run.startedAt }
+    }
   }
 
   enum Action: Equatable {
@@ -106,6 +114,7 @@ struct WorkflowRunsFeature {
   @Dependency(WorkflowWatchdogClient.self) var watchdog
   @Dependency(WorkflowEffectQueueClient.self) var queue
   @Dependency(WorkflowCLIResponderClient.self) var responder
+  @Dependency(WorkflowActionExecutorKey.self) var actionExecutor
   @Dependency(\.date.now) var now
   @Dependency(\.uuid) var uuid
 
@@ -201,12 +210,13 @@ struct WorkflowRunsFeature {
         let pending = roots.filter { !state.scannedWorktreeRoots.contains($0) }
         guard !pending.isEmpty else { return .none }
         state.scannedWorktreeRoots.formUnion(pending)
-        let timestamp = now
+        // Read only for a record that is marked: a scan that finds nothing needs no clock.
+        let clock = _now
         return .run { _ in
           for root in pending {
             let store = WorkflowRunStore(rootURL: URL(filePath: root, directoryHint: .isDirectory))
             do {
-              let result = try store.markInterruptedRuns(now: timestamp)
+              let result = try store.markInterruptedRuns(now: { clock.wrappedValue })
               if !result.interrupted.isEmpty || !result.unreadable.isEmpty {
                 Self.logger.info(
                   "[Workflow] \(root): \(result.interrupted.count) run(s) marked interrupted, "
@@ -647,16 +657,30 @@ struct WorkflowRunsFeature {
         now: timestamp)
       // The last main-actor operation before the action starts. A cancel that lands during the
       // hop to the action's executor can no longer stop it: the action runs to completion (its
-      // writes are the handoff store's own atomic operations), the machine's cancel log names
-      // it as still running, and the result is discarded.
-      guard isLive() else { return .stop }
+      // writes are the handoff store's own atomic operations) and the result is discarded. The
+      // run log records which of the two happened rather than guessing at cancel time.
+      guard isLive() else {
+        appendLog(
+          "Step '\(stepID)': native action '\(actionID)' not started; the run had moved on.", store: store,
+          runID: runID)
+        return .stop
+      }
       do {
-        let outputs = try await WorkflowNativeActionRunner().execute(
-          actionID: actionID, inputs: inputs, context: context)
-        guard isLive() else { return .stop }
+        let outputs = try await actionExecutor.execute(actionID: actionID, inputs: inputs, context: context)
+        guard isLive() else {
+          appendLog(
+            "Step '\(stepID)': native action '\(actionID)' finished after the run moved on; result discarded.",
+            store: store, runID: runID)
+          return .stop
+        }
         await send(.event(runID: runID, .actionCompleted(stepID: stepID, outputs: outputs)))
       } catch {
-        guard isLive() else { return .stop }
+        guard isLive() else {
+          appendLog(
+            "Step '\(stepID)': native action '\(actionID)' failed after the run moved on (\(error)); ignored.",
+            store: store, runID: runID)
+          return .stop
+        }
         await send(.event(runID: runID, .actionFailed(stepID: stepID, reason: "\(error)")))
       }
 
@@ -694,17 +718,21 @@ struct WorkflowRunsFeature {
       }
 
     case .log(let line):
-      do {
-        try store.ensureLayout(runID: runID)
-        try store.appendLog(runID: runID, line: line, now: timestamp)
-      } catch {
-        Self.logger.warning("[Workflow] Could not append to the log of run \(runID): \(error)")
-      }
+      appendLog(line, store: store, runID: runID)
 
     case .finished:
       queue.finish(runID)
     }
     return .continue
+  }
+
+  private func appendLog(_ line: String, store: WorkflowRunStore, runID: UUID) {
+    do {
+      try store.ensureLayout(runID: runID)
+      try store.appendLog(runID: runID, line: line, now: now)
+    } catch {
+      Self.logger.warning("[Workflow] Could not append to the log of run \(runID): \(error)")
+    }
   }
 }
 

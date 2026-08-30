@@ -181,7 +181,8 @@ struct WorkflowRunsFeatureTests {
       _ yaml: String = WorkflowRunMachineTests.adversarialReview,
       selfInitiated: Bool = false,
       inputs: [String: String] = [:],
-      skipped: Set<String> = []
+      skipped: Set<String> = [],
+      startedAt: Date = WorkflowRunsFeatureTests.now
     ) throws -> (WorkflowRunSession, [WorkflowRunEffect]) {
       let definition = try #require(WorkflowDocumentParser.parse(yaml).definition)
       let counter = WorkflowRunMachineTests.TokenCounter()
@@ -200,7 +201,7 @@ struct WorkflowRunsFeatureTests {
           inputs: inputs,
           skippedSteps: skipped,
           selfInitiated: selfInitiated),
-        now: { WorkflowRunsFeatureTests.now },
+        now: { startedAt },
         makeToken: { counter.next() })
       let plan = AgentProfileLaunchPlan(
         profileID: WorkflowRunsFeatureTests.reviewerProfile.id, profileName: "Pi Reviewer",
@@ -230,11 +231,15 @@ struct WorkflowRunsFeatureTests {
 
   private func makeStore(
     _ fixture: Fixture, queue: WorkflowEffectQueueClient,
-    storage: SettingsTestStorage = SettingsTestStorage()
+    storage: SettingsTestStorage = SettingsTestStorage(),
+    actionExecutor: (any WorkflowActionExecuting)? = nil
   ) -> TestStoreOf<WorkflowRunsFeature> {
     let store = TestStore(initialState: WorkflowRunsFeature.State()) {
       WorkflowRunsFeature()
     } withDependencies: {
+      if let actionExecutor {
+        $0.workflowActionExecutor = actionExecutor
+      }
       $0.workflowRuntimeClient = fixture.runtime
       $0.workflowActivationClient = fixture.activation
       $0.workflowWatchdogClient = fixture.watchdog
@@ -298,6 +303,28 @@ struct WorkflowRunsFeatureTests {
     func reached() async {
       guard checks < fenceOnCheck else { return }
       await withCheckedContinuation { waiter = $0 }
+    }
+  }
+
+  /// A native action that reports when it started and finishes only once released.
+  nonisolated final class GatedActionExecutor: WorkflowActionExecuting, Sendable {
+    private let startedStream = AsyncStream<Void>.makeStream()
+    private let releaseStream = AsyncStream<Void>.makeStream()
+
+    func execute(actionID: String, inputs: [String: String], context: WorkflowActionContext) async throws
+      -> [String: String]
+    {
+      startedStream.continuation.yield()
+      for await _ in releaseStream.stream { break }
+      return ["summary": "done"]
+    }
+
+    func started() async {
+      for await _ in startedStream.stream { break }
+    }
+
+    func release() {
+      releaseStream.continuation.yield()
     }
   }
 
@@ -689,8 +716,7 @@ struct WorkflowRunsFeatureTests {
   }
 
   /// A native action checks the fence once more right before it starts: a cancel that lands
-  /// after the batch check runs nothing, and the cancel's log names the action as in flight only
-  /// when it did start.
+  /// after the batch check runs nothing, and the run log says so.
   @Test(.dependencies) func aFenceBeforeANativeActionStartsRunsNothing() async throws {
     let fixture = try Fixture()
     defer { fixture.cleanUp() }
@@ -713,7 +739,34 @@ struct WorkflowRunsFeatureTests {
     await store.finish(timeout: Self.timeout)
     let log = try String(
       contentsOf: session.store.directory(for: runID).appending(path: "log.md"), encoding: .utf8)
-    #expect(log.contains("Step 'context': its native action keeps running; the result will be discarded."))
+    #expect(log.contains("Step 'context': native action 'git.context' not started; the run had moved on."))
+    #expect(!log.contains("finished after the run moved on"))
+  }
+
+  /// An action that already left the main actor runs to completion; the run that was cancelled
+  /// meanwhile discards its result and the log records that it finished late.
+  @Test(.dependencies) func aNativeActionThatOutlivesTheRunIsDiscardedAndLogged() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let gate = GatedActionExecutor()
+    let store = makeStore(fixture, queue: WorkflowEffectQueue().client, actionExecutor: gate)
+    let (session, effects) = try fixture.session(Self.actionFirst)
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await gate.started()
+    await store.send(.userAction(runID: runID, .cancel)) {
+      $0.sessions[runID]?.run.status = .cancelled
+    }
+    gate.release()
+    await store.finish(timeout: Self.timeout)
+    #expect(store.state.sessions[runID]?.run.actionOutputs.isEmpty == true)
+    let log = try String(
+      contentsOf: session.store.directory(for: runID).appending(path: "log.md"), encoding: .utf8)
+    #expect(
+      log.contains(
+        "Step 'context': native action 'git.context' finished after the run moved on; result discarded."))
+    #expect(!log.contains("not started"))
+    #expect(log.contains("Run finished: cancelled."))
   }
 
   /// `close` is revocable: a cancel that beats a queued close keeps the pane, while a close the
@@ -752,22 +805,28 @@ struct WorkflowRunsFeatureTests {
     #expect(fixture.closed.isEmpty, "cancel never closes panes")
   }
 
-  /// The boundary's ownership rule: a pane a terminal run still lists is owned by the active run
-  /// that bound it since, never by the run that ended.
-  @Test func anActiveRunOwnsAPaneATerminalRunStillLists() throws {
+  /// The boundary's ownership rule: the pane belongs to the run that bound it most recently —
+  /// also once that run has ended and kept it — never to an earlier run whose close is still
+  /// queued.
+  @Test func theLatestBinderOwnsAPaneWhateverItsStatus() throws {
     let fixture = try Fixture()
     defer { fixture.cleanUp() }
-    var ended = try fixture.session().0
     let pane = WorkflowRunMachineTests.reviewerPane
-    ended.run.bindings["reviewer"] = .launch(Self.reviewerProfile, pane: pane)
-    ended.run.status = .cancelled
-    var live = try fixture.session().0
-    live.run.bindings["author"] = .current(pane)
+    var earlier = try fixture.session().0
+    earlier.run.bindings["reviewer"] = .launch(Self.reviewerProfile, pane: pane)
+    earlier.run.status = .completed
+    var later = try fixture.session(startedAt: Self.now.addingTimeInterval(1)).0
+    later.run.bindings["author"] = .current(pane)
     var state = WorkflowRunsFeature.State()
-    state.sessions[ended.run.id] = ended
-    #expect(state.activeSession(boundTo: pane.surfaceID) == nil)
-    state.sessions[live.run.id] = live
-    #expect(state.activeSession(boundTo: pane.surfaceID)?.run.id == live.run.id)
+    state.sessions[earlier.run.id] = earlier
+    #expect(state.latestBinder(of: pane.surfaceID)?.run.id == earlier.run.id)
+    state.sessions[later.run.id] = later
+    #expect(state.latestBinder(of: pane.surfaceID)?.run.id == later.run.id)
+    #expect(state.activeSession(boundTo: pane.surfaceID)?.run.id == later.run.id)
+    later.run.status = .cancelled
+    state.sessions[later.run.id] = later
+    #expect(state.activeSession(boundTo: pane.surfaceID) == nil, "an ended run is no longer busy")
+    #expect(state.latestBinder(of: pane.surfaceID)?.run.id == later.run.id, "but the pane stays its")
   }
 
   /// Brief delivered, reviewer launched, findings delivered: the run is at `cleanup` (a queued

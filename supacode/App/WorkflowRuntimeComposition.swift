@@ -199,12 +199,12 @@ extension SupacodeApp {
       },
       close: { worktree, surfaceID, runID in
         // Same main-actor turn as the close: a run that ended no longer counts as busy at
-        // admission, so the pane may belong to another run by now.
-        if let owner = storeBox.store?.state.workflowRuns.activeSession(boundTo: surfaceID),
+        // admission, so a later run may have bound the pane — and kept it when it ended.
+        if let owner = storeBox.store?.state.workflowRuns.latestBinder(of: surfaceID),
           owner.run.id != runID
         {
           workflowLogger.warning(
-            "[Workflow] Run \(runID) left pane \(surfaceID) open: workflow run \(owner.run.id) owns it now.")
+            "[Workflow] Run \(runID) left pane \(surfaceID) open: workflow run \(owner.run.id) bound it since.")
           return false
         }
         return terminalManager.stateIfExists(for: worktree.id)?.closeSurface(

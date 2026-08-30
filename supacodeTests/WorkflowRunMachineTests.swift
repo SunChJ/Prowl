@@ -771,21 +771,6 @@ struct WorkflowRunMachineTests {
     }
   }
 
-  @Test func aCancelDuringANativeActionLogsThatItKeepsRunning() throws {
-    var (machine, _) = try makeMachine(
-      Self.handoff,
-      roles: ["source": .current(Self.authorPane), "receiver": .launch(Self.reviewerProfile, pane: nil)])
-    _ = machine.apply(.roleIdle(ordinal: 1))
-    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "d1"))
-    _ = machine.apply(.user(.skip))
-    #expect(machine.run.phase == .runningAction(stepID: "transition"))
-    let effects = machine.apply(.user(.cancel))
-    #expect(machine.run.status == .cancelled)
-    #expect(
-      effects.contains(
-        .log("Step 'transition': its native action keeps running; the result will be discarded.")))
-  }
-
   @Test func skipOfAnOptionalActionInputContinuesWithoutTheKey() throws {
     var (machine, _) = try makeMachine(
       Self.handoff,
