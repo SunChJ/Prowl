@@ -596,11 +596,14 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
-- Updated 2026-08-30: a live display-sleep spike proved that every tested Ghostty native
-  surface path fails with zero active displays; detached staging, immediate creation, removing
-  `initial_input`, and removing the Profile environment do not preserve an interactive launch.
-  R2a accepts this as a known limitation; the recommended follow-up is a typed
-  display-unavailable outcome plus an explicit headless-or-fail workflow policy — see
+- Updated 2026-08-30: a two-round display-sleep spike located the `CREATE_FAILED` cause in the
+  pinned GhosttyKit, not in Prowl's launch ordering: with zero active displays the renderer's
+  eager CoreVideo display link (`window-vsync = true`) aborts `ghostty_surface_new`, while
+  `window-vsync = false` — even toggled at runtime — creates fully working tabs, splits, and
+  Profile panes that render normally after wake. The recommended follow-up is a display-aware
+  creation override in Prowl plus typed display-unavailable classification and honest
+  tab/split creation; the headless-or-fail workflow policy is withdrawn (upstream Ghostty fixed
+  the same failure in #13639) — see
   [009-display-sleep-surface-spike.md](009-display-sleep-surface-spike.md).
 - Updated 2026-08-29 (B2, grilled): the runner core is a pure reducer (`WorkflowRunMachine`)
   whose effects B3 interprets; activation tokens are checked in the machine, the dispatch store

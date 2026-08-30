@@ -2,30 +2,37 @@
 
 ## Status
 
-Accepted investigation, 2026-08-30. The spike ran against `main` at `299b5a5d`, which includes
-[#744](https://github.com/onevcat/Prowl/pull/744). It produced no production-code change: every
-experimental edit was reverted after the result was established.
+Accepted investigation, 2026-08-30, in two rounds against `main` at `299b5a5d` (includes
+[#744](https://github.com/onevcat/Prowl/pull/744)). Neither round changed production code:
+every experimental edit was reverted after the result was established.
 
-This is not an R2a release blocker. It does establish a required follow-up: an interactive
-workflow launch needs an explicit policy for a display-unavailable failure instead of depending
-on Ghostty surface creation indefinitely.
+The first round concluded that no Ghostty surface can be created while the display is asleep
+and recommended a headless fallback. The second round re-verified that claim and **falsified
+it**: surface creation only fails because the pinned GhosttyKit makes a CoreVideo display link
+a hard precondition of renderer initialization, and Ghostty already exposes the switch
+(`window-vsync`) that removes that precondition. Upstream Ghostty fixed the same failure on
+2026-08-05. The recommendation below supersedes the first-round one.
+
+This is not an R2a release blocker. It does establish a required follow-up: interactive
+launches must survive display sleep through the surface-level fix, not through an
+execution-mode substitution.
 
 ## Problem summary
 
 Long-running agent work commonly continues while the Mac display is asleep. In that state, a
-CLI-driven Agent Profile launch can fail with `CREATE_FAILED`:
+CLI-driven Agent Profile launch fails with `CREATE_FAILED`:
 
 > The terminal surface for Agent Profile “…” could not be created.
 
-Earlier live verification had already correlated this with a zero-display Ghostty failure:
+The unified log shows the native cause:
 
 ```text
 CVDisplayLinkCreateWithCGDisplays error -6661 due to invalid display count (0)
 com.mitchellh.ghostty:embedded_window: error initializing surface err=error.OutOfMemory
 ```
 
-`pmset -g log` showed `Display is turned off`; waking the display made the same launch succeed.
-The immediate question for this spike was narrower than designing a fallback:
+`pmset -g log` shows `Display is turned off`; waking the display makes the same launch succeed.
+The question for both rounds:
 
 > Can Prowl preserve an interactive launch by changing when or how it creates and attaches the
 > Ghostty surface while the display remains asleep?
@@ -49,150 +56,194 @@ tab UUID is therefore not evidence that a working terminal surface exists.
 Relevant boundaries:
 
 - `supacode/Infrastructure/Ghostty/GhosttySurfaceView.swift`
+- `supacode/Infrastructure/Ghostty/GhosttyRuntime.swift` (`loadConfig`, `reloadConfig`,
+  `loadTerminalProgramOverrides`, the `screensDidSleep`/`screensDidWake` observers)
 - `supacode/Features/Terminal/Models/WorktreeTerminalState.swift`
 - `supacode/App/WorkflowRuntimeComposition.swift`
-- `supacodeTests/WorktreeTerminalStateAgentProfileTests.swift`
+- `ThirdParty/ghostty/src/renderer/generic.zig`, `ThirdParty/ghostty/pkg/macos/video/display_link.zig`
 
 ## Method
 
-The live checks used a separately launched Debug app with a scratch `CFFIXED_USER_HOME` and a
-dedicated `PROWL_CLI_SOCKET`; the installed Prowl instance and its sessions were not replaced.
-Display state was driven with `pmset displaysleepnow` and verified from `pmset -g log`. A
-`caffeinate -d -u -t 3` wake trap restored the display after each bounded attempt. One sample was
-discarded because the display was manually woken before it completed; the conclusions below use
-only attempts that remained in the logged display-off interval.
+Both rounds used a separately launched Debug app with a scratch `CFFIXED_USER_HOME`, a scratch
+Git repository seeded through `~/.prowl/repository-entries.json`, a hand-written Codex Profile in
+`~/.prowl/global.onevcat.json`, and a dedicated `PROWL_CLI_SOCKET`; the installed Prowl instance
+and its sessions were not touched. Display state was driven with `pmset displaysleepnow` and
+verified from `pmset -g log`; a `caffeinate -u -t 3` wake trap restored the display after each
+bounded attempt. Attempts that did not stay inside the logged display-off interval were discarded.
 
-Experimental code lived temporarily on `spike/profile-launch-display-sleep`. The spike added
-targeted logging and, for the detached-staging hypothesis, a regression test. All changes were
-then reverted, the isolated app was stopped, its scratch state was moved to Trash, and the
-temporary branch was deleted.
+The second round additionally ran a one-second CoreGraphics/CoreVideo probe during every
+display-off interval so each result is paired with the display state Ghostty actually saw:
 
-## Experiments
+```text
+active=0 online=2 main=2 mainAsleep=1 mainActive=0 screens=2 cv[active=-6661 main=0]
+```
+
+`CGGetActiveDisplayList` reports zero displays while both displays stay online and
+`NSScreen.screens` still lists them. `CVDisplayLinkCreateWithActiveCGDisplays` fails with
+`kCVReturnInvalidDisplay` (-6661); `CVDisplayLinkCreateWithCGDisplay(CGMainDisplayID())` still
+succeeds. Every pane's health was checked from inside the display-off interval with
+`prowl send … --capture` (a dead shell times out with `WAIT_TIMEOUT`), and again after wake.
+
+## Round 1 experiments (Swift-side ordering)
+
+Experimental code lived temporarily on `spike/profile-launch-display-sleep` and was deleted.
 
 | Experiment | Result | Interpretation |
 | --- | --- | --- |
 | Baseline Profile launch with the display awake | Succeeded | The current #744/Profile/CLI wiring is functional under its normal display precondition. |
 | Unmodified Profile launch during a stable display-off interval | Failed with `CREATE_FAILED` at native surface creation | Reproduced the known issue on current `main`. |
-| Build the Swift tab/split structure detached, prepare hooks, then attach and arm the surface | Unit test was red before staging and green after it; real tab and split Profile launches still failed while the display was off | Tree attachment and managed-hook ordering are not the cause. The promising unit result modeled Swift ordering, not Ghostty's display dependency. |
+| Build the Swift tab/split structure detached, prepare hooks, then attach and arm the surface | Unit test was red before staging and green after it; real tab and split Profile launches still failed while the display was off | Tree attachment and managed-hook ordering are not the cause. |
 | Disable deferred creation and create the native Profile surface during initialization | Failed while the display was off | Deferral itself is not the cause. |
 | Remove Ghostty `initial_input` and attempt post-create text injection | Failed before input could be delivered | Initial input is not the cause. |
 | Remove the Profile launch's `surfaceEnvironment` | Failed while the display was off | Launch-scoped carriers and managed-hook environment are not the cause. |
-| Create ordinary tabs and splits with temporary logging at the native boundary | Swift-side creation returned identifiers, but the log showed native Ghostty surface creation failed | The apparent fallback was a false positive: these paths ignore the failed arm result and leave a non-functional shell. |
+| Create ordinary tabs and splits with temporary logging at the native boundary | Swift-side creation returned identifiers, but native Ghostty surface creation failed | These paths ignore the failed arm result and leave a non-functional shell. |
 | Wake the display and repeat the same Profile launch | Succeeded | The failure follows display availability, not #744's workflow wiring or the selected Profile. |
 
-The detached-staging test exercised the desired hook-before-tree ordering and passed as a logic
-test, but the real display-off result falsified the product hypothesis. Its implementation and
-test were therefore not retained.
+Round 1 correctly established that Swift-side ordering is irrelevant. Its conclusion that “every
+path that ultimately calls `ghostty_surface_new` needs an active display” over-generalized from
+the default configuration; it never varied the Ghostty renderer configuration.
+
+## Round 2: where the precondition actually lives
+
+Reading the pinned GhosttyKit (`onevcat/ghostty` at `48365577c`, v1.3.1 plus four fork patches):
+
+- `pkg/macos/video/display_link.zig` — `createWithActiveCGDisplays()` maps **any**
+  `CVDisplayLinkCreateWithActiveCGDisplays` failure to `error.OutOfMemory`. The logged
+  “OutOfMemory” is this mapping, not memory pressure.
+- `src/renderer/generic.zig` (`init`) — `if (options.config.vsync) try
+  DisplayLink.createWithActiveCGDisplays() else null`. With `window-vsync = true` (the default)
+  the `try` aborts renderer initialization, which aborts `ghostty_surface_new`. With
+  `window-vsync = false` no display link is created and the renderer runs in its existing
+  change-driven mode (`hasVsync()` returns false; `renderer.Thread` draws after each render and
+  on its 8 ms animation timer). Every other use of `display_link` is already `orelse`-guarded.
+- `src/config/Config.zig` — `window-vsync` is documented as macOS-only and “changing this value
+  at runtime will only affect new terminals”, i.e. the choice is fixed per surface at creation.
+
+Upstream Ghostty removed the precondition in
+[ghostty-org/ghostty#13639](https://github.com/ghostty-org/ghostty/pull/13639) (“macos: tolerate
+display link creation failures”, merged 2026-08-05, commit `a177ba90af`): display link creation
+became lazy and non-fatal (`syncDisplayLink`), retried on the next display-ID update, with
+`CreationFailed` replacing the misleading `OutOfMemory`. Follow-ups
+[#14035](https://github.com/ghostty-org/ghostty/pull/14035) and
+[#14068](https://github.com/ghostty-org/ghostty/pull/14068) (2026-08-26/29) extend the same
+`syncDisplayLink` path so the link is also re-synced from rendering activity. None of these are
+in a tagged release yet (v1.3.1 is the latest tag; `main` is ~2,400 commits ahead of it). The
+patch does not apply cleanly to v1.3.1 because `generic.zig` drifted, but a hand port is about
+70 lines and was prepared on a throwaway submodule branch (`zig fmt` clean, deleted afterwards).
+
+Prowl already has the hook the lazy path needs: `GhosttySurfaceView.windowDidChangeScreen()`
+pushes `ghostty_surface_set_display_id` on `NSWindow.didChangeScreenNotification`, and
+`GhosttyRuntime` observes `screensDidSleep`/`screensDidWake` (currently log-only).
+
+## Round 2 experiments (renderer configuration)
+
+All rows below ran inside logged display-off intervals with the probe reporting `active=0`.
+
+| Experiment | Result | Interpretation |
+| --- | --- | --- |
+| Unmodified app, default `window-vsync`: `send` to a pane created while awake | Worked (`OFF-A-…` captured) | Existing surfaces keep running while the display sleeps; only creation is affected. |
+| Same, `create tab` / `create pane` | Returned identifiers; shells dead (`WAIT_TIMEOUT`), still dead after wake; `READ_FAILED` | Re-confirms round 1: the non-Profile paths hide native failure. |
+| Same, Profile launch | `CREATE_FAILED`, log shows `-6661` then `error.OutOfMemory` | Reproduced. |
+| Unmodified app relaunched with `window-vsync = false` in the scratch `~/.config/ghostty/config`; `create tab`, `create pane`, Profile launch while dark | **All succeeded**; shells answered from inside the dark interval (`OFF-B-…`, `OFF-C-…`); Codex started in the Profile pane; no Ghostty error lines | The display link is the only native precondition. The same GhosttyKit binary creates fully working surfaces without a display. |
+| Wake the display; `send` to those surfaces again; screenshot the window | Worked (`WAKE-B-…`, `WAKE-C-…`); the panes rendered normally | Change-driven rendering is functional after wake, not only while dark. |
+| Default config at launch; flip `window-vsync = false` at runtime via Ghostty's `reload_config` (`prowl key … cmd-shift-comma`); go dark; `create tab` and Profile launch | Both succeeded | `GhosttyRuntime.reloadConfig` → `ghostty_app_update_config` is enough to switch the mode for surfaces created afterwards; no relaunch needed. |
+| Still dark: flip back to `window-vsync = true` via `reload_config`; probe the earlier panes; `create tab` again | Earlier panes unaffected (`OFF-A2-…`, `OFF-B2-…`); the new tab was a dead shell again | The switch is evaluated per surface at creation time and is safe to toggle in both directions while surfaces are live. |
+
+A locally rebuilt GhosttyKit with the ported upstream fix could not be tested: `zig build`
+(zig 0.15.2) fails to link its own build runner under Xcode 26.6 (`undefined symbol: _waitpid`,
+`_sigaction`, … — libSystem is not linked), with or without `SDKROOT` pointing at the 26.5 SDK
+and with fresh local/global caches; a plain `zig build-exe -lc` links fine. The fork's last
+artifacts were built 2026-05-14. This is a fork-infrastructure gap independent of this spike.
 
 ## Conclusion
 
-In the tested build and environment, every path that ultimately calls `ghostty_surface_new`
-needs an active display. Reordering Swift objects, bypassing `initial_input`, omitting the Profile
-environment, or choosing immediate rather than deferred creation does not avoid that native
-precondition.
+Surface creation without an active display is possible with the pinned GhosttyKit today, and is
+the default behavior of upstream Ghostty since 2026-08-05. The only native precondition is the
+eager CoreVideo display link that `window-vsync = true` demands; a surface created with
+`window-vsync = false` is a fully working terminal in Ghostty's change-driven rendering mode,
+during display sleep and after wake.
 
-The Ghostty log reports `error.OutOfMemory`, but the adjacent CVDisplayLink diagnostic and the
-repeatable display-off/display-on boundary show that this case is display unavailability, not
-ordinary memory pressure. Prowl should not expose it only as generic `CREATE_FAILED`.
+Consequences for the first-round recommendation:
 
-The spike therefore rejects “create the same interactive surface differently” as the fallback.
-A path that truly works without a display must not create a Ghostty/AppKit terminal surface.
+- Typed display-unavailable classification and honest ordinary tab/split creation remain
+  correct and are still wanted.
+- “A path that truly works without a display must not create a Ghostty/AppKit terminal
+  surface” is withdrawn. Headless execution is no longer justified by display sleep; the
+  `on_display_unavailable` policy and the `HeadlessAgentExecutor` scope expansion are dropped
+  from this problem's plan (headless stays a V2 topic on its own merits, see
+  [the DSL specification](dsl-spec.md#12-reserved-for-v2)).
 
 ## Recommended follow-up
 
-### 1. Make display unavailability a typed launch outcome
+### 1. Ship a display-aware surface creation mode (Prowl-only, no GhosttyKit rebuild)
 
-Add a display-availability preflight at the closest reliable launch boundary and retain a
-postcondition check around native surface creation. Map the known zero-display case to a typed
-error such as `DISPLAY_UNAVAILABLE` (provisional name), distinct from hook registration,
-Profile planning, authentication, and unknown native failures.
+When native surface creation is about to run and `CGGetActiveDisplayList` reports zero active
+displays, create the surface with `window-vsync = false` and restore the user's setting
+afterwards. Mechanically this is a config override pushed through the existing
+`GhosttyRuntime.reloadConfig`/`applyConfig` path (the same route `loadTerminalProgramOverrides`
+uses to append Prowl-owned keys after the user's config), scoped to the creation call. Apply it
+to every creation path — Profile launches, ordinary tabs, and splits — not only to Profiles.
 
-The preflight improves error quality and avoids reserving workflow state for a launch that
-cannot start. It must not replace the native result check because display state can change
-between preflight and creation.
+Constraints:
 
-### 2. Make ordinary tab and split creation honest
+- Keep the native result check. Display state can change between the preflight and
+  `ghostty_surface_new`; on failure with zero active displays, retry once with the override
+  before reporting the typed error.
+- The override is per surface and permanent for that surface: it stays in change-driven
+  rendering after wake (slightly more redraw work under load; this is the mode Ghostty ships
+  for non-macOS and the fallback upstream now uses for exactly this case). Record it in the
+  surface's diagnostics so a later renderer complaint can be traced.
+- Do not make `window-vsync = false` Prowl's global default; Ghostty defaults to vsync for
+  documented reasons.
+- Add reducer/runtime tests for the preflight decision and the restore, and a live check under
+  `pmset displaysleepnow` in the release runbook.
 
-The non-Profile paths should not return a usable target identifier after native creation failed.
-They should check the arm result, roll back the Swift tab/split/target state, and return a typed
-failure. This does not solve display sleep, but it removes a misleading fallback and prevents
-dead terminal shells from entering the model.
+Zero-code interim for users: `window-vsync = false` in the user's Ghostty config removes the
+failure today.
 
-### 3. Add an explicit interactive-launch failure policy
+### 2. Make display unavailability a typed launch outcome
 
-For a workflow role declared as `kind: interactive`, introduce a policy scoped specifically to
-the typed display-unavailable outcome:
+Still required. Map the zero-display case to a typed error (`DISPLAY_UNAVAILABLE`,
+provisional) distinct from hook registration, Profile planning, authentication, and unknown
+native failures. With follow-up 1 in place this becomes the residual diagnostic for the retry
+path rather than the primary user-facing outcome.
 
-```yaml
-roles:
-  reviewer:
-    source: launch
-    kind: interactive
-    on_display_unavailable: headless # proposed default
-```
+### 3. Make ordinary tab and split creation honest
 
-The initial choices should be:
+Unchanged. The non-Profile paths must check the arm result, roll back the Swift tab/split/target
+state, and return a typed failure instead of a dead shell with a valid identifier.
 
-- `headless` — default; run the role without a Ghostty surface when the runtime supports the
-  required headless contract.
-- `fail` — opt out of substitution and move the workflow to explicit attention/failure.
+### 4. Take the upstream fix into the fork
 
-The key name and exact state vocabulary remain design work. The important boundary is that this
-must not become a catch-all fallback for arbitrary `CREATE_FAILED`: hook, Profile, credential,
-renderer, and unknown native failures still fail closed.
+The durable fix is upstream #13639 plus its follow-ups: surfaces created without a display get
+their display link lazily once a display is available, so the per-surface non-vsync trade-off in
+follow-up 1 disappears. This requires cherry-picking (or syncing the fork past) those commits,
+rebuilding GhosttyKit, and re-pinning the prebuilt artifacts — which is blocked until the fork
+can build GhosttyKit again (zig 0.15.2 vs Xcode 26.6). Treat restoring that build path as its
+own infrastructure task; it gates every future fork patch, not just this one.
 
-### 4. Specify the headless executor before enabling the default
+### 5. Workflow semantics
 
-`kind: headless` is already reserved for V2 in [the DSL specification](dsl-spec.md#12-reserved-for-v2),
-but no executor exists. A production `HeadlessAgentExecutor` needs at least:
-
-- explicit cwd and bounded environment construction;
-- process-group cancellation and timeout semantics;
-- bounded stdout/stderr capture and persisted diagnostics;
-- per-runtime invocation rendering and trusted result extraction;
-- runtime capability gating and a deterministic unsupported-fallback outcome;
-- the same output validation and workflow-delivery trust boundary as interactive roles.
-
-This is a real release-scope expansion if pulled into R2a. The accepted spike only establishes
-the direction; it does not silently move the full V2 headless contract into R2a.
-
-### 5. Preserve workflow semantics when substituting execution modes
-
-An interactive role may be launched once and later receive `message`, `repeat`, `focus`, or
-`close` steps. A one-shot headless subprocess is not automatically equivalent. Before allowing
-fallback, validation or admission must prove that the runtime/executor can preserve the role's
-lifetime and re-dispatch semantics; otherwise the run should use the configured `fail` behavior
-and surface actionable attention.
-
-C1 should eventually make these cases visible as separate states: falling back to headless,
-fallback unsupported, and display-unavailable with `fail`. The fallback decision must be
-persisted in `run.json` and exposed by `workflow status` so the execution mode is never hidden.
+No execution-mode substitution is needed. An interactive role launched while the display sleeps
+is the same Ghostty pane with the same `message`/`repeat`/`focus`/`close` semantics; C1 needs no
+fallback states for this case. The only state worth surfacing is the typed failure from
+follow-up 2 when both the normal and the overridden creation fail.
 
 ## Release impact
 
 R2a remains B3 plus C1 as recorded in [the release plan](release-plan.md#r2a--workflow-engine-and-cli).
-This spike is accepted as a known environmental limitation rather than an R2a blocker. For R2a
-verification, keep the display awake so the interactive contract being released can be tested
-deterministically.
-
-The recommended next planning slice is narrow:
-
-1. define and test the typed display-unavailable classification and honest ordinary-creation
-   rollback;
-2. decide whether R2a ships only the explicit `fail` behavior or pulls in a minimal capability-
-   gated headless executor;
-3. if headless remains V2, record the limitation in user-facing workflow documentation and keep
-   the full fallback behind the V2 executor contract;
-4. include fallback/unsupported/fail presentation in the C1 state model, without blocking C1's
-   existing provisional-delivery controls.
+Follow-up 1 is small enough to land inside R2a and removes the “keep the display awake”
+caveat from interactive-workflow verification; until it lands, keep the display awake for
+deterministic R2a verification and note `window-vsync = false` as the user-side workaround.
 
 ## Non-goals of this spike
 
-- No production fallback was implemented.
-- No virtual-display, screen-wake, or Ghostty-fork workaround was attempted.
-- No fallback was proposed for arbitrary launch failures.
-- No claim was made that a headless process preserves interactive pane semantics without the
-  executor and capability contract above.
+- No production fallback was implemented; the `window-vsync` runs used the user-config and
+  `reload_config` paths only.
+- No virtual-display or screen-wake workaround was attempted.
+- No fallback was proposed for arbitrary launch failures: hook, Profile, credential, renderer,
+  and unknown native failures still fail closed.
+- No GhosttyKit rebuild was verified (blocked by the toolchain gap above).
 
 ## References
 
@@ -200,3 +251,5 @@ The recommended next planning slice is narrow:
 - [063 workflow DSL, V2 reservations](dsl-spec.md#12-reserved-for-v2)
 - [064.011 — S3c action, original display-sleep finding](../064-agent-completion-signals/011-s3c-action.md#display-sleep-is-the-create_failed-behind-the-intermittent-profile-launches)
 - [065.005 — K3 settings and verification note](../065-bundled-agent-skills/005-k3-settings-agent-skills.md)
+- [ghostty-org/ghostty#13639 — macos: tolerate display link creation failures](https://github.com/ghostty-org/ghostty/pull/13639)
+- [ghostty-org/ghostty#14035 — renderer: park DisplayLink while idle](https://github.com/ghostty-org/ghostty/pull/14035)
