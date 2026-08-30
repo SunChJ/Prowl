@@ -15,7 +15,9 @@ a hard precondition of renderer initialization, and Ghostty already exposes the 
 
 This is not an R2a release blocker. It does establish a required follow-up: interactive
 launches must survive display sleep through the surface-level fix, not through an
-execution-mode substitution.
+execution-mode substitution. That fix landed the same day as
+[#746](https://github.com/onevcat/Prowl/pull/746) (upstream backport into the GhosttyKit fork);
+see [Outcome](#outcome).
 
 ## Problem summary
 
@@ -149,11 +151,17 @@ All rows below ran inside logged display-off intervals with the probe reporting 
 | Default config at launch; flip `window-vsync = false` at runtime via Ghostty's `reload_config` (`prowl key … cmd-shift-comma`); go dark; `create tab` and Profile launch | Both succeeded | `GhosttyRuntime.reloadConfig` → `ghostty_app_update_config` is enough to switch the mode for surfaces created afterwards; no relaunch needed. |
 | Still dark: flip back to `window-vsync = true` via `reload_config`; probe the earlier panes; `create tab` again | Earlier panes unaffected (`OFF-A2-…`, `OFF-B2-…`); the new tab was a dead shell again | The switch is evaluated per surface at creation time and is safe to toggle in both directions while surfaces are live. |
 
-A locally rebuilt GhosttyKit with the ported upstream fix could not be tested: `zig build`
+A locally rebuilt GhosttyKit with the ported upstream fix initially could not be tested: `zig build`
 (zig 0.15.2) fails to link its own build runner under Xcode 26.6 (`undefined symbol: _waitpid`,
-`_sigaction`, … — libSystem is not linked), with or without `SDKROOT` pointing at the 26.5 SDK
-and with fresh local/global caches; a plain `zig build-exe -lc` links fine. The fork's last
-artifacts were built 2026-05-14. This is a fork-infrastructure gap independent of this spike.
+`_sigaction`, … — libSystem is not linked). The cause is the SDK, not the cache or `SDKROOT`
+(zig asks `xcrun --sdk macosx --show-sdk-path`, which ignores `SDKROOT`): from SDK 26.4 on,
+`libSystem.tbd` lists `arm64e-macos` instead of `arm64-macos`, and zig 0.15.2's Mach-O linker
+cannot match its `aarch64-macos` target to it (ziglang/zig#31658; fixed on the 0.16 line, never
+released for 0.15). Xcode 26.3 (SDK 26.2) is the last toolchain that works and is now the
+documented requirement in the ghostty fork-sync runbook. Two shortcuts were tried and rejected:
+the leftover Command Line Tools 15.4 SDK links the runner but produces objects whose auto-link
+metadata no longer resolves against the 26.5 SDK, and a patched 26.5 SDK overlay works but is
+not worth maintaining for a toolchain that changes again with the next Ghostty release.
 
 ## Conclusion
 
@@ -213,14 +221,14 @@ path rather than the primary user-facing outcome.
 Unchanged. The non-Profile paths must check the arm result, roll back the Swift tab/split/target
 state, and return a typed failure instead of a dead shell with a valid identifier.
 
-### 4. Take the upstream fix into the fork
+### 4. Take the upstream fix into the fork — done in #746
 
-The durable fix is upstream #13639 plus its follow-ups: surfaces created without a display get
-their display link lazily once a display is available, so the per-surface non-vsync trade-off in
-follow-up 1 disappears. This requires cherry-picking (or syncing the fork past) those commits,
-rebuilding GhosttyKit, and re-pinning the prebuilt artifacts — which is blocked until the fork
-can build GhosttyKit again (zig 0.15.2 vs Xcode 26.6). Treat restoring that build path as its
-own infrastructure task; it gates every future fork patch, not just this one.
+The durable fix is upstream #13639: surfaces created without a display get their display link
+lazily once a display is available, so the per-surface non-vsync trade-off in follow-up 1
+disappears. [#746](https://github.com/onevcat/Prowl/pull/746) backports it onto
+`onevcat/ghostty` `release/v1.3.1-patched` (`a0671ce9`), rebuilds GhosttyKit with Xcode 26.3, and
+re-pins the prebuilt artifacts. Drop the fork patch when the submodule moves to an upstream tag
+that contains `a177ba90af`.
 
 ### 5. Workflow semantics
 
@@ -229,12 +237,24 @@ is the same Ghostty pane with the same `message`/`repeat`/`focus`/`close` semant
 fallback states for this case. The only state worth surfacing is the typed failure from
 follow-up 2 when both the normal and the overridden creation fail.
 
+## Outcome
+
+With the backport in place, the same live protocol (default `window-vsync`, probe `active=0` for
+the whole dark interval) produced the intended result on the rebuilt GhosttyKit: `create tab`,
+`create pane`, and a Profile launch all succeeded while dark and answered from inside the
+interval; the unified log shows `error creating display link; using fallback rendering
+err=error.CreationFailed` for each dark surface and, after wake, `created display link` followed
+by `updating display link display id=2` — Prowl's `windowDidChangeScreen` →
+`ghostty_surface_set_display_id` is the retry trigger, exactly as upstream intended. The
+follow-up 1 override is therefore not needed as long as the fork carries this patch; it remains
+the fallback design if a future Ghostty pin regresses.
+
 ## Release impact
 
 R2a remains B3 plus C1 as recorded in [the release plan](release-plan.md#r2a--workflow-engine-and-cli).
-Follow-up 1 is small enough to land inside R2a and removes the “keep the display awake”
-caveat from interactive-workflow verification; until it lands, keep the display awake for
-deterministic R2a verification and note `window-vsync = false` as the user-side workaround.
+Once #746 ships, interactive-workflow verification no longer needs the “keep the display awake”
+caveat; the typed display-unavailable classification and honest tab/split creation
+(follow-ups 2 and 3) remain worthwhile hardening for the residual native failures.
 
 ## Non-goals of this spike
 
@@ -243,7 +263,7 @@ deterministic R2a verification and note `window-vsync = false` as the user-side 
 - No virtual-display or screen-wake workaround was attempted.
 - No fallback was proposed for arbitrary launch failures: hook, Profile, credential, renderer,
   and unknown native failures still fail closed.
-- No GhosttyKit rebuild was verified (blocked by the toolchain gap above).
+- No Prowl-side fallback (follow-up 1) was implemented; the fork backport made it unnecessary.
 
 ## References
 
