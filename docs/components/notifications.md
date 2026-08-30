@@ -72,7 +72,8 @@ top of its section. **Jump to Latest Unread** (`⌘⌥U`) takes you straight to 
 - `muteNotificationsForActiveSurface` (default on) — skip the banner, sound, and
   dock bounce when the notification comes from the pane you're already looking at
   (selected worktree, focused pane, key + visible window). Sidebar reordering
-  still happens.
+  still happens. Workflow status-edge notices are worktree-level rather than pane-
+  level, so the selected worktree in a key, visible window counts as currently viewed.
 - `moveNotifiedWorktreeToTop` — float notified worktree to top.
 - `commandFinishedNotificationEnabled` + `commandFinishedNotificationThreshold` —
   long-command notifications and their minimum duration.

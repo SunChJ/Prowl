@@ -58,6 +58,7 @@ struct WorkflowStatusPopoverButton: View {
       .onDisappear {
         isHoveringPopover = false
         isPinnedOpen = false
+        selectedRunID = nil
       }
     }
     .onChange(of: presentation.runs.map(\.id)) { _, runIDs in
