@@ -44,6 +44,9 @@ final class WorkflowRuntimeCoordinator {
   }
 
   private let dependencies: Dependencies
+  /// The verified caller role of each outstanding `run` / `done`, so the answer spells completion
+  /// commands only to the pane that owns the activation (never to a manual or forced caller).
+  private var callerRoles: [UUID: String] = [:]
 
   init(dependencies: Dependencies) {
     self.dependencies = dependencies
@@ -53,7 +56,7 @@ final class WorkflowRuntimeCoordinator {
 
   func run(
     _ input: WorkflowInput, source: WorkflowRunSource, snapshot: WorkflowRuntimeSnapshot
-  ) -> CommandResponse {
+  ) async -> CommandResponse {
     var environment = dependencies.admissionEnvironment()
     environment = environment.busy(dependencies.sessions().filter { !$0.run.status.isTerminal })
     let admission = WorkflowRunAdmission.admit(input, source: source, snapshot: snapshot, environment: environment)
@@ -61,16 +64,24 @@ final class WorkflowRuntimeCoordinator {
     case .failure(let failure):
       return Self.failure(failure)
     case .success(let admitted):
-      dependencies.send(.started(admitted.session, effects: admitted.effects))
-      // The reducer may already have advanced (a self-initiated first step opens its activation
-      // synchronously); answer with what it holds now.
-      let run =
-        dependencies.sessions().first { $0.run.id == admitted.session.run.id }?.run
-        ?? admitted.session.run
-      return Self.success(
-        .run(
-          WorkflowRunPayload(run: run, callerRole: admitted.callerRole, includeSelfInitiated: true))
-      )
+      guard admitted.session.run.selfInitiatedLine != nil else {
+        dependencies.send(.started(admitted.session, effects: admitted.effects))
+        let run =
+          dependencies.sessions().first { $0.run.id == admitted.session.run.id }?.run ?? admitted.session.run
+        return Self.success(
+          .run(WorkflowRunPayload(run: run, callerRole: admitted.callerRole, includeSelfInitiated: true)))
+      }
+      // A self-initiated first step hands the caller its completion command: answer only once
+      // the activation record that attributes that command exists (or its opening failed).
+      let requestID = dependencies.makeRequestID()
+      guard dependencies.rendezvous.register(requestID) else {
+        return Self.failure(code: CLIErrorCode.requestConflict, message: "Workflow request id is already in use.")
+      }
+      if let callerRole = admitted.callerRole {
+        callerRoles[requestID] = callerRole
+      }
+      dependencies.send(.started(admitted.session, effects: admitted.effects, requestID: requestID))
+      return await dependencies.rendezvous.wait(for: requestID)
     }
   }
 
@@ -140,22 +151,27 @@ final class WorkflowRuntimeCoordinator {
       explicit = (runID, stepID)
     }
 
-    let request: WorkflowDeliveryRequest
-    let attribution = attribute(explicit: explicit, callerPane: callerPane, token: input.token, force: input.force)
-    switch attribution {
+    let attribution: Attribution
+    switch attribute(explicit: explicit, callerPane: callerPane, token: input.token, force: input.force) {
     case .failure(let refusal):
       return refusal.response
-    case .success(let attribution):
-      request = WorkflowDeliveryRequest(
-        requestID: dependencies.makeRequestID(),
-        runID: attribution.runID,
-        ordinal: attribution.ordinal,
-        selector: attribution.selector,
-        body: body,
-        verdict: input.verdict,
-        source: attribution.source)
+    case .success(let value):
+      attribution = value
     }
-    dependencies.rendezvous.register(request.requestID)
+    let request = WorkflowDeliveryRequest(
+      requestID: dependencies.makeRequestID(),
+      runID: attribution.runID,
+      ordinal: attribution.ordinal,
+      selector: attribution.selector,
+      body: body,
+      verdict: input.verdict,
+      source: attribution.source)
+    guard dependencies.rendezvous.register(request.requestID) else {
+      return Self.failure(code: CLIErrorCode.requestConflict, message: "Workflow request id is already in use.")
+    }
+    if let callerRole = attribution.callerRole {
+      callerRoles[request.requestID] = callerRole
+    }
     dependencies.send(.deliver(request))
     return await dependencies.rendezvous.wait(for: request.requestID)
   }
@@ -165,6 +181,8 @@ final class WorkflowRuntimeCoordinator {
     let ordinal: Int?
     let selector: WorkflowDeliverySelector
     let source: String
+    /// The caller pane's role when the delivery was attributed by that pane; nil for manual.
+    let callerRole: String?
   }
 
   /// Decision W3: the caller pane's pending dispatch identifies the activation first; explicit
@@ -199,7 +217,7 @@ final class WorkflowRuntimeCoordinator {
       return .success(
         Attribution(
           runID: session.run.id, ordinal: activation.ordinal, selector: .token(token),
-          source: "pane"))
+          source: "pane", callerRole: activation.role))
     }
     guard let explicit else {
       if callerPane == nil {
@@ -231,19 +249,22 @@ final class WorkflowRuntimeCoordinator {
     return .success(
       Attribution(
         runID: session.run.id, ordinal: nil, selector: .manual(stepID: explicit.stepID),
-        source: source))
+        source: source, callerRole: nil))
   }
 
-  /// The reducer's answer to a `done` (through `WorkflowCLIResponderClient`).
-  func resolve(_ requestID: UUID, _ resolution: WorkflowDeliveryResolution) {
+  /// The reducer's answer to a `run` or `done` request (through `WorkflowCLIResponderClient`).
+  func resolve(_ requestID: UUID, _ resolution: WorkflowRequestResolution) {
+    let callerRole = callerRoles.removeValue(forKey: requestID)
     let response: CommandResponse
     switch resolution {
+    case .started(let run):
+      response = Self.success(.run(WorkflowRunPayload(run: run, callerRole: callerRole, includeSelfInitiated: true)))
     case .delivered(let run, let receipt):
       response = Self.success(
-        .done(Self.donePayload(run: run, receipt: receipt, state: .delivered)))
+        .done(Self.donePayload(run: run, receipt: receipt, state: .delivered, callerRole: callerRole)))
     case .provisional(let run, let receipt):
       response = Self.success(
-        .done(Self.donePayload(run: run, receipt: receipt, state: .provisional)))
+        .done(Self.donePayload(run: run, receipt: receipt, state: .provisional, callerRole: callerRole)))
     case .failed(let code, let message):
       response = Self.failure(code: code, message: message)
     }
@@ -251,12 +272,33 @@ final class WorkflowRuntimeCoordinator {
   }
 
   private static func donePayload(
-    run: WorkflowRun, receipt: WorkflowDeliveryReceipt, state: WorkflowDeliveryState
+    run: WorkflowRun, receipt: WorkflowDeliveryReceipt, state: WorkflowDeliveryState, callerRole: String?
   ) -> WorkflowDonePayload {
     let role = run.invocations.first { $0.ordinal == receipt.ordinal }?.role ?? "-"
     return WorkflowDonePayload(
-      run: WorkflowRunPayload(run: run, callerRole: role, includeSelfInitiated: false),
+      run: WorkflowRunPayload(run: run, callerRole: callerRole, includeSelfInitiated: false),
       delivery: WorkflowDeliveryPayload(state: state, receipt: receipt, role: role))
+  }
+
+  /// The `WORKFLOW_DELIVERY_REQUIRED` refusal for `agents dispatch-complete` when the pane's
+  /// pending record is a workflow activation. Terminal sessions count too: their abandon is
+  /// queued behind earlier work, and a plain completion must not win that race.
+  static func deliveryRefusal(dispatchID: String, sessions: [WorkflowRunSession]) -> CommandError? {
+    for session in sessions {
+      guard let activation = session.run.activation(forDispatchID: dispatchID) else { continue }
+      if session.run.status.isTerminal {
+        return CommandError(
+          code: CLIErrorCode.workflowDeliveryRequired,
+          message: "This pane's pending dispatch belongs to workflow run \(session.run.id.uuidString), "
+            + "which already ended (\(WorkflowRunMachine.describe(session.run.status))); the record is being abandoned."
+        )
+      }
+      return CommandError(
+        code: CLIErrorCode.workflowDeliveryRequired,
+        message: activation.completion.deliveryRequiredMessage(
+          runID: session.run.id.uuidString, stepID: activation.stepID))
+    }
+    return nil
   }
 
   // MARK: - cancel

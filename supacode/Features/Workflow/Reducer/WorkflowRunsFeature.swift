@@ -76,6 +76,8 @@ struct WorkflowRunsFeature {
     /// Every run started in this app instance, terminal ones included (`status` reads them).
     var sessions: [UUID: WorkflowRunSession] = [:]
     var pendingDeliveries: [UUID: WorkflowPendingDelivery] = [:]
+    /// Self-initiated `run` requests waiting for their first activation to open (request → run).
+    var pendingStarts: [UUID: UUID] = [:]
     /// Worktree roots whose leftover runs were marked `interrupted` at load (dsl-spec §10 Restart).
     var scannedWorktreeRoots: Set<String> = []
 
@@ -91,7 +93,8 @@ struct WorkflowRunsFeature {
 
   enum Action: Equatable {
     /// Admission succeeded (preflight, layout, initial record): own the run and perform its effects.
-    case started(WorkflowRunSession, effects: [WorkflowRunEffect])
+    /// A self-initiated run passes the CLI request to answer once its first activation is open.
+    case started(WorkflowRunSession, effects: [WorkflowRunEffect], requestID: UUID? = nil)
     case event(runID: UUID, WorkflowRunEvent)
     case deliver(WorkflowDeliveryRequest)
     case userAction(runID: UUID, WorkflowUserAction)
@@ -111,19 +114,23 @@ struct WorkflowRunsFeature {
   var body: some Reducer<State, Action> {
     Reduce { state, action in
       switch action {
-      case .started(let session, let effects):
+      case .started(let session, let effects, let requestID):
         let runID = session.run.id
         state.sessions[runID] = session
+        if let requestID {
+          state.pendingStarts[requestID] = runID
+        }
         // The queue exists before the first batch is enqueued below; the executor drains it.
         let batches = queue.start(runID)
         return .merge(
           executor(runID: runID, batches: batches),
-          perform(effects, runID: runID, session: session)
+          perform(effects, runID: runID, session: session),
+          resolvePendingStarts(&state, runID: runID, session: session)
         )
 
       case .event(let runID, let event):
         guard var session = state.sessions[runID], !session.run.status.isTerminal else {
-          return lateLaunchCleanup(event, session: state.sessions[runID])
+          return lateEventCleanup(event, session: state.sessions[runID])
         }
         let timestamp = now
         let generator = uuid
@@ -135,10 +142,12 @@ struct WorkflowRunsFeature {
         if case .launched = event {
           rememberLaunchedBindings(previous: previous, current: session)
         }
+        fenceIfStale(runID: runID, previous: previous, current: session.run)
         return .merge(
           resolvePendingDeliveries(&state, runID: runID, session: session),
+          resolvePendingStarts(&state, runID: runID, session: session),
           perform(effects, runID: runID, session: session),
-          staleLaunchCleanup(event, session: session)
+          staleEventCleanup(event, session: session)
         )
 
       case .deliver(let request):
@@ -178,10 +187,13 @@ struct WorkflowRunsFeature {
         let generator = uuid
         var machine = session.machine(now: { timestamp }, makeToken: { generator().uuidString })
         let effects = machine.apply(.user(userAction))
+        let previous = session.run
         session.run = machine.run
         state.sessions[runID] = session
+        fenceIfStale(runID: runID, previous: previous, current: session.run)
         return .merge(
           resolvePendingDeliveries(&state, runID: runID, session: session),
+          resolvePendingStarts(&state, runID: runID, session: session),
           perform(effects, runID: runID, session: session)
         )
 
@@ -212,10 +224,50 @@ struct WorkflowRunsFeature {
 
   // MARK: - Rendezvous
 
-  private func respond(_ requestID: UUID, _ resolution: WorkflowDeliveryResolution) -> Effect<
-    Action
-  > {
+  private func respond(_ requestID: UUID, _ resolution: WorkflowRequestResolution) -> Effect<Action> {
     .run { _ in await responder.respond(requestID, resolution) }
+  }
+
+  /// Answers a self-initiated `run` once its first activation is open — or once opening it failed
+  /// and the run sits in attention or ended — so the caller never holds a completion command
+  /// before the dispatch record `done` is attributed by exists.
+  private func resolvePendingStarts(
+    _ state: inout State, runID: UUID, session: WorkflowRunSession
+  ) -> Effect<Action> {
+    var effects: [Effect<Action>] = []
+    for (requestID, pendingRunID) in state.pendingStarts where pendingRunID == runID {
+      if case .injecting = session.run.phase, session.run.status == .running { continue }
+      state.pendingStarts.removeValue(forKey: requestID)
+      effects.append(respond(requestID, .started(run: session.run)))
+    }
+    return .merge(effects)
+  }
+
+  /// Queued work belongs to the invocation that was in flight when it was enqueued. Once a
+  /// transition revokes that invocation (retry, relaunch, skip, cancel, an ended run) the queue is
+  /// fenced so the executor drops what is left of it instead of typing into a pane a cancel
+  /// already left or opening a dispatch record nobody will complete.
+  private func fenceIfStale(runID: UUID, previous: WorkflowRun, current: WorkflowRun) {
+    guard !previous.status.isTerminal else { return }
+    let revokedInFlight: Bool =
+      switch previous.phase {
+      case .waitingForRole(_, let ordinal), .injecting(let ordinal), .launching(let ordinal):
+        current.phase != previous.phase && current.currentInvocation?.ordinal != ordinal
+      case .runningAction(let stepID):
+        current.phase != previous.phase && current.actionOutputs[stepID] == nil
+      case .waitingForDelivery, .idle:
+        false
+      }
+    let revokedActivation = previous.invocations.contains { invocation in
+      guard let before = invocation.activation,
+        let after = current.invocations.first(where: { $0.ordinal == invocation.ordinal })?.activation
+      else { return false }
+      let open: Set<WorkflowActivationState> = [.waiting, .persisting, .provisional]
+      return open.contains(before.state) && (after.state == .revoked || after.state == .skipped)
+    }
+    if current.status.isTerminal || revokedInFlight || revokedActivation {
+      queue.fence(runID)
+    }
   }
 
   /// Answers every `done` whose activation left `persisting` (decision W1): delivered and
@@ -226,7 +278,7 @@ struct WorkflowRunsFeature {
     var effects: [Effect<Action>] = []
     for (requestID, pending) in state.pendingDeliveries where pending.runID == runID {
       let activation = session.run.invocations.first { $0.ordinal == pending.ordinal }?.activation
-      let resolution: WorkflowDeliveryResolution?
+      let resolution: WorkflowRequestResolution?
       switch activation?.state {
       case .delivered:
         resolution = .delivered(run: session.run, receipt: pending.receipt)
@@ -261,33 +313,52 @@ struct WorkflowRunsFeature {
     return .merge(effects)
   }
 
-  // MARK: - Late launches
+  // MARK: - Late and stale events
 
-  /// A `.launched` that arrives after the run ended (or for an unknown run) owns a pane and maybe
-  /// a dispatch record nobody will use: abandon the record and close the pane (B2: the machine
-  /// ignores events on terminal runs, so the wiring must clean up).
-  private func lateLaunchCleanup(_ event: WorkflowRunEvent, session: WorkflowRunSession?) -> Effect<
-    Action
-  > {
-    guard case .launched(let ordinal, let pane, let dispatchID) = event else { return .none }
-    let reason =
-      "Workflow run \(session?.run.id.uuidString ?? "?") ended before role launch \(ordinal) completed."
-    return closeUnboundLaunch(
-      pane: pane, dispatchID: dispatchID, reason: reason, worktree: session?.worktree)
+  /// An event that arrives after the run ended (or for an unknown run) may own a pane or a
+  /// dispatch record nobody will use: a `.launched` abandons its record and closes the pane, an
+  /// `.injectionSucceeded` abandons the record it opened (B2: the machine ignores events on
+  /// terminal runs, so the wiring must clean up).
+  private func lateEventCleanup(_ event: WorkflowRunEvent, session: WorkflowRunSession?) -> Effect<Action> {
+    let runName = session?.run.id.uuidString ?? "?"
+    switch event {
+    case .launched(let ordinal, let pane, let dispatchID):
+      return closeUnboundLaunch(
+        pane: pane, dispatchID: dispatchID,
+        reason: "Workflow run \(runName) ended before role launch \(ordinal) completed.",
+        worktree: session?.worktree)
+    case .injectionSucceeded(let ordinal, let dispatchID?):
+      return abandonStaleActivation(
+        dispatchID, reason: "Workflow run \(runName) ended before invocation \(ordinal) was typed.")
+    default:
+      return .none
+    }
   }
 
-  /// A `.launched` the running machine did not bind (its step was retried, relaunched, skipped,
-  /// or cancelled while the launch was in flight) is cleaned up the same way.
-  private func staleLaunchCleanup(_ event: WorkflowRunEvent, session: WorkflowRunSession) -> Effect<
-    Action
-  > {
-    guard case .launched(let ordinal, let pane, let dispatchID) = event,
-      !session.boundSurfaceIDs.contains(pane.surfaceID)
-    else { return .none }
-    let reason =
-      "Workflow run \(session.run.id.uuidString) moved on before role launch \(ordinal) completed."
-    return closeUnboundLaunch(
-      pane: pane, dispatchID: dispatchID, reason: reason, worktree: session.worktree)
+  /// An event the running machine did not take up (its step was retried, relaunched, skipped, or
+  /// cancelled while the effect was in flight) is cleaned up the same way.
+  private func staleEventCleanup(_ event: WorkflowRunEvent, session: WorkflowRunSession) -> Effect<Action> {
+    let runName = session.run.id.uuidString
+    switch event {
+    case .launched(let ordinal, let pane, let dispatchID) where !session.boundSurfaceIDs.contains(pane.surfaceID):
+      return closeUnboundLaunch(
+        pane: pane, dispatchID: dispatchID,
+        reason: "Workflow run \(runName) moved on before role launch \(ordinal) completed.",
+        worktree: session.worktree)
+    case .injectionSucceeded(let ordinal, let dispatchID?)
+    where session.run.activation(forDispatchID: dispatchID) == nil:
+      return abandonStaleActivation(
+        dispatchID, reason: "Workflow run \(runName) moved on before invocation \(ordinal) was typed.")
+    default:
+      return .none
+    }
+  }
+
+  private func abandonStaleActivation(_ dispatchID: String, reason: String) -> Effect<Action> {
+    .run { _ in
+      await activation.abandon(dispatchID, reason)
+      Self.logger.info("[Workflow] Abandoned stale activation \(dispatchID): \(reason)")
+    }
   }
 
   private func closeUnboundLaunch(
@@ -328,11 +399,19 @@ struct WorkflowRunsFeature {
   }
 
   /// The run's ordered effect executor (one per run). It ends when `.finished` closes the queue.
+  /// Effects of a fenced batch are skipped one by one, so a fence raised mid-batch still stops
+  /// the rest of it.
   private func executor(runID: UUID, batches: AsyncStream<WorkflowEffectBatch>) -> Effect<Action> {
     .run { send in
       for await batch in batches {
         for effect in batch.effects {
-          let outcome = await perform(effect, runID: runID, session: batch.session, send: send)
+          if await queue.isStale(runID, batch.sequence) {
+            Self.logger.info("[Workflow] Skipped stale effect of run \(runID): \(effect)")
+            break
+          }
+          let outcome = await perform(
+            effect, runID: runID, session: batch.session, send: send,
+            isStale: { await queue.isStale(runID, batch.sequence) })
           if outcome == .stop { break }
         }
       }
@@ -432,7 +511,11 @@ struct WorkflowRunsFeature {
 
   // swiftlint:disable:next cyclomatic_complexity function_body_length
   private func perform(
-    _ effect: WorkflowRunEffect, runID: UUID, session: WorkflowRunSession, send: Send<Action>
+    _ effect: WorkflowRunEffect,
+    runID: UUID,
+    session: WorkflowRunSession,
+    send: Send<Action>,
+    isStale: @Sendable () async -> Bool
   ) async -> StepOutcome {
     let store = session.store
     let timestamp = now
@@ -489,6 +572,11 @@ struct WorkflowRunsFeature {
         case .failure(let failure):
           await send(
             .event(runID: runID, .injectionFailed(ordinal: ordinal, failure.injectionFailure)))
+          return .stop
+        }
+        // A cancel that landed while the record was being issued must not see a typed line.
+        if await isStale(), let dispatchID {
+          activation.cancel(dispatchID)
           return .stop
         }
       }

@@ -14,9 +14,32 @@ final class WorkflowCoordinatorBox {
   var coordinator: WorkflowRuntimeCoordinator?
 }
 
+/// Panes a workflow launch created but the reducer has not bound yet (dsl-spec §10: one run per
+/// pane). A launch without `expect` opens no dispatch record, so between surface creation and
+/// the reducer's `.launched` nothing else would keep admission from binding that pane.
+@MainActor
+final class WorkflowPaneReservations {
+  private var surfaceIDs: Set<UUID> = []
+
+  func reserve(_ surfaceID: UUID) {
+    surfaceIDs.insert(surfaceID)
+  }
+
+  func release(_ surfaceID: UUID) {
+    surfaceIDs.remove(surfaceID)
+  }
+
+  /// Reservations still worth honoring: the pane exists and no run has bound it yet.
+  func pending(bound: Set<UUID>, isLive: (UUID) -> Bool) -> Set<UUID> {
+    surfaceIDs = surfaceIDs.filter { !bound.contains($0) && isLive($0) }
+    return surfaceIDs
+  }
+}
+
 /// Everything the app installs for the workflow runner at its composition root.
 struct WorkflowRuntimeInstallation {
   let coordinatorBox: WorkflowCoordinatorBox
+  let reservations: WorkflowPaneReservations
   let activation: WorkflowActivationClient
   let runtime: WorkflowRuntimeClient
   let watchdog: WorkflowWatchdogClient
@@ -42,10 +65,13 @@ extension SupacodeApp {
   ) -> WorkflowRuntimeInstallation {
     let bridge = makeWorkflowActivationBridge(terminalManager: terminalManager, storeBox: storeBox)
     let coordinatorBox = WorkflowCoordinatorBox()
+    let reservations = WorkflowPaneReservations()
     return WorkflowRuntimeInstallation(
       coordinatorBox: coordinatorBox,
+      reservations: reservations,
       activation: makeWorkflowActivationClient(bridge: bridge),
-      runtime: makeWorkflowRuntimeClient(terminalManager: terminalManager, storeBox: storeBox),
+      runtime: makeWorkflowRuntimeClient(
+        terminalManager: terminalManager, storeBox: storeBox, reservations: reservations),
       watchdog: makeWorkflowWatchdogClient(
         terminalManager: terminalManager, activationBridge: bridge, storeBox: storeBox),
       queue: WorkflowEffectQueue().client,
@@ -147,7 +173,8 @@ extension SupacodeApp {
   @MainActor
   static func makeWorkflowRuntimeClient(
     terminalManager: WorktreeTerminalManager,
-    storeBox: SupacodeAppStoreBox
+    storeBox: SupacodeAppStoreBox,
+    reservations: WorkflowPaneReservations = WorkflowPaneReservations()
   ) -> WorkflowRuntimeClient {
     WorkflowRuntimeClient(
       waitForRole: { surfaceID in
@@ -164,8 +191,8 @@ extension SupacodeApp {
       launch: { worktree, frozenPlan, request in
         await launchWorkflowRole(
           worktree: worktree, frozenPlan: frozenPlan, request: request,
-          terminalManager: terminalManager,
-          storeBox: storeBox)
+          boundary: WorkflowLaunchBoundary(
+            terminalManager: terminalManager, storeBox: storeBox, reservations: reservations))
       },
       close: { worktree, surfaceID in
         _ = terminalManager.stateIfExists(for: worktree.id)?.closeSurface(
@@ -184,9 +211,11 @@ extension SupacodeApp {
   }
 
   /// The #733 idle precondition without its five-second cap (docs-ai 063.007, "What B3 must do
-  /// with each effect"): exact idle evidence returns at once, a detector-only idle view must stay
-  /// stable for two seconds, `working` keeps waiting, an exact `needs-input` or a heuristic
-  /// `blocked` that persists for the blocked grace ends the wait as blocked.
+  /// with each effect"), decided by `WorkflowRoleWaitPolicy` against the baseline captured when
+  /// the wait started: a fresh exact `turn-ended` ends it at once, a detector-only idle view must
+  /// stay stable for two seconds, `working` keeps waiting, an exact `needs-input` or a heuristic
+  /// `blocked` that persists for the blocked grace ends the wait as blocked, and a pane that holds
+  /// someone else's pending dispatch record ends it as `dispatchPending`.
   @MainActor
   private static func waitForWorkflowRole(
     surfaceID: UUID,
@@ -195,46 +224,15 @@ extension SupacodeApp {
   ) async -> WorkflowRoleWaitOutcome {
     let clock = ContinuousClock()
     var elapsed = 0
-    var stabilizer = AgentConditionEvidence.HeuristicStabilizer()
-    var blockedSince: Int?
+    var policy = WorkflowRoleWaitPolicy(
+      blockedGraceMilliseconds: workflowRoleWaitBlockedMilliseconds,
+      appearanceGraceMilliseconds: workflowRoleWaitAppearanceMilliseconds)
     while !Task.isCancelled {
       let snapshot = makeWorkflowConditionSnapshot(
         surfaceID: surfaceID, terminalManager: terminalManager, storeBox: storeBox)
-      guard snapshot.isLive else { return .gone }
-      if let pending = terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID) {
-        return .dispatchPending(pending.record.id)
-      }
-      if snapshot.agent == nil {
-        if elapsed >= workflowRoleWaitAppearanceMilliseconds { return .noAgent }
-      } else {
-        switch AgentConditionEvidence.idleVerdict(for: snapshot) {
-        case .idle:
-          return .idle
-        case .settling(let state):
-          blockedSince = nil
-          let detectorCandidate =
-            AgentConditionEvidence.detectorReports(.idle, normalizedState: state)
-            && AgentConditionEvidence.allowsHeuristic(.auto, condition: .idle, snapshot: snapshot)
-          if stabilizer.observe(
-            candidate: detectorCandidate ? state : nil, elapsedMilliseconds: elapsed)
-          {
-            return .idle
-          }
-        case .busy(let state):
-          _ = stabilizer.observe(candidate: nil, elapsedMilliseconds: elapsed)
-          if let signal = snapshot.signal, signal.event == .needsInput,
-            AgentConditionEvidence.accepts(signal.confidence, minimum: .auto)
-          {
-            return .blocked
-          }
-          if AgentConditionEvidence.detectorReports(.blocked, normalizedState: state) {
-            let since = blockedSince ?? elapsed
-            blockedSince = since
-            if elapsed - since >= workflowRoleWaitBlockedMilliseconds { return .blocked }
-          } else {
-            blockedSince = nil
-          }
-        }
+      let pending = terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID)?.record.id
+      if let outcome = policy.observe(snapshot, pendingDispatchID: pending, elapsedMilliseconds: elapsed) {
+        return outcome
       }
       do {
         try await clock.sleep(for: .milliseconds(workflowRoleWaitPollMilliseconds))
@@ -256,9 +254,9 @@ extension SupacodeApp {
     worktree: Worktree,
     frozenPlan: AgentProfileLaunchPlan,
     request: WorkflowLaunchRequest,
-    terminalManager: WorktreeTerminalManager,
-    storeBox: SupacodeAppStoreBox
+    boundary: WorkflowLaunchBoundary
   ) async -> Result<WorkflowLaunchResult, WorkflowLaunchError> {
+    let (terminalManager, storeBox, reservations) = (boundary.terminalManager, boundary.storeBox, boundary.reservations)
     var dispatchID: String?
     if request.expectsDelivery {
       do {
@@ -270,6 +268,7 @@ extension SupacodeApp {
     func rollback(closing surfaceID: UUID?) {
       if let dispatchID { terminalManager.cancelAgentDispatchIssuance(dispatchID: dispatchID) }
       if let surfaceID {
+        reservations.release(surfaceID)
         _ = terminalManager.stateIfExists(for: worktree.id)?.closeSurface(
           id: surfaceID, confirmation: .skip)
       }
@@ -292,6 +291,8 @@ extension SupacodeApp {
     case .success(let value):
       launched = value
     }
+    // Reserved until the reducer binds the pane (or a later admission finds it bound / gone).
+    reservations.reserve(launched.surfaceID)
     guard let appStore = storeBox.store else {
       rollback(closing: launched.surfaceID)
       return .failure(.failed("the app store is unavailable"))
@@ -406,12 +407,14 @@ extension SupacodeApp {
   @MainActor
   static func makeWorkflowAdmissionEnvironment(
     appStore: StoreOf<AppFeature>,
-    terminalManager: WorktreeTerminalManager
+    terminalManager: WorktreeTerminalManager,
+    reservations: WorkflowPaneReservations
   ) -> WorkflowAdmissionEnvironment {
     @Shared(.userGlobalSettings) var settings
     let profiles = settings.agentProfiles
     let bundledSkills =
       Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) } ?? []
+    let bound = Set(appStore.state.workflowRuns.activeSessions.flatMap(\.boundSurfaceIDs))
     return WorkflowAdmissionEnvironment(
       profiles: profiles,
       recommendation: { repositoryRootURL in
@@ -432,6 +435,7 @@ extension SupacodeApp {
       pendingDispatchID: { surfaceID in
         terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID)?.record.id
       },
+      busySurfaceIDs: reservations.pending(bound: bound, isLive: { terminalManager.isSurfaceLive($0) }),
       worktree: { id in
         resolveCLITerminalWorktree(
           id: id, repositories: Array(appStore.state.repositories.repositories))
@@ -453,12 +457,14 @@ extension SupacodeApp {
   static func makeWorkflowCoordinator(
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager,
-    rendezvous: WorkflowCLIRendezvous
+    rendezvous: WorkflowCLIRendezvous,
+    reservations: WorkflowPaneReservations
   ) -> WorkflowRuntimeCoordinator {
     WorkflowRuntimeCoordinator(
       dependencies: WorkflowRuntimeCoordinator.Dependencies(
         admissionEnvironment: {
-          makeWorkflowAdmissionEnvironment(appStore: appStore, terminalManager: terminalManager)
+          makeWorkflowAdmissionEnvironment(
+            appStore: appStore, terminalManager: terminalManager, reservations: reservations)
         },
         sessions: { Array(appStore.state.workflowRuns.sessions.values) },
         send: { appStore.send(.workflowRuns($0)) },
@@ -475,27 +481,27 @@ extension SupacodeApp {
   }
 
   /// The `WORKFLOW_DELIVERY_REQUIRED` refusal of `agents dispatch-complete` for a pane whose
-  /// pending record is a workflow activation (decision W3).
+  /// pending record is a workflow activation (decision W3), live or already ended.
   @MainActor
   static func workflowDeliveryRefusal(
     surfaceID: UUID,
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager
   ) -> CommandError? {
-    guard
-      let dispatchID = terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID)?.record.id
-    else {
+    guard let dispatchID = terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID)?.record.id else {
       return nil
     }
-    for session in appStore.state.workflowRuns.activeSessions {
-      guard let activation = session.run.activation(forDispatchID: dispatchID) else { continue }
-      return CommandError(
-        code: CLIErrorCode.workflowDeliveryRequired,
-        message: activation.completion.deliveryRequiredMessage(
-          runID: session.run.id.uuidString, stepID: activation.stepID))
-    }
-    return nil
+    return WorkflowRuntimeCoordinator.deliveryRefusal(
+      dispatchID: dispatchID, sessions: Array(appStore.state.workflowRuns.sessions.values))
   }
+}
+
+/// The app objects a workflow launch touches.
+@MainActor
+struct WorkflowLaunchBoundary {
+  let terminalManager: WorktreeTerminalManager
+  let storeBox: SupacodeAppStoreBox
+  let reservations: WorkflowPaneReservations
 }
 
 /// The prompt a frozen `launch` plan is compiled with; `attachingWorkflow` replaces it at launch.

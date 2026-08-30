@@ -93,12 +93,17 @@ enum AgentConditionEvidence {
     case busy(String)
   }
 
-  /// Every signal the snapshot holds predates this call, so a `turn-ended` counts only with
-  /// detector corroboration, and the detector alone counts only where the wait would fall back to
-  /// it. Either source alone is not a refusal yet; working or blocked without such evidence is.
-  static func idleVerdict(for snapshot: AgentConditionSnapshot) -> IdleVerdict {
+  /// A pre-arm `turn-ended` counts only with detector corroboration, and the detector alone
+  /// counts only where the wait would fall back to it. Either source alone is not a refusal yet;
+  /// working or blocked without such evidence is.
+  static func idleVerdict(
+    for snapshot: AgentConditionSnapshot, baseline explicitBaseline: Baseline? = nil
+  ) -> IdleVerdict {
     let state = normalizedState(snapshot)
-    let baseline = Baseline(snapshot: snapshot)
+    // Without a baseline every signal the snapshot holds predates this call (the re-dispatch
+    // case); a wait that keeps polling passes the baseline it armed with, so a later exact
+    // `turn-ended` counts even while the screen still shows `working`.
+    let baseline = explicitBaseline ?? Baseline(snapshot: snapshot)
     if exactMatch(
       condition: .idle, snapshot: snapshot, normalizedState: state, baseline: baseline, minimumConfidence: .auto)
       != nil

@@ -89,8 +89,9 @@ be valid (`WORKFLOW_INVALID`, `details` = the validate payload) and enabled
   (`INVALID_ARGUMENT` names the dependent step). A worktree path that cannot be rendered on
   one line is `UNSAFE_PATH`.
 - **Reply point.** The run directory exists and `run.json` is written before the response;
-  the first step is already in progress (or, for a self-initiated first step, its activation is
-  open and nothing was typed).
+  the first step is already in progress. A self-initiated first step is answered only once its
+  activation record exists (or its opening failed and the run sits in attention), so the
+  returned completion command is attributable the moment the caller runs it; nothing was typed.
 
 ### `done` attribution (decision W3)
 
@@ -224,9 +225,10 @@ valid; the app-side `list` always has the bundle.
   `injection_failed:<why>`, `launch_failed`, `rendered_text_invalid`, `action_failed`,
   `persist_failed`, `delivery_issues`, `timeout`), `message`, `step`, `role`, `ordinal`,
   `actions[]` (the controls C1 will offer), and `issues[]` for a provisional delivery.
-- `step` is the step in progress; absent once the run ended. `role` is the calling pane's
-  role when it is bound in the run; only then does `activation.expect.completion` spell the
-  activation's completion commands (they carry the token). `activation` is the activation
+- `step` is the step in progress; absent once the run ended. `role` is the *verified* calling
+  pane's role when it is bound in the run; only when that pane owns the current activation does
+  `activation.expect.completion` spell the completion commands (they carry the token) — a
+  worktree-started run, a manual or forced `done`, and any other role's pane get an empty list. `activation` is the activation
   waiting for, persisting, or holding a provisional delivery — the one `done` can address; a
   step stuck in an injection or launch attention reports none.
 - `bindings.<role>.profile` is the frozen profile (id, name, agent) of a `launch` role;

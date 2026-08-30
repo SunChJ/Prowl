@@ -90,8 +90,11 @@ unchanged except for one seam.
   reducing, drained by a single long-lived executor effect per run), so an instruction file exists
   before the pointer line that names it is typed and `run.json` writes never overtake each other;
   idle waits and watchdogs are separate cancellable effects (`cancelInFlight` per ordinal, a
-  run-wide id torn down on `.finished`). A materialize failure stops the rest of its batch and
-  raises the injection / launch attention. Late (`run` ended) and stale (machine no longer
+  run-wide id torn down on `.finished`). A transition that revokes the in-flight invocation or
+  ends the run *fences* the queue: the executor drops what was enqueued before, `.inject`
+  re-checks the fence between opening its record and typing, and an ignored
+  `.injectionSucceeded` abandons the record it opened. A materialize failure stops the rest of
+  its batch and raises the injection / launch attention. Late (`run` ended) and stale (machine no longer
   expects it) `.launched` events abandon their dispatch record and close the pane. A successful
   launch remembers its profile under B2's digest key (`UserGlobalSettings.workflowBindings`).
 - The `done` rendezvous (`WorkflowCLIRendezvous`, `WorkflowCLIResponderClient`): the reducer
@@ -111,11 +114,14 @@ unchanged except for one seam.
   through), inputs / skips through `WorkflowRunMachine.start`, the frozen launch plan
   (`AgentProfileLaunchPlanner.plan` with a placeholder prompt), layout + initial `run.json`
   before the reply.
-- The coordinator (`WorkflowRuntimeCoordinator`): `run` / `status` (W5: live session, else a
-  `run.json` from any known worktree root, else `RUN_NOT_FOUND`) / `done` (W3: caller pane's
-  pending dispatch → activation; explicit `--run --step` manual; disagreement `ROLE_MISMATCH`
-  unless `--force`) / `cancel`. `agents dispatch-complete` is intercepted before the store
-  through `AgentDispatchCompleteCommandHandler.intercept` → `WORKFLOW_DELIVERY_REQUIRED`.
+- The coordinator (`WorkflowRuntimeCoordinator`): `run` (a self-initiated first step is
+  answered through the rendezvous once its activation record exists) / `status` (W5: live
+  session, else a `run.json` from any known worktree root, else `RUN_NOT_FOUND`) / `done` (W3:
+  caller pane's pending dispatch → activation; explicit `--run --step` manual; disagreement
+  `ROLE_MISMATCH` unless `--force`) / `cancel`. Completion commands are spelled only for the
+  verified caller pane's own activation. `agents dispatch-complete` is intercepted before the
+  store through `AgentDispatchCompleteCommandHandler.intercept` → `WORKFLOW_DELIVERY_REQUIRED`,
+  for live and just-ended runs alike.
 - Live boundaries (`WorkflowRuntimeComposition`): `waitForRole` = the #733 evidence rules
   (`AgentConditionEvidence.idleVerdict`, shared with `agents dispatch`) without the 5 s cap —
   exact idle at once, a detector-only idle after 2 s of stability, `working` keeps waiting,
@@ -197,6 +203,36 @@ unchanged except for one seam.
   - Restart: the isolated app was killed while `b3-idle` was `running`; after relaunch
     `status <run-id>` answered from `run.json` (`source: record`, `interrupted`, no activation)
     and `log.md` gained "Run marked interrupted at app launch (no resume in V1)".
+
+## Review
+
+Adversarial review with the neighboring `pi` pane (the installed Prowl is the v2026.8.29 release,
+whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` and awaited with
+`agents wait --until idle`, findings under `/tmp/prowl-b3-review/`).
+
+- **Round 1 — 8 findings (1 P0, 6 P1, 1 P2), all accepted and fixed.** P0: `run` spelled the
+  current activation's completion command whenever it included the self-initiated line — a
+  workflow whose first awaited step is a `launch` handed the launcher the reviewer's token — and a
+  manual or forced `done` was answered as if the caller were the delivering role (it could learn
+  the next activation's token); completion commands are now spelled only for the *verified*
+  caller pane's own activation (`callerRole` travels with the request; `includeSelfInitiated`
+  only adds the self-initiated line). P1: work queued before a cancel / skip / retry still ran
+  (an `.inject` could open a record and type into a pane the run had left) — the reducer now
+  fences the run's queue whenever a transition revokes the in-flight invocation or ends the
+  run, the executor drops fenced effects one by one, `.inject` re-checks the fence between
+  opening the record and typing (cancelling the issuance), and an `.injectionSucceeded` the
+  machine ignores abandons the record it opened; `agents dispatch-complete` searched only
+  active sessions, so a cancelled run's not-yet-abandoned record could be completed normally
+  (all sessions are searched now, an ended run answers `WORKFLOW_DELIVERY_REQUIRED` with its
+  status); the idle wait rebuilt the #733 baseline on every poll, so a fresh exact `turn-ended`
+  never counted while the screen still showed `working` (`WorkflowRoleWaitPolicy` now keeps the
+  arm-time baseline, as `agents wait` does); an exact `needs-input` could be outrun by the
+  detector-idle stabilizer (it is checked first now); a launch without `expect` left its new
+  pane unreserved until `.launched` reached the reducer (`WorkflowPaneReservations` now holds
+  it, admission counts it busy); a self-initiated `run` replied before its activation record
+  existed, so an immediate `done` could be `STEP_NOT_EXPECTING` (the reply now waits for the
+  record through the same rendezvous as `done`). P2: a duplicate request id was registered
+  twice (refused with `REQUEST_CONFLICT` now).
 
 ## Non-goals
 

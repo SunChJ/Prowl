@@ -19,7 +19,7 @@ struct WorkflowRuntimeCoordinatorTests {
     let rendezvous = WorkflowCLIRendezvous()
     let requestID = UUID()
     /// What the reducer would answer to a `.deliver`, applied synchronously inside `send`.
-    var answer: WorkflowDeliveryResolution?
+    var answer: WorkflowRequestResolution?
     private(set) var coordinator: WorkflowRuntimeCoordinator!
 
     init() throws {
@@ -88,7 +88,7 @@ struct WorkflowRuntimeCoordinatorTests {
     worktreeID: "wt", surfaceID: WorkflowRunMachineTests.authorPane.surfaceID)
   private static let strangerCaller = CallerPane(worktreeID: "wt", surfaceID: UUID())
 
-  private func delivered(_ session: WorkflowRunSession) throws -> WorkflowDeliveryResolution {
+  private func delivered(_ session: WorkflowRunSession) throws -> WorkflowRequestResolution {
     var machine = session.machine(now: { Self.now }, makeToken: { "T" })
     let (result, _) = machine.deliver(
       ordinal: 1, selector: .token("TOKEN-1"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
@@ -257,6 +257,122 @@ struct WorkflowRuntimeCoordinatorTests {
     #expect(done.delivery.warnings.map(\.code) == ["missing_sections"])
     #expect(done.run.status.state == "needs_attention")
     #expect(done.run.status.attention?.issues == ["missing_sections"])
+  }
+
+  @Test func aDuplicateRequestIDIsRefusedWithoutEnteringTheReducer() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let session = try fixture.waitingSession()
+    fixture.sessions = [session]
+    // No synchronous answer: the first request stays pending under the fixed request id.
+    let first = Task { @MainActor in
+      await fixture.coordinator.done(
+        WorkflowInput(action: .done, body: "x", token: "TOKEN-1"), callerPane: Self.authorCaller)
+    }
+    await Task.yield()
+    #expect(fixture.rendezvous.pendingRequestIDs == [fixture.requestID])
+    let duplicate = await fixture.coordinator.done(
+      WorkflowInput(action: .done, body: "y", token: "TOKEN-1"), callerPane: Self.authorCaller)
+    #expect(duplicate.error?.code == CLIErrorCode.requestConflict)
+    #expect(fixture.sent.count == 1, "the duplicate never reaches the reducer")
+    fixture.coordinator.resolve(fixture.requestID, .failed(code: CLIErrorCode.stepNotExpecting, message: "no"))
+    #expect((await first.value).error?.code == CLIErrorCode.stepNotExpecting)
+  }
+
+  /// Tokens are spelled only to the pane that owns the activation: a manual delivery advancing
+  /// the run to the same role's next step must not learn that step's completion command.
+  @Test func aManualDeliveryIsAnsweredWithoutTheNextActivationsToken() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let session = try fixture.waitingSession()
+    fixture.sessions = [session]
+    // The delivered resolution's run has advanced to the launch step, whose activation waits.
+    var machine = session.machine(now: { Self.now }, makeToken: { "TOKEN-2" })
+    let (result, _) = machine.deliver(
+      ordinal: nil, selector: .manual(stepID: "brief"), body: "## Scope\nx\n## Claims\ny", verdict: nil)
+    _ = machine.apply(.outputPersisted(ordinal: 1))
+    #expect(machine.run.phase == .launching(ordinal: 2))
+    let reviewerPane = WorkflowPaneIdentity(surfaceID: UUID(), tabID: nil, handle: "p9", displayName: "Pi", agent: "pi")
+    _ = machine.apply(.launched(ordinal: 2, pane: reviewerPane, dispatchID: "dispatch-2"))
+    fixture.answer = .delivered(run: machine.run, receipt: try result.get())
+
+    let response = await fixture.coordinator.done(
+      WorkflowInput(
+        action: .done, runID: session.run.id.uuidString, stepID: "brief", body: "## Scope\nx\n## Claims\ny"),
+      callerPane: nil)
+    #expect(response.ok, "\(response.error?.message ?? "")")
+    guard case .done(let done) = try payload(response) else {
+      Issue.record("expected a done payload")
+      return
+    }
+    #expect(done.delivery.role == "author")
+    #expect(done.run.role == nil)
+    #expect(done.run.activation?.role == "reviewer")
+    #expect(done.run.activation?.expect.completion == [], "a manual caller is not the reviewer's pane")
+  }
+
+  /// `run` spells the completion command only for the caller's own activation: a workflow whose
+  /// first awaited step is a launch must not hand the launcher the reviewer's token.
+  @Test func aRunResponseNeverSpellsAnotherRolesCompletion() throws {
+    let yaml = """
+      schema: prowl.workflow/v1
+      id: launch-first
+      name: Launch First
+      roles:
+        author:
+          source: current
+        reviewer:
+          source: launch
+      steps:
+        - id: launch
+          launch: reviewer
+          prompt: "Review."
+          expect: { output: findings }
+      """
+    let definition = try #require(WorkflowDocumentParser.parse(yaml).definition)
+    let started = try WorkflowRunMachine.start(
+      WorkflowRunStartRequest(
+        definition: definition, runID: UUID(),
+        context: WorkflowRunContext(
+          scope: .user, definitionPath: nil,
+          worktree: WorkflowRunWorktree(id: "wt", name: "feature", branch: "feat/x", path: "/tmp")),
+        bindings: [
+          "author": .current(WorkflowRunMachineTests.authorPane),
+          "reviewer": .launch(WorkflowRunMachineTests.reviewerProfile, pane: nil),
+        ],
+        selfInitiated: true),
+      now: { Self.now }, makeToken: { "SECRET" })
+    var machine = started.machine
+    let reviewerPane = WorkflowPaneIdentity(surfaceID: UUID(), tabID: nil, handle: "p9", displayName: "Pi", agent: "pi")
+    _ = machine.apply(.launched(ordinal: 1, pane: reviewerPane, dispatchID: "dispatch-1"))
+    #expect(machine.run.currentActivation?.role == "reviewer")
+
+    let asAuthor = WorkflowRunPayload(run: machine.run, callerRole: "author", includeSelfInitiated: true)
+    #expect(asAuthor.activation?.expect.completion == [])
+    #expect(asAuthor.selfInitiated == nil)
+    let asNobody = WorkflowRunPayload(run: machine.run, callerRole: nil, includeSelfInitiated: true)
+    #expect(asNobody.activation?.expect.completion == [])
+    let asReviewer = WorkflowRunPayload(run: machine.run, callerRole: "reviewer", includeSelfInitiated: false)
+    #expect(asReviewer.activation?.expect.completion == ["PROWL_WORKFLOW_TOKEN=SECRET prowl workflow done -"])
+  }
+
+  /// `agents dispatch-complete` is refused for a workflow activation even after its run ended:
+  /// the abandon is queued behind earlier work and must not lose to a plain completion.
+  @Test func deliveryRefusalCoversTerminalRuns() throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let session = try fixture.waitingSession()
+    let live = WorkflowRuntimeCoordinator.deliveryRefusal(dispatchID: "dispatch-1", sessions: [session])
+    #expect(live?.code == CLIErrorCode.workflowDeliveryRequired)
+    #expect(live?.message.contains("prowl workflow done") == true)
+    var machine = session.machine(now: { Self.now }, makeToken: { "T" })
+    _ = machine.apply(.user(.cancel))
+    var ended = session
+    ended.run = machine.run
+    let terminal = WorkflowRuntimeCoordinator.deliveryRefusal(dispatchID: "dispatch-1", sessions: [ended])
+    #expect(terminal?.code == CLIErrorCode.workflowDeliveryRequired)
+    #expect(terminal?.message.contains("already ended") == true)
+    #expect(WorkflowRuntimeCoordinator.deliveryRefusal(dispatchID: "unrelated", sessions: [session, ended]) == nil)
   }
 
   // MARK: - status (decision W5)

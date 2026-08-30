@@ -37,7 +37,7 @@ struct WorkflowRunsFeatureTests {
     var completed: [String] = []
     var armed: [WorkflowWatchdogRequest] = []
     var disarmed: [Int] = []
-    var responses: [(requestID: UUID, resolution: WorkflowDeliveryResolution)] = []
+    var responses: [(requestID: UUID, resolution: WorkflowRequestResolution)] = []
     var roleWaitOutcome: WorkflowRoleWaitOutcome = .idle
     var launchOutcome: Result<WorkflowLaunchResult, WorkflowLaunchError>?
     private var dispatchCounter = 0
@@ -193,11 +193,14 @@ struct WorkflowRunsFeatureTests {
   @MainActor
   final class RecordingQueue {
     var batches: [(runID: UUID, effects: [WorkflowRunEffect])] = []
+    var fenced: [UUID] = []
     var finished: [UUID] = []
     var client: WorkflowEffectQueueClient {
       WorkflowEffectQueueClient(
         start: { _ in AsyncStream { $0.finish() } },
         enqueue: { [self] runID, batch in batches.append((runID, batch.effects)) },
+        fence: { [self] runID in fenced.append(runID) },
+        isStale: { _, _ in false },
         finish: { [self] runID in finished.append(runID) })
     }
     var effects: [WorkflowRunEffect] { batches.flatMap(\.effects) }
@@ -495,6 +498,106 @@ struct WorkflowRunsFeatureTests {
     await store.finish(timeout: Self.timeout)
   }
 
+  // MARK: - Fences and stale work
+
+  /// Cancel, skip, and retry revoke the invocation whose work may still sit in the queue; the
+  /// reducer fences the queue so that work is dropped instead of typing into the pane.
+  @Test(.dependencies) func revokingAnInFlightInvocationFencesTheQueue() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    #expect(queue.fenced.isEmpty)
+    // The idle wait ended and the inject is (conceptually) queued; a cancel must fence it.
+    await store.send(.userAction(runID: runID, .cancel))
+    #expect(queue.fenced == [runID])
+    await store.finish(timeout: Self.timeout)
+
+    // A retry from an attention likewise revokes the in-flight invocation.
+    let second = try fixture.session().0
+    let secondID = second.run.id
+    await store.send(.started(second, effects: []))
+    await store.send(.event(runID: secondID, .roleUnavailable(ordinal: 1, .roleBlocked)))
+    #expect(queue.fenced == [runID], "attention alone revokes nothing")
+    await store.send(.userAction(runID: secondID, .retry))
+    #expect(queue.fenced == [runID, secondID])
+    await store.send(.userAction(runID: secondID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  /// A typed line whose `.injectionSucceeded` the machine no longer takes up (the step moved on)
+  /// leaves a pending dispatch record behind unless the wiring abandons it.
+  @Test(.dependencies) func anIgnoredInjectionAbandonsTheRecordItOpened() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let waiting = try waitingForDelivery(session)
+    let runID = waiting.run.id
+    await store.send(.started(waiting, effects: []))
+    await store.send(.event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "stale-1")))
+    await store.finish(timeout: Self.timeout)
+    #expect(fixture.abandoned.map(\.dispatchID) == ["stale-1"])
+
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+    await store.send(.event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "late-1")))
+    await store.finish(timeout: Self.timeout)
+    // The cancel's own abandon of `dispatch-0` is an ordered effect the recording queue never
+    // performs; the late injection's record is abandoned directly by the reducer.
+    #expect(fixture.abandoned.map(\.dispatchID) == ["stale-1", "late-1"])
+  }
+
+  // MARK: - Start rendezvous
+
+  /// A self-initiated `run` is answered only once its first activation is open, so the caller
+  /// never holds a completion command before the record `done` is attributed by exists.
+  @Test(.dependencies) func aSelfInitiatedRunIsAnsweredOnceItsActivationIsOpen() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session(selfInitiated: true)
+    let runID = session.run.id
+    #expect(session.run.phase == .injecting(ordinal: 1))
+    #expect(effects.contains(.openActivation(role: "author", surfaceID: Self.authorPane.surfaceID, ordinal: 1)))
+    let requestID = UUID()
+    await store.send(.started(session, effects: effects, requestID: requestID)) {
+      $0.pendingStarts[requestID] == runID
+    }
+    #expect(fixture.responses.isEmpty)
+    await store.send(.event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "dispatch-1"))) {
+      $0.pendingStarts.isEmpty
+    }
+    await store.finish(timeout: Self.timeout)
+    #expect(fixture.responses.count == 1)
+    guard case .started(let run) = fixture.responses[0].resolution else {
+      Issue.record("expected a started resolution")
+      return
+    }
+    #expect(run.phase == .waitingForDelivery(ordinal: 1))
+    #expect(run.activeActivation?.dispatchID == "dispatch-1")
+
+    // A failed opening answers too, with the run in attention.
+    let (second, secondEffects) = try fixture.session(selfInitiated: true)
+    let secondRequest = UUID()
+    await store.send(.started(second, effects: secondEffects, requestID: secondRequest))
+    await store.send(.event(runID: second.run.id, .injectionFailed(ordinal: 1, .surfaceMissing)))
+    await store.finish(timeout: Self.timeout)
+    guard case .started(let failed) = fixture.responses[1].resolution else {
+      Issue.record("expected a started resolution")
+      return
+    }
+    #expect(failed.status.attention?.reason.code == "injection_failed:surface_missing")
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.send(.userAction(runID: second.run.id, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
   // MARK: - Idle wait outcomes
 
   @Test(.dependencies) func aBlockedRoleDuringTheIdleWaitRaisesAttention() async throws {
@@ -571,5 +674,37 @@ struct WorkflowRunsFeatureTests {
     var waiting = session
     waiting.run = machine.run
     return waiting
+  }
+}
+
+/// The per-run FIFO's fence: everything enqueued before it is stale, later batches are not.
+@MainActor
+struct WorkflowEffectQueueTests {
+  @Test func aFenceMarksEarlierBatchesStaleAndLaterOnesLive() async throws {
+    let queue = WorkflowEffectQueue()
+    let runID = UUID()
+    let stream = queue.start(runID)
+    let session = try WorkflowRunsFeatureTests.Fixture().session().0
+    queue.enqueue(runID, WorkflowEffectBatch(session: session, effects: [.log("one")]))
+    queue.enqueue(runID, WorkflowEffectBatch(session: session, effects: [.log("two")]))
+    queue.fence(runID)
+    queue.enqueue(runID, WorkflowEffectBatch(session: session, effects: [.log("three")]))
+    queue.finish(runID)
+    var seen: [(sequence: Int, stale: Bool)] = []
+    for await batch in stream {
+      seen.append((batch.sequence, queue.isStale(runID, sequence: batch.sequence)))
+    }
+    #expect(seen.map(\.sequence) == [1, 2, 3])
+    // After `finish` nothing is known about the run: every sequence reads stale.
+    #expect(queue.isStale(runID, sequence: 3))
+    let queue2 = WorkflowEffectQueue()
+    _ = queue2.start(runID)
+    queue2.enqueue(runID, WorkflowEffectBatch(session: session, effects: [.log("one")]))
+    queue2.enqueue(runID, WorkflowEffectBatch(session: session, effects: [.log("two")]))
+    queue2.fence(runID)
+    queue2.enqueue(runID, WorkflowEffectBatch(session: session, effects: [.log("three")]))
+    #expect(queue2.isStale(runID, sequence: 1))
+    #expect(queue2.isStale(runID, sequence: 2))
+    #expect(!queue2.isStale(runID, sequence: 3))
   }
 }

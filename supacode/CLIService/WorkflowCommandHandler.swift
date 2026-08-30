@@ -87,7 +87,7 @@ final class WorkflowCommandHandler: CommandHandler {
       case .failure(let refusal):
         return refusal.response
       case .success(let source):
-        return runtime.run(input, source: source, snapshot: snapshot)
+        return await runtime.run(input, source: source, snapshot: snapshot)
       }
     case .status:
       return runtime.status(input, callerPane: callerPane)

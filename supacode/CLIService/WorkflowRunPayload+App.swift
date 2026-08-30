@@ -14,8 +14,9 @@ extension WorkflowRunPayload {
     return formatter
   }
 
-  /// - Parameter callerRole: the role of the pane that issued the command, when it belongs to the
-  ///   run; only then does the payload spell the current activation's completion commands.
+  /// - Parameter callerRole: the role of the *verified* caller pane (socket peer ancestry) when it
+  ///   is bound in the run; only then, and only for its own activation, does the payload spell the
+  ///   completion commands (they carry the token). A manual or forced delivery passes nil.
   nonisolated init(run: WorkflowRun, callerRole: String?, includeSelfInitiated: Bool) {
     let formatter = Self.makeDateFormatter()
     let activation = run.activeActivation
@@ -46,9 +47,10 @@ extension WorkflowRunPayload {
       bindings: run.bindings.mapValues {
         WorkflowBindingPayload(source: $0.source, profile: $0.profile, pane: $0.pane)
       },
+      // Only the pane that owns the activation (its role) is told the completion command; a
+      // self-initiated line already carries the caller's own step and nothing else.
       activation: activation.map {
-        WorkflowActivationPayload(
-          $0, spellCompletion: spellsCompletion || includeSelfInitiated, formatter: formatter)
+        WorkflowActivationPayload($0, spellCompletion: spellsCompletion, formatter: formatter)
       },
       outputs: run.outputs.mapValues { WorkflowOutputPayload($0, formatter: formatter) },
       startedAt: formatter.string(from: run.startedAt),

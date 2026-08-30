@@ -255,7 +255,8 @@ struct SupacodeApp: App {
       appStore: appStore,
       terminalManager: terminalManager,
       handoffRequestRegistry: handoffRequestRegistry,
-      workflowCoordinatorBox: workflowRuntime.coordinatorBox
+      workflowCoordinatorBox: workflowRuntime.coordinatorBox,
+      workflowReservations: workflowRuntime.reservations
     )
 
     _cliSocketServer = State(initialValue: cliServer)
@@ -688,6 +689,7 @@ struct SupacodeApp: App {
     terminalManager: WorktreeTerminalManager,
     handoffRequestRegistry: HandoffRequestRegistry = HandoffRequestRegistry(),
     workflowCoordinatorBox: WorkflowCoordinatorBox = WorkflowCoordinatorBox(),
+    workflowReservations: WorkflowPaneReservations = WorkflowPaneReservations(),
     agentSignalCallerResolver: AgentSignalCommandHandler.ResolveCaller? = nil
   ) -> CLICommandRouter {
 
@@ -1197,7 +1199,8 @@ struct SupacodeApp: App {
     let workflowCoordinator = Self.makeWorkflowCoordinator(
       appStore: appStore,
       terminalManager: terminalManager,
-      rendezvous: WorkflowCLIRendezvous()
+      rendezvous: WorkflowCLIRendezvous(),
+      reservations: workflowReservations
     )
     workflowCoordinatorBox.coordinator = workflowCoordinator
     let workflowHandler = WorkflowCommandHandler(
@@ -1335,14 +1338,16 @@ struct SupacodeApp: App {
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager,
     handoffRequestRegistry: HandoffRequestRegistry,
-    workflowCoordinatorBox: WorkflowCoordinatorBox
+    workflowCoordinatorBox: WorkflowCoordinatorBox,
+    workflowReservations: WorkflowPaneReservations
   ) -> CLISocketServer {
 
     let cliRouter = makeCLICommandRouter(
       appStore: appStore,
       terminalManager: terminalManager,
       handoffRequestRegistry: handoffRequestRegistry,
-      workflowCoordinatorBox: workflowCoordinatorBox
+      workflowCoordinatorBox: workflowCoordinatorBox,
+      workflowReservations: workflowReservations
     )
     let cliServer = CLISocketServer(router: cliRouter)
     let logger = SupaLogger("CLIService")
