@@ -596,6 +596,12 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-31 (C1 kickoff, grilled): the workflow status center is the selected
+  worktree's runtime indicator/control only; it lists active runs without history, renders every
+  machine-authorized attention action, and keeps R2a CLI-first. C1 is one PR with exhaustive cheap
+  tests, two or more neighboring-agent adversarial review rounds, and reviewed-head live E2E as its
+  merge gate. Display sleep relies on #746 and does not add a headless/fail policy. Plan and evidence:
+  [010-c1-workflow-status-center.md](010-c1-workflow-status-center.md).
 - Updated 2026-08-30: a two-round display-sleep spike located the `CREATE_FAILED` cause in the
   pinned GhosttyKit, not in Prowl's launch ordering: with zero active displays the renderer's
   eager CoreVideo display link (`window-vsync = true`) aborts `ghostty_surface_new`, while

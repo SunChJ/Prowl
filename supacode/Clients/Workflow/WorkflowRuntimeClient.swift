@@ -39,6 +39,25 @@ nonisolated enum WorkflowLaunchError: Error, Equatable, Sendable {
   case failed(String)
 }
 
+nonisolated struct WorkflowRuntimeNotification: Equatable, Sendable {
+  let title: String
+  let body: String
+  let targetSurfaceID: UUID?
+  let suppressExternalWhenWorktreeSelected: Bool
+
+  init(
+    title: String,
+    body: String,
+    targetSurfaceID: UUID?,
+    suppressExternalWhenWorktreeSelected: Bool = true
+  ) {
+    self.title = title
+    self.body = body
+    self.targetSurfaceID = targetSurfaceID
+    self.suppressExternalWhenWorktreeSelected = suppressExternalWhenWorktreeSelected
+  }
+}
+
 struct WorkflowRuntimeClient: Sendable {
   /// The #733 idle precondition without its five-second cap: exact `turn-ended` evidence first,
   /// a stabilized detector view otherwise; returns when the role can receive a line.
@@ -57,7 +76,7 @@ struct WorkflowRuntimeClient: Sendable {
   /// author's `close` step is explicit and the run owns the pane); `false` when the pane is gone
   /// or another active run has bound it since.
   var close: @MainActor @Sendable (Worktree, UUID, UUID) -> Bool
-  var notify: @MainActor @Sendable (Worktree, String) -> Void
+  var notify: @MainActor @Sendable (Worktree, WorkflowRuntimeNotification) -> Void
 }
 
 extension WorkflowRuntimeClient: DependencyKey {

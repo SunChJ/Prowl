@@ -104,6 +104,12 @@ struct WorkflowRunsFeature {
     case deliver(WorkflowDeliveryRequest)
     case userAction(runID: UUID, WorkflowUserAction)
     case markInterruptedRuns(worktreeRoots: [String])
+    case delegate(Delegate)
+  }
+
+  @CasePathable
+  enum Delegate: Equatable {
+    case notice(WorkflowRunNotice)
   }
 
   @Dependency(WorkflowRuntimeClient.self) var runtime
@@ -134,7 +140,8 @@ struct WorkflowRunsFeature {
         return .merge(
           executor(runID: runID, batches: batches),
           perform(effects, runID: runID, session: session),
-          resolvePendingStarts(&state, runID: runID, session: session)
+          resolvePendingStarts(&state, runID: runID, session: session),
+          statusNotice(from: nil, to: session.run, effects: effects)
         )
 
       case .event(let runID, let event):
@@ -160,7 +167,8 @@ struct WorkflowRunsFeature {
           resolvePendingDeliveries(&state, runID: runID, session: session),
           resolvePendingStarts(&state, runID: runID, session: session),
           perform(effects, runID: runID, session: session),
-          staleEventCleanup(event, session: session)
+          staleEventCleanup(event, session: session),
+          statusNotice(from: previous.status, to: session.run, effects: effects)
         )
 
       case .deliver(let request):
@@ -207,7 +215,8 @@ struct WorkflowRunsFeature {
         return .merge(
           resolvePendingDeliveries(&state, runID: runID, session: session),
           resolvePendingStarts(&state, runID: runID, session: session),
-          perform(effects, runID: runID, session: session)
+          perform(effects, runID: runID, session: session),
+          statusNotice(from: previous.status, to: session.run, effects: effects)
         )
 
       case .markInterruptedRuns(let roots):
@@ -232,8 +241,36 @@ struct WorkflowRunsFeature {
             }
           }
         }
+
+      case .delegate:
+        return .none
       }
     }
+  }
+
+  private func statusNotice(
+    from previous: WorkflowRunStatus?,
+    to run: WorkflowRun,
+    effects: [WorkflowRunEffect]
+  ) -> Effect<Action> {
+    guard let base = WorkflowRunNotice.statusEdge(from: previous, to: run) else {
+      return .none
+    }
+    let hasExplicitNotification = effects.contains {
+      if case .notify = $0 { return true }
+      return false
+    }
+    let notice = WorkflowRunNotice(
+      kind: base.kind,
+      runID: base.runID,
+      worktreeID: base.worktreeID,
+      workflowName: base.workflowName,
+      title: base.title,
+      body: base.body,
+      targetSurfaceID: base.targetSurfaceID,
+      postsNotification: !(base.kind == .completed && hasExplicitNotification)
+    )
+    return .send(.delegate(.notice(notice)))
   }
 
   // MARK: - Rendezvous
@@ -694,7 +731,14 @@ struct WorkflowRunsFeature {
       }
 
     case .notify(let text):
-      runtime.notify(session.worktree, text)
+      runtime.notify(
+        session.worktree,
+        WorkflowRuntimeNotification(
+          title: "Workflow · \(session.run.definition.name)",
+          body: text,
+          targetSurfaceID: WorkflowRunNotice.targetSurfaceID(for: session.run)
+        )
+      )
 
     case .close(let role, let surfaceID):
       // Revocable: a cancel that beat the close keeps the pane (cancel never closes panes); the
