@@ -54,19 +54,39 @@ struct WorkflowWatchdogPolicyTests {
     var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: false)
     _ = policy.apply(.armed(exact))
     _ = policy.apply(.turnEnded)
-    #expect(policy.apply(.deadline(.turnGrace, working())) == [])
+    let reArm: WorkflowWatchdogCommands = [.schedule(.turnGrace, .seconds(15))]
+    #expect(policy.apply(.deadline(.turnGrace, working())) == reArm)
     #expect(!policy.nudged)
     _ = policy.apply(.turnEnded)
     #expect(policy.apply(.signal(.progress)) == [])
-    #expect(policy.apply(.deadline(.turnGrace, idle())) == [])
+    #expect(policy.apply(.deadline(.turnGrace, idle())) == reArm)
     _ = policy.apply(.turnEnded)
     #expect(policy.apply(.signal(.sessionStart)) == [])
-    #expect(policy.apply(.deadline(.turnGrace, idle())) == [])
+    #expect(policy.apply(.deadline(.turnGrace, idle())) == reArm)
     _ = policy.apply(.turnEnded)
     #expect(policy.apply(.detector(state: "working")) == [])
-    #expect(policy.apply(.deadline(.turnGrace, idle())) == [])
+    #expect(policy.apply(.deadline(.turnGrace, idle())) == reArm)
     _ = policy.apply(.turnEnded)
     #expect(policy.apply(.deadline(.turnGrace, idle())) == [.emit(.nudge), .schedule(.idleGrace, .seconds(180))])
+  }
+
+  /// Seen live (063 B3): a launched agent answered before the detector first saw it, so the
+  /// detector's first `working` arrived after the exact `turn-ended`. Activity at the grace
+  /// expiry must re-arm the grace, never leave the watchdog waiting for an event that never comes.
+  @Test func activityAtATurnGraceExpiryReArmsTheGraceInsteadOfGoingSilent() {
+    var policy = WorkflowWatchdogPolicy(settings: settings, timeoutSeconds: nil, nudgedAlready: false)
+    _ = policy.apply(
+      .armed(
+        WorkflowWatchdogSnapshot(state: "absent", liveChannelCoversTurnEnded: false, liveChannelCoversSessionEnd: false)
+      ))
+    #expect(policy.apply(.turnEnded) == [.schedule(.turnGrace, .seconds(15))])
+    #expect(policy.apply(.detector(state: "working")) == [.cancel(.appearanceGrace)])
+    #expect(policy.apply(.deadline(.turnGrace, idle())) == [.schedule(.turnGrace, .seconds(15))])
+    #expect(policy.apply(.deadline(.turnGrace, idle())) == [.emit(.nudge), .schedule(.idleGrace, .seconds(180))])
+    // The same after the nudge: a spurious activity mark at idle_grace re-arms idle_grace.
+    _ = policy.apply(.signal(.progress))
+    #expect(policy.apply(.deadline(.idleGrace, idle())) == [.schedule(.idleGrace, .seconds(180))])
+    #expect(policy.apply(.deadline(.idleGrace, idle())) == [.emit(.attention(.idleWithoutDelivery)), .stop])
   }
 
   @Test func idleGraceReArmsWhileTheNudgedRoleWorksAndNeverNudgesTwice() {
@@ -74,8 +94,8 @@ struct WorkflowWatchdogPolicyTests {
     _ = policy.apply(.armed(exact))
     _ = policy.apply(.turnEnded)
     _ = policy.apply(.deadline(.turnGrace, idle()))
-    #expect(policy.apply(.deadline(.idleGrace, working())) == [])
-    #expect(policy.apply(.turnEnded) == [.schedule(.turnGrace, .seconds(15))])
+    #expect(policy.apply(.deadline(.idleGrace, working())) == [.schedule(.idleGrace, .seconds(180))])
+    #expect(policy.apply(.turnEnded) == [.cancel(.idleGrace), .schedule(.turnGrace, .seconds(15))])
     #expect(policy.apply(.deadline(.turnGrace, idle())) == [.schedule(.idleGrace, .seconds(180))])
     #expect(policy.apply(.deadline(.idleGrace, idle())) == [.emit(.attention(.idleWithoutDelivery)), .stop])
   }

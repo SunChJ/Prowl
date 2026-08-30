@@ -174,35 +174,15 @@ final class AgentDispatchCommandHandler: CommandHandler {
     }
   }
 
-  /// The arm-time evaluation of `agents wait --until idle` under `auto`: every signal the
-  /// snapshot holds predates this call, so a `turn-ended` counts only with detector
-  /// corroboration, and the detector alone counts only where the wait would fall back to it.
-  /// Either source alone is not a refusal yet — the wait itself would keep polling — so it
-  /// settles within the grace budget; working or blocked without such evidence is refused.
+  /// The shared arm-time evaluation (`AgentConditionEvidence.idleVerdict`): either source alone
+  /// is not a refusal yet — the wait itself would keep polling — so it settles within the grace
+  /// budget; working or blocked without such evidence is refused.
   private func verdict(for snapshot: AgentConditionSnapshot) -> IdleVerdict {
-    let state = AgentConditionEvidence.normalizedState(snapshot)
-    let baseline = AgentConditionEvidence.Baseline(snapshot: snapshot)
-    if AgentConditionEvidence.exactMatch(
-      condition: .idle,
-      snapshot: snapshot,
-      normalizedState: state,
-      baseline: baseline,
-      minimumConfidence: .auto
-    ) != nil {
-      return .idle
+    switch AgentConditionEvidence.idleVerdict(for: snapshot) {
+    case .idle: .idle
+    case .settling(let state): .settling(state)
+    case .busy(let state): .busy(heuristicObservation(snapshot, state: state))
     }
-    let detectorIdle = AgentConditionEvidence.detectorReports(.idle, normalizedState: state)
-    if detectorIdle, AgentConditionEvidence.allowsHeuristic(.auto, condition: .idle, snapshot: snapshot) {
-      return .settling(state)
-    }
-    if let signal = snapshot.signal,
-      signal.event == .turnEnded,
-      AgentConditionEvidence.accepts(signal.confidence, minimum: .auto),
-      !AgentConditionEvidence.detectorReports(.blocked, normalizedState: state)
-    {
-      return .settling(state)
-    }
-    return .busy(heuristicObservation(snapshot, state: state))
   }
 
   private func heuristicObservation(_ snapshot: AgentConditionSnapshot, state: String) -> AgentWaitObservation {
@@ -273,18 +253,25 @@ final class AgentDispatchCompleteCommandHandler: CommandHandler {
     @MainActor (
       UUID, DispatchCompletionOutcome, String
     ) -> Result<AgentDispatchMutationResult, AgentDispatchStoreError>
+  /// A refusal for a caller pane whose pending record belongs to someone else — a workflow
+  /// activation answers `WORKFLOW_DELIVERY_REQUIRED` here (docs-ai 063 B3, decision W3) so the
+  /// store never completes it through this path.
+  typealias Intercept = @MainActor (UUID) -> CommandError?
 
   private let resolveCaller: ResolveCaller
   private let complete: Complete
+  private let intercept: Intercept
   private let formatter: ISO8601DateFormatter
 
   init(
     resolveCaller: @escaping ResolveCaller,
     complete: @escaping Complete,
+    intercept: @escaping Intercept = { _ in nil },
     now: @escaping @MainActor () -> Date = Date.init
   ) {
     self.resolveCaller = resolveCaller
     self.complete = complete
+    self.intercept = intercept
     self.formatter = Self.makeFormatter()
     _ = now
   }
@@ -305,6 +292,14 @@ final class AgentDispatchCompleteCommandHandler: CommandHandler {
       return failure(
         code: CLIErrorCode.dispatchContextRequired,
         message: "Run dispatch completion from the Prowl pane that owns this dispatch."
+      )
+    }
+    if let refusal = intercept(caller.surfaceID) {
+      return CommandResponse(
+        ok: false,
+        command: "agents.dispatch-complete",
+        schemaVersion: "prowl.cli.agents.dispatch-complete.v1",
+        error: refusal
       )
     }
     switch complete(caller.surfaceID, input.outcome, input.summary) {

@@ -1,0 +1,575 @@
+// supacodeTests/WorkflowRunsFeatureTests.swift
+// The reducer that wires B2's machine to the boundaries (docs-ai 063 B3): ordered effect
+// execution, the two-phase `done` rendezvous, late launches, and the restart scan.
+
+import ComposableArchitecture
+import DependenciesTestSupport
+import Foundation
+import Testing
+
+@testable import supacode
+
+/// A line the fake terminal received, with whether the instruction file it points at existed.
+struct WorkflowTypedLineRecord {
+  let surfaceID: UUID
+  let line: String
+  let instructionExisted: Bool
+}
+
+@MainActor
+struct WorkflowRunsFeatureTests {
+  nonisolated private static let now = Date(timeIntervalSince1970: 1_760_000_000)
+  private static let authorPane = WorkflowRunMachineTests.authorPane
+  private static let reviewerProfile = WorkflowRunMachineTests.reviewerProfile
+
+  /// Records every boundary call; the runtime fakes answer synchronously.
+  @MainActor
+  final class Fixture {
+    let root: URL
+    let worktree: Worktree
+    var typed: [WorkflowTypedLineRecord] = []
+    var launches: [WorkflowLaunchRequest] = []
+    var closed: [UUID] = []
+    var notifications: [String] = []
+    var opened: [UUID] = []
+    var cancelled: [String] = []
+    var abandoned: [(dispatchID: String, reason: String)] = []
+    var completed: [String] = []
+    var armed: [WorkflowWatchdogRequest] = []
+    var disarmed: [Int] = []
+    var responses: [(requestID: UUID, resolution: WorkflowDeliveryResolution)] = []
+    var roleWaitOutcome: WorkflowRoleWaitOutcome = .idle
+    var launchOutcome: Result<WorkflowLaunchResult, WorkflowLaunchError>?
+    private var dispatchCounter = 0
+    private var paneCounter = 10
+
+    init() throws {
+      root =
+        FileManager.default.temporaryDirectory
+        .appending(path: "workflow-runs-feature-tests", directoryHint: .isDirectory)
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        .standardizedFileURL
+      let skill = root.appending(
+        path: "skills/prowl.adversarial-reviewer", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+      try "---\nname: r\ndescription: d\n---\n# Reviewer\n".write(
+        to: skill.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+      worktree = Worktree(
+        id: "wt", name: "feature", detail: "", workingDirectory: root, repositoryRootURL: root)
+    }
+
+    func cleanUp() {
+      try? FileManager.default.removeItem(at: root)
+    }
+
+    var runtime: WorkflowRuntimeClient {
+      WorkflowRuntimeClient(
+        waitForRole: { [self] _ in roleWaitOutcome },
+        deliverLine: { [self] _, surfaceID, line in
+          let pointer = line.split(separator: " ").first { $0.hasPrefix("/") }.map(String.init)
+          let existed = pointer.map { FileManager.default.fileExists(atPath: $0) } ?? true
+          typed.append(WorkflowTypedLineRecord(surfaceID: surfaceID, line: line, instructionExisted: existed))
+          return .delivered
+        },
+        launch: { [self] _, _, request in
+          launches.append(request)
+          if let launchOutcome { return launchOutcome }
+          paneCounter += 1
+          let pane = WorkflowPaneIdentity(
+            surfaceID: UUID(), tabID: UUID(), handle: "p\(paneCounter)",
+            displayName: request.profile.name,
+            agent: request.profile.agent)
+          let dispatchID = request.expectsDelivery ? issue(pane.surfaceID) : nil
+          return .success(WorkflowLaunchResult(pane: pane, dispatchID: dispatchID))
+        },
+        close: { [self] _, surfaceID in closed.append(surfaceID) },
+        notify: { [self] _, text in notifications.append(text) }
+      )
+    }
+
+    var activation: WorkflowActivationClient {
+      WorkflowActivationClient(
+        openMessage: { [self] surfaceID in .success(issue(surfaceID)) },
+        cancel: { [self] id in cancelled.append(id) },
+        abandon: { [self] id, reason in abandoned.append((id, reason)) },
+        complete: { [self] id, _ in completed.append(id) },
+        observe: { _ in nil }
+      )
+    }
+
+    var watchdog: WorkflowWatchdogClient {
+      WorkflowWatchdogClient(arm: { [self] _, request in
+        armed.append(request)
+        return WorkflowWatchdogHandle(
+          verdicts: AsyncStream { $0.finish() },
+          cancel: { [self] in disarmed.append(request.ordinal) })
+      })
+    }
+
+    var responder: WorkflowCLIResponderClient {
+      WorkflowCLIResponderClient(respond: { [self] requestID, resolution in
+        responses.append((requestID, resolution))
+      })
+    }
+
+    private func issue(_ surfaceID: UUID) -> String {
+      dispatchCounter += 1
+      opened.append(surfaceID)
+      return "dispatch-\(dispatchCounter)"
+    }
+
+    func session(
+      _ yaml: String = WorkflowRunMachineTests.adversarialReview,
+      selfInitiated: Bool = false,
+      inputs: [String: String] = [:],
+      skipped: Set<String> = []
+    ) throws -> (WorkflowRunSession, [WorkflowRunEffect]) {
+      let definition = try #require(WorkflowDocumentParser.parse(yaml).definition)
+      let counter = WorkflowRunMachineTests.TokenCounter()
+      let started = try WorkflowRunMachine.start(
+        WorkflowRunStartRequest(
+          definition: definition,
+          runID: UUID(),
+          context: WorkflowRunContext(
+            scope: .user, definitionPath: nil,
+            worktree: WorkflowRunWorktree(
+              id: "wt", name: "feature", branch: "feat/x", path: root.path(percentEncoded: false))),
+          bindings: [
+            definition.roles[0].name: .current(WorkflowRunsFeatureTests.authorPane),
+            definition.roles[1].name: .launch(WorkflowRunsFeatureTests.reviewerProfile, pane: nil),
+          ],
+          inputs: inputs,
+          skippedSteps: skipped,
+          selfInitiated: selfInitiated),
+        now: { WorkflowRunsFeatureTests.now },
+        makeToken: { counter.next() })
+      let plan = AgentProfileLaunchPlan(
+        profileID: WorkflowRunsFeatureTests.reviewerProfile.id, profileName: "Pi Reviewer",
+        runtime: .pi,
+        invocation: AgentInvocation(executable: "pi", arguments: ["placeholder"]),
+        commandEnvironmentTokens: [], placement: .split, splitDirection: .right,
+        surfaceEnvironment: [AgentProfileLaunchPlanner.promptCarrierName: "placeholder"],
+        dedicatedHome: nil)
+      let session = WorkflowRunSession(
+        run: started.machine.run,
+        worktree: worktree,
+        launchPlans: [definition.roles[1].name: plan],
+        bindingMemoryKeys: [
+          definition.roles[1].name: WorkflowBindingResolver.memoryKey(
+            scope: .user, workflowID: definition.id, role: definition.roles[1])
+        ],
+        skills: [
+          "prowl.adversarial-reviewer": BundledSkill(
+            id: "prowl.adversarial-reviewer", name: "Reviewer", description: "d",
+            audience: .workflow,
+            directoryURL: root.appending(
+              path: "skills/prowl.adversarial-reviewer", directoryHint: .isDirectory))
+        ])
+      return (session, started.effects)
+    }
+  }
+
+  private func makeStore(
+    _ fixture: Fixture, queue: WorkflowEffectQueueClient,
+    storage: SettingsTestStorage = SettingsTestStorage()
+  ) -> TestStoreOf<WorkflowRunsFeature> {
+    let store = TestStore(initialState: WorkflowRunsFeature.State()) {
+      WorkflowRunsFeature()
+    } withDependencies: {
+      $0.workflowRuntimeClient = fixture.runtime
+      $0.workflowActivationClient = fixture.activation
+      $0.workflowWatchdogClient = fixture.watchdog
+      $0.workflowEffectQueue = queue
+      $0.workflowCLIResponder = fixture.responder
+      $0.date.now = Self.now
+      $0.uuid = .incrementing
+      $0.settingsFileStorage = storage.storage
+    }
+    store.exhaustivity = .off(showSkippedAssertions: false)
+    return store
+  }
+
+  /// A queue that records batches without performing them, for transitions under test control.
+  @MainActor
+  final class RecordingQueue {
+    var batches: [(runID: UUID, effects: [WorkflowRunEffect])] = []
+    var finished: [UUID] = []
+    var client: WorkflowEffectQueueClient {
+      WorkflowEffectQueueClient(
+        start: { _ in AsyncStream { $0.finish() } },
+        enqueue: { [self] runID, batch in batches.append((runID, batch.effects)) },
+        finish: { [self] runID in finished.append(runID) })
+    }
+    var effects: [WorkflowRunEffect] { batches.flatMap(\.effects) }
+  }
+
+  private static let timeout: Duration = .seconds(5)
+  /// Tokens are minted by the reducer's `uuid` dependency (`.incrementing`) when a step opens.
+  nonisolated private static let firstToken = "00000000-0000-0000-0000-000000000000"
+  nonisolated private static let secondToken = "00000000-0000-0000-0000-000000000001"
+
+  // MARK: - Ordered execution
+
+  @Test(.dependencies) func aRunPerformsItsEffectsInMachineOrderAndAnswersDoneAfterPersistence()
+    async throws
+  {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let storage = SettingsTestStorage()
+    let store = makeStore(fixture, queue: WorkflowEffectQueue().client, storage: storage)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    let runDirectory = session.store.directory(for: runID)
+
+    await store.send(.started(session, effects: effects))
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
+    await store.receive(
+      .event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "dispatch-1")),
+      timeout: Self.timeout)
+    #expect(fixture.typed.count == 1)
+    #expect(
+      fixture.typed[0].instructionExisted,
+      "the instruction file must exist before the pointer is typed")
+    #expect(fixture.typed[0].line.contains("PROWL_WORKFLOW_TOKEN=\(Self.firstToken) prowl workflow done -"))
+    #expect(fixture.armed.map(\.ordinal) == [1])
+    let record = try session.store.readRecord(runID: runID)
+    #expect(record.run.status.state == "running")
+
+    let requestID = UUID()
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: requestID, runID: runID, ordinal: 1, selector: .token(Self.firstToken),
+          body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil, source: "pane"))
+    ) {
+      $0.pendingDeliveries[requestID]?.ordinal == 1
+    }
+    await store.receive(.event(runID: runID, .outputPersisted(ordinal: 1)), timeout: Self.timeout)
+    #expect(fixture.responses.count == 1)
+    guard case .delivered(let run, let receipt) = fixture.responses[0].resolution else {
+      Issue.record("expected a delivered resolution, got \(fixture.responses[0].resolution)")
+      return
+    }
+    #expect(receipt.ordinal == 1)
+    #expect(run.outputs["brief"]?.ordinal == 1)
+    #expect(store.state.pendingDeliveries.isEmpty)
+    #expect(fixture.disarmed.first == 1, "the accepted delivery disarms its watchdog")
+    #expect(fixture.completed == ["dispatch-1"])
+
+    // The next step launches the reviewer: skill materialized, plan frozen, pane bound, memory written.
+    await store.receive(\.event, timeout: Self.timeout)
+    #expect(fixture.launches.count == 1)
+    #expect(fixture.launches[0].environment["PROWL_WORKFLOW_TOKEN"] == Self.secondToken)
+    #expect(
+      FileManager.default.fileExists(
+        atPath: runDirectory.appending(path: "skills/prowl.adversarial-reviewer/SKILL.md").path(
+          percentEncoded: false)))
+    let reviewerPane = try #require(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane)
+    #expect(reviewerPane.handle == "p11")
+    #expect(fixture.armed.map(\.ordinal) == [1, 2])
+    let key = try #require(session.bindingMemoryKeys["reviewer"])
+    let remembered = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.userGlobalSettings) var settings
+      return settings.rememberedWorkflowBinding(for: key)
+    }
+    #expect(remembered == Self.reviewerProfile.id)
+
+    await store.send(.userAction(runID: runID, .cancel)) {
+      $0.sessions[runID]?.run.status == .cancelled
+    }
+    await store.finish(timeout: Self.timeout)
+    #expect(fixture.abandoned.map(\.dispatchID) == ["dispatch-2"])
+    #expect(fixture.disarmed.sorted() == [1, 2])
+    #expect(try session.store.readRecord(runID: runID).run.status.state == "cancelled")
+    let log = try String(contentsOf: runDirectory.appending(path: "log.md"), encoding: .utf8)
+    #expect(log.contains("Run finished: cancelled."))
+    #expect(!log.contains("TOKEN-"))
+  }
+
+  @Test(.dependencies) func aFailedInstructionWriteStopsTheBatchBeforeAnythingIsTyped() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let store = makeStore(fixture, queue: WorkflowEffectQueue().client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    // The run directory's `instructions` leaf becomes a link, which the store refuses.
+    try session.store.ensureLayout(runID: runID)
+    let instructions = session.store.directory(for: runID).appending(
+      path: "instructions", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: instructions)
+    let elsewhere = fixture.root.appending(path: "elsewhere", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: instructions, withDestinationURL: elsewhere)
+
+    await store.send(.started(session, effects: effects))
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
+    await store.receive(\.event, timeout: Self.timeout) {
+      $0.sessions[runID]?.run.status.attention?.reason.code
+        == "injection_failed:activation_unavailable"
+    }
+    #expect(fixture.typed.isEmpty)
+    #expect(fixture.opened.isEmpty)
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  // MARK: - Rendezvous (decision W1)
+
+  @Test(.dependencies) func cancelWhileTheOutputIsPersistingFailsThePendingDone() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let waiting = try waitingForDelivery(session)
+    let runID = waiting.run.id
+    await store.send(.started(waiting, effects: []))
+
+    let requestID = UUID()
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: requestID, runID: runID, ordinal: 1, selector: .token("TOKEN-1"),
+          body: "## Scope\nx\n## Claims\ny", verdict: nil, source: "pane")))
+    #expect(store.state.pendingDeliveries[requestID]?.ordinal == 1)
+    #expect(store.state.sessions[runID]?.run.activeActivation?.state == .persisting)
+    #expect(fixture.responses.isEmpty)
+    #expect(
+      queue.effects.contains { if case .persistOutput = $0 { return true } else { return false } })
+
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+    #expect(store.state.pendingDeliveries.isEmpty)
+    #expect(fixture.responses.count == 1)
+    #expect(fixture.responses[0].requestID == requestID)
+    #expect(
+      fixture.responses[0].resolution
+        == .failed(
+          code: CLIErrorCode.stepNotExpecting,
+          message: "The step stopped waiting for this delivery before the output was saved."))
+    #expect(queue.effects.contains(.finished(.cancelled)))
+
+    // The queued `.outputPersisted` of the abandoned write is stale: ignored, nothing answered twice.
+    await store.send(.event(runID: runID, .outputPersisted(ordinal: 1)))
+    #expect(fixture.responses.count == 1)
+  }
+
+  @Test(.dependencies) func aPersistenceFailureFailsThePendingDoneWithWorkflowFailed() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let waiting = try waitingForDelivery(session)
+    let runID = waiting.run.id
+    await store.send(.started(waiting, effects: []))
+    let requestID = UUID()
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: requestID, runID: runID, ordinal: 1, selector: .token("TOKEN-1"),
+          body: "## Scope\nx\n## Claims\ny", verdict: nil, source: "manual")))
+    #expect(queue.effects.first == .log("Step 'brief': delivery received (source=manual)."))
+
+    await store.send(.event(runID: runID, .outputPersistFailed(ordinal: 1, reason: "disk full")))
+    #expect(store.state.sessions[runID]?.run.status.attention?.reason.code == "persist_failed")
+    #expect(store.state.pendingDeliveries.isEmpty)
+    #expect(fixture.responses.count == 1)
+    guard case .failed(let code, let message) = fixture.responses[0].resolution else {
+      Issue.record("expected a failure")
+      return
+    }
+    #expect(code == CLIErrorCode.workflowFailed)
+    #expect(message.contains("disk full"))
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  @Test(.dependencies) func aProvisionalDeliveryIsAnsweredAsProvisionalWithItsIssues() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let waiting = try waitingForDelivery(session)
+    let runID = waiting.run.id
+    await store.send(.started(waiting, effects: []))
+    let requestID = UUID()
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: requestID, runID: runID, ordinal: 1, selector: .token("TOKEN-1"),
+          body: "## Scope\nonly", verdict: nil, source: "pane")))
+    await store.send(.event(runID: runID, .outputPersisted(ordinal: 1)))
+    #expect(store.state.sessions[runID]?.run.status.attention?.reason.code == "delivery_issues")
+    #expect(fixture.responses.count == 1)
+    guard case .provisional(_, let receipt) = fixture.responses[0].resolution else {
+      Issue.record("expected a provisional resolution")
+      return
+    }
+    #expect(receipt.issues == [.missingSections(["## Claims"])])
+    #expect(fixture.completed.isEmpty, "the dispatch record stays pending until the user accepts")
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  @Test(.dependencies) func aRejectedDeliveryIsAnsweredAtOnceWithoutAPendingRequest() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let waiting = try waitingForDelivery(session)
+    let runID = waiting.run.id
+    await store.send(.started(waiting, effects: []))
+
+    let wrongToken = UUID()
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: wrongToken, runID: runID, ordinal: 1, selector: .token("TOKEN-9"),
+          body: "## Scope\nx\n## Claims\ny", verdict: nil, source: "pane")))
+    let unknownRun = UUID()
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: unknownRun, runID: UUID(), ordinal: nil, selector: .manual(stepID: "brief"),
+          body: "x", verdict: nil, source: "manual")))
+    await store.finish(timeout: Self.timeout)
+    #expect(store.state.pendingDeliveries.isEmpty)
+    #expect(fixture.responses.map(\.requestID) == [wrongToken, unknownRun])
+    #expect(
+      fixture.responses[0].resolution
+        == .failed(
+          code: CLIErrorCode.tokenInvalid, message: WorkflowDeliveryError.tokenInvalid.message))
+    #expect(
+      fixture.responses[1].resolution
+        == .failed(code: CLIErrorCode.runNotFound, message: "The workflow run is not active."))
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  // MARK: - Late and stale launches
+
+  @Test(.dependencies) func aLaunchThatCompletesAfterTheRunEndedIsAbandonedAndClosed() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: []))
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+
+    let pane = WorkflowPaneIdentity(
+      surfaceID: UUID(), tabID: nil, handle: "p7", displayName: "Pi", agent: "pi")
+    await store.send(
+      .event(runID: runID, .launched(ordinal: 2, pane: pane, dispatchID: "late-dispatch")))
+    await store.finish(timeout: Self.timeout)
+    #expect(fixture.abandoned.map(\.dispatchID) == ["late-dispatch"])
+    #expect(fixture.closed == [pane.surfaceID])
+  }
+
+  @Test(.dependencies) func aLaunchTheMachineNoLongerExpectsIsClosedToo() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let waiting = try waitingForDelivery(session)
+    let runID = waiting.run.id
+    await store.send(.started(waiting, effects: []))
+
+    let pane = WorkflowPaneIdentity(
+      surfaceID: UUID(), tabID: nil, handle: "p8", displayName: "Pi", agent: "pi")
+    await store.send(
+      .event(runID: runID, .launched(ordinal: 42, pane: pane, dispatchID: "stale-dispatch")))
+    await store.finish(timeout: Self.timeout)
+    #expect(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane == nil)
+    #expect(fixture.abandoned.map(\.dispatchID) == ["stale-dispatch"])
+    #expect(fixture.closed == [pane.surfaceID])
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  // MARK: - Idle wait outcomes
+
+  @Test(.dependencies) func aBlockedRoleDuringTheIdleWaitRaisesAttention() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    fixture.roleWaitOutcome = .blocked
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await store.receive(
+      .event(runID: runID, .roleUnavailable(ordinal: 1, .roleBlocked)), timeout: Self.timeout
+    ) {
+      $0.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:role_blocked"
+    }
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  @Test(.dependencies) func aPaneWithAForeignPendingDispatchEndsTheIdleWaitInAttention() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    fixture.roleWaitOutcome = .dispatchPending("someone-elses-dispatch")
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await store.receive(\.event, timeout: Self.timeout) {
+      $0.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:activation_unavailable"
+    }
+    #expect(store.state.sessions[runID]?.run.status.attention?.message.contains("someone-elses-dispatch") == true)
+    #expect(fixture.typed.isEmpty)
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  // MARK: - Restart scan
+
+  @Test(.dependencies) func interruptedRunsAreMarkedOncePerWorktreeRoot() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let (session, _) = try fixture.session()
+    try session.store.ensureLayout(runID: session.run.id)
+    try session.store.writeRecord(WorkflowRunRecord(run: session.run))
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let root = fixture.root.path(percentEncoded: false)
+
+    await store.send(.markInterruptedRuns(worktreeRoots: [root])) {
+      $0.scannedWorktreeRoots = [root]
+    }
+    await store.finish(timeout: Self.timeout)
+    #expect(try session.store.readRecord(runID: session.run.id).run.status.state == "interrupted")
+
+    // A second scan of the same root is a no-op even after a new run started there.
+    await store.send(.started(session, effects: []))
+    await store.send(.markInterruptedRuns(worktreeRoots: [root]))
+    await store.finish(timeout: Self.timeout)
+    #expect(store.state.sessions[session.run.id]?.run.status == .running)
+    await store.send(.userAction(runID: session.run.id, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  // MARK: - Helpers
+
+  /// The session after its first message was typed: activation 1 waits on `dispatch-0`.
+  private func waitingForDelivery(_ session: WorkflowRunSession) throws -> WorkflowRunSession {
+    var machine = session.machine(now: { Self.now }, makeToken: { "TOKEN-1" })
+    _ = machine.apply(.roleIdle(ordinal: 1))
+    _ = machine.apply(.injectionSucceeded(ordinal: 1, dispatchID: "dispatch-0"))
+    #expect(machine.run.phase == .waitingForDelivery(ordinal: 1))
+    var waiting = session
+    waiting.run = machine.run
+    return waiting
+  }
+}

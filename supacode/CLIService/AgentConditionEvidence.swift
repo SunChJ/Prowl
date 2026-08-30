@@ -84,6 +84,38 @@ enum AgentConditionEvidence {
     }
   }
 
+  /// The arm-time verdict of `agents wait --until idle` under `auto`, shared by `agents dispatch`
+  /// and the workflow runner's idle wait (docs-ai 064.014 D5, 063 B3).
+  enum IdleVerdict: Equatable {
+    case idle
+    /// Idle by one source only; the caller keeps polling (and stabilizes a detector-only view).
+    case settling(String)
+    case busy(String)
+  }
+
+  /// Every signal the snapshot holds predates this call, so a `turn-ended` counts only with
+  /// detector corroboration, and the detector alone counts only where the wait would fall back to
+  /// it. Either source alone is not a refusal yet; working or blocked without such evidence is.
+  static func idleVerdict(for snapshot: AgentConditionSnapshot) -> IdleVerdict {
+    let state = normalizedState(snapshot)
+    let baseline = Baseline(snapshot: snapshot)
+    if exactMatch(
+      condition: .idle, snapshot: snapshot, normalizedState: state, baseline: baseline, minimumConfidence: .auto)
+      != nil
+    {
+      return .idle
+    }
+    if detectorReports(.idle, normalizedState: state), allowsHeuristic(.auto, condition: .idle, snapshot: snapshot) {
+      return .settling(state)
+    }
+    if let signal = snapshot.signal, signal.event == .turnEnded, accepts(signal.confidence, minimum: .auto),
+      !detectorReports(.blocked, normalizedState: state)
+    {
+      return .settling(state)
+    }
+    return .busy(state)
+  }
+
   static func normalizedState(_ snapshot: AgentConditionSnapshot) -> String {
     guard snapshot.isLive else { return "gone" }
     return snapshot.agent.map { status(for: $0, fallback: .idle).rawValue } ?? "absent"

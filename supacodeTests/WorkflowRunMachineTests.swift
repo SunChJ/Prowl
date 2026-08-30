@@ -846,6 +846,31 @@ struct WorkflowRunMachineTests {
     #expect(machine.run.invocations[1].activation?.token == "TOKEN-2")
   }
 
+  @Test func anUnavailableRoleDuringTheIdleWaitEntersAttentionAndRetryWaitsAgain() throws {
+    var (machine, _) = try makeMachine()
+    #expect(machine.run.phase == .waitingForRole(role: "author", ordinal: 1))
+    let effects = machine.apply(.roleUnavailable(ordinal: 1, .roleBlocked))
+    #expect(machine.run.status.attention?.reason.code == "injection_failed:role_blocked")
+    #expect(machine.run.status.attention?.actions == [.focusPane, .retry, .skip, .cancel])
+    #expect(effects.contains(.persist))
+    #expect(!effects.contains { if case .inject = $0 { return true } else { return false } })
+
+    let retried = machine.apply(.user(.retry))
+    #expect(machine.run.status == .running)
+    #expect(retried.contains(.awaitRoleIdle(role: "author", surfaceID: Self.authorPane.surfaceID, ordinal: 2)))
+
+    // Outside the idle wait the event is stale and ignored.
+    #expect(machine.apply(.roleUnavailable(ordinal: 1, .surfaceMissing)).isEmpty)
+    #expect(machine.run.status == .running)
+  }
+
+  @Test func aGoneCurrentRoleDuringTheIdleWaitOffersRetrySkipCancelOnly() throws {
+    var (machine, _) = try makeMachine()
+    _ = machine.apply(.roleUnavailable(ordinal: 1, .surfaceMissing))
+    #expect(machine.run.status.attention?.reason.code == "injection_failed:surface_missing")
+    #expect(machine.run.status.attention?.actions == [.retry, .skip, .cancel])
+  }
+
   @Test func roleBusyReturnsTheStepToItsIdleWaitAndKeepsItsToken() throws {
     var (machine, _) = try makeMachine()
     _ = machine.apply(.roleIdle(ordinal: 1))

@@ -15,7 +15,7 @@ import Sharing
 import SwiftUI
 
 @MainActor
-private final class SupacodeAppStoreBox {
+final class SupacodeAppStoreBox {
   weak var store: StoreOf<AppFeature>?
 }
 
@@ -204,6 +204,7 @@ struct SupacodeApp: App {
     _worktreeInfoWatcher = State(initialValue: worktreeInfoWatcher)
     let storeBox = SupacodeAppStoreBox()
     let handoffRequestRegistry = HandoffRequestRegistry()
+    let workflowRuntime = Self.makeWorkflowRuntime(terminalManager: terminalManager, storeBox: storeBox)
 
     let coordinator = Self.makePullRequestRefreshCoordinator(storeBox: storeBox)
     _pullRequestRefreshCoordinator = State(initialValue: coordinator)
@@ -242,6 +243,7 @@ struct SupacodeApp: App {
           handoffRequestRegistry.supersede(requestID)
         }
       )
+      workflowRuntime.install(into: &values)
       values.outgoingChangesClient = Self.makeOutgoingChangesClient(storeBox: storeBox)
 
     }
@@ -252,7 +254,8 @@ struct SupacodeApp: App {
     let cliServer = Self.makeCLISocketServer(
       appStore: appStore,
       terminalManager: terminalManager,
-      handoffRequestRegistry: handoffRequestRegistry
+      handoffRequestRegistry: handoffRequestRegistry,
+      workflowCoordinatorBox: workflowRuntime.coordinatorBox
     )
 
     _cliSocketServer = State(initialValue: cliServer)
@@ -526,7 +529,7 @@ struct SupacodeApp: App {
     )
   }
 
-  private static func makeTargetResolver(
+  static func makeTargetResolver(
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager
   ) -> TargetResolver {
@@ -684,6 +687,7 @@ struct SupacodeApp: App {
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager,
     handoffRequestRegistry: HandoffRequestRegistry = HandoffRequestRegistry(),
+    workflowCoordinatorBox: WorkflowCoordinatorBox = WorkflowCoordinatorBox(),
     agentSignalCallerResolver: AgentSignalCommandHandler.ResolveCaller? = nil
   ) -> CLICommandRouter {
 
@@ -768,6 +772,9 @@ struct SupacodeApp: App {
         } catch {
           return .failure(.notFound)
         }
+      },
+      intercept: { surfaceID in
+        Self.workflowDeliveryRefusal(surfaceID: surfaceID, appStore: appStore, terminalManager: terminalManager)
       }
     )
     let dispatchAbandonHandler = AgentDispatchAbandonCommandHandler(
@@ -1187,36 +1194,16 @@ struct SupacodeApp: App {
       }
 
     )
-    let workflowHandler = WorkflowCommandHandler {
-      @Shared(.userGlobalSettings) var settings
-      @Shared(.agentRuntimeAvailabilityProbeResults) var probeResults
-      let bundledSkills = Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) }
-      let installedAgents =
-        probeResults.isEmpty
-        ? nil
-        : Set(probeResults.filter { $0.value.isAvailable }.keys.map { $0.agent.rawValue })
-      return WorkflowRuntimeSnapshot(
-        resolution: TargetResolutionSnapshotBuilder.makeSnapshot(
-          repositoriesState: appStore.state.repositories,
-          terminalManager: terminalManager
-        ),
-        paneByShellPID: terminalManager.paneByShellPID(),
-        bundleWorkflowsURL: SupacodePaths.bundledWorkflowsURL,
-        userWorkflowsURL: WorkflowSources.userDirectory(home: FileManager.default.homeDirectoryForCurrentUser),
-        disabledWorkflowIDs: Set(settings.disabledWorkflowIDs),
-        bundledSkillIDs: bundledSkills.map { Set($0.map(\.id)) },
-        knownAgents: Set(DetectedAgent.allCases.map(\.rawValue)),
-        installedAgents: installedAgents,
-        enabledProfiles: settings.agentProfiles.filter(\.isEnabled).map { profile in
-          WorkflowProfileSuggestion(
-            agent: profile.runtime.agent.rawValue,
-            model: profile.model,
-            reasoningEffort: profile.reasoningEffort,
-            executionMode: profile.executionMode.rawValue
-          )
-        }
-      )
-    }
+    let workflowCoordinator = Self.makeWorkflowCoordinator(
+      appStore: appStore,
+      terminalManager: terminalManager,
+      rendezvous: WorkflowCLIRendezvous()
+    )
+    workflowCoordinatorBox.coordinator = workflowCoordinator
+    let workflowHandler = WorkflowCommandHandler(
+      snapshotProvider: { Self.makeWorkflowRuntimeSnapshot(appStore: appStore, terminalManager: terminalManager) },
+      runtime: workflowCoordinator
+    )
     return CLICommandRouter(
       openHandler: openHandler,
       listHandler: listHandler,
@@ -1308,16 +1295,54 @@ struct SupacodeApp: App {
     )
   }
 
+  @MainActor
+  static func makeWorkflowRuntimeSnapshot(
+    appStore: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager
+  ) -> WorkflowRuntimeSnapshot {
+    @Shared(.userGlobalSettings) var settings
+    @Shared(.agentRuntimeAvailabilityProbeResults) var probeResults
+    let bundledSkills = Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) }
+    let installedAgents =
+      probeResults.isEmpty
+      ? nil
+      : Set(probeResults.filter { $0.value.isAvailable }.keys.map { $0.agent.rawValue })
+    return WorkflowRuntimeSnapshot(
+      resolution: TargetResolutionSnapshotBuilder.makeSnapshot(
+        repositoriesState: appStore.state.repositories,
+        terminalManager: terminalManager
+      ),
+      paneByShellPID: terminalManager.paneByShellPID(),
+      bundleWorkflowsURL: SupacodePaths.bundledWorkflowsURL,
+      userWorkflowsURL: WorkflowSources.userDirectory(home: FileManager.default.homeDirectoryForCurrentUser),
+      disabledWorkflowIDs: Set(settings.disabledWorkflowIDs),
+      bundledSkillIDs: bundledSkills.map { Set($0.map(\.id)) },
+      knownAgents: Set(DetectedAgent.allCases.map(\.rawValue)),
+      installedAgents: installedAgents,
+      enabledProfiles: settings.agentProfiles.filter(\.isEnabled).map { profile in
+        WorkflowProfileSuggestion(
+          agent: profile.runtime.agent.rawValue,
+          model: profile.model,
+          reasoningEffort: profile.reasoningEffort,
+          executionMode: profile.executionMode.rawValue
+        )
+      }
+    )
+
+  }
+
   private static func makeCLISocketServer(
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager,
-    handoffRequestRegistry: HandoffRequestRegistry
+    handoffRequestRegistry: HandoffRequestRegistry,
+    workflowCoordinatorBox: WorkflowCoordinatorBox
   ) -> CLISocketServer {
 
     let cliRouter = makeCLICommandRouter(
       appStore: appStore,
       terminalManager: terminalManager,
-      handoffRequestRegistry: handoffRequestRegistry
+      handoffRequestRegistry: handoffRequestRegistry,
+      workflowCoordinatorBox: workflowCoordinatorBox
     )
     let cliServer = CLISocketServer(router: cliRouter)
     let logger = SupaLogger("CLIService")
@@ -1674,7 +1699,7 @@ struct SupacodeApp: App {
     }
   }
 
-  private static func selectCLIWorktreeContext(
+  static func selectCLIWorktreeContext(
     worktreeID: Worktree.ID,
     appStore: StoreOf<AppFeature>,
     terminalManager: WorktreeTerminalManager

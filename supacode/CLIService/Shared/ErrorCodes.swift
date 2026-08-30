@@ -102,6 +102,8 @@ nonisolated public enum CLIErrorCode {
   public static let workflowNotFound = "WORKFLOW_NOT_FOUND"
   /// The file parsed or validated with errors; `details` carries the validate payload.
   public static let workflowInvalid = "WORKFLOW_INVALID"
+  /// `workflow run` named a definition the user switched off.
+  public static let workflowDisabled = "WORKFLOW_DISABLED"
   // Run-time codes of the workflow runner (dsl-spec §9); emitted by `workflow run/done` from B3 on.
   public static let runNotFound = "RUN_NOT_FOUND"
   public static let paneBusy = "PANE_BUSY"
@@ -119,6 +121,10 @@ nonisolated public enum CLIErrorCode {
   public static let promptTooLarge = "PROMPT_TOO_LARGE"
   /// `agents dispatch-complete` from a pane whose pending record is a workflow activation.
   public static let workflowDeliveryRequired = "WORKFLOW_DELIVERY_REQUIRED"
+  /// A socket client disconnected before its in-app workflow request completed.
+  public static let requestCancelled = "REQUEST_CANCELLED"
+  /// A duplicate in-app request UUID was registered; the original remains authoritative.
+  public static let requestConflict = "REQUEST_CONFLICT"
 
   // Transport
   public static let transportFailed = "TRANSPORT_FAILED"

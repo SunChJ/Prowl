@@ -3824,6 +3824,18 @@
           "$ref": "#/$defs/workflowListData"
         },
         {
+          "$ref": "#/$defs/workflowRunData"
+        },
+        {
+          "$ref": "#/$defs/workflowStatusData"
+        },
+        {
+          "$ref": "#/$defs/workflowDoneData"
+        },
+        {
+          "$ref": "#/$defs/workflowCancelData"
+        },
+        {
           "$ref": "#/$defs/workflowValidateData"
         },
         {
@@ -3950,6 +3962,742 @@
         },
         "shadowed": {
           "type": "boolean"
+        }
+      }
+    },
+    "workflowRunData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "id",
+        "workflow",
+        "scope",
+        "source",
+        "status",
+        "worktree",
+        "run_directory",
+        "bindings",
+        "outputs",
+        "started_at",
+        "updated_at"
+      ],
+      "properties": {
+        "action": {
+          "const": "run"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowIdentity"
+        },
+        "scope": {
+          "$ref": "#/$defs/workflowScope"
+        },
+        "definition_path": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "live",
+            "record"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/workflowRunStatus"
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "worktree": {
+          "$ref": "#/$defs/workflowRunWorktree"
+        },
+        "run_directory": {
+          "type": "string"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowBinding"
+          }
+        },
+        "activation": {
+          "$ref": "#/$defs/workflowActivation"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowOutput"
+          }
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "self_initiated": {
+          "$ref": "#/$defs/workflowSelfInitiated"
+        }
+      }
+    },
+    "workflowStatusData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "id",
+        "workflow",
+        "scope",
+        "source",
+        "status",
+        "worktree",
+        "run_directory",
+        "bindings",
+        "outputs",
+        "started_at",
+        "updated_at"
+      ],
+      "properties": {
+        "action": {
+          "const": "status"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowIdentity"
+        },
+        "scope": {
+          "$ref": "#/$defs/workflowScope"
+        },
+        "definition_path": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "live",
+            "record"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/workflowRunStatus"
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "worktree": {
+          "$ref": "#/$defs/workflowRunWorktree"
+        },
+        "run_directory": {
+          "type": "string"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowBinding"
+          }
+        },
+        "activation": {
+          "$ref": "#/$defs/workflowActivation"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowOutput"
+          }
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "self_initiated": {
+          "$ref": "#/$defs/workflowSelfInitiated"
+        }
+      }
+    },
+    "workflowCancelData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "id",
+        "workflow",
+        "scope",
+        "source",
+        "status",
+        "worktree",
+        "run_directory",
+        "bindings",
+        "outputs",
+        "started_at",
+        "updated_at"
+      ],
+      "properties": {
+        "action": {
+          "const": "cancel"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowIdentity"
+        },
+        "scope": {
+          "$ref": "#/$defs/workflowScope"
+        },
+        "definition_path": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "live",
+            "record"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/workflowRunStatus"
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "worktree": {
+          "$ref": "#/$defs/workflowRunWorktree"
+        },
+        "run_directory": {
+          "type": "string"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowBinding"
+          }
+        },
+        "activation": {
+          "$ref": "#/$defs/workflowActivation"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowOutput"
+          }
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "self_initiated": {
+          "$ref": "#/$defs/workflowSelfInitiated"
+        }
+      }
+    },
+    "workflowDoneData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "run",
+        "delivery"
+      ],
+      "properties": {
+        "action": {
+          "const": "done"
+        },
+        "run": {
+          "$ref": "#/$defs/workflowRun"
+        },
+        "delivery": {
+          "$ref": "#/$defs/workflowDelivery"
+        }
+      }
+    },
+    "workflowRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workflow",
+        "scope",
+        "source",
+        "status",
+        "worktree",
+        "run_directory",
+        "bindings",
+        "outputs",
+        "started_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowIdentity"
+        },
+        "scope": {
+          "$ref": "#/$defs/workflowScope"
+        },
+        "definition_path": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "live",
+            "record"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/workflowRunStatus"
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "worktree": {
+          "$ref": "#/$defs/workflowRunWorktree"
+        },
+        "run_directory": {
+          "type": "string"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowBinding"
+          }
+        },
+        "activation": {
+          "$ref": "#/$defs/workflowActivation"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workflowOutput"
+          }
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "self_initiated": {
+          "$ref": "#/$defs/workflowSelfInitiated"
+        }
+      }
+    },
+    "workflowRunStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "running",
+            "needs_attention",
+            "completed",
+            "cancelled",
+            "skipped",
+            "max_rounds_reached",
+            "interrupted"
+          ]
+        },
+        "step": {
+          "type": "string"
+        },
+        "dependent": {
+          "type": "string"
+        },
+        "attention": {
+          "$ref": "#/$defs/workflowAttention"
+        }
+      }
+    },
+    "workflowAttention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "message",
+        "step",
+        "actions"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "focus_pane",
+              "nudge",
+              "keep_waiting",
+              "retry",
+              "relaunch",
+              "accept_delivery",
+              "accept_with_verdict",
+              "ask_again",
+              "skip",
+              "cancel"
+            ]
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "workflowRunWorktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "branch",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "workflowBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "current",
+            "launch",
+            "pick"
+          ]
+        },
+        "profile": {
+          "$ref": "#/$defs/workflowProfileBinding"
+        },
+        "pane": {
+          "$ref": "#/$defs/workflowPaneBinding"
+        }
+      }
+    },
+    "workflowProfileBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "agent"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        }
+      }
+    },
+    "workflowPaneBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "handle",
+        "display_name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "tab_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        }
+      }
+    },
+    "workflowActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "step",
+        "role",
+        "state",
+        "output",
+        "expect"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "waiting",
+            "persisting",
+            "provisional",
+            "delivered",
+            "skipped",
+            "revoked"
+          ]
+        },
+        "dispatch_id": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "expect": {
+          "$ref": "#/$defs/workflowExpectation"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "workflowExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "sections",
+        "strict",
+        "completion"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "markdown",
+            "text",
+            "json"
+          ]
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verdict": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "strict": {
+          "type": "boolean"
+        },
+        "completion": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "workflowOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "ordinal",
+        "path",
+        "latest_path",
+        "delivered_at"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "latest_path": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "delivered_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "workflowSelfInitiated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line",
+        "completion"
+      ],
+      "properties": {
+        "line": {
+          "type": "string"
+        },
+        "instruction_path": {
+          "type": "string"
+        },
+        "completion": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "workflowDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "ordinal",
+        "step",
+        "role",
+        "output",
+        "warnings"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "delivered",
+            "provisional"
+          ]
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "step": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/$defs/workflowOutput"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workflowDeliveryWarning"
+          }
+        }
+      }
+    },
+    "workflowDeliveryWarning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
         }
       }
     },

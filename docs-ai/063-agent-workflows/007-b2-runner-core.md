@@ -209,7 +209,10 @@ Everything lives in `supacode/Domain/Workflow/` (app target) plus three Shared t
   a fresh nudge; `run.json` records the issue codes under `status.attention.issues`.
 - After the automatic nudge is spent (or after "Keep waiting"), a later `turn-ended` still earns
   `idle_grace` before the run asks for attention; only an `idle_grace` that expires idle
-  escalates. `needs-input` and heuristic `blocked` raise attention but keep watching, so a
+  escalates. A grace expiry that saw activity (`working`, `session-start`, `progress`) re-arms
+  the same grace (amended by B3, [008](008-b3-runner-wiring.md): the original policy only
+  cleared the flag, and a freshly launched agent whose first detector `working` arrived after
+  its hook `turn-ended` left the watchdog silent for good). `needs-input` and heuristic `blocked` raise attention but keep watching, so a
   later `turn-ended` without delivery can still nudge.
 - Skip of an `action` step is not offered (Retry / Cancel); Skip of a `launch` step leaves the
   role without a pane, and a later `message` to it raises `agent_gone:not_launched` with

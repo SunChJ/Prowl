@@ -689,18 +689,64 @@ public struct PaneInput: Codable, Sendable {
 // MARK: - Workflow
 
 nonisolated public enum WorkflowInputAction: String, Codable, Sendable {
-  /// Discover definitions for a worktree; the only workflow action that crosses the socket today.
   case list
+  case run
+  case status
+  case done
+  case cancel
 }
 
+/// The wire request for the workflow command family (docs-ai 063 B1/B3). Fields are
+/// action-specific; the app handler ignores the ones that do not belong to `action`.
 nonisolated public struct WorkflowInput: Codable, Sendable {
   public let action: WorkflowInputAction
-  /// Worktree whose repo source is searched: any 060 target; `.none` = the caller's pane, then
-  /// the focused worktree.
+  /// `list`: the worktree whose repo source is searched. `run`: the source pane (a workflow with a
+  /// `current` role) or worktree. `.none` = the caller's pane, then the focused worktree (`list`).
   public let target: TargetSelector
+  /// `run`: workflow id or unique name.
+  public let workflow: String?
+  /// `run`: `<role>=<binding>` overrides (dsl-spec §9).
+  public let roleBindings: [String]
+  /// `run`: `<name>=<value>` inputs.
+  public let inputValues: [String]
+  /// `run`: step ids skipped at start.
+  public let skippedSteps: [String]
+  /// `status` / `cancel`: the run; `done`: the manual target together with `stepID`.
+  public let runID: String?
+  public let stepID: String?
+  /// `done`: the delivered output body (already read by the CLI).
+  public let body: String?
+  public let verdict: String?
+  /// `done`: `--token` or `$PROWL_WORKFLOW_TOKEN`; correlation only, never authentication.
+  public let token: String?
+  /// `done`: deliver to the explicit target even when the caller pane belongs to another step.
+  public let force: Bool
 
-  public init(action: WorkflowInputAction = .list, target: TargetSelector = .none) {
+  public init(
+    action: WorkflowInputAction = .list,
+    target: TargetSelector = .none,
+    workflow: String? = nil,
+    roleBindings: [String] = [],
+    inputValues: [String] = [],
+    skippedSteps: [String] = [],
+    runID: String? = nil,
+    stepID: String? = nil,
+    body: String? = nil,
+    verdict: String? = nil,
+    token: String? = nil,
+    force: Bool = false
+  ) {
     self.action = action
     self.target = target
+    self.workflow = workflow
+    self.roleBindings = roleBindings
+    self.inputValues = inputValues
+    self.skippedSteps = skippedSteps
+    self.runID = runID
+    self.stepID = stepID
+    self.body = body
+    self.verdict = verdict
+    self.token = token
+    self.force = force
   }
 }
