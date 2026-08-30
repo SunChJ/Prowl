@@ -2,8 +2,9 @@
 
 ## Status
 
-Planned on `feat/workflow-runner-wiring-b3` (2026-08-29), after B2 merged as
-[#743](https://github.com/onevcat/Prowl/pull/743). B3 is the R2a slice that powers the
+Implemented on `feat/workflow-runner-wiring-b3` (2026-08-29/30), after B2 merged as
+[#743](https://github.com/onevcat/Prowl/pull/743); PR
+[#744](https://github.com/onevcat/Prowl/pull/744). B3 is the R2a slice that powers the
 engine for CLI callers. C1 owns workflow presentation and user attention controls; C2 owns the
 start sheet and interactive binding picker.
 

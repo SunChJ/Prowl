@@ -34,7 +34,7 @@ say when each is cut:
 | Release | State | Next action |
 | --- | --- | --- |
 | R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
-| R2a | In progress | B1 #740, #726 T0 #739, #733 #741, and B2 #743 merged; B3 in progress (record [063.008](008-b3-runner-wiring.md)) |
+| R2a | In progress | B1 #740, #726 T0 #739, #733 #741, and B2 #743 merged; B3 = #744 (review; record [063.008](008-b3-runner-wiring.md)) |
 | R2b | Planned | after R2a ships |
 | R3 | Planned | after R2b ships |
 
