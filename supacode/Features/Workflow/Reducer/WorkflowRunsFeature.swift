@@ -405,13 +405,16 @@ struct WorkflowRunsFeature {
     .run { send in
       for await batch in batches {
         for effect in batch.effects {
-          if await queue.isStale(runID, batch.sequence) {
+          // A fenced batch still performs its bookkeeping (records, logs, dispatch completions
+          // and abandonments, close, notify) — those belong to transitions the machine already
+          // made — but skips what would act on a pane or the worktree for an invocation the
+          // run has left (`WorkflowRunEffect.isRevocable`), effect by effect.
+          if effect.isRevocable, await queue.isStale(runID, batch.sequence) {
             Self.logger.info("[Workflow] Skipped stale effect of run \(runID): \(effect)")
-            break
+            continue
           }
           let outcome = await perform(
-            effect, runID: runID, session: batch.session, send: send,
-            isStale: { await queue.isStale(runID, batch.sequence) })
+            effect, runID: runID, session: batch.session, send: send, sequence: batch.sequence)
           if outcome == .stop { break }
         }
       }
@@ -515,10 +518,13 @@ struct WorkflowRunsFeature {
     runID: UUID,
     session: WorkflowRunSession,
     send: Send<Action>,
-    isStale: @Sendable () async -> Bool
+    sequence: Int
   ) async -> StepOutcome {
     let store = session.store
     let timestamp = now
+    let queue = queue
+    // Read on the main actor right before a pane is touched: no cancel can slip in between.
+    let isLive: @MainActor () -> Bool = { !queue.isStale(runID, sequence) }
     switch effect {
     case .awaitRoleIdle, .cancelRoleWait, .armWatchdog, .disarmWatchdog:
       // Observers never enter the ordered queue.
@@ -574,16 +580,16 @@ struct WorkflowRunsFeature {
             .event(runID: runID, .injectionFailed(ordinal: ordinal, failure.injectionFailure)))
           return .stop
         }
-        // A cancel that landed while the record was being issued must not see a typed line.
-        if await isStale(), let dispatchID {
-          activation.cancel(dispatchID)
-          return .stop
-        }
       }
-      switch await runtime.deliverLine(session.worktree, surfaceID, line) {
+      switch await runtime.deliverLine(session.worktree, surfaceID, line, isLive) {
       case .delivered:
         await send(
           .event(runID: runID, .injectionSucceeded(ordinal: ordinal, dispatchID: dispatchID)))
+      case .stale:
+        // A cancel landed while the record was being issued: nothing was typed; give the
+        // issuance back and let the fence swallow the rest of the batch.
+        if let dispatchID { activation.cancel(dispatchID) }
+        return .stop
       case .insertFailed:
         if let dispatchID { activation.cancel(dispatchID) }
         await send(.event(runID: runID, .injectionFailed(ordinal: ordinal, .insertFailed)))
@@ -595,7 +601,8 @@ struct WorkflowRunsFeature {
       }
 
     case .typeLine(let role, let surfaceID, let line):
-      if runtime.deliverLine(session.worktree, surfaceID, line) != .delivered {
+      let delivery = await runtime.deliverLine(session.worktree, surfaceID, line, isLive)
+      if delivery != .delivered && delivery != .stale {
         Self.logger.warning("[Workflow] Could not type into role '\(role)' of run \(runID).")
       }
 
@@ -629,11 +636,15 @@ struct WorkflowRunsFeature {
         },
         outgoingAgent: session.run.bindings.values.first { $0.source == .current }?.pane?.agent,
         now: timestamp)
+      // A native action that already started runs to completion (its writes are the handoff
+      // store's own atomic operations); a run that was cancelled meanwhile discards the result.
       do {
         let outputs = try await WorkflowNativeActionRunner().execute(
           actionID: actionID, inputs: inputs, context: context)
+        guard await isLive() else { return .stop }
         await send(.event(runID: runID, .actionCompleted(stepID: stepID, outputs: outputs)))
       } catch {
+        guard await isLive() else { return .stop }
         await send(.event(runID: runID, .actionFailed(stepID: stepID, reason: "\(error)")))
       }
 
@@ -677,5 +688,21 @@ struct WorkflowRunsFeature {
       queue.finish(runID)
     }
     return .continue
+  }
+}
+
+extension WorkflowRunEffect {
+  /// Effects that act on a pane or the worktree for the invocation in flight, which a fence
+  /// (retry / relaunch / skip / cancel / an ended run) must keep from running late. Everything
+  /// else — records, logs, materialized files, dispatch completions and abandonments, close,
+  /// notify, teardown — belongs to a transition the machine already made and still runs.
+  nonisolated var isRevocable: Bool {
+    switch self {
+    case .openActivation, .inject, .typeLine, .launch, .runAction: true
+    case .awaitRoleIdle, .cancelRoleWait, .materializeInstruction, .materializeSkill, .notify, .close,
+      .abandonActivation, .completeActivation, .armWatchdog, .disarmWatchdog, .persistOutput, .persist, .log,
+      .finished:
+      false
+    }
   }
 }

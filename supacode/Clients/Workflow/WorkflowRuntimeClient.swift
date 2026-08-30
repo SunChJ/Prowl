@@ -11,6 +11,8 @@ nonisolated enum WorkflowTextDelivery: Equatable, Sendable {
   case delivered
   case insertFailed
   case submitFailed
+  /// The liveness guard failed right before insertion: nothing was typed.
+  case stale
 }
 
 /// How a `message` step's idle wait ended (dsl-spec §10: a `working` role is never injected into).
@@ -41,8 +43,10 @@ struct WorkflowRuntimeClient: Sendable {
   /// The #733 idle precondition without its five-second cap: exact `turn-ended` evidence first,
   /// a stabilized detector view otherwise; returns when the role can receive a line.
   var waitForRole: @MainActor @Sendable (UUID) async -> WorkflowRoleWaitOutcome
-  /// `insertCommittedText` + `submitLine` as one operation.
-  var deliverLine: @MainActor @Sendable (Worktree, UUID, String) -> WorkflowTextDelivery
+  /// `insertCommittedText` + `submitLine` as one operation, entered only if the guard still
+  /// holds at that moment (the run's queue fence, checked on the same main-actor turn as the
+  /// insertion so a cancel cannot slip in between).
+  var deliverLine: @MainActor @Sendable (Worktree, UUID, String, @MainActor () -> Bool) -> WorkflowTextDelivery
   /// Launches the frozen profile plan with the rendered kickoff prompt and the child-only
   /// workflow environment; issues and binds the launch activation when the step expects a delivery.
   var launch:
@@ -56,7 +60,7 @@ struct WorkflowRuntimeClient: Sendable {
 extension WorkflowRuntimeClient: DependencyKey {
   static let liveValue = WorkflowRuntimeClient(
     waitForRole: { _ in .cancelled },
-    deliverLine: { _, _, _ in .insertFailed },
+    deliverLine: { _, _, _, _ in .insertFailed },
     launch: { _, _, _ in .failure(.failed("WorkflowRuntimeClient.launch is not configured")) },
     close: { _, _ in },
     notify: { _, _ in }
@@ -64,7 +68,7 @@ extension WorkflowRuntimeClient: DependencyKey {
 
   static let testValue = WorkflowRuntimeClient(
     waitForRole: { _ in .cancelled },
-    deliverLine: { _, _, _ in .insertFailed },
+    deliverLine: { _, _, _, _ in .insertFailed },
     launch: { _, _, _ in .failure(.failed("No test workflow runtime configured.")) },
     close: { _, _ in },
     notify: { _, _ in }

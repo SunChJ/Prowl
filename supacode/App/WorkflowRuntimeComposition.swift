@@ -29,9 +29,10 @@ final class WorkflowPaneReservations {
     surfaceIDs.remove(surfaceID)
   }
 
-  /// Reservations still worth honoring: the pane exists and no run has bound it yet.
-  func pending(bound: Set<UUID>, isLive: (UUID) -> Bool) -> Set<UUID> {
-    surfaceIDs = surfaceIDs.filter { !bound.contains($0) && isLive($0) }
+  /// Reservations still worth honoring: the pane exists and no run — live or ended — has bound
+  /// it yet (a pane a finished run kept is free again).
+  func pending(everBound: Set<UUID>, isLive: (UUID) -> Bool) -> Set<UUID> {
+    surfaceIDs = surfaceIDs.filter { !everBound.contains($0) && isLive($0) }
     return surfaceIDs
   }
 }
@@ -181,10 +182,12 @@ extension SupacodeApp {
         await waitForWorkflowRole(
           surfaceID: surfaceID, terminalManager: terminalManager, storeBox: storeBox)
       },
-      deliverLine: { worktree, surfaceID, line in
+      deliverLine: { worktree, surfaceID, line, isLive in
         guard let state = terminalManager.stateIfExists(for: worktree.id) else {
           return .insertFailed
         }
+        // Same main-actor turn as the insertion: a fence raised by a cancel cannot slip in between.
+        guard isLive() else { return .stale }
         guard state.insertCommittedText(line, in: surfaceID) else { return .insertFailed }
         return state.submitLine(in: surfaceID) ? .delivered : .submitFailed
       },
@@ -414,7 +417,7 @@ extension SupacodeApp {
     let profiles = settings.agentProfiles
     let bundledSkills =
       Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) } ?? []
-    let bound = Set(appStore.state.workflowRuns.activeSessions.flatMap(\.boundSurfaceIDs))
+    let everBound = Set(appStore.state.workflowRuns.sessions.values.flatMap(\.boundSurfaceIDs))
     return WorkflowAdmissionEnvironment(
       profiles: profiles,
       recommendation: { repositoryRootURL in
@@ -435,7 +438,8 @@ extension SupacodeApp {
       pendingDispatchID: { surfaceID in
         terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID)?.record.id
       },
-      busySurfaceIDs: reservations.pending(bound: bound, isLive: { terminalManager.isSurfaceLive($0) }),
+      busySurfaceIDs: reservations.pending(
+        everBound: everBound, isLive: { terminalManager.isSurfaceLive($0) }),
       worktree: { id in
         resolveCLITerminalWorktree(
           id: id, repositories: Array(appStore.state.repositories.repositories))

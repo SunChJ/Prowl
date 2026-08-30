@@ -233,6 +233,22 @@ whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` 
   existed, so an immediate `done` could be `STEP_NOT_EXPECTING` (the reply now waits for the
   record through the same rendezvous as `done`). P2: a duplicate request id was registered
   twice (refused with `REQUEST_CONFLICT` now).
+- **Round 2 — 5 findings (0 P0, 4 P1, 1 P2), all accepted and fixed; round-1 fixes
+  verified.** P1: the batch-wide fence also dropped the *bookkeeping* of transitions the
+  machine had already made — cancelling step B before the executor reached
+  `completeActivation(A)` of the delivered step A left A's record pending forever — so a fenced
+  batch now skips only pane- and worktree-facing effects (`WorkflowRunEffect.isRevocable`:
+  `openActivation`, `inject`, `typeLine`, `launch`, `runAction`) and still performs records,
+  logs, completions, abandonments, close, notify; the separate stale check before typing left a
+  check-to-use gap (and the no-`expect` and nudge lines had none) — the liveness guard is now
+  evaluated inside `deliverLine` on the same main-actor turn as the insertion, for every typed
+  line, answering `stale` (the issuance is returned, nothing typed); a native action already
+  running is not cancelled (its writes are the handoff store's own atomic operations) but its
+  result is dropped when the run left meanwhile — documented as a limitation, with the
+  liveness re-check after `execute`; reservations were pruned only against *active* bindings,
+  so a pane a finished run kept stayed reserved forever (pruned against every run that ever
+  bound it now). P2: a waiter the socket cancelled left its verified role behind and its id
+  reusable before the reducer answered (`inFlight` ids stay claimed until `resolve`).
 
 ## Non-goals
 

@@ -279,6 +279,37 @@ struct WorkflowRuntimeCoordinatorTests {
     #expect((await first.value).error?.code == CLIErrorCode.stepNotExpecting)
   }
 
+  /// A waiter the socket cancelled frees its slot, but its request id stays in flight until the
+  /// reducer answers: a reused id can neither be answered by the old transaction nor inherit
+  /// its verified caller role.
+  @Test func aCancelledWaitersRequestIDStaysUnusableUntilTheReducerAnswers() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let session = try fixture.waitingSession()
+    fixture.sessions = [session]
+    let first = Task { @MainActor in
+      await fixture.coordinator.done(
+        WorkflowInput(action: .done, body: "x", token: "TOKEN-1"), callerPane: Self.authorCaller)
+    }
+    await Task.yield()
+    first.cancel()
+    #expect((await first.value).error?.code == CLIErrorCode.requestCancelled)
+    #expect(fixture.rendezvous.pendingRequestIDs.isEmpty)
+
+    let reuse = await fixture.coordinator.done(
+      WorkflowInput(action: .done, runID: session.run.id.uuidString, stepID: "brief", body: "y"), callerPane: nil)
+    #expect(reuse.error?.code == CLIErrorCode.requestConflict)
+    #expect(fixture.sent.count == 1)
+
+    // The old transaction's answer goes nowhere, and only then is the id free again.
+    fixture.coordinator.resolve(fixture.requestID, .failed(code: CLIErrorCode.stepNotExpecting, message: "late"))
+    fixture.answer = .failed(code: CLIErrorCode.stepNotExpecting, message: "fresh")
+    let fresh = await fixture.coordinator.done(
+      WorkflowInput(action: .done, runID: session.run.id.uuidString, stepID: "brief", body: "y"), callerPane: nil)
+    #expect(fresh.error?.message == "fresh")
+    #expect(fixture.sent.count == 2)
+  }
+
   /// Tokens are spelled only to the pane that owns the activation: a manual delivery advancing
   /// the run to the same role's next step must not learn that step's completion command.
   @Test func aManualDeliveryIsAnsweredWithoutTheNextActivationsToken() async throws {
@@ -468,6 +499,20 @@ struct WorkflowRuntimeCoordinatorTests {
     #expect(payload.status.state == "needs_attention")
     #expect(payload.status.attention?.reason == "injection_failed:role_blocked")
     #expect(payload.activation == nil)
+  }
+
+  /// A pane a finished run kept is free again: reservations are pruned against every run that
+  /// ever bound the pane, not only the active ones.
+  @Test func reservationsAreReleasedOncePaneWasBoundEvenByAFinishedRun() {
+    let reservations = WorkflowPaneReservations()
+    let launched = UUID()
+    let gone = UUID()
+    reservations.reserve(launched)
+    reservations.reserve(gone)
+    #expect(reservations.pending(everBound: [], isLive: { _ in true }) == [launched, gone])
+    #expect(reservations.pending(everBound: [], isLive: { $0 == launched }) == [launched])
+    #expect(reservations.pending(everBound: [launched], isLive: { _ in true }).isEmpty)
+    #expect(reservations.pending(everBound: [], isLive: { _ in true }).isEmpty, "pruning is permanent")
   }
 
   // MARK: - cancel

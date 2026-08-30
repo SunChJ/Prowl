@@ -47,6 +47,9 @@ final class WorkflowRuntimeCoordinator {
   /// The verified caller role of each outstanding `run` / `done`, so the answer spells completion
   /// commands only to the pane that owns the activation (never to a manual or forced caller).
   private var callerRoles: [UUID: String] = [:]
+  /// Request ids the reducer still owes an answer for; a cancelled waiter frees its rendezvous
+  /// slot, but its id stays unusable until that answer arrives so nothing crosses requests.
+  private var inFlight: Set<UUID> = []
 
   init(dependencies: Dependencies) {
     self.dependencies = dependencies
@@ -74,11 +77,8 @@ final class WorkflowRuntimeCoordinator {
       // A self-initiated first step hands the caller its completion command: answer only once
       // the activation record that attributes that command exists (or its opening failed).
       let requestID = dependencies.makeRequestID()
-      guard dependencies.rendezvous.register(requestID) else {
+      guard claim(requestID, callerRole: admitted.callerRole) else {
         return Self.failure(code: CLIErrorCode.requestConflict, message: "Workflow request id is already in use.")
-      }
-      if let callerRole = admitted.callerRole {
-        callerRoles[requestID] = callerRole
       }
       dependencies.send(.started(admitted.session, effects: admitted.effects, requestID: requestID))
       return await dependencies.rendezvous.wait(for: requestID)
@@ -166,14 +166,22 @@ final class WorkflowRuntimeCoordinator {
       body: body,
       verdict: input.verdict,
       source: attribution.source)
-    guard dependencies.rendezvous.register(request.requestID) else {
+    guard claim(request.requestID, callerRole: attribution.callerRole) else {
       return Self.failure(code: CLIErrorCode.requestConflict, message: "Workflow request id is already in use.")
-    }
-    if let callerRole = attribution.callerRole {
-      callerRoles[request.requestID] = callerRole
     }
     dependencies.send(.deliver(request))
     return await dependencies.rendezvous.wait(for: request.requestID)
+  }
+
+  /// Registers a request with the rendezvous and remembers its verified caller role; false when
+  /// the id is still in flight (or waiting) for another request.
+  private func claim(_ requestID: UUID, callerRole: String?) -> Bool {
+    guard !inFlight.contains(requestID), dependencies.rendezvous.register(requestID) else { return false }
+    inFlight.insert(requestID)
+    if let callerRole {
+      callerRoles[requestID] = callerRole
+    }
+    return true
   }
 
   private struct Attribution {
@@ -254,6 +262,7 @@ final class WorkflowRuntimeCoordinator {
 
   /// The reducer's answer to a `run` or `done` request (through `WorkflowCLIResponderClient`).
   func resolve(_ requestID: UUID, _ resolution: WorkflowRequestResolution) {
+    inFlight.remove(requestID)
     let callerRole = callerRoles.removeValue(forKey: requestID)
     let response: CommandResponse
     switch resolution {

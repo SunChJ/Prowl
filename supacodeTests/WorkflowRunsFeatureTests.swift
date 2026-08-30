@@ -40,6 +40,8 @@ struct WorkflowRunsFeatureTests {
     var responses: [(requestID: UUID, resolution: WorkflowRequestResolution)] = []
     var roleWaitOutcome: WorkflowRoleWaitOutcome = .idle
     var launchOutcome: Result<WorkflowLaunchResult, WorkflowLaunchError>?
+    /// When set, the fake terminal reports the line as stale instead of typing it.
+    var staleLines = false
     private var dispatchCounter = 0
     private var paneCounter = 10
 
@@ -65,7 +67,8 @@ struct WorkflowRunsFeatureTests {
     var runtime: WorkflowRuntimeClient {
       WorkflowRuntimeClient(
         waitForRole: { [self] _ in roleWaitOutcome },
-        deliverLine: { [self] _, surfaceID, line in
+        deliverLine: { [self] _, surfaceID, line, isLive in
+          guard isLive(), !staleLines else { return .stale }
           let pointer = line.split(separator: " ").first { $0.hasPrefix("/") }.map(String.init)
           let existed = pointer.map { FileManager.default.fileExists(atPath: $0) } ?? true
           typed.append(WorkflowTypedLineRecord(surfaceID: surfaceID, line: line, instructionExisted: existed))
@@ -550,6 +553,53 @@ struct WorkflowRunsFeatureTests {
     // The cancel's own abandon of `dispatch-0` is an ordered effect the recording queue never
     // performs; the late injection's record is abandoned directly by the reducer.
     #expect(fixture.abandoned.map(\.dispatchID) == ["stale-1", "late-1"])
+  }
+
+  /// The terminal refuses a line whose fence rose on the very turn it would have been typed: the
+  /// issuance is returned and no event reaches the machine.
+  @Test(.dependencies) func aStaleLineReturnsItsIssuanceAndTypesNothing() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    fixture.staleLines = true
+    let store = makeStore(fixture, queue: WorkflowEffectQueue().client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
+    // Give the executor a moment: it must open the record, see the stale line, and cancel it.
+    for _ in 0..<50 where fixture.cancelled.isEmpty {
+      await Task.yield()
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(fixture.opened.count == 1)
+    #expect(fixture.cancelled == ["dispatch-1"])
+    #expect(fixture.typed.isEmpty)
+    #expect(store.state.sessions[runID]?.run.phase == .injecting(ordinal: 1))
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  /// Bookkeeping survives a fence; only pane- and worktree-facing effects are revocable.
+  @Test func onlyPaneAndWorktreeFacingEffectsAreRevocable() {
+    let pane = UUID()
+    let request = WorkflowLaunchRequest(
+      role: "r", ordinal: 1, profile: Self.reviewerProfile, prompt: "p", environment: [:], placement: .tab,
+      direction: .right, background: false, anchorSurfaceID: nil, skill: nil, expectsDelivery: true,
+      redelivery: false)
+    #expect(WorkflowRunEffect.openActivation(role: "r", surfaceID: pane, ordinal: 1).isRevocable)
+    #expect(
+      WorkflowRunEffect.inject(role: "r", surfaceID: pane, ordinal: 1, line: "l", opensActivation: true).isRevocable)
+    #expect(WorkflowRunEffect.typeLine(role: "r", surfaceID: pane, line: "l").isRevocable)
+    #expect(WorkflowRunEffect.launch(request).isRevocable)
+    #expect(WorkflowRunEffect.runAction(stepID: "s", actionID: "git.context", inputs: [:]).isRevocable)
+    #expect(!WorkflowRunEffect.completeActivation(dispatchID: "d", summary: "s").isRevocable)
+    #expect(!WorkflowRunEffect.abandonActivation(dispatchID: "d", reason: "r").isRevocable)
+    #expect(!WorkflowRunEffect.persist.isRevocable)
+    #expect(!WorkflowRunEffect.persistOutput(name: "o", ordinal: 1, body: "b").isRevocable)
+    #expect(!WorkflowRunEffect.log("l").isRevocable)
+    #expect(!WorkflowRunEffect.close(role: "r", surfaceID: pane).isRevocable)
+    #expect(!WorkflowRunEffect.notify("n").isRevocable)
+    #expect(!WorkflowRunEffect.finished(.cancelled).isRevocable)
   }
 
   // MARK: - Start rendezvous
