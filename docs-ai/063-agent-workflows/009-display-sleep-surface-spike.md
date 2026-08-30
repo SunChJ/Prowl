@@ -13,11 +13,10 @@ a hard precondition of renderer initialization, and Ghostty already exposes the 
 (`window-vsync`) that removes that precondition. Upstream Ghostty fixed the same failure on
 2026-08-05. The recommendation below supersedes the first-round one.
 
-This is not an R2a release blocker. It does establish a required follow-up: interactive
-launches must survive display sleep through the surface-level fix, not through an
-execution-mode substitution. That fix landed the same day as
-[#746](https://github.com/onevcat/Prowl/pull/746) (upstream backport into the GhosttyKit fork);
-see [Outcome](#outcome).
+This is not an R2a release blocker. The required surface-level fix is implemented in
+[#746](https://github.com/onevcat/Prowl/pull/746), which backports the upstream repair into the
+GhosttyKit fork. No Prowl-side display override or execution-mode substitution remains planned
+for this issue; see [Outcome](#outcome).
 
 ## Problem summary
 
@@ -171,71 +170,58 @@ eager CoreVideo display link that `window-vsync = true` demands; a surface creat
 `window-vsync = false` is a fully working terminal in Ghostty's change-driven rendering mode,
 during display sleep and after wake.
 
-Consequences for the first-round recommendation:
+Final decision:
 
-- Typed display-unavailable classification and honest ordinary tab/split creation remain
-  correct and are still wanted.
+- [#746](https://github.com/onevcat/Prowl/pull/746) resolves display sleep at the Ghostty layer;
+  no display-specific Prowl launch policy is required.
 - “A path that truly works without a display must not create a Ghostty/AppKit terminal
   surface” is withdrawn. Headless execution is no longer justified by display sleep; the
   `on_display_unavailable` policy and the `HeadlessAgentExecutor` scope expansion are dropped
   from this problem's plan (headless stays a V2 topic on its own merits, see
   [the DSL specification](dsl-spec.md#12-reserved-for-v2)).
+- Honest propagation of an otherwise unknown native surface-creation failure remains useful
+  generic hardening, independent of display sleep and outside the R2a release gate.
 
-## Recommended follow-up
+## Resolution and residual hardening
 
-### 1. Ship a display-aware surface creation mode (Prowl-only, no GhosttyKit rebuild)
-
-When native surface creation is about to run and `CGGetActiveDisplayList` reports zero active
-displays, create the surface with `window-vsync = false` and restore the user's setting
-afterwards. Mechanically this is a config override pushed through the existing
-`GhosttyRuntime.reloadConfig`/`applyConfig` path (the same route `loadTerminalProgramOverrides`
-uses to append Prowl-owned keys after the user's config), scoped to the creation call. Apply it
-to every creation path — Profile launches, ordinary tabs, and splits — not only to Profiles.
-
-Constraints:
-
-- Keep the native result check. Display state can change between the preflight and
-  `ghostty_surface_new`; on failure with zero active displays, retry once with the override
-  before reporting the typed error.
-- The override is per surface and permanent for that surface: it stays in change-driven
-  rendering after wake (slightly more redraw work under load; this is the mode Ghostty ships
-  for non-macOS and the fallback upstream now uses for exactly this case). Record it in the
-  surface's diagnostics so a later renderer complaint can be traced.
-- Do not make `window-vsync = false` Prowl's global default; Ghostty defaults to vsync for
-  documented reasons.
-- Add reducer/runtime tests for the preflight decision and the restore, and a live check under
-  `pmset displaysleepnow` in the release runbook.
-
-Zero-code interim for users: `window-vsync = false` in the user's Ghostty config removes the
-failure today.
-
-### 2. Make display unavailability a typed launch outcome
-
-Still required. Map the zero-display case to a typed error (`DISPLAY_UNAVAILABLE`,
-provisional) distinct from hook registration, Profile planning, authentication, and unknown
-native failures. With follow-up 1 in place this becomes the residual diagnostic for the retry
-path rather than the primary user-facing outcome.
-
-### 3. Make ordinary tab and split creation honest
-
-Unchanged. The non-Profile paths must check the arm result, roll back the Swift tab/split/target
-state, and return a typed failure instead of a dead shell with a valid identifier.
-
-### 4. Take the upstream fix into the fork — done in #746
+### 1. Take the upstream fix into the fork — implemented in #746
 
 The durable fix is upstream #13639: surfaces created without a display get their display link
-lazily once a display is available, so the per-surface non-vsync trade-off in follow-up 1
-disappears. [#746](https://github.com/onevcat/Prowl/pull/746) backports it onto
-`onevcat/ghostty` `release/v1.3.1-patched` (`a0671ce9`), rebuilds GhosttyKit with Xcode 26.3, and
-re-pins the prebuilt artifacts. Drop the fork patch when the submodule moves to an upstream tag
-that contains `a177ba90af`.
+lazily once a display is available. [#746](https://github.com/onevcat/Prowl/pull/746)
+backports it onto `onevcat/ghostty` `release/v1.3.1-patched` (`a0671ce9`), rebuilds GhosttyKit
+with Xcode 26.3, and re-pins the prebuilt artifacts. Drop the fork patch when the submodule
+moves to an upstream tag that contains `a177ba90af`.
 
-### 5. Workflow semantics
+### 2. Prowl-side `window-vsync` override — not planned
+
+Before the GhosttyKit rebuild succeeded, the viable Prowl-only contingency was to detect zero
+active displays, create the surface with `window-vsync = false`, and restore the user's setting
+afterwards through the existing `GhosttyRuntime.reloadConfig` / `applyConfig` path. The live
+spike proved that mechanism works, but #746 makes it unnecessary and avoids its per-surface
+non-vsync trade-off.
+
+Do not implement this override while the fork carries the upstream fix. If a future Ghostty pin
+regresses, restore or forward-port the upstream behavior first; use this experiment as diagnosis
+and a bounded contingency, not as a standing product fallback.
+
+Zero-code interim for users: `window-vsync = false` in the user's Ghostty config removes the
+failure on a build that does not yet contain #746.
+
+### 3. Make ordinary tab and split creation honest — optional generic hardening
+
+The non-Profile paths currently ignore the `armSurfaceCreation()` result. Independently of
+display sleep, they should eventually roll back the Swift tab/split/target state and return an
+honest failure when `ghostty_surface_new` fails for an unknown reason. Profile launches already
+do this through `.surfaceCreationFailed`.
+
+Do not add a display-specific `DISPLAY_UNAVAILABLE` contract without a reproducible residual
+failure after #746. This hardening is not part of the display-sleep fix or the R2a release gate.
+
+### 4. Workflow semantics
 
 No execution-mode substitution is needed. An interactive role launched while the display sleeps
-is the same Ghostty pane with the same `message`/`repeat`/`focus`/`close` semantics; C1 needs no
-fallback states for this case. The only state worth surfacing is the typed failure from
-follow-up 2 when both the normal and the overridden creation fail.
+is the same Ghostty pane with the same `message` / `repeat` / `focus` / `close` semantics. C1
+needs no display-sleep fallback state.
 
 ## Outcome
 
@@ -246,15 +232,16 @@ interval; the unified log shows `error creating display link; using fallback ren
 err=error.CreationFailed` for each dark surface and, after wake, `created display link` followed
 by `updating display link display id=2` — Prowl's `windowDidChangeScreen` →
 `ghostty_surface_set_display_id` is the retry trigger, exactly as upstream intended. The
-follow-up 1 override is therefore not needed as long as the fork carries this patch; it remains
-the fallback design if a future Ghostty pin regresses.
+Prowl-side override is therefore not needed. If a future Ghostty pin regresses, the default
+response is to restore this upstream behavior rather than substitute execution modes or retain
+a parallel Prowl policy.
 
 ## Release impact
 
 R2a remains B3 plus C1 as recorded in [the release plan](release-plan.md#r2a--workflow-engine-and-cli).
 Once #746 ships, interactive-workflow verification no longer needs the “keep the display awake”
-caveat; the typed display-unavailable classification and honest tab/split creation
-(follow-ups 2 and 3) remain worthwhile hardening for the residual native failures.
+caveat. Generic native-failure propagation for ordinary tabs/splits remains optional hardening,
+not display-sleep work and not an R2a requirement.
 
 ## Non-goals of this spike
 
@@ -263,7 +250,8 @@ caveat; the typed display-unavailable classification and honest tab/split creati
 - No virtual-display or screen-wake workaround was attempted.
 - No fallback was proposed for arbitrary launch failures: hook, Profile, credential, renderer,
   and unknown native failures still fail closed.
-- No Prowl-side fallback (follow-up 1) was implemented; the fork backport made it unnecessary.
+- No Prowl-side fallback was implemented or remains planned; the fork backport made it
+  unnecessary.
 
 ## References
 

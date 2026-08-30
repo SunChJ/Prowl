@@ -600,10 +600,10 @@ attaches hooks through A2's launch boundary.
   pinned GhosttyKit, not in Prowl's launch ordering: with zero active displays the renderer's
   eager CoreVideo display link (`window-vsync = true`) aborts `ghostty_surface_new`, while
   `window-vsync = false` — even toggled at runtime — creates fully working tabs, splits, and
-  Profile panes that render normally after wake. The recommended follow-up is a display-aware
-  creation override in Prowl plus typed display-unavailable classification and honest
-  tab/split creation; the headless-or-fail workflow policy is withdrawn (upstream Ghostty fixed
-  the same failure in #13639) — see
+  Profile panes that render normally after wake. #746 implements upstream Ghostty's #13639 fix
+  in the fork, so neither a Prowl-side display override nor the headless-or-fail workflow policy
+  remains planned; honest rollback for otherwise unknown tab/split creation failures remains
+  optional generic hardening — see
   [009-display-sleep-surface-spike.md](009-display-sleep-surface-spike.md).
 - Updated 2026-08-29 (B2, grilled): the runner core is a pure reducer (`WorkflowRunMachine`)
   whose effects B3 interprets; activation tokens are checked in the machine, the dispatch store
