@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | In progress — R1 shipped in v2026.8.29; R2a under way: B1 (#740, [006](006-b1-definitions.md)), #733 (#741), #726 T0 (#739), and B2 (#743, [007](007-b2-runner-core.md)) merged; B3 runner wiring = #744 (review; record [008](008-b3-runner-wiring.md)) |
+| **Status** | In progress — R1 shipped in v2026.8.29; R2a under way: B1 (#740, [006](006-b1-definitions.md)), #733 (#741), #726 T0 (#739), B2 (#743, [007](007-b2-runner-core.md)), and B3 (#744, [008](008-b3-runner-wiring.md)) merged; C1 is next |
 | **Anchor date** | 2026-08-21 |
 | **Primary PRs** | R1: #709 (C0), #710 (A1), #713 (A1b), #714 (A2) — shipped in v2026.8.29; R2a: #740 (B1), #743 (B2, [007](007-b2-runner-core.md)); #744 (B3, [008](008-b3-runner-wiring.md)); C1–D3 TBD |
 | **Related** | [047 cross-agent-handoff](../047-cross-agent-handoff/000-plan.md), [049 agents-toolbar-entry](../049-agents-toolbar-entry/000-plan.md), [053 agent-profiles](../053-agent-profiles/000-plan.md), [055 agent-profile-runtimes](../055-agent-profile-runtimes/000-plan.md), [059 agent-transcript-snapshots](../059-agent-transcript-snapshots/000-plan.md), [060 cli-targeting-and-contract-governance](../060-prowl-cli-targeting-and-contract-governance/000-plan.md), [061 native-toolbar-controls](../061-native-toolbar-controls/toolbar-controls.md), [064 agent-completion-signals](../064-agent-completion-signals/000-plan.md) (signal bus, `agents signal` / `agents wait`), [#699 `prowl create pane`](https://github.com/onevcat/Prowl/issues/699), [PR #651 (direction reference, not merged)](https://github.com/onevcat/Prowl/pull/651), [DSL spec (living)](dsl-spec.md), [release plan (living)](release-plan.md), `docs/components/handoff.md`, `docs/components/agent-profiles.md`, `docs/components/cli.md` |
@@ -596,6 +596,15 @@ attaches hooks through A2's launch boundary.
 
 ## Amendments
 
+- Updated 2026-08-30: a two-round display-sleep spike located the `CREATE_FAILED` cause in the
+  pinned GhosttyKit, not in Prowl's launch ordering: with zero active displays the renderer's
+  eager CoreVideo display link (`window-vsync = true`) aborts `ghostty_surface_new`, while
+  `window-vsync = false` — even toggled at runtime — creates fully working tabs, splits, and
+  Profile panes that render normally after wake. #746 implements upstream Ghostty's #13639 fix
+  in the fork, so neither a Prowl-side display override nor the headless-or-fail workflow policy
+  remains planned; honest rollback for otherwise unknown tab/split creation failures remains
+  optional generic hardening — see
+  [009-display-sleep-surface-spike.md](009-display-sleep-surface-spike.md).
 - Updated 2026-08-29 (B2, grilled): the runner core is a pure reducer (`WorkflowRunMachine`)
   whose effects B3 interprets; activation tokens are checked in the machine, the dispatch store
   stays untouched; the watchdog observes each activation through `observeAgentDispatch` +
