@@ -34,7 +34,7 @@ say when each is cut:
 | Release | State | Next action |
 | --- | --- | --- |
 | R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
-| R2a | In progress | B1 #740, #726 T0 #739, #733 #741 merged; B2 = #743 (review; record [063.007](007-b2-runner-core.md)); B3 next |
+| R2a | In progress | B1 #740, #726 T0 #739, #733 #741, and B2 #743 merged; B3 = #744 (review; record [063.008](008-b3-runner-wiring.md)) |
 | R2b | Planned | after R2a ships |
 | R3 | Planned | after R2b ships |
 
@@ -110,7 +110,9 @@ User-visible result: onevcat's daily CLI-driven orchestration is first-class
 
 User-visible result: a workflow file runs from the CLI (`prowl workflow run`), its steps and
 attention states show in the status center, and a coordinating agent can re-dispatch into a
-reviewer it already launched. Parallelism: B1 ∥ #733 ∥ #726 T0 (the two 064 slices do not
+reviewer it already launched. **R2a is released only after both B3 and C1 merge**: B3 intentionally
+leaves attention controls to C1, so a non-strict provisional delivery must never ship as a
+cancel-only production workflow state. Parallelism: B1 ∥ #733 ∥ #726 T0 (the two 064 slices do not
 touch B1's files); #733 must merge before B3 starts. Docs: `workflows.md` (CLI part), `cli.md`, `prowl-cli` skill.
 
 ### R2b — Workflow GUI, docs, and the first built-in

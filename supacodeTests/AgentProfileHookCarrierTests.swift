@@ -174,3 +174,81 @@ struct AgentProfileHookCarrierTests {
     )
   }
 }
+
+/// A workflow `launch` role (docs-ai 063 B3, decision W6): the kickoff prompt replaces the
+/// placeholder the frozen plan was compiled with, and `PROWL_WORKFLOW_*` reach only the child
+/// through carriers the typed command names — the token is never spelled in the pane.
+struct AgentProfileWorkflowCarrierTests {
+  @Test func workflowValuesUseChildOnlyCarriersAndReplaceThePromptWithoutTheDispatchProtocol() throws {
+    let base = AgentProfileLaunchPlan(
+      profileID: UUID(),
+      profileName: "Reviewer",
+      runtime: .codex,
+      invocation: AgentInvocation(executable: "codex", arguments: ["placeholder"]),
+      commandEnvironmentTokens: ["CODEX_HOME=/tmp/home"],
+      placement: .split,
+      splitDirection: .right,
+      surfaceEnvironment: [AgentProfileLaunchPlanner.promptCarrierName: "placeholder"],
+      dedicatedHome: nil
+    )
+    let hooked = base.applyingManagedHook(
+      AgentHookPreparedInvocation(
+        invocation: AgentInvocation(executable: "codex", arguments: ["-c", "notify=[]", "placeholder"]),
+        argumentValues: [1: "notify=[]"]
+      ),
+      resources: AgentHookResources(bundledCLIPath: "/bundle/prowl", socketPath: "/tmp/prowl.sock"),
+      launchCWD: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+      token: "hook-token",
+      coveredEvents: [.turnEnded]
+    )
+    let prompt = "Review the brief.\n\n---\nProwl workflow completion protocol v1:\nprowl workflow done -\n"
+    let attached = try hooked.attachingWorkflow(
+      prompt: prompt,
+      environment: [
+        "PROWL_WORKFLOW_TOKEN": "secret-token",
+        "PROWL_WORKFLOW_RUN": "run-1",
+        "PROWL_WORKFLOW_ROLE": "reviewer",
+      ]
+    )
+
+    #expect(attached.hookRegistration == hooked.hookRegistration)
+    #expect(attached.invocation.arguments.last == prompt)
+    #expect(attached.surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] == prompt)
+    #expect(attached.surfaceEnvironment[AgentProfileLaunchPlanner.dispatchCarrierName] == nil)
+    #expect(!prompt.contains("dispatch completion protocol"))
+    let input = attached.terminalInput
+    #expect(input.contains("PROWL_WORKFLOW_ROLE=\"$PROWL_LAUNCH_WORKFLOW_0\""))
+    #expect(input.contains("PROWL_WORKFLOW_RUN=\"$PROWL_LAUNCH_WORKFLOW_1\""))
+    #expect(input.contains("PROWL_WORKFLOW_TOKEN=\"$PROWL_LAUNCH_WORKFLOW_2\""))
+    #expect(input.contains("-u PROWL_LAUNCH_WORKFLOW_0"))
+    #expect(input.contains("-u PROWL_LAUNCH_WORKFLOW_2"))
+    #expect(input.contains("-u PROWL_LAUNCH_HOOK_TOKEN"))
+    #expect(input.contains("CODEX_HOME=/tmp/home"))
+    #expect(!input.contains("secret-token"))
+    #expect(!input.contains("hook-token"))
+    #expect(!input.contains("Review the brief"))
+    #expect(attached.surfaceEnvironment["PROWL_LAUNCH_WORKFLOW_2"] == "secret-token")
+  }
+
+  @Test func attachingWorkflowRequiresAPromptedPlanAndRejectsNUL() {
+    let unprompted = AgentProfileLaunchPlan(
+      profileID: UUID(), profileName: "Plain", runtime: .claude,
+      invocation: AgentInvocation(executable: "claude", arguments: []),
+      commandEnvironmentTokens: [], placement: .tab, splitDirection: .right, surfaceEnvironment: [:],
+      dedicatedHome: nil)
+    #expect(throws: AgentProfileLaunchPlanError.dispatchRequiresPrompt) {
+      try unprompted.attachingWorkflow(prompt: "x", environment: [:])
+    }
+    let prompted = AgentProfileLaunchPlan(
+      profileID: UUID(), profileName: "Prompted", runtime: .claude,
+      invocation: AgentInvocation(executable: "claude", arguments: ["placeholder"]),
+      commandEnvironmentTokens: [], placement: .tab, splitDirection: .right,
+      surfaceEnvironment: [AgentProfileLaunchPlanner.promptCarrierName: "placeholder"], dedicatedHome: nil)
+    #expect(throws: AgentProfileLaunchPlanError.promptContainsNUL) {
+      try prompted.attachingWorkflow(prompt: "a\0b", environment: [:])
+    }
+    #expect(throws: AgentProfileLaunchPlanError.promptContainsNUL) {
+      try prompted.attachingWorkflow(prompt: "ok", environment: ["PROWL_WORKFLOW_TOKEN": "t\0"])
+    }
+  }
+}

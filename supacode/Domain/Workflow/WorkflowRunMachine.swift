@@ -50,6 +50,9 @@ nonisolated enum WorkflowUserAction: Equatable, Sendable {
 
 nonisolated enum WorkflowRunEvent: Equatable, Sendable {
   case roleIdle(ordinal: Int)
+  /// The idle wait ended without an idle role: the pane is gone, its agent stays blocked, or it
+  /// hosts no agent to inject into. The step enters attention as a failed injection would.
+  case roleUnavailable(ordinal: Int, WorkflowInjectionFailure)
   case injectionSucceeded(ordinal: Int, dispatchID: String?)
   case injectionFailed(ordinal: Int, WorkflowInjectionFailure)
   case launched(ordinal: Int, pane: WorkflowPaneIdentity, dispatchID: String?)
@@ -316,7 +319,7 @@ nonisolated struct WorkflowRunMachine {
     case .injectionSucceeded(let ordinal, let dispatchID):
       guard case .injecting(ordinal) = run.phase else { return [] }
       openWaiting(ordinal: ordinal, dispatchID: dispatchID, effects: &effects)
-    case .injectionFailed(let ordinal, let failure):
+    case .injectionFailed(let ordinal, let failure), .roleUnavailable(let ordinal, let failure):
       applyInjectionFailed(ordinal: ordinal, failure: failure, effects: &effects)
     case .launched(let ordinal, let pane, let dispatchID):
       applyLaunched(ordinal: ordinal, pane: pane, dispatchID: dispatchID, effects: &effects)
@@ -341,7 +344,16 @@ nonisolated struct WorkflowRunMachine {
   private mutating func applyInjectionFailed(
     ordinal: Int, failure: WorkflowInjectionFailure, effects: inout [WorkflowRunEffect]
   ) {
-    guard case .injecting(ordinal) = run.phase, let invocation = invocation(ordinal) else { return }
+    switch run.phase {
+    case .injecting(ordinal):
+      break
+    case .waitingForRole(_, ordinal):
+      // `.roleUnavailable`: the idle wait ended without an idle role; the step fails as an injection would.
+      run.phase = .injecting(ordinal: ordinal)
+    default:
+      return
+    }
+    guard let invocation = invocation(ordinal) else { return }
     if failure == .roleBusy {
       guard let surfaceID = run.bindings[invocation.role]?.pane?.surfaceID else { return }
       run.phase = .waitingForRole(role: invocation.role, ordinal: ordinal)

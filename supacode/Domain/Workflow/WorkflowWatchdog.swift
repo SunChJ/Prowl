@@ -202,15 +202,21 @@ nonisolated struct WorkflowWatchdogPolicy: Equatable, Sendable {
     let active = snapshot.state == "working" || sawActivity
     switch deadline {
     case .turnGrace:
+      // Activity re-arms the same grace: a freshly launched agent's first detector `working`
+      // can arrive after the hook's `turn-ended`, and a watchdog that only cleared the flag
+      // here would wait for a second `turn-ended` that never comes (found live, 063 B3).
       guard !active else {
         sawActivity = false
+        schedule(.turnGrace, settings.turnGrace, &commands)
         return
       }
       escalate(after: .turnGrace, &commands)
     case .idleGrace:
       guard !active else {
         sawActivity = false
-        if mode == .heuristic, snapshot.state == "idle" || snapshot.state == "done" {
+        // Heuristic mode re-arms from the detector's next idle level; exact mode has no such
+        // trigger, so the grace re-arms itself.
+        if mode != .heuristic || snapshot.state == "idle" || snapshot.state == "done" {
           schedule(.idleGrace, settings.idleGrace, &commands)
         }
         return

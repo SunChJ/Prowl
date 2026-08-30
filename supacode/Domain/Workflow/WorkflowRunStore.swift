@@ -495,7 +495,7 @@ nonisolated struct WorkflowRunStore: Sendable {
   /// `interrupted`. Only a small header (`version`, `run.status.state`) is read before a run is
   /// selected, so a record of another version is left alone; a v1 record that cannot be decoded
   /// or a run directory that fails the containment gate is reported and left untouched.
-  func markInterruptedRuns(now: Date) throws -> WorkflowInterruptedRuns {
+  func markInterruptedRuns(now: () -> Date) throws -> WorkflowInterruptedRuns {
     let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: runsDirectory.path(percentEncoded: false)) else {
       return WorkflowInterruptedRuns(interrupted: [], unreadable: [])
@@ -529,8 +529,9 @@ nonisolated struct WorkflowRunStore: Sendable {
         unreadable.append(recordPath)
         continue
       }
-      try writeRecord(record.interrupted(at: now))
-      try appendLog(runID: runID, line: "Run marked interrupted at app launch (no resume in V1).", now: now)
+      let timestamp = now()
+      try writeRecord(record.interrupted(at: timestamp))
+      try appendLog(runID: runID, line: "Run marked interrupted at app launch (no resume in V1).", now: timestamp)
       interrupted.append(runID)
     }
     return WorkflowInterruptedRuns(interrupted: interrupted, unreadable: unreadable)

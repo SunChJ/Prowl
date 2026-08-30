@@ -199,6 +199,50 @@ nonisolated struct AgentProfileLaunchPlan: Equatable, Sendable {
     )
   }
 
+  /// A workflow `launch` role (docs-ai 063 B3, decision W6): replaces the placeholder prompt the
+  /// frozen plan was compiled with by the rendered kickoff prompt (its own protocol block, not
+  /// S2's dispatch protocol) and attaches the `PROWL_WORKFLOW_*` values as child-only carriers,
+  /// exactly like `attachingDispatch` carries `PROWL_DISPATCH_ID`. Nothing here reaches the
+  /// typed command or the pane's shell by name.
+  func attachingWorkflow(prompt: String, environment values: [String: String]) throws -> AgentProfileLaunchPlan {
+    guard !invocation.arguments.isEmpty, surfaceEnvironment[AgentProfileLaunchPlanner.promptCarrierName] != nil
+    else {
+      throw AgentProfileLaunchPlanError.dispatchRequiresPrompt
+    }
+    guard !prompt.contains("\0"), !values.contains(where: { $0.key.contains("\0") || $0.value.contains("\0") })
+    else {
+      throw AgentProfileLaunchPlanError.promptContainsNUL
+    }
+    var arguments = invocation.arguments
+    arguments[arguments.index(before: arguments.endIndex)] = prompt
+    var environment = surfaceEnvironment
+    environment[AgentProfileLaunchPlanner.promptCarrierName] = prompt
+    var commandTokens = commandEnvironmentTokens
+    var carriers = environmentCarriers
+    for (offset, entry) in values.sorted(by: { $0.key < $1.key }).enumerated() {
+      let carrier = "\(AgentProfileLaunchPlanner.workflowCarrierPrefix)\(offset)"
+      carriers.append(carrier)
+      environment[carrier] = entry.value
+      commandTokens.append("\(entry.key)=\"$\(carrier)\"")
+    }
+    return AgentProfileLaunchPlan(
+      profileID: profileID,
+      profileName: profileName,
+      runtime: runtime,
+      invocation: AgentInvocation(executable: invocation.executable, arguments: arguments),
+      argumentCarriers: argumentCarriers,
+      environmentCarriers: carriers,
+      hookRegistration: hookRegistration,
+      commandEnvironmentTokens: commandTokens,
+      placement: placement,
+      splitDirection: splitDirection,
+      surfaceEnvironment: environment,
+      profileEnvironmentOverrides: profileEnvironmentOverrides,
+      dedicatedHome: dedicatedHome,
+      sessionConfigRoot: sessionConfigRoot
+    )
+  }
+
   func attachingDispatch(id: String, userPrompt: String) throws -> AgentProfileLaunchPlan {
     guard !id.isEmpty, !id.contains("\0"), !userPrompt.contains("\0"),
       !invocation.arguments.isEmpty,
@@ -459,6 +503,8 @@ nonisolated enum AgentProfileLaunchPlanner {
   static let hookTokenCarrierName = "PROWL_LAUNCH_HOOK_TOKEN"
   static let hookSocketCarrierName = "PROWL_LAUNCH_HOOK_SOCKET"
   static let hookForwardCarrierName = "PROWL_LAUNCH_HOOK_FORWARD"
+  /// `PROWL_LAUNCH_WORKFLOW_<n>`: one carrier per workflow child-environment value (063 B3).
+  static let workflowCarrierPrefix = "PROWL_LAUNCH_WORKFLOW_"
 
   /// Resolves a profile into one launch plan. Pure: no filesystem access —
   /// home provisioning happens at the launch boundary, not here.

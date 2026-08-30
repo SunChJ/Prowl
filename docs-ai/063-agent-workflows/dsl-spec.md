@@ -139,7 +139,7 @@ steps:
     notify: "Adversarial review: {{ outputs.findings.verdict }} after {{ loop.count }} round(s)"   # ⑤
 
   - id: cleanup
-    close: reviewer                          # ⑥ only launch roles; protected close (confirms if the agent is still running)
+    close: reviewer                          # ⑥ only launch roles; closes the pane the run launched, no confirmation
 ```
 
 | Verb | Payload keys | Allowed target | Notes |
@@ -148,7 +148,7 @@ steps:
 | `launch: <role>` | `prompt` (kickoff, templated), optional `skill` (an id from the embedded skill registry — same pattern as a workflow id, e.g. `prowl.adversarial-reviewer`; it must resolve to a bundled skill, unknown ids are validation errors; custom skills are V2) | `launch` role, at most once per run (V1) | Profile plan with `AgentStartIntent.prompt`. The rendered prompt is passed whole through the launch boundary's prompt carrier (A2's `PROWL_LAUNCH_PROMPT`; no PTY line limit): multi-line prompts are allowed, NUL is rejected, and a rendered prompt above 32 KiB is `PROMPT_TOO_LARGE`. Materialization applies to `message` only. When the step has an `expect`, the runner appends the workflow completion protocol block (below) in place of S2's plain dispatch protocol. |
 | `action: <id>` | `with` (templated map) | — | V1 registry: `handoff.transition` (inputs `briefing?`, `from`, `to`; performs archive-first `.prowl/handoff/` transition; outputs `kickoff_prompt`, `artifact_path`, `has_briefing`), `handoff.checkpoint`, `git.context`. Every registered action declares a typed schema for its `with` inputs (required/optional) and its output keys; `prowl workflow schema` prints them. |
 | `notify: <text>` | — | — | Bell pipeline; click focuses the `current` role's pane, or — when the workflow has no `current` role — the source worktree (status panel). |
-| `close: <role>` | — | `launch` roles | Never implicit; cancel never closes panes. |
+| `close: <role>` | — | `launch` roles | Never implicit. Closes the pane this run launched without a confirmation — the step is the author's explicit ask and the run owns the pane (B3 decision W7). Cancel never closes panes: a close still queued when the run is cancelled is dropped, and a pane another run has bound since is left alone. |
 | `repeat` | `max` (required), `until` (optional), `steps` | — | While-loop semantics: `until` is evaluated **before entering** and **after every iteration**, so a verdict already satisfied by an earlier step skips the loop. `until` compares a declared verdict only: `outputs.<name>.verdict == <value>` or `in [..]`, every literal must belong to that output's declared `verdict` set. `max` is either a positive integer literal or a template that references exactly one `integer` input (nothing else); it is resolved at start, must lie in `1…20` (the V1 ceiling), and an invalid value is `WORKFLOW_INVALID` (literal) or a start-time `INVALID_ARGUMENT` (input). Reaching `max` with `until` still unsatisfied (or absent) ends the run as `max_rounds_reached`. |
 
 **Typed line formats and the completion-command renderer.** Every line Prowl types into a

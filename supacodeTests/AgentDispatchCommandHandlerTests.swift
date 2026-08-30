@@ -75,6 +75,32 @@ struct AgentDispatchCommandHandlerTests {
     #expect(completedSurfaces == [caller.surfaceID, caller.surfaceID])
   }
 
+  /// A workflow activation is completed by `prowl workflow done`, never here (063 B3, W3).
+  @Test func completionIsInterceptedBeforeTheStoreForWorkflowActivations() async throws {
+    let caller = CallerPane(worktreeID: "w1", surfaceID: UUID())
+    var completed = 0
+    let handler = AgentDispatchCompleteCommandHandler(
+      resolveCaller: { _ in caller },
+      complete: { _, _, _ in
+        completed += 1
+        return .failure(.notFound)
+      },
+      intercept: { surfaceID in
+        #expect(surfaceID == caller.surfaceID)
+        return CommandError(code: CLIErrorCode.workflowDeliveryRequired, message: "deliver with prowl workflow done -")
+      }
+    )
+    let response = await handler.handle(
+      envelope: envelope(.agentsDispatchComplete(.init(dispatchID: nil, outcome: .succeeded, summary: "Done"))),
+      context: CLICommandContext(callerProcessID: 123)
+    )
+    #expect(response.ok == false)
+    #expect(response.command == "agents.dispatch-complete")
+    #expect(response.error?.code == CLIErrorCode.workflowDeliveryRequired)
+    #expect(response.error?.message == "deliver with prowl workflow done -")
+    #expect(completed == 0)
+  }
+
   @Test func completionMapsStoreFailuresToStableCodes() async {
     let caller = CallerPane(worktreeID: "w1", surfaceID: UUID())
     for (error, code) in [

@@ -12,6 +12,7 @@ struct AppFeature {
     var settings: SettingsFeature.State
     var updates = UpdatesFeature.State()
     var commandPalette = CommandPaletteFeature.State()
+    var workflowRuns = WorkflowRunsFeature.State()
     var openActionSelection: OpenWorktreeAction = .finder
     /// Whether the selected worktree's repository resolves its open action
     /// automatically (project-aware) rather than a user-pinned app. Drives the
@@ -53,6 +54,7 @@ struct AppFeature {
     case settings(SettingsFeature.Action)
     case updates(UpdatesFeature.Action)
     case commandPalette(CommandPaletteFeature.Action)
+    case workflowRuns(WorkflowRunsFeature.Action)
     case openActionSelectionChanged(OpenWorktreeAction)
     case openActionResetToAutomatic
     case worktreeSettingsLoaded(RepositorySettings, worktreeID: Worktree.ID)
@@ -297,7 +299,10 @@ struct AppFeature {
         state.runScriptStatusByWorktreeID = state.runScriptStatusByWorktreeID.filter { ids.contains($0.key) }
         let restorableWorktrees = makeTerminalRestorableWorktrees(from: Array(repositories))
         appLogger.info("[LayoutRestore] restorableWorktrees count=\(restorableWorktrees.count)")
-        var allEffects: [Effect<Action>] = []
+        var allEffects: [Effect<Action>] = [
+          // Runs a previous app instance left behind are marked interrupted (dsl-spec §10 Restart).
+          .send(.workflowRuns(.markInterruptedRuns(worktreeRoots: workflowRunRoots(of: Array(repositories)))))
+        ]
         if !shouldDeferDefaultView {
           allEffects.append(applyDefaultViewMode(into: &state))
         }
@@ -1011,6 +1016,9 @@ struct AppFeature {
       case .commandPalette(let action):
         return reduceCommandPaletteAction(action, state: &state)
 
+      case .workflowRuns:
+        return .none
+
       case .openHandoffHud:
         return openHandoffHud(state: &state)
 
@@ -1061,6 +1069,9 @@ struct AppFeature {
     }
     Scope(state: \.commandPalette, action: \.commandPalette) {
       CommandPaletteFeature()
+    }
+    Scope(state: \.workflowRuns, action: \.workflowRuns) {
+      WorkflowRunsFeature()
     }
   }
 }

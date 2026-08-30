@@ -1,6 +1,8 @@
 // supacode/CLIService/WorkflowCommandHandler.swift
-// Handles `prowl workflow list`: resolves the worktree whose repo source is searched, runs
-// three-source discovery, and applies the (hidden until D1) enabled set.
+// Handles `prowl workflow` over the socket (docs-ai 063 B1/B3): `list` resolves the worktree
+// whose repo source is searched and runs three-source discovery; `run` resolves the source pane
+// or worktree and hands admission to the runtime; `status`, `done`, and `cancel` are attributed by
+// the caller pane and routed to the runtime coordinator.
 
 import Foundation
 
@@ -23,9 +25,11 @@ final class WorkflowCommandHandler: CommandHandler {
   typealias SnapshotProvider = @MainActor () -> WorkflowRuntimeSnapshot
 
   private let snapshotProvider: SnapshotProvider
+  private let runtime: WorkflowRuntimeCoordinator?
 
-  init(snapshotProvider: @escaping SnapshotProvider) {
+  init(snapshotProvider: @escaping SnapshotProvider, runtime: WorkflowRuntimeCoordinator? = nil) {
     self.snapshotProvider = snapshotProvider
+    self.runtime = runtime
   }
 
   static func disabledKey(scope: WorkflowScope, id: String) -> String {
@@ -36,28 +40,124 @@ final class WorkflowCommandHandler: CommandHandler {
     await handle(envelope: envelope, context: CLICommandContext())
   }
 
-  // swiftlint:disable:next async_without_await
   func handle(envelope: CommandEnvelope, context: CLICommandContext) async -> CommandResponse {
     guard case .workflow(let input) = envelope.command else {
       return failure(code: CLIErrorCode.invalidArgument, message: "Expected a workflow command.")
     }
     let snapshot = snapshotProvider()
-    switch resolveWorktree(input.target, snapshot: snapshot, context: context) {
-    case .failure(.notFound(let message)):
-      return failure(code: CLIErrorCode.targetNotFound, message: message)
-    case .failure(.notUnique(let message)):
-      return failure(code: CLIErrorCode.targetNotUnique, message: message)
-    case .success(let worktree):
-      do {
-        let payload = try listPayload(worktree: worktree, snapshot: snapshot)
-        return try CommandResponse(
-          ok: true,
-          command: WorkflowCommandPayload.commandName,
-          schemaVersion: WorkflowCommandPayload.schemaVersion,
-          data: RawJSON(encoding: WorkflowCommandPayload.list(payload))
+    let callerPane = callerPane(context: context, paneByShellPID: snapshot.paneByShellPID)
+    switch input.action {
+    case .list:
+      switch resolveWorktree(input.target, snapshot: snapshot, callerPane: callerPane) {
+      case .failure(.notFound(let message)):
+        return failure(code: CLIErrorCode.targetNotFound, message: message)
+      case .failure(.notUnique(let message)):
+        return failure(code: CLIErrorCode.targetNotUnique, message: message)
+      case .success(let worktree):
+        do {
+          let payload = try listPayload(worktree: worktree, snapshot: snapshot)
+          return try CommandResponse(
+            ok: true,
+            command: WorkflowCommandPayload.commandName,
+            schemaVersion: WorkflowCommandPayload.schemaVersion,
+            data: RawJSON(encoding: WorkflowCommandPayload.list(payload))
+          )
+        } catch {
+          return failure(
+            code: CLIErrorCode.workflowFailed, message: "Failed to list workflows: \(error)")
+        }
+      }
+    case .run, .status, .done, .cancel:
+      guard let runtime else { return notConfigured() }
+      return await handleRuntime(input, runtime: runtime, snapshot: snapshot, callerPane: callerPane)
+    }
+  }
+
+  private func handleRuntime(
+    _ input: WorkflowInput,
+    runtime: WorkflowRuntimeCoordinator,
+    snapshot: WorkflowRuntimeSnapshot,
+    callerPane: CallerPane?
+  ) async -> CommandResponse {
+    switch input.action {
+    case .list:
+      return failure(code: CLIErrorCode.invalidArgument, message: "Expected a runtime workflow action.")
+    case .run:
+      switch resolveSource(input.target, snapshot: snapshot, callerPane: callerPane) {
+      case .failure(let refusal):
+        return refusal.response
+      case .success(let source):
+        return await runtime.run(input, source: source, snapshot: snapshot)
+      }
+    case .status:
+      return runtime.status(input, callerPane: callerPane)
+    case .done:
+      return await runtime.done(input, callerPane: callerPane)
+    case .cancel:
+      return runtime.cancel(input, callerPane: callerPane)
+    }
+  }
+
+  // MARK: - Source resolution
+
+  /// `run`: the caller's own pane, or an explicit target. A pane or tab target names the pane the
+  /// `current` role binds to; a worktree target names no pane (decision W2).
+  func resolveSource(
+    _ selector: TargetSelector, snapshot: WorkflowRuntimeSnapshot, callerPane: CallerPane?
+  ) -> Result<WorkflowRunSource, WorkflowCommandRefusal> {
+    let resolver = TargetResolver { snapshot.resolution }
+    if case .none = selector {
+      if let callerPane,
+        let worktree = snapshot.resolution.worktrees.first(where: { $0.id == callerPane.worktreeID }
         )
-      } catch {
-        return failure(code: CLIErrorCode.workflowFailed, message: "Failed to list workflows: \(error)")
+      {
+        return .success(
+          WorkflowRunSource(worktree: worktree, paneID: callerPane.surfaceID, paneIsCaller: true))
+      }
+      guard case .success(let focused) = resolver.resolve(.none),
+        let worktree = snapshot.resolution.worktrees.first(where: { $0.id == focused.worktreeID })
+      else {
+        return .failure(
+          refusal(
+            code: CLIErrorCode.sourceRequired,
+            message:
+              "Run `prowl workflow run` inside a Prowl pane, or pass a pane or worktree target."))
+      }
+      return .success(WorkflowRunSource(worktree: worktree, paneID: nil, paneIsCaller: false))
+    }
+    switch resolver.resolve(selector) {
+    case .failure(.notFound(let message)):
+      return .failure(refusal(code: CLIErrorCode.targetNotFound, message: message))
+    case .failure(.notUnique(let message)):
+      return .failure(refusal(code: CLIErrorCode.targetNotUnique, message: message))
+    case .success(let resolved):
+      guard
+        let worktree = snapshot.resolution.worktrees.first(where: { $0.id == resolved.worktreeID })
+      else {
+        return .failure(
+          refusal(
+            code: CLIErrorCode.targetNotFound, message: "The target's worktree was not found."))
+      }
+      let paneID = Self.addressesPane(selector, snapshot: snapshot) ? resolved.paneID : nil
+      return .success(
+        WorkflowRunSource(
+          worktree: worktree, paneID: paneID,
+          paneIsCaller: paneID != nil && paneID == callerPane?.surfaceID))
+    }
+  }
+
+  /// Whether a selector named a pane or a tab (whose focused pane stands in), not a worktree.
+  static func addressesPane(_ selector: TargetSelector, snapshot: WorkflowRuntimeSnapshot) -> Bool {
+    switch selector {
+    case .pane, .tab:
+      return true
+    case .none, .worktree:
+      return false
+    case .auto(let value):
+      if value.hasPrefix("p") || value.hasPrefix("t"), Int(value.dropFirst()) != nil { return true }
+      guard let id = UUID(uuidString: value) else { return false }
+      return snapshot.resolution.worktrees.contains { worktree in
+        worktree.tabs.contains { $0.id == id || $0.panes.contains { $0.id == id } }
       }
     }
   }
@@ -69,12 +169,13 @@ final class WorkflowCommandHandler: CommandHandler {
   private func resolveWorktree(
     _ selector: TargetSelector,
     snapshot: WorkflowRuntimeSnapshot,
-    context: CLICommandContext
+    callerPane: CallerPane?
   ) -> Result<TargetResolutionSnapshot.Worktree?, TargetResolverError> {
     let resolver = TargetResolver { snapshot.resolution }
     if case .none = selector {
-      if let callerPane = callerPane(context: context, paneByShellPID: snapshot.paneByShellPID),
-        let worktree = snapshot.resolution.worktrees.first(where: { $0.id == callerPane.worktreeID })
+      if let callerPane,
+        let worktree = snapshot.resolution.worktrees.first(where: { $0.id == callerPane.worktreeID }
+        )
       {
         return .success(worktree)
       }
@@ -88,13 +189,16 @@ final class WorkflowCommandHandler: CommandHandler {
     }
   }
 
-  private func callerPane(context: CLICommandContext, paneByShellPID: [pid_t: CallerPane]) -> CallerPane? {
+  private func callerPane(context: CLICommandContext, paneByShellPID: [pid_t: CallerPane])
+    -> CallerPane?
+  {
     if !context.callerProcessAncestry.isEmpty {
       return CallerPaneResolver.pane(
         forCallerProcessAncestry: context.callerProcessAncestry, paneByShellPID: paneByShellPID)
     }
     guard let callerProcessID = context.callerProcessID else { return nil }
-    return CallerPaneResolver.pane(forCallerProcess: callerProcessID, paneByShellPID: paneByShellPID)
+    return CallerPaneResolver.pane(
+      forCallerProcess: callerProcessID, paneByShellPID: paneByShellPID)
   }
 
   // MARK: - Listing
@@ -105,7 +209,8 @@ final class WorkflowCommandHandler: CommandHandler {
     let repoURL = worktree.map {
       WorkflowSources.repoDirectory(root: URL(filePath: $0.rootPath, directoryHint: .isDirectory))
     }
-    let sources = WorkflowSources(bundle: snapshot.bundleWorkflowsURL, user: snapshot.userWorkflowsURL, repo: repoURL)
+    let sources = WorkflowSources(
+      bundle: snapshot.bundleWorkflowsURL, user: snapshot.userWorkflowsURL, repo: repoURL)
     let catalog = try WorkflowDiscovery.catalog(sources: sources) { scope in
       WorkflowValidationContext(
         scope: scope,
@@ -135,12 +240,15 @@ final class WorkflowCommandHandler: CommandHandler {
     )
   }
 
+  private func notConfigured() -> CommandResponse {
+    failure(code: "NOT_IMPLEMENTED", message: "Workflow runtime is not configured.")
+  }
+
   private func failure(code: String, message: String) -> CommandResponse {
-    CommandResponse(
-      ok: false,
-      command: WorkflowCommandPayload.commandName,
-      schemaVersion: WorkflowCommandPayload.schemaVersion,
-      error: CommandError(code: code, message: message)
-    )
+    WorkflowCLIRendezvous.failure(code: code, message: message)
+  }
+
+  private func refusal(code: String, message: String) -> WorkflowCommandRefusal {
+    WorkflowCommandRefusal(response: failure(code: code, message: message))
   }
 }

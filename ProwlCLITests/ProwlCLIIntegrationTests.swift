@@ -1284,6 +1284,103 @@ final class ProwlCLIIntegrationTests: XCTestCase {
     XCTAssertTrue(text.stdout.contains("1 warning(s)"), text.stdout)
   }
 
+  func testWorkflowRunAndDoneRoundTripThroughTheSocket() throws {
+    let output = WorkflowOutputPayload(
+      name: "brief", ordinal: 1, path: "/Projects/App/.prowl/workflow-runs/R/outputs/brief.1.md",
+      latestPath: "/Projects/App/.prowl/workflow-runs/R/outputs/brief.md", verdict: nil,
+      deliveredAt: "2026-08-30T01:02:03.000Z")
+    let run = WorkflowRunPayload(
+      id: "0BADCAFE-0000-4000-8000-000000000042",
+      workflow: WorkflowIdentity(id: "review", name: "Review"),
+      scope: .repo,
+      definitionPath: "/Projects/App/.prowl/workflows/review.yaml",
+      source: .live,
+      status: WorkflowRunStatusPayload(state: "running"),
+      step: "brief",
+      role: "author",
+      worktree: WorkflowRunWorktreePayload(id: "wt", name: "feature", branch: "feat/x", path: "/Projects/App"),
+      runDirectory: "/Projects/App/.prowl/workflow-runs/R",
+      bindings: [
+        "author": WorkflowBindingPayload(
+          source: .current,
+          pane: WorkflowPaneBindingPayload(
+            id: "00000000-0000-0000-0000-000000000001", tabID: nil, handle: "p1", displayName: "Claude Code",
+            agent: "claude"))
+      ],
+      activation: WorkflowActivationPayload(
+        ordinal: 1, step: "brief", role: "author", state: "waiting", dispatchID: "d-1", output: "brief",
+        expect: WorkflowExpectationPayload(
+          format: .markdown, sections: ["## Scope"], verdict: nil, strict: false,
+          completion: ["PROWL_WORKFLOW_TOKEN=T prowl workflow done -"]),
+        deadline: nil),
+      outputs: [:],
+      startedAt: "2026-08-30T01:00:00.000Z",
+      updatedAt: "2026-08-30T01:00:00.000Z",
+      finishedAt: nil,
+      selfInitiated: WorkflowSelfInitiatedPayload(
+        line: "[Prowl] Read /Projects/App/.prowl/workflow-runs/R/instructions/brief.1.md and follow it — finish with: PROWL_WORKFLOW_TOKEN=T prowl workflow done -",
+        instructionPath: "/Projects/App/.prowl/workflow-runs/R/instructions/brief.1.md",
+        completion: ["PROWL_WORKFLOW_TOKEN=T prowl workflow done -"]))
+    let runResponse = try CommandResponse(
+      ok: true, command: "workflow", schemaVersion: "prowl.cli.workflow.v1",
+      data: RawJSON(encoding: WorkflowCommandPayload.run(run)))
+    let (runRequest, runResult) = try runWithMockServer(
+      socketPath: temporarySocketPath(suffix: "workflow-run"), response: runResponse,
+      args: ["workflow", "run", "review", "p3", "--role", "reviewer=Codex", "--input", "rounds=2", "--skip", "x", "--json"])
+    XCTAssertEqual(runResult.exitCode, 0, runResult.stderr)
+    let runEnvelope = try JSONDecoder().decode(CommandEnvelope.self, from: runRequest)
+    guard case .workflow(let runInput) = runEnvelope.command else { return XCTFail("Expected a workflow envelope") }
+    XCTAssertEqual(runInput.action, .run)
+    XCTAssertEqual(runInput.workflow, "review")
+    XCTAssertEqual(runInput.target, .auto("p3"))
+    XCTAssertEqual(runInput.roleBindings, ["reviewer=Codex"])
+    XCTAssertEqual(runInput.inputValues, ["rounds=2"])
+    XCTAssertEqual(runInput.skippedSteps, ["x"])
+    let runOutput = try jsonObject(from: runResult.stdout)
+    XCTAssertEqual(((runOutput["data"] as? [String: Any])?["self_initiated"] as? [String: Any])?["instruction_path"] as? String,
+      "/Projects/App/.prowl/workflow-runs/R/instructions/brief.1.md")
+    let runText = try runWithMockServer(
+      socketPath: temporarySocketPath(suffix: "workflow-run-text"), response: runResponse,
+      args: ["workflow", "run", "review", "--no-color"]).1
+    XCTAssertEqual(runText.exitCode, 0, runText.stderr)
+    XCTAssertTrue(runText.stdout.contains("Run: 0BADCAFE-0000-4000-8000-000000000042"), runText.stdout)
+    XCTAssertTrue(runText.stdout.contains("Follow this line yourself"), runText.stdout)
+
+    let doneResponse = try CommandResponse(
+      ok: true, command: "workflow", schemaVersion: "prowl.cli.workflow.v1",
+      data: RawJSON(
+        encoding: WorkflowCommandPayload.done(
+          WorkflowDonePayload(
+            run: run,
+            delivery: WorkflowDeliveryPayload(
+              state: .provisional, ordinal: 1, step: "brief", role: "author", output: output,
+              warnings: [WorkflowDeliveryWarningPayload(code: "missing_sections", message: "missing section(s) ## Claims")])
+          ))))
+    let (doneRequest, doneResult) = try runWithMockServer(
+      socketPath: temporarySocketPath(suffix: "workflow-done"), response: doneResponse,
+      args: ["workflow", "done", "-", "--verdict", "clean", "--json"],
+      stdinData: Data("## Scope\nOnly the scope.\n".utf8),
+      environment: [WorkflowSchema.tokenEnvironmentKey: "T"])
+    XCTAssertEqual(doneResult.exitCode, 0, doneResult.stderr)
+    let doneEnvelope = try JSONDecoder().decode(CommandEnvelope.self, from: doneRequest)
+    guard case .workflow(let doneInput) = doneEnvelope.command else { return XCTFail("Expected a workflow envelope") }
+    XCTAssertEqual(doneInput.action, .done)
+    XCTAssertEqual(doneInput.body, "## Scope\nOnly the scope.\n")
+    XCTAssertEqual(doneInput.verdict, "clean")
+    XCTAssertEqual(doneInput.token, "T", "the token comes from the environment the step handed out")
+    XCTAssertNil(doneInput.runID)
+    XCTAssertFalse(doneInput.force)
+    let doneText = try runWithMockServer(
+      socketPath: temporarySocketPath(suffix: "workflow-done-text"), response: doneResponse,
+      args: ["workflow", "done", "-", "--no-color"], stdinData: Data("x".utf8)).1
+    XCTAssertEqual(doneText.exitCode, 0, doneText.stderr)
+    XCTAssertTrue(doneText.stdout.contains("Provisional"), doneText.stdout)
+    XCTAssertTrue(doneText.stdout.contains("missing_sections"), doneText.stdout)
+
+    let noStdin = try runProwl(args: ["workflow", "done", "-"], environment: [ProwlSocket.environmentKey: "/nonexistent.sock"])
+    XCTAssertNotEqual(noStdin.exitCode, 0)
+  }
+
   // MARK: - skills (local-only)
 
   func testSkillsListIsLocalOnlyAndValidatesAgainstSchema() throws {
