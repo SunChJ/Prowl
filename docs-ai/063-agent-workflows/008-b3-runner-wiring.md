@@ -187,7 +187,12 @@ unchanged except for one seam.
     expiry that sees activity re-arms the same grace (`turn_grace` / `idle_grace`) instead of
     waiting for an event that may never come; the B2 tests that pinned the silent `[]` now pin
     the re-arm, plus a regression test for the late first detection. Re-verified live after the
-    fix: see the note at the end of this list.
+    fix: the worker answered "OK" within seconds of its launch, the nudge (`[Prowl] When your
+    work for this step is fully complete, finish with: PROWL_WORKFLOW_TOKEN=… prowl workflow
+    done -`) was typed 41 s after the run started, the worker answered "OK" again, and 3 min
+    later the run entered `needs_attention` / `idle_without_delivery` with the H7 copy
+    ("… has been idle without delivering report; Prowl nudged it once"). The heuristic
+    (unhooked) watchdog path was not exercised live; B2's policy tests cover it.
   - Restart: the isolated app was killed while `b3-idle` was `running`; after relaunch
     `status <run-id>` answered from `run.json` (`source: record`, `interrupted`, no activation)
     and `log.md` gained "Run marked interrupted at app launch (no resume in V1)".
