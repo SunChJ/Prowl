@@ -29,8 +29,8 @@ final class WorkflowPaneReservations {
     surfaceIDs.remove(surfaceID)
   }
 
-  /// Reservations still worth honoring: the pane exists and no run — live or ended — has bound
-  /// it yet (a pane a finished run kept is free again).
+  /// Reservations still worth honoring: the pane exists and no run — live, ended, or relaunched
+  /// away from it — has ever bound it (a pane a finished run kept is free again).
   func pending(everBound: Set<UUID>, isLive: (UUID) -> Bool) -> Set<UUID> {
     surfaceIDs = surfaceIDs.filter { !everBound.contains($0) && isLive($0) }
     return surfaceIDs
@@ -424,7 +424,9 @@ extension SupacodeApp {
     let profiles = settings.agentProfiles
     let bundledSkills =
       Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) } ?? []
-    let everBound = Set(appStore.state.workflowRuns.sessions.values.flatMap(\.boundSurfaceIDs))
+    // Every pane a run ever bound, including one a relaunch dropped from its binding again: a
+    // reservation ends when its launch was taken up, never later.
+    let everBound = Set(appStore.state.workflowRuns.paneOwners.keys)
     return WorkflowAdmissionEnvironment(
       profiles: profiles,
       recommendation: { repositoryRootURL in

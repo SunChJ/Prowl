@@ -835,6 +835,41 @@ struct WorkflowRunsFeatureTests {
       "the later run keeps the pane it ended with; the earlier run never gets it back")
   }
 
+  /// A relaunch drops the old pane from the role's binding, but the pane stays among the panes
+  /// the run ever owned: admission prunes launch reservations against that set, so the old pane
+  /// is neither reserved forever nor handed back to the run that left it.
+  @Test(.dependencies) func aRelaunchKeepsTheOldPaneAmongTheOwnedOnes() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let store = makeStore(fixture, queue: WorkflowEffectQueue().client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
+    await store.receive(
+      .event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "dispatch-1")), timeout: Self.timeout)
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: UUID(), runID: runID, ordinal: 1, selector: .token(Self.firstToken),
+          body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil, source: "pane")))
+    await store.receive(.event(runID: runID, .outputPersisted(ordinal: 1)), timeout: Self.timeout)
+    await store.receive(\.event, timeout: Self.timeout)
+    let first = try #require(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane)
+    #expect(store.state.paneOwners[first.surfaceID] == runID)
+
+    await store.send(.event(runID: runID, .watchdog(ordinal: 2, .attention(.agentGone(.sessionEnded)))))
+    await store.send(.userAction(runID: runID, .relaunch))
+    await store.receive(\.event, timeout: Self.timeout)
+    let second = try #require(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane)
+    #expect(second.surfaceID != first.surfaceID)
+    #expect(store.state.sessions[runID]?.boundSurfaceIDs == [Self.authorPane.surfaceID, second.surfaceID])
+    #expect(store.state.paneOwners[first.surfaceID] == runID, "the pane the relaunch left stays owned")
+    #expect(store.state.paneOwners[second.surfaceID] == runID)
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
   /// A fence that lands before the executor even reaches the action's batch skips it at the
   /// batch check, and the run log still records that the action was not started.
   @Test(.dependencies) func anActionSkippedAtTheBatchCheckIsLoggedAsNotStarted() async throws {

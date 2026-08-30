@@ -205,9 +205,9 @@ unchanged except for one seam.
     `status <run-id>` answered from `run.json` (`source: record`, `interrupted`, no activation)
     and `log.md` gained "Run marked interrupted at app launch (no resume in V1)".
   - Re-run after each review round that touched the live path (round 2: fenced bookkeeping and
-    the in-`deliverLine` liveness guard; round 3: revocable `close`; round 4: latest-binder
+    the in-`deliverLine` liveness guard; round 3: revocable `close`; rounds 4–5: pane
     ownership at the close boundary): `b3-review` from a launched author pane completed each
-    time (230 s, 260 s, 100 s) — brief delivered by caller ancestry, reviewer launched, `fix`
+    time (230 s, 260 s, 100 s, 180 s) — brief delivered by caller ancestry, reviewer launched, `fix`
     and `rereview` re-dispatched through the #733 idle wait, `until` exited on `clean` after
     one round, `notify` fired, `close` removed the reviewer pane; no dispatch record was left
     pending on either pane.
@@ -297,6 +297,12 @@ whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` 
   only. P2: an action the executor skipped at the *batch* check (the fence rose before its
   batch was reached) left no "not started" line in `log.md`, only an app log — the batch
   check writes the same definitive line now.
+- **Round 6 (verification) — round-5 fixes confirmed; 1 finding (0 P0, 1 P1), accepted and
+  fixed.** P1: launch reservations were pruned against the runs' *current* bindings, and a
+  relaunch drops the old pane from the binding before the replacement is taken up — so a pane
+  a relaunch left behind stayed reserved for as long as it lived and was refused to later runs
+  as `PANE_BUSY`. Admission now prunes against `paneOwners.keys` (every pane a run ever bound,
+  including one a relaunch dropped). Test: `aRelaunchKeepsTheOldPaneAmongTheOwnedOnes`.
 
 ## Non-goals
 
