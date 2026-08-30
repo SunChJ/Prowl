@@ -2,10 +2,11 @@
 
 ## Status
 
-Implementation and pre-review verification are complete on `feat/workflow-status-center-c1`,
-after B3 merged as [#744](https://github.com/onevcat/Prowl/pull/744). C1 is the last
-implementation slice in R2a; R2a is not release-ready until the required adversarial review and
-reviewed-head live end-to-end verification in this record are complete.
+Implementation and pre-review verification are complete in
+[#747](https://github.com/onevcat/Prowl/pull/747), after B3 merged as
+[#744](https://github.com/onevcat/Prowl/pull/744). C1 is the last implementation slice in R2a;
+R2a is not release-ready until the required adversarial review and reviewed-head live end-to-end
+verification in this record are complete.
 
 ## Product contract
 
