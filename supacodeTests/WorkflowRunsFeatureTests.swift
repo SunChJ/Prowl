@@ -857,6 +857,9 @@ struct WorkflowRunsFeatureTests {
     await store.receive(\.event, timeout: Self.timeout)
     let first = try #require(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane)
     #expect(store.state.paneOwners[first.surfaceID] == runID)
+    // The launch boundary reserved the pane while the launch was in flight.
+    let reservations = WorkflowPaneReservations()
+    reservations.reserve(first.surfaceID)
 
     await store.send(.event(runID: runID, .watchdog(ordinal: 2, .attention(.agentGone(.sessionEnded)))))
     await store.send(.userAction(runID: runID, .relaunch))
@@ -866,6 +869,9 @@ struct WorkflowRunsFeatureTests {
     #expect(store.state.sessions[runID]?.boundSurfaceIDs == [Self.authorPane.surfaceID, second.surfaceID])
     #expect(store.state.paneOwners[first.surfaceID] == runID, "the pane the relaunch left stays owned")
     #expect(store.state.paneOwners[second.surfaceID] == runID)
+    #expect(
+      reservations.pending(for: store.state, isLive: { _ in true }).isEmpty,
+      "admission no longer holds the pane the relaunch left, even while it lives")
     await store.send(.userAction(runID: runID, .cancel))
     await store.finish(timeout: Self.timeout)
   }

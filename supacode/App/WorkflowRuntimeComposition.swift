@@ -35,6 +35,12 @@ final class WorkflowPaneReservations {
     surfaceIDs = surfaceIDs.filter { !everBound.contains($0) && isLive($0) }
     return surfaceIDs
   }
+
+  /// The reservations admission still honors, pruned against every pane a run ever owned —
+  /// a relaunch's old pane included, so a reservation ends the moment its launch was taken up.
+  func pending(for workflowRuns: WorkflowRunsFeature.State, isLive: (UUID) -> Bool) -> Set<UUID> {
+    pending(everBound: Set(workflowRuns.paneOwners.keys), isLive: isLive)
+  }
 }
 
 /// Everything the app installs for the workflow runner at its composition root.
@@ -424,9 +430,6 @@ extension SupacodeApp {
     let profiles = settings.agentProfiles
     let bundledSkills =
       Bundle.main.resourceURL.flatMap { try? ProwlSkills.bundled(resourcesURL: $0) } ?? []
-    // Every pane a run ever bound, including one a relaunch dropped from its binding again: a
-    // reservation ends when its launch was taken up, never later.
-    let everBound = Set(appStore.state.workflowRuns.paneOwners.keys)
     return WorkflowAdmissionEnvironment(
       profiles: profiles,
       recommendation: { repositoryRootURL in
@@ -448,7 +451,7 @@ extension SupacodeApp {
         terminalManager.pendingAgentDispatchSnapshot(surfaceID: surfaceID)?.record.id
       },
       busySurfaceIDs: reservations.pending(
-        everBound: everBound, isLive: { terminalManager.isSurfaceLive($0) }),
+        for: appStore.state.workflowRuns, isLive: { terminalManager.isSurfaceLive($0) }),
       worktree: { id in
         resolveCLITerminalWorktree(
           id: id, repositories: Array(appStore.state.repositories.repositories))

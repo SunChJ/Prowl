@@ -156,7 +156,10 @@ unchanged except for one seam.
   schema (`WorkflowSchemaTests` for every action + Codable round trip), and the mock-socket
   `run` / `done` round trip. `make check`, `make build-cli`, `make test-cli-unit` (233),
   `make test-cli-smoke`, `make test-cli-integration` (110), `make build-app` (0 warnings in the
-  changed files), the workflow app suites (121), and `make test`.
+  changed files), the workflow app suites (121 at PR time; 135 with the review rounds' tests),
+  and `make test` — 2892 passed, 0 failed at the final head. Note for the next slice: run the
+  *full* `make test` before every push, not the workflow subset — the AppFeature suites caught
+  a dependency the subset never touched (review round 4), and CI failed four times on it.
 - Live, in an isolated Debug instance (`CFFIXED_USER_HOME` scratch home, `PROWL_CLI_SOCKET=
   /tmp/prowl-b3.sock`, `Claude Code` / `Codex` profiles whose `PATH` override puts the bundled
   debug CLI first, a scratch Git repository with `b3-review` and `b3-idle` under
@@ -303,6 +306,10 @@ whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` 
   a relaunch left behind stayed reserved for as long as it lived and was refused to later runs
   as `PANE_BUSY`. Admission now prunes against `paneOwners.keys` (every pane a run ever bound,
   including one a relaunch dropped). Test: `aRelaunchKeepsTheOldPaneAmongTheOwnedOnes`.
+- **Round 7 (verification) — round-6 fix confirmed, no P0/P1 remaining; 1 P2, fixed.** The
+  relaunch test asserted only `paneOwners` and would have passed with the old pruning rule —
+  the rule now lives in `WorkflowPaneReservations.pending(for:isLive:)` and the same test
+  reserves the first pane and asserts the reservation is gone after the relaunch.
 
 ## Non-goals
 
