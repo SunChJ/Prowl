@@ -1176,6 +1176,11 @@ nonisolated struct WorkflowRunMachine {
 
   private mutating func cancel(effects: inout [WorkflowRunEffect]) {
     let stepID = run.currentStep?.id ?? "-"
+    if case .runningAction(let actionStep) = run.phase {
+      // The runner cannot stop a native action once it left the main actor; the result is dropped.
+      effects.append(
+        .log("Step '\(actionStep)': its native action keeps running; the result will be discarded."))
+    }
     revokeCurrentActivation(
       reason: "Workflow run \(run.id.uuidString) cancelled at step '\(stepID)'.", effects: &effects)
     if let record = run.stepRecords.indices.last, run.stepRecords[record].state == .active {

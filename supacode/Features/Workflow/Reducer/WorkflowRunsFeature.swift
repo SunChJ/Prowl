@@ -130,7 +130,7 @@ struct WorkflowRunsFeature {
 
       case .event(let runID, let event):
         guard var session = state.sessions[runID], !session.run.status.isTerminal else {
-          return lateEventCleanup(event, session: state.sessions[runID])
+          return lateEventCleanup(event, runID: runID, session: state.sessions[runID])
         }
         let timestamp = now
         let generator = uuid
@@ -319,14 +319,16 @@ struct WorkflowRunsFeature {
   /// dispatch record nobody will use: a `.launched` abandons its record and closes the pane, an
   /// `.injectionSucceeded` abandons the record it opened (B2: the machine ignores events on
   /// terminal runs, so the wiring must clean up).
-  private func lateEventCleanup(_ event: WorkflowRunEvent, session: WorkflowRunSession?) -> Effect<Action> {
-    let runName = session?.run.id.uuidString ?? "?"
+  private func lateEventCleanup(_ event: WorkflowRunEvent, runID: UUID, session: WorkflowRunSession?)
+    -> Effect<Action>
+  {
+    let runName = runID.uuidString
     switch event {
     case .launched(let ordinal, let pane, let dispatchID):
       return closeUnboundLaunch(
         pane: pane, dispatchID: dispatchID,
         reason: "Workflow run \(runName) ended before role launch \(ordinal) completed.",
-        worktree: session?.worktree)
+        worktree: session?.worktree, runID: runID)
     case .injectionSucceeded(let ordinal, let dispatchID?):
       return abandonStaleActivation(
         dispatchID, reason: "Workflow run \(runName) ended before invocation \(ordinal) was typed.")
@@ -344,7 +346,7 @@ struct WorkflowRunsFeature {
       return closeUnboundLaunch(
         pane: pane, dispatchID: dispatchID,
         reason: "Workflow run \(runName) moved on before role launch \(ordinal) completed.",
-        worktree: session.worktree)
+        worktree: session.worktree, runID: session.run.id)
     case .injectionSucceeded(let ordinal, let dispatchID?)
     where session.run.activation(forDispatchID: dispatchID) == nil:
       return abandonStaleActivation(
@@ -362,14 +364,14 @@ struct WorkflowRunsFeature {
   }
 
   private func closeUnboundLaunch(
-    pane: WorkflowPaneIdentity, dispatchID: String?, reason: String, worktree: Worktree?
+    pane: WorkflowPaneIdentity, dispatchID: String?, reason: String, worktree: Worktree?, runID: UUID
   ) -> Effect<Action> {
     .run { _ in
       if let dispatchID {
         await activation.abandon(dispatchID, reason)
       }
       if let worktree {
-        await runtime.close(worktree, pane.surfaceID)
+        _ = await runtime.close(worktree, pane.surfaceID, runID)
       }
       Self.logger.info("[Workflow] Closed unbound launch \(pane.handle): \(reason)")
     }
@@ -406,9 +408,9 @@ struct WorkflowRunsFeature {
       for await batch in batches {
         for effect in batch.effects {
           // A fenced batch still performs its bookkeeping (records, logs, dispatch completions
-          // and abandonments, close, notify) — those belong to transitions the machine already
-          // made — but skips what would act on a pane or the worktree for an invocation the
-          // run has left (`WorkflowRunEffect.isRevocable`), effect by effect.
+          // and abandonments, notify) — those belong to transitions the machine already made —
+          // but skips what would act on a pane or the worktree for an invocation the run has
+          // left (`WorkflowRunEffect.isRevocable`), effect by effect.
           if effect.isRevocable, await queue.isStale(runID, batch.sequence) {
             Self.logger.info("[Workflow] Skipped stale effect of run \(runID): \(effect)")
             continue
@@ -531,7 +533,11 @@ struct WorkflowRunsFeature {
       return .continue
 
     case .openActivation(_, let surfaceID, let ordinal):
-      switch await activation.openMessage(surfaceID) {
+      // Issuance and the machine's take-up of the record share this main-actor turn (`send`
+      // reduces synchronously); the guard keeps a cancel that landed after the batch check
+      // from opening a record the run would never own.
+      guard isLive() else { return .stop }
+      switch activation.openMessage(surfaceID) {
       case .success(let dispatchID):
         await send(
           .event(runID: runID, .injectionSucceeded(ordinal: ordinal, dispatchID: dispatchID)))
@@ -570,9 +576,12 @@ struct WorkflowRunsFeature {
       }
 
     case .inject(_, let surfaceID, let ordinal, let line, let opensActivation):
+      // Issuance, the typed line, and — when the terminal refuses it — the issuance's return
+      // share one main-actor turn: nothing can complete or bind the record in between.
+      guard isLive() else { return .stop }
       var dispatchID: String?
       if opensActivation {
-        switch await activation.openMessage(surfaceID) {
+        switch activation.openMessage(surfaceID) {
         case .success(let value):
           dispatchID = value
         case .failure(let failure):
@@ -581,7 +590,7 @@ struct WorkflowRunsFeature {
           return .stop
         }
       }
-      switch await runtime.deliverLine(session.worktree, surfaceID, line, isLive) {
+      switch runtime.deliverLine(session.worktree, surfaceID, line, isLive) {
       case .delivered:
         await send(
           .event(runID: runID, .injectionSucceeded(ordinal: ordinal, dispatchID: dispatchID)))
@@ -601,7 +610,7 @@ struct WorkflowRunsFeature {
       }
 
     case .typeLine(let role, let surfaceID, let line):
-      let delivery = await runtime.deliverLine(session.worktree, surfaceID, line, isLive)
+      let delivery = runtime.deliverLine(session.worktree, surfaceID, line, isLive)
       if delivery != .delivered && delivery != .stale {
         Self.logger.warning("[Workflow] Could not type into role '\(role)' of run \(runID).")
       }
@@ -636,23 +645,31 @@ struct WorkflowRunsFeature {
         },
         outgoingAgent: session.run.bindings.values.first { $0.source == .current }?.pane?.agent,
         now: timestamp)
-      // A native action that already started runs to completion (its writes are the handoff
-      // store's own atomic operations); a run that was cancelled meanwhile discards the result.
+      // The last main-actor operation before the action starts. A cancel that lands during the
+      // hop to the action's executor can no longer stop it: the action runs to completion (its
+      // writes are the handoff store's own atomic operations), the machine's cancel log names
+      // it as still running, and the result is discarded.
+      guard isLive() else { return .stop }
       do {
         let outputs = try await WorkflowNativeActionRunner().execute(
           actionID: actionID, inputs: inputs, context: context)
-        guard await isLive() else { return .stop }
+        guard isLive() else { return .stop }
         await send(.event(runID: runID, .actionCompleted(stepID: stepID, outputs: outputs)))
       } catch {
-        guard await isLive() else { return .stop }
+        guard isLive() else { return .stop }
         await send(.event(runID: runID, .actionFailed(stepID: stepID, reason: "\(error)")))
       }
 
     case .notify(let text):
       runtime.notify(session.worktree, text)
 
-    case .close(_, let surfaceID):
-      runtime.close(session.worktree, surfaceID)
+    case .close(let role, let surfaceID):
+      // Revocable: a cancel that beat the close keeps the pane (cancel never closes panes); the
+      // boundary leaves a pane another run has bound since alone.
+      guard isLive() else { return .stop }
+      if !runtime.close(session.worktree, surfaceID, runID) {
+        Self.logger.warning("[Workflow] Run \(runID) could not close the pane of role '\(role)'.")
+      }
 
     case .abandonActivation(let dispatchID, let reason):
       activation.abandon(dispatchID, reason)
@@ -693,13 +710,15 @@ struct WorkflowRunsFeature {
 
 extension WorkflowRunEffect {
   /// Effects that act on a pane or the worktree for the invocation in flight, which a fence
-  /// (retry / relaunch / skip / cancel / an ended run) must keep from running late. Everything
-  /// else — records, logs, materialized files, dispatch completions and abandonments, close,
-  /// notify, teardown — belongs to a transition the machine already made and still runs.
+  /// (retry / relaunch / skip / cancel / an ended run) must keep from running late; `close` is
+  /// one of them because a cancel keeps every pane. Everything else — records, logs,
+  /// materialized files, dispatch completions and abandonments, notify, teardown — belongs to a
+  /// transition the machine already made and still runs. The fence a run's own end raises
+  /// precedes the batch that ends it, so a `close` in that batch is still performed.
   nonisolated var isRevocable: Bool {
     switch self {
-    case .openActivation, .inject, .typeLine, .launch, .runAction: true
-    case .awaitRoleIdle, .cancelRoleWait, .materializeInstruction, .materializeSkill, .notify, .close,
+    case .openActivation, .inject, .typeLine, .launch, .runAction, .close: true
+    case .awaitRoleIdle, .cancelRoleWait, .materializeInstruction, .materializeSkill, .notify,
       .abandonActivation, .completeActivation, .armWatchdog, .disarmWatchdog, .persistOutput, .persist, .log,
       .finished:
       false

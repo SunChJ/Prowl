@@ -56,6 +56,7 @@ start sheet and interactive binding picker.
 | W4 | A non-strict delivery with validation issues persists and becomes `needsAttention`; B3 reports `delivery.state = provisional`, warnings, and the attention vocabulary through `status`, but does not silently accept it. | H14 requires a user decision. C1 supplies Accept / Ask again / Skip / Retry / Relaunch controls; B3 intentionally has only `status` and `cancel` as public lifecycle controls. Before C1, a provisional delivery (and every other attention state) is cancel-only; it cannot be re-delivered because the activation is no longer waiting. R2a is not released with B3 but without C1. |
 | W5 | `status` reads an active run from reducer state when available and otherwise reads a v1 record from its indexed worktree root. No run is reconstructed from disk. | Status and `agents wait --dispatch` remain useful after an app restart without accidentally implementing V2 resume. |
 | W6 | CLI launch roles use only frozen profile launch plans. `PROWL_WORKFLOW_TOKEN`, `PROWL_WORKFLOW_RUN`, and `PROWL_WORKFLOW_ROLE` are child-only surface environment values, not `run.json` or response data. | Retains B2's privacy rule and prevents a workflow token from leaking to unrelated processes or persisted metadata. |
+| W7 | A `close` step closes the pane the run launched without a confirmation (`closeSurface(confirmation: .skip)`); the effect is revocable (a cancel that beats it keeps the pane), and the boundary refuses to close a pane another *active* run has bound since. The plan's "protected close" wording is superseded. | Ghostty's protected close asks whenever the pane's process is alive, which an idle agent's process always is — every workflow cleanup would pop a modal from the executor. The author asked for the close explicitly and the run owns the pane; the two real hazards (a cancel racing the close, a pane re-bound after the run ended) are what the guards cover. |
 
 ## Tests and verification
 
@@ -203,6 +204,11 @@ unchanged except for one seam.
   - Restart: the isolated app was killed while `b3-idle` was `running`; after relaunch
     `status <run-id>` answered from `run.json` (`source: record`, `interrupted`, no activation)
     and `log.md` gained "Run marked interrupted at app launch (no resume in V1)".
+  - Re-run after review round 2 (fenced bookkeeping, in-`deliverLine` liveness guard,
+    reservations): `b3-review` from a launched author pane again completed in 230 s — brief
+    delivered by caller ancestry, reviewer launched, `fix` and `rereview` re-dispatched through
+    the #733 idle wait, `until` exited on `clean` after one round, `notify` fired, `close`
+    removed the reviewer pane; no dispatch record was left pending on either pane.
 
 ## Review
 
@@ -249,6 +255,24 @@ whose app does not accept `agents.dispatch`; briefs were sent with `prowl send` 
   so a pane a finished run kept stayed reserved forever (pruned against every run that ever
   bound it now). P2: a waiter the socket cancelled left its verified role behind and its id
   reusable before the reducer answered (`inFlight` ids stay claimed until `resolve`).
+- **Round 3 (verification) — round-2 fixes confirmed; 4 findings (0 P0, 3 P1, 1 P2), all
+  accepted and fixed.** P1: `close` was non-revocable, so a close queued when a cancel landed
+  still force-closed the pane — possibly one another run had bound since, because a terminal
+  run no longer counts as busy at admission (`close` is revocable now, re-checks the fence on
+  its own turn, and the boundary refuses to close a pane another *active* run has bound; the
+  `.skip` confirmation became decision W7); a native action could start after a cancel that
+  landed between the batch check and `execute` (the fence is now consulted as the last
+  main-actor operation before the action starts; the cancel that lands during the hop to the
+  action's executor cannot stop it — the machine's cancel log names the action as still running
+  and the result is discarded — documented as the remaining limitation); a stale injection
+  could, in theory, issue a record nobody owns (the chain issuance → typed line → returned
+  issuance is one main-actor turn, so the window does not exist; the executor now also checks
+  the fence right before issuance). P2: the stale-line test forced the fake terminal's answer
+  and polled with `Task.sleep` — `FencingQueue` now raises the real queue's fence on the n-th
+  staleness check and resumes the test through a continuation, and the fake evaluates the guard
+  the reducer supplied. Also cleaned up while there: `store.send { $0.x == y }` closures that
+  asserted nothing (assignments or `#expect` now) and the spurious `await`s on synchronous
+  main-actor closures in the executor.
 
 ## Non-goals
 

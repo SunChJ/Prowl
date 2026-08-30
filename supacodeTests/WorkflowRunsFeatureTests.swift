@@ -22,6 +22,57 @@ struct WorkflowRunsFeatureTests {
   private static let authorPane = WorkflowRunMachineTests.authorPane
   private static let reviewerProfile = WorkflowRunMachineTests.reviewerProfile
 
+  /// A `close` followed by another awaited step, so the close is queued while the run goes on.
+  nonisolated private static let closeThenSummary = """
+    schema: prowl.workflow/v1
+    id: test.close-then-summary
+    name: Close Then Summary
+    roles:
+      author:
+        source: current
+      reviewer:
+        source: launch
+        placement: split
+        direction: right
+    steps:
+      - id: brief
+        message: author
+        text: "Write the brief."
+        expect: { output: brief }
+      - id: launch
+        launch: reviewer
+        prompt: "Review {{ outputs.brief.path }}."
+        expect: { output: findings }
+      - id: cleanup
+        close: reviewer
+      - id: summary
+        message: author
+        text: "Findings: {{ outputs.findings.path }}. Summarize."
+        expect: { output: summary }
+    """
+
+  /// A native action as the first step: the run starts in `runningAction`.
+  nonisolated private static let actionFirst = """
+    schema: prowl.workflow/v1
+    id: test.action-first
+    name: Action First
+    roles:
+      author:
+        source: current
+      reviewer:
+        source: launch
+        placement: tab
+    steps:
+      - id: context
+        action: git.context
+        with: { root: "{{ worktree.path }}" }
+      - id: launch
+        launch: reviewer
+        prompt: "Review."
+      - id: done
+        notify: "Done"
+    """
+
   /// Records every boundary call; the runtime fakes answer synchronously.
   @MainActor
   final class Fixture {
@@ -40,8 +91,8 @@ struct WorkflowRunsFeatureTests {
     var responses: [(requestID: UUID, resolution: WorkflowRequestResolution)] = []
     var roleWaitOutcome: WorkflowRoleWaitOutcome = .idle
     var launchOutcome: Result<WorkflowLaunchResult, WorkflowLaunchError>?
-    /// When set, the fake terminal reports the line as stale instead of typing it.
-    var staleLines = false
+    /// What the liveness guard answered on each `deliverLine`.
+    var guardAnswers: [Bool] = []
     private var dispatchCounter = 0
     private var paneCounter = 10
 
@@ -68,7 +119,9 @@ struct WorkflowRunsFeatureTests {
       WorkflowRuntimeClient(
         waitForRole: { [self] _ in roleWaitOutcome },
         deliverLine: { [self] _, surfaceID, line, isLive in
-          guard isLive(), !staleLines else { return .stale }
+          let live = isLive()
+          guardAnswers.append(live)
+          guard live else { return .stale }
           let pointer = line.split(separator: " ").first { $0.hasPrefix("/") }.map(String.init)
           let existed = pointer.map { FileManager.default.fileExists(atPath: $0) } ?? true
           typed.append(WorkflowTypedLineRecord(surfaceID: surfaceID, line: line, instructionExisted: existed))
@@ -85,7 +138,10 @@ struct WorkflowRunsFeatureTests {
           let dispatchID = request.expectsDelivery ? issue(pane.surfaceID) : nil
           return .success(WorkflowLaunchResult(pane: pane, dispatchID: dispatchID))
         },
-        close: { [self] _, surfaceID in closed.append(surfaceID) },
+        close: { [self] _, surfaceID, _ in
+          closed.append(surfaceID)
+          return true
+        },
         notify: { [self] _, text in notifications.append(text) }
       )
     }
@@ -209,6 +265,42 @@ struct WorkflowRunsFeatureTests {
     var effects: [WorkflowRunEffect] { batches.flatMap(\.effects) }
   }
 
+  /// A real queue whose fence rises on the n-th staleness check of the run — as a cancel that
+  /// reduces on that very main-actor turn would raise it; `reached()` returns once it did.
+  @MainActor
+  final class FencingQueue {
+    private let queue = WorkflowEffectQueue()
+    private let fenceOnCheck: Int
+    private var checks = 0
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    init(fenceOnCheck: Int) {
+      self.fenceOnCheck = fenceOnCheck
+    }
+
+    var client: WorkflowEffectQueueClient {
+      WorkflowEffectQueueClient(
+        start: { [queue] runID in queue.start(runID) },
+        enqueue: { [queue] runID, batch in queue.enqueue(runID, batch) },
+        fence: { [queue] runID in queue.fence(runID) },
+        isStale: { [self] runID, sequence in
+          checks += 1
+          if checks == fenceOnCheck {
+            queue.fence(runID)
+            waiter?.resume()
+            waiter = nil
+          }
+          return queue.isStale(runID, sequence: sequence)
+        },
+        finish: { [queue] runID in queue.finish(runID) })
+    }
+
+    func reached() async {
+      guard checks < fenceOnCheck else { return }
+      await withCheckedContinuation { waiter = $0 }
+    }
+  }
+
   private static let timeout: Duration = .seconds(5)
   /// Tokens are minted by the reducer's `uuid` dependency (`.incrementing`) when a step opens.
   nonisolated private static let firstToken = "00000000-0000-0000-0000-000000000000"
@@ -247,9 +339,8 @@ struct WorkflowRunsFeatureTests {
         WorkflowDeliveryRequest(
           requestID: requestID, runID: runID, ordinal: 1, selector: .token(Self.firstToken),
           body: "# Brief\n## Scope\nx\n## Claims\ny", verdict: nil, source: "pane"))
-    ) {
-      $0.pendingDeliveries[requestID]?.ordinal == 1
-    }
+    )
+    #expect(store.state.pendingDeliveries[requestID]?.ordinal == 1)
     await store.receive(.event(runID: runID, .outputPersisted(ordinal: 1)), timeout: Self.timeout)
     #expect(fixture.responses.count == 1)
     guard case .delivered(let run, let receipt) = fixture.responses[0].resolution else {
@@ -283,7 +374,7 @@ struct WorkflowRunsFeatureTests {
     #expect(remembered == Self.reviewerProfile.id)
 
     await store.send(.userAction(runID: runID, .cancel)) {
-      $0.sessions[runID]?.run.status == .cancelled
+      $0.sessions[runID]?.run.status = .cancelled
     }
     await store.finish(timeout: Self.timeout)
     #expect(fixture.abandoned.map(\.dispatchID) == ["dispatch-2"])
@@ -311,10 +402,9 @@ struct WorkflowRunsFeatureTests {
 
     await store.send(.started(session, effects: effects))
     await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
-    await store.receive(\.event, timeout: Self.timeout) {
-      $0.sessions[runID]?.run.status.attention?.reason.code
-        == "injection_failed:activation_unavailable"
-    }
+    await store.receive(\.event, timeout: Self.timeout)
+    #expect(
+      store.state.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:activation_unavailable")
     #expect(fixture.typed.isEmpty)
     #expect(fixture.opened.isEmpty)
     await store.send(.userAction(runID: runID, .cancel))
@@ -555,28 +645,157 @@ struct WorkflowRunsFeatureTests {
     #expect(fixture.abandoned.map(\.dispatchID) == ["stale-1", "late-1"])
   }
 
-  /// The terminal refuses a line whose fence rose on the very turn it would have been typed: the
-  /// issuance is returned and no event reaches the machine.
-  @Test(.dependencies) func aStaleLineReturnsItsIssuanceAndTypesNothing() async throws {
+  /// The first `inject` makes three staleness checks in order: the batch check, the guard before
+  /// the record is issued, and the guard the terminal evaluates on the typing turn. A fence that
+  /// rises on the last one (a cancel reducing on that turn) returns the issuance: nothing is typed
+  /// and no event reaches the machine.
+  @Test(.dependencies) func aFenceOnTheTypingTurnReturnsTheIssuanceAndTypesNothing() async throws {
     let fixture = try Fixture()
     defer { fixture.cleanUp() }
-    fixture.staleLines = true
-    let store = makeStore(fixture, queue: WorkflowEffectQueue().client)
+    let queue = FencingQueue(fenceOnCheck: 3)
+    let store = makeStore(fixture, queue: queue.client)
     let (session, effects) = try fixture.session()
     let runID = session.run.id
     await store.send(.started(session, effects: effects))
     await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
-    // Give the executor a moment: it must open the record, see the stale line, and cancel it.
-    for _ in 0..<50 where fixture.cancelled.isEmpty {
-      await Task.yield()
-      try await Task.sleep(for: .milliseconds(20))
-    }
+    await queue.reached()
     #expect(fixture.opened.count == 1)
+    #expect(fixture.guardAnswers == [false], "the guard the terminal evaluates reflects the real fence")
     #expect(fixture.cancelled == ["dispatch-1"])
     #expect(fixture.typed.isEmpty)
     #expect(store.state.sessions[runID]?.run.phase == .injecting(ordinal: 1))
     await store.send(.userAction(runID: runID, .cancel))
     await store.finish(timeout: Self.timeout)
+  }
+
+  /// A fence that rises between the batch check and the issuance opens no record at all.
+  @Test(.dependencies) func aFenceBeforeTheIssuanceOpensNoRecord() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = FencingQueue(fenceOnCheck: 2)
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session()
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
+    await queue.reached()
+    #expect(fixture.opened.isEmpty)
+    #expect(fixture.cancelled.isEmpty)
+    #expect(fixture.typed.isEmpty)
+    #expect(fixture.guardAnswers.isEmpty)
+    #expect(store.state.sessions[runID]?.run.phase == .injecting(ordinal: 1))
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  /// A native action checks the fence once more right before it starts: a cancel that lands
+  /// after the batch check runs nothing, and the cancel's log names the action as in flight only
+  /// when it did start.
+  @Test(.dependencies) func aFenceBeforeANativeActionStartsRunsNothing() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = FencingQueue(fenceOnCheck: 2)
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session(Self.actionFirst)
+    let runID = session.run.id
+    #expect(
+      effects.contains(
+        .runAction(
+          stepID: "context", actionID: "git.context", inputs: ["root": fixture.root.path(percentEncoded: false)])))
+    await store.send(.started(session, effects: effects))
+    await queue.reached()
+    #expect(store.state.sessions[runID]?.run.phase == .runningAction(stepID: "context"))
+    #expect(store.state.sessions[runID]?.run.status == .running)
+    #expect(store.state.sessions[runID]?.run.actionOutputs.isEmpty == true)
+    await store.send(.userAction(runID: runID, .cancel)) {
+      $0.sessions[runID]?.run.status = .cancelled
+    }
+    await store.finish(timeout: Self.timeout)
+    let log = try String(
+      contentsOf: session.store.directory(for: runID).appending(path: "log.md"), encoding: .utf8)
+    #expect(log.contains("Step 'context': its native action keeps running; the result will be discarded."))
+  }
+
+  /// `close` is revocable: a cancel that beats a queued close keeps the pane, while a close the
+  /// run reaches normally removes it before the next line is typed.
+  @Test(.dependencies) func aCloseStepRemovesThePaneBeforeTheNextLineIsTyped() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let store = makeStore(fixture, queue: WorkflowEffectQueue().client)
+    let (session, effects) = try fixture.session(Self.closeThenSummary)
+    let runID = session.run.id
+    let reviewer = try await driveToCleanup(store, fixture: fixture, session: session, effects: effects)
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 3)), timeout: Self.timeout)
+    await store.receive(
+      .event(runID: runID, .injectionSucceeded(ordinal: 3, dispatchID: "dispatch-3")), timeout: Self.timeout)
+    #expect(fixture.closed == [reviewer.surfaceID])
+    #expect(fixture.typed.count == 2)
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  @Test(.dependencies) func aCancelThatBeatsAQueuedCloseKeepsThePane() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    // Staleness checks in FIFO order: inject 1 (batch, issuance, typing turn), launch 2 (batch),
+    // then the close's batch check — the fence rises there.
+    let queue = FencingQueue(fenceOnCheck: 5)
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, effects) = try fixture.session(Self.closeThenSummary)
+    let runID = session.run.id
+    let reviewer = try await driveToCleanup(store, fixture: fixture, session: session, effects: effects)
+    await queue.reached()
+    #expect(fixture.closed.isEmpty)
+    #expect(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane?.surfaceID == reviewer.surfaceID)
+    await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+    #expect(fixture.closed.isEmpty, "cancel never closes panes")
+  }
+
+  /// The boundary's ownership rule: a pane a terminal run still lists is owned by the active run
+  /// that bound it since, never by the run that ended.
+  @Test func anActiveRunOwnsAPaneATerminalRunStillLists() throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    var ended = try fixture.session().0
+    let pane = WorkflowRunMachineTests.reviewerPane
+    ended.run.bindings["reviewer"] = .launch(Self.reviewerProfile, pane: pane)
+    ended.run.status = .cancelled
+    var live = try fixture.session().0
+    live.run.bindings["author"] = .current(pane)
+    var state = WorkflowRunsFeature.State()
+    state.sessions[ended.run.id] = ended
+    #expect(state.activeSession(boundTo: pane.surfaceID) == nil)
+    state.sessions[live.run.id] = live
+    #expect(state.activeSession(boundTo: pane.surfaceID)?.run.id == live.run.id)
+  }
+
+  /// Brief delivered, reviewer launched, findings delivered: the run is at `cleanup` (a queued
+  /// close) with the `summary` message's idle wait armed. Returns the reviewer's pane.
+  private func driveToCleanup(
+    _ store: TestStoreOf<WorkflowRunsFeature>, fixture: Fixture, session: WorkflowRunSession,
+    effects: [WorkflowRunEffect]
+  ) async throws -> WorkflowPaneIdentity {
+    let runID = session.run.id
+    await store.send(.started(session, effects: effects))
+    await store.receive(.event(runID: runID, .roleIdle(ordinal: 1)), timeout: Self.timeout)
+    await store.receive(
+      .event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "dispatch-1")), timeout: Self.timeout)
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: UUID(), runID: runID, ordinal: 1, selector: .token(Self.firstToken), body: "brief",
+          verdict: nil, source: "pane")))
+    await store.receive(.event(runID: runID, .outputPersisted(ordinal: 1)), timeout: Self.timeout)
+    await store.receive(\.event, timeout: Self.timeout)
+    let reviewer = try #require(store.state.sessions[runID]?.run.bindings["reviewer"]?.pane)
+    await store.send(
+      .deliver(
+        WorkflowDeliveryRequest(
+          requestID: UUID(), runID: runID, ordinal: 2, selector: .token(Self.secondToken), body: "findings",
+          verdict: nil, source: "pane")))
+    await store.receive(.event(runID: runID, .outputPersisted(ordinal: 2)), timeout: Self.timeout)
+    return reviewer
   }
 
   /// Bookkeeping survives a fence; only pane- and worktree-facing effects are revocable.
@@ -597,7 +816,8 @@ struct WorkflowRunsFeatureTests {
     #expect(!WorkflowRunEffect.persist.isRevocable)
     #expect(!WorkflowRunEffect.persistOutput(name: "o", ordinal: 1, body: "b").isRevocable)
     #expect(!WorkflowRunEffect.log("l").isRevocable)
-    #expect(!WorkflowRunEffect.close(role: "r", surfaceID: pane).isRevocable)
+    #expect(WorkflowRunEffect.close(role: "r", surfaceID: pane).isRevocable, "cancel never closes panes")
+    #expect(!WorkflowRunEffect.notify("n").isRevocable)
     #expect(!WorkflowRunEffect.notify("n").isRevocable)
     #expect(!WorkflowRunEffect.finished(.cancelled).isRevocable)
   }
@@ -617,11 +837,11 @@ struct WorkflowRunsFeatureTests {
     #expect(effects.contains(.openActivation(role: "author", surfaceID: Self.authorPane.surfaceID, ordinal: 1)))
     let requestID = UUID()
     await store.send(.started(session, effects: effects, requestID: requestID)) {
-      $0.pendingStarts[requestID] == runID
+      $0.pendingStarts[requestID] = runID
     }
     #expect(fixture.responses.isEmpty)
     await store.send(.event(runID: runID, .injectionSucceeded(ordinal: 1, dispatchID: "dispatch-1"))) {
-      $0.pendingStarts.isEmpty
+      $0.pendingStarts = [:]
     }
     await store.finish(timeout: Self.timeout)
     #expect(fixture.responses.count == 1)
@@ -660,10 +880,8 @@ struct WorkflowRunsFeatureTests {
     let runID = session.run.id
     await store.send(.started(session, effects: effects))
     await store.receive(
-      .event(runID: runID, .roleUnavailable(ordinal: 1, .roleBlocked)), timeout: Self.timeout
-    ) {
-      $0.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:role_blocked"
-    }
+      .event(runID: runID, .roleUnavailable(ordinal: 1, .roleBlocked)), timeout: Self.timeout)
+    #expect(store.state.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:role_blocked")
     await store.send(.userAction(runID: runID, .cancel))
     await store.finish(timeout: Self.timeout)
   }
@@ -677,9 +895,9 @@ struct WorkflowRunsFeatureTests {
     let (session, effects) = try fixture.session()
     let runID = session.run.id
     await store.send(.started(session, effects: effects))
-    await store.receive(\.event, timeout: Self.timeout) {
-      $0.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:activation_unavailable"
-    }
+    await store.receive(\.event, timeout: Self.timeout)
+    #expect(
+      store.state.sessions[runID]?.run.status.attention?.reason.code == "injection_failed:activation_unavailable")
     #expect(store.state.sessions[runID]?.run.status.attention?.message.contains("someone-elses-dispatch") == true)
     #expect(fixture.typed.isEmpty)
     await store.send(.userAction(runID: runID, .cancel))

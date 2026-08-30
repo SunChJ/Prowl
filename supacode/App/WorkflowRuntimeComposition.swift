@@ -197,9 +197,18 @@ extension SupacodeApp {
           boundary: WorkflowLaunchBoundary(
             terminalManager: terminalManager, storeBox: storeBox, reservations: reservations))
       },
-      close: { worktree, surfaceID in
-        _ = terminalManager.stateIfExists(for: worktree.id)?.closeSurface(
-          id: surfaceID, confirmation: .skip)
+      close: { worktree, surfaceID, runID in
+        // Same main-actor turn as the close: a run that ended no longer counts as busy at
+        // admission, so the pane may belong to another run by now.
+        if let owner = storeBox.store?.state.workflowRuns.activeSession(boundTo: surfaceID),
+          owner.run.id != runID
+        {
+          workflowLogger.warning(
+            "[Workflow] Run \(runID) left pane \(surfaceID) open: workflow run \(owner.run.id) owns it now.")
+          return false
+        }
+        return terminalManager.stateIfExists(for: worktree.id)?.closeSurface(
+          id: surfaceID, confirmation: .skip) ?? false
       },
       notify: { worktree, text in
         workflowLogger.notice("[\(worktree.name)] \(text)")

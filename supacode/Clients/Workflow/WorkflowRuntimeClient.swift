@@ -53,7 +53,10 @@ struct WorkflowRuntimeClient: Sendable {
     @MainActor @Sendable (Worktree, AgentProfileLaunchPlan, WorkflowLaunchRequest) async -> Result<
       WorkflowLaunchResult, WorkflowLaunchError
     >
-  var close: @MainActor @Sendable (Worktree, UUID) -> Void
+  /// Closes a `launch` role's pane for the run that launched it, without a confirmation (the
+  /// author's `close` step is explicit and the run owns the pane); `false` when the pane is gone
+  /// or another active run has bound it since.
+  var close: @MainActor @Sendable (Worktree, UUID, UUID) -> Bool
   var notify: @MainActor @Sendable (Worktree, String) -> Void
 }
 
@@ -62,7 +65,7 @@ extension WorkflowRuntimeClient: DependencyKey {
     waitForRole: { _ in .cancelled },
     deliverLine: { _, _, _, _ in .insertFailed },
     launch: { _, _, _ in .failure(.failed("WorkflowRuntimeClient.launch is not configured")) },
-    close: { _, _ in },
+    close: { _, _, _ in false },
     notify: { _, _ in }
   )
 
@@ -70,7 +73,7 @@ extension WorkflowRuntimeClient: DependencyKey {
     waitForRole: { _ in .cancelled },
     deliverLine: { _, _, _, _ in .insertFailed },
     launch: { _, _, _ in .failure(.failed("No test workflow runtime configured.")) },
-    close: { _, _ in },
+    close: { _, _, _ in false },
     notify: { _, _ in }
   )
 }
