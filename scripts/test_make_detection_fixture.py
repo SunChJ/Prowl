@@ -15,12 +15,16 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "make-detection-fixture.py"
+DETECTED_AGENT_SWIFT = (
+    SCRIPT.parent.parent / "supacode/Domain/AgentDetection/DetectedAgent.swift"
+)
 
 _spec = importlib.util.spec_from_file_location("make_detection_fixture", SCRIPT)
 fixture = importlib.util.module_from_spec(_spec)
@@ -116,6 +120,18 @@ class MoneyMasking(unittest.TestCase):
         self.assertEqual(len(applied), 2)
 
 
+
+class AgentVocabulary(unittest.TestCase):
+    def test_agent_vocabulary_matches_the_swift_enum(self):
+        # The generator mirrors the detector's dispatch, so its agent names have
+        # to be the detector's. A hand-copied list drifts silently; this fails.
+        source = DETECTED_AGENT_SWIFT.read_text(encoding="utf-8")
+        body = source.split("enum DetectedAgent", 1)[1].split("var id:", 1)[0]
+        cases = re.findall(r'^\s*case (\w+)(?:\s*=\s*"([^"]+)")?\s*$', body, re.M)
+        self.assertTrue(cases, "no cases parsed from DetectedAgent.swift")
+        self.assertEqual(list(fixture.DETECTED_AGENTS), [raw or name for name, raw in cases])
+
+
 class Reduction(unittest.TestCase):
     def test_claude_keeps_the_full_screen(self):
         # Mirrors `DetectedAgent.detectionScreenText(from:)`: trimming a Claude
@@ -174,6 +190,13 @@ class EndToEnd(unittest.TestCase):
         self.assertNotIn("realname", result.stderr)
         self.assertIn("/Users/usr", result.stderr)
         self.assertIn("1 line", result.stderr)
+
+    def test_unknown_agent_is_rejected(self):
+        # Before the flag was constrained, "Claude" was not "claude" and so took
+        # the bounded-tail branch, silently dropping rows from a Claude capture.
+        result = self.run_script("row", agent="Claude")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid choice", result.stderr)
 
     def test_undecidable_replacement_fails_the_run(self):
         result = self.run_script("│ owner name │", "--redact", "owner=❤️")

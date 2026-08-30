@@ -71,6 +71,30 @@ def canonical_tail(content: str, limit: int = DETECTOR_TAIL_LIMIT) -> str:
     return "\n".join(lines[start:])
 
 
+# The runtime names `DetectedAgent` carries, which are also the `<runtime>` path
+# component of a fixture. Two of them are not the case name (`cursor-agent`,
+# `qodercli`), so an unconstrained flag is easy to get wrong — and every wrong
+# value would take the bounded-tail branch below without saying so.
+# `test_agent_vocabulary_matches_the_swift_enum` fails when this list drifts.
+DETECTED_AGENTS = (
+    "pi",
+    "omp",
+    "claude",
+    "codex",
+    "gemini",
+    "cursor-agent",
+    "cline",
+    "opencode",
+    "copilot",
+    "kimi",
+    "droid",
+    "amp",
+    "qodercli",
+    "qwen",
+    "grok",
+)
+
+
 def detection_screen_text(text: str, agent: str) -> str:
     """Port of `DetectedAgent.detectionScreenText(from:)`.
 
@@ -234,10 +258,11 @@ def main() -> int:
     parser.add_argument(
         "--agent",
         required=True,
+        choices=DETECTED_AGENTS,
         metavar="AGENT",
         help="detector the fixture targets (the <runtime> path component, e.g. claude "
         "or codex); claude keeps the full screen, every other agent takes the "
-        "bounded 24-line tail",
+        "bounded 24-line tail. One of: " + ", ".join(DETECTED_AGENTS),
     )
     parser.add_argument(
         "--redact",
