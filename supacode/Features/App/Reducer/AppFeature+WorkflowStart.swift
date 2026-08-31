@@ -63,8 +63,8 @@ extension AppFeature {
     }
   }
 
-  /// Pure derivation, unit-tested directly: every pane bound to an active run wears
-  /// `in <workflow> \u{00B7} <role>`.
+  /// Pure derivation (covered by `WorkflowRoleBadgeTests`): every pane bound to an active
+  /// run wears `in <workflow> \u{00B7} <role>`.
   static func workflowRoleBadges(for runs: WorkflowRunsFeature.State) -> [UUID: String] {
     var badges: [UUID: String] = [:]
     for session in runs.activeSessions {

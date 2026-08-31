@@ -52,13 +52,21 @@ struct WorkflowStartFeature {
       role.candidates + (createdCandidatesByRole[role.name] ?? [])
     }
 
-    /// A suggestion can only form a profile when it names a known runtime; a Create action
-    /// for anything else would be dead (dsl-spec §3 allows agent-less suggestions).
+    /// A suggestion can only form a profile when it names a known runtime AND the resulting
+    /// profile would actually qualify for the role — judged by the same resolver rejection
+    /// rule admission applies, so Create never manufactures a profile the run then refuses
+    /// (dsl-spec §3 allows agent-less suggestions and agent/`agents` mismatches; the
+    /// validator only warns about them).
     func canCreateSuggestion(for roleName: String) -> Bool {
       guard let role = context.launchRoles.first(where: { $0.name == roleName }),
-        let agent = role.suggestion?.agent
+        let agent = role.suggestion?.agent,
+        let runtime = AgentProfileRuntime(rawValue: agent),
+        let requirements = context.definition.roles.first(where: { $0.name == roleName })?.launch
       else { return false }
-      return AgentProfileRuntime(rawValue: agent) != nil
+      let probe = AgentProfile(id: UUID(), name: "probe", runtime: runtime)
+      return WorkflowBindingResolver.rejection(
+        of: probe, requirements: requirements,
+        context: WorkflowBindingResolverContext(profiles: [])) == nil
     }
 
     /// Whether the chosen source must host a detected agent, given the current skip choices.
@@ -226,6 +234,7 @@ struct WorkflowStartFeature {
 
     case .createSuggestionConfirmed:
       guard let roleName = state.creatingSuggestionForRole,
+        state.canCreateSuggestion(for: roleName),
         let role = state.context.launchRoles.first(where: { $0.name == roleName }),
         let profile = Self.profile(
           from: role.suggestion, name: state.suggestionProfileName, id: uuid())

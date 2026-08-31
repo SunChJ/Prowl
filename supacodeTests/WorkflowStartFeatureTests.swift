@@ -321,6 +321,37 @@ struct WorkflowStartFeatureTests {
     }
   }
 
+  @Test func suggestionOutsideTheRoleAgentListOffersNoCreateAction() async throws {
+    // dsl-spec §3: `agents: [pi]` with `suggest: { agent: claude }` is legal (validator
+    // warns only); creating that profile would be refused by admission as agentNotAllowed,
+    // so the sheet must not offer it — and a stray confirm must not persist anything.
+    let context = try makeContext(
+      suggestion: WorkflowProfileSuggestion(agent: "claude"), includeCandidates: false)
+    let state = WorkflowStartFeature.State(context: context)
+    #expect(!state.canCreateSuggestion(for: "reviewer"))
+
+    let storage = UserGlobalSettingsTestStorage()
+    let url = URL(fileURLWithPath: "/tmp/prowl-global-settings-\(UUID().uuidString).json")
+    try await withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.userGlobalSettingsURL = url
+    } operation: {
+      var initial = WorkflowStartFeature.State(context: context)
+      initial.creatingSuggestionForRole = "reviewer"
+      initial.suggestionProfileName = "Sneaky"
+      let store = TestStore(initialState: initial) {
+        WorkflowStartFeature()
+      } withDependencies: {
+        $0.uuid = .incrementing
+      }
+      await store.send(.createSuggestionConfirmed) {
+        $0.creatingSuggestionForRole = nil
+      }
+      @Shared(.userGlobalSettings) var settings: UserGlobalSettings
+      #expect(settings.agentProfiles.isEmpty)
+    }
+  }
+
   @Test func suggestionWithoutAnAgentOffersNoCreateAction() throws {
     // dsl-spec §3 allows a `suggest` that omits `agent`; it cannot form a profile, so the
     // sheet must not offer a dead Create action for it.
