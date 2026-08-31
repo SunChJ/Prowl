@@ -1,0 +1,282 @@
+import ComposableArchitecture
+import Foundation
+import Sharing
+import Testing
+
+@testable import supacode
+
+@MainActor
+struct WorkflowStartFeatureTests {
+  static let review = """
+    schema: prowl.workflow/v1
+    id: review
+    name: Review
+    inputs:
+      focus: { type: string, default: "everything" }
+      goal: { type: string }
+    roles:
+      author:
+        source: current
+      reviewer:
+        source: launch
+        agents: [pi]
+    steps:
+      - id: brief
+        message: author
+        text: "Brief on {{ inputs.goal }}."
+        expect: { output: brief }
+      - id: launch
+        launch: reviewer
+        prompt: "Read {{ outputs.brief.path }}."
+    """
+
+  static let skippableNote = """
+    schema: prowl.workflow/v1
+    id: note-flow
+    name: Note Flow
+    roles:
+      author:
+        source: current
+      runner:
+        source: launch
+        bind: auto
+    steps:
+      - id: note
+        message: author
+        text: "Write a note."
+        expect: { output: note }
+      - id: launch
+        launch: runner
+        prompt: "Just do it."
+    """
+
+  static let profileID = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
+  static let agentPaneID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+  static let shellPaneID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+
+  static let agentPane = WorkflowStartPaneCandidate(
+    surfaceID: agentPaneID, handle: "p1", agentToken: "claude",
+    agentDisplayName: "Claude Code", paneTitle: "claude")
+  static let shellPane = WorkflowStartPaneCandidate(
+    surfaceID: shellPaneID, handle: "p2", agentToken: nil, agentDisplayName: nil, paneTitle: "zsh")
+
+  private func makeContext(
+    yaml: String = review,
+    preselected: UUID? = agentPaneID,
+    resolvedProfileID: UUID? = nil,
+    suggestion: WorkflowProfileSuggestion? = nil,
+    bindModeOverride: WorkflowBindModeOverride.Mode? = nil,
+    candidateUnavailableReason: String? = nil
+  ) throws -> WorkflowStartContext {
+    let definition = try #require(WorkflowDocumentParser.parse(yaml).definition)
+    let launchRoles = definition.roles.filter { $0.source == .launch }.map { role in
+      WorkflowStartLaunchRole(
+        name: role.name,
+        effectiveBind: bindModeOverride == .auto ? .auto : (role.launch?.bind ?? .ask),
+        resolvedProfileID: resolvedProfileID,
+        candidates: [
+          WorkflowStartLaunchRole.Candidate(
+            profileID: Self.profileID, name: "Pi Reviewer", agentToken: "pi",
+            unavailableReason: candidateUnavailableReason)
+        ],
+        suggestion: suggestion,
+        rejectedNote: nil)
+    }
+    return WorkflowStartContext(
+      item: WorkflowStartCatalogItem(
+        key: "user/\(definition.id)", workflowID: definition.id, name: definition.name,
+        workflowDescription: nil, validationFailure: nil),
+      definition: definition,
+      worktreeID: "/tmp/wt/", worktreeName: "main",
+      source: WorkflowStartSource(
+        roleName: "author",
+        candidates: [Self.agentPane, Self.shellPane],
+        preselectedSurfaceID: preselected),
+      launchRoles: launchRoles,
+      pickRoles: [],
+      cliInstalled: true,
+      bindModeOverride: bindModeOverride)
+  }
+
+  @Test func initPrefillsFromTheResolverAnswers() throws {
+    let context = try makeContext(resolvedProfileID: Self.profileID)
+    let state = WorkflowStartFeature.State(context: context)
+
+    #expect(state.selectedSourceSurfaceID == Self.agentPaneID)
+    #expect(state.launchSelections == ["reviewer": Self.profileID])
+    #expect(state.inputValues == ["focus": "everything"])
+    #expect(!state.dontAskAgain)
+  }
+
+  @Test func canRunNeedsSelectionsAndRequiredInputs() throws {
+    let context = try makeContext(resolvedProfileID: Self.profileID)
+    var state = WorkflowStartFeature.State(context: context)
+
+    #expect(!state.canRun)  // `goal` has no default
+    state.inputValues["goal"] = "ship C2"
+    #expect(state.canRun)
+    state.launchSelections = [:]
+    #expect(!state.canRun)
+  }
+
+  @Test func unavailableProfileSelectionBlocksRun() throws {
+    let context = try makeContext(
+      resolvedProfileID: Self.profileID, candidateUnavailableReason: "This role needs pi.")
+    var state = WorkflowStartFeature.State(context: context)
+    state.inputValues["goal"] = "x"
+    #expect(!state.canRun)
+  }
+
+  @Test func skippingTheOnlyDeliveryMakesABareShellSourceValid() async throws {
+    let context = try makeContext(yaml: Self.skippableNote, preselected: Self.shellPaneID,
+      resolvedProfileID: Self.profileID)
+    let store = TestStore(initialState: WorkflowStartFeature.State(context: context)) {
+      WorkflowStartFeature()
+    }
+
+    #expect(!store.state.canRun)  // bare shell + a surviving delivery
+    await store.send(.skipToggled(stepID: "note")) {
+      $0.skippedSteps = ["note"]
+    }
+    #expect(store.state.canRun)
+  }
+
+  @Test func endsRunSkipsAreNeverArmed() async throws {
+    let context = try makeContext(resolvedProfileID: Self.profileID)
+    let store = TestStore(initialState: WorkflowStartFeature.State(context: context)) {
+      WorkflowStartFeature()
+    }
+    // `brief` feeds the launch prompt: skipping it at start is refused by admission (§9).
+    await store.send(.skipToggled(stepID: "brief"))
+    #expect(store.state.skippedSteps.isEmpty)
+  }
+
+  @Test func runSubmitsTheCLIVocabularyAndPersistsDontAskAgain() async throws {
+    let storage = UserGlobalSettingsTestStorage()
+    let url = URL(fileURLWithPath: "/tmp/prowl-global-settings-\(UUID().uuidString).json")
+    let submitted = LockIsolated<WorkflowStartRequest?>(nil)
+    let context = try makeContext(resolvedProfileID: Self.profileID)
+
+    try await withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.userGlobalSettingsURL = url
+    } operation: {
+      var initial = WorkflowStartFeature.State(context: context)
+      initial.inputValues["goal"] = "ship C2"
+      initial.inputValues["focus"] = "everything"  // untouched default: must not submit
+      initial.dontAskAgain = true
+      let store = TestStore(initialState: initial) {
+        WorkflowStartFeature()
+      } withDependencies: {
+        $0[WorkflowStartClient.self].run = { request in
+          submitted.setValue(request)
+          return .started
+        }
+      }
+
+      await store.send(.runTapped) {
+        $0.isSubmitting = true
+      }
+      await store.receive(.runResponse(.started)) {
+        $0.isSubmitting = false
+      }
+      await store.receive(.delegate(.started))
+
+      let request = try #require(submitted.value)
+      #expect(request.workflowID == "review")
+      #expect(request.sourceSurfaceID == Self.agentPaneID)
+      #expect(request.roleBindings == ["reviewer=\(Self.profileID.uuidString)"])
+      #expect(request.inputValues == ["goal=ship C2"])
+      #expect(request.skippedSteps.isEmpty)
+
+      @Shared(.userGlobalSettings) var settings: UserGlobalSettings
+      #expect(settings.workflowBindMode(for: "user/review") == .auto)
+    }
+  }
+
+  @Test func uncheckingDontAskAgainClearsAPersistedAuto() async throws {
+    let storage = UserGlobalSettingsTestStorage()
+    let url = URL(fileURLWithPath: "/tmp/prowl-global-settings-\(UUID().uuidString).json")
+    let context = try makeContext(resolvedProfileID: Self.profileID, bindModeOverride: .auto)
+
+    try await withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.userGlobalSettingsURL = url
+    } operation: {
+      @Shared(.userGlobalSettings) var settings: UserGlobalSettings
+      $settings.withLock { $0.setWorkflowBindMode(.auto, for: "user/review") }
+
+      var initial = WorkflowStartFeature.State(context: context)
+      initial.inputValues["goal"] = "x"
+      #expect(initial.dontAskAgain)  // reflects the stored override
+      initial.dontAskAgain = false
+      let store = TestStore(initialState: initial) {
+        WorkflowStartFeature()
+      } withDependencies: {
+        $0[WorkflowStartClient.self].run = { _ in .started }
+      }
+
+      await store.send(.runTapped) { $0.isSubmitting = true }
+      await store.receive(.runResponse(.started)) { $0.isSubmitting = false }
+      await store.receive(.delegate(.started))
+
+      #expect(settings.workflowBindMode(for: "user/review") == nil)
+    }
+  }
+
+  @Test func failedSubmissionShowsTheError() async throws {
+    let context = try makeContext(resolvedProfileID: Self.profileID)
+    var initial = WorkflowStartFeature.State(context: context)
+    initial.inputValues["goal"] = "x"
+    let store = TestStore(initialState: initial) {
+      WorkflowStartFeature()
+    } withDependencies: {
+      $0[WorkflowStartClient.self].run = { _ in
+        .failed(code: "PANE_BUSY", message: "The source pane already belongs to a run.")
+      }
+    }
+
+    await store.send(.runTapped) { $0.isSubmitting = true }
+    await store.receive(.runResponse(.failed(code: "PANE_BUSY", message: "The source pane already belongs to a run."))) {
+      $0.isSubmitting = false
+      $0.submissionError = "The source pane already belongs to a run."
+    }
+  }
+
+  @Test func createFromSuggestionPersistsARealProfileAndSelectsIt() async throws {
+    let storage = UserGlobalSettingsTestStorage()
+    let url = URL(fileURLWithPath: "/tmp/prowl-global-settings-\(UUID().uuidString).json")
+    let suggestion = WorkflowProfileSuggestion(
+      agent: "pi", model: nil, reasoningEffort: "xhigh", executionMode: "standard")
+    let context = try makeContext(suggestion: suggestion)
+
+    try await withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.userGlobalSettingsURL = url
+    } operation: {
+      let store = TestStore(initialState: WorkflowStartFeature.State(context: context)) {
+        WorkflowStartFeature()
+      } withDependencies: {
+        $0.uuid = .incrementing
+      }
+
+      await store.send(.createSuggestionTapped(role: "reviewer")) {
+        $0.creatingSuggestionForRole = "reviewer"
+        $0.suggestionProfileName = "Reviewer (Pi)"
+      }
+      let expected = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+      await store.send(.createSuggestionConfirmed) {
+        $0.creatingSuggestionForRole = nil
+        $0.suggestionProfileName = ""
+        $0.launchSelections = ["reviewer": expected]
+      }
+
+      @Shared(.userGlobalSettings) var settings: UserGlobalSettings
+      let created = try #require(settings.agentProfiles.first { $0.id == expected })
+      #expect(created.name == "Reviewer (Pi)")
+      #expect(created.runtime == .pi)
+      #expect(created.reasoningEffort == "xhigh")
+      #expect(created.isEnabled)
+    }
+  }
+}
