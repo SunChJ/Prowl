@@ -25,6 +25,29 @@ SCRIPT = pathlib.Path(__file__).resolve().parent / "make-detection-fixture.py"
 DETECTED_AGENT_SWIFT = (
     SCRIPT.parent.parent / "supacode/Domain/AgentDetection/DetectedAgent.swift"
 )
+SCREEN_HEURISTICS_SWIFT = (
+    SCRIPT.parent.parent / "supacode/Infrastructure/AgentDetection/ScreenHeuristics.swift"
+)
+
+
+def swift_declaration_body(source: str, header: str) -> str:
+    """The braced body of the declaration `header` opens, brace-matched.
+
+    Splitting on a later member instead would stop the scan early, and a case
+    declared after that member would go unread.
+    """
+    start = source.index(header)
+    opening = source.index("{", start)
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening + 1 : index]
+    raise AssertionError(f"unterminated declaration: {header}")
+
 
 _spec = importlib.util.spec_from_file_location("make_detection_fixture", SCRIPT)
 fixture = importlib.util.module_from_spec(_spec)
@@ -126,10 +149,40 @@ class AgentVocabulary(unittest.TestCase):
         # The generator mirrors the detector's dispatch, so its agent names have
         # to be the detector's. A hand-copied list drifts silently; this fails.
         source = DETECTED_AGENT_SWIFT.read_text(encoding="utf-8")
-        body = source.split("enum DetectedAgent", 1)[1].split("var id:", 1)[0]
-        cases = re.findall(r'^\s*case (\w+)(?:\s*=\s*"([^"]+)")?\s*$', body, re.M)
+        body = swift_declaration_body(source, "enum DetectedAgent")
+        # Two leading spaces pins a member of the enum itself. A `case .claude:`
+        # inside one of its switch statements sits deeper and ends in a colon,
+        # so it matches neither the indent nor the end-of-line anchor.
+        cases = re.findall(r'^  case (\w+)(?:\s*=\s*"([^"]+)")?\s*$', body, re.M)
         self.assertTrue(cases, "no cases parsed from DetectedAgent.swift")
         self.assertEqual(list(fixture.DETECTED_AGENTS), [raw or name for name, raw in cases])
+
+    def test_body_scan_reads_past_a_member_declared_before_a_case(self):
+        # The scan used to stop at `var id:`. Swift permits a case after a
+        # computed property, and that case has to be read.
+        source = "enum Sample: String {\n  case first\n  var id: String { rawValue }\n  case last\n}\n"
+        body = swift_declaration_body(source, "enum Sample")
+        cases = re.findall(r'^  case (\w+)(?:\s*=\s*"([^"]+)")?\s*$', body, re.M)
+        self.assertEqual([name for name, _ in cases], ["first", "last"])
+
+
+class TailLimits(unittest.TestCase):
+    def test_tail_limits_match_the_swift_constants(self):
+        # The generator ports the detector's line budgets. A budget changed on
+        # the Swift side and not here produces a fixture the detector never
+        # reads, and the corpus round trip cannot see it: applying a wider tail
+        # to an already narrower fixture leaves the fixture unchanged.
+        source = SCREEN_HEURISTICS_SWIFT.read_text(encoding="utf-8")
+        limits = dict(
+            re.findall(r"^nonisolated let (\w*[Ll]ineLimit) = (\d+)$", source, re.M)
+        )
+        self.assertEqual(
+            limits,
+            {
+                "agentDetectionRecentLineLimit": str(fixture.DETECTOR_TAIL_LIMIT),
+                "piAgentDetectionRecentLineLimit": str(fixture.PI_DETECTOR_TAIL_LIMIT),
+            },
+        )
 
 
 class Reduction(unittest.TestCase):
@@ -139,10 +192,25 @@ class Reduction(unittest.TestCase):
         text = "\n".join(f"line {index}" for index in range(40))
         self.assertEqual(fixture.detection_screen_text(text, "claude"), text)
 
+    def test_pi_takes_the_wider_bounded_tail(self):
+        # Mirrors the `.pi` branch: 32 non-blank lines, not the default 24.
+        text = "\n".join(f"line {index}" for index in range(40))
+        reduced = fixture.detection_screen_text(text, "pi")
+        self.assertEqual(reduced.split("\n"), [f"line {index}" for index in range(8, 40)])
+
     def test_other_agents_take_the_bounded_tail(self):
         text = "\n".join(f"line {index}" for index in range(40))
         reduced = fixture.detection_screen_text(text, "codex")
         self.assertEqual(reduced.split("\n"), [f"line {index}" for index in range(16, 40)])
+
+    def test_each_agent_takes_its_own_slice_of_one_screen(self):
+        # The three reduction categories, read off the same capture.
+        text = "\n".join(f"line {index}" for index in range(40))
+        widths = {
+            agent: len(fixture.detection_screen_text(text, agent).split("\n"))
+            for agent in ("claude", "pi", "codex")
+        }
+        self.assertEqual(widths, {"claude": 40, "pi": 32, "codex": 24})
 
     def test_blank_lines_do_not_count_toward_the_tail_budget(self):
         rows = [f"line {index}" for index in range(30)]
