@@ -1,0 +1,40 @@
+import ComposableArchitecture
+import Foundation
+
+extension AppFeature {
+  /// Open the workflow start sheet, or start the run at once when nothing is undecided
+  /// (docs-ai 063.011 decisions 2 and 6). `worktreeID` pins an entry's worktree (the Active
+  /// Agents menu); nil resolves the action target. `sourceSurfaceID` pre-selects — and for
+  /// the Active Agents menu fixes — the "You" row; nil lets the client take the worktree's
+  /// focused pane. `forceSheet` is the capsule popover's "Run with Options…" escape hatch.
+  func openWorkflowStart(
+    state: inout State,
+    workflowKey: String,
+    worktreeID: Worktree.ID?,
+    sourceSurfaceID: UUID?,
+    forceSheet: Bool
+  ) -> Effect<Action> {
+    guard state.workflowStart == nil else { return .none }
+    let worktree =
+      worktreeID.flatMap { state.repositories.terminalWorktree(for: $0) }
+      ?? actionTargetWorktree(repositories: state.repositories)
+    guard let worktree else { return .none }
+    @Dependency(WorkflowStartClient.self) var workflowStartClient
+    guard let context = workflowStartClient.context(workflowKey, worktree.id, sourceSurfaceID)
+    else {
+      return .send(
+        .repositories(.showToast(.warning("This workflow cannot start — check its file with `prowl workflow validate`"))))
+    }
+    if !forceSheet, context.canStartImmediately {
+      // dsl-spec §3 `bind: auto`: no sheet; C1's status center is the start feedback.
+      let request = WorkflowStartFeature.State(context: context).request
+      return .run { send in
+        if case .failed(_, let message) = await workflowStartClient.run(request) {
+          await send(.repositories(.showToast(.warning(message))))
+        }
+      }
+    }
+    state.workflowStart = WorkflowStartFeature.State(context: context)
+    return .none
+  }
+}

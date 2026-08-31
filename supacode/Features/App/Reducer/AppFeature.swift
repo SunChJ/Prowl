@@ -32,6 +32,7 @@ struct AppFeature {
     var launchedAt: Date?
     var leftSidebarVisibility: NavigationSplitViewVisibility = .all
     @Presents var handoffHud: HandoffHudFeature.State?
+    @Presents var workflowStart: WorkflowStartFeature.State?
     @Presents var alert: AlertState<Alert>?
 
     init(
@@ -92,6 +93,11 @@ struct AppFeature {
     case terminalEvent(TerminalClient.Event)
     case openHandoffHud
     case handoffHud(PresentationAction<HandoffHudFeature.Action>)
+    /// Open the workflow start sheet — or start at once when nothing is undecided (063 C2).
+    /// `worktreeID` pins an entry's worktree (Active Agents menu); nil uses the action target.
+    /// `forceSheet` is the "Run with Options…" escape hatch.
+    case openWorkflowStart(workflowKey: String, worktreeID: Worktree.ID?, sourceSurfaceID: UUID?, forceSheet: Bool)
+    case workflowStart(PresentationAction<WorkflowStartFeature.Action>)
     /// A CLI handoff completed (announced by the socket-service handler); the
     /// HUD uses it to observe the request it injected into the source pane.
     case handoffCliCompleted(HandoffCLICompletion)
@@ -1056,6 +1062,26 @@ struct AppFeature {
       case .openHandoffHud:
         return openHandoffHud(state: &state)
 
+      case .openWorkflowStart(let workflowKey, let worktreeID, let sourceSurfaceID, let forceSheet):
+        return openWorkflowStart(
+          state: &state, workflowKey: workflowKey, worktreeID: worktreeID,
+          sourceSurfaceID: sourceSurfaceID, forceSheet: forceSheet)
+
+      case .workflowStart(.presented(.delegate(.dismiss))),
+        .workflowStart(.presented(.delegate(.started))),
+        .workflowStart(.dismiss):
+        state.workflowStart = nil
+        guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
+          return .none
+        }
+        // Hand keyboard focus back to the terminal the sheet captured it from.
+        return .run { _ in
+          await terminalClient.send(.focusSelectedTab(worktree))
+        }
+
+      case .workflowStart:
+        return .none
+
       case .handoffHud(.presented(.delegate(.dismiss))), .handoffHud(.dismiss):
         let worktree = state.handoffHud?.worktree
         state.handoffHud = nil
@@ -1079,6 +1105,9 @@ struct AppFeature {
     core
       .ifLet(\.$handoffHud, action: \.handoffHud) {
         HandoffHudFeature()
+      }
+      .ifLet(\.$workflowStart, action: \.workflowStart) {
+        WorkflowStartFeature()
       }
     Reduce<State, Action> { state, action in
       // Default-on focus restore: every command-palette delegate action that

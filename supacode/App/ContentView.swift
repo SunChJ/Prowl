@@ -176,6 +176,11 @@ struct ContentView: View {
         HandoffHudOverlayView(store: handoffHudStore)
       }
     }
+    .overlay {
+      if let workflowStartStore = store.scope(state: \.workflowStart, action: \.workflowStart.presented) {
+        WorkflowStartOverlayView(store: workflowStartStore)
+      }
+    }
     .background(WindowTabbingDisabler())
   }
 

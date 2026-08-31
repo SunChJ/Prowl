@@ -78,6 +78,7 @@ extension AppFeature.State {
   fileprivate var hasBlockingRenameBranchPresentation: Bool {
     isRunScriptPromptPresented
       || handoffHud != nil
+      || workflowStart != nil
       || alert != nil
       || repositories.isOpenPanelPresented
       || repositories.worktreeCreationPrompt != nil
