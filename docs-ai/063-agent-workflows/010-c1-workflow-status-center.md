@@ -2,11 +2,11 @@
 
 ## Status
 
-Implementation and pre-review verification are complete in
+Implementation, adversarial review, and reviewed-head live verification are complete in
 [#747](https://github.com/onevcat/Prowl/pull/747), after B3 merged as
-[#744](https://github.com/onevcat/Prowl/pull/744). C1 is the last implementation slice in R2a;
-R2a is not release-ready until the required adversarial review and reviewed-head live end-to-end
-verification in this record are complete.
+[#744](https://github.com/onevcat/Prowl/pull/744). C1 is the last implementation slice in R2a and
+the PR is merge-ready. Merging #747 completes the R2a implementation scope; release packaging and
+publishing remain the normal post-merge release operation.
 
 ## Product contract
 
@@ -111,7 +111,7 @@ After local self-review and the first PR push:
   notification routing, and the native run panel are implemented.
 - `make check`: passed (format, strict SwiftFormat, strict SwiftLint, 76 repository checks).
 - Focused workflow/notification regression group: 107 tests passed.
-- `make test`: both result bundles passed; the primary bundle contained 2,911 tests and the
+- Final `make test`: both result bundles passed; the primary bundle contained 2,915 tests and the
   secondary bundle 2 tests, with zero failures.
 - `make build-app`: passed with zero errors and zero warnings.
 - CLI release gates passed: `make build-cli`, `make test-cli-smoke`, 233 CLI unit tests, and 110
@@ -130,7 +130,7 @@ document-order steps, elapsed state, and footer controls remained legible and us
 through `prowl workflow done -`, after which the active item disappeared as designed. Temporary
 workflow input was removed; persisted local run records remain under the self-ignored run store.
 
-### Remaining merge gates
+### Adversarial review record
 
 - A first neighboring-agent adversarial review found five material interaction/notification gaps;
   all were accepted and fixed test-first:
@@ -147,7 +147,49 @@ workflow input was removed; persisted local run records remain under the self-ig
   action, so an unexpected duplicate notice cannot be discarded before the assertion boundary.
 - The toolbar still summarizes the newest run, but a run needing attention is now the default panel
   selection and VoiceOver label target, avoiding an extra hunt in multi-run panels.
-- One or more additional neighboring-agent adversarial review rounds, with accepted fixes and
-  evidence recorded on the PR.
-- Final reviewed-head live E2E across the full action/attention matrix, multiple runs,
-  notifications, focus/reveal/log controls, accessibility, and display sleep.
+- Round 2 independently traced all five fixes and ran 68 relevant tests plus strict SwiftLint. It
+  found no P0, P1, or serious P2 and recommended merge after reviewed-head live E2E.
+- Round 3 reviewed the attention/default-selection and exhaustive-test follow-up. Its two P3
+  findings were accepted: closing the popover now clears sticky selection, and notification docs
+  distinguish pane-level ordinary notices from worktree-level workflow notices.
+- Round 4 reviewed only that final delta, found no P0/P1/P2, and approved `7c235988` as the safe
+  reviewed E2E head.
+- Live E2E then exposed an inert-toolbar regression after a pinned last run completed and a later
+  run started in the same selected worktree. `e301696e` keeps the workflow status control mounted
+  through the zero-run transition so its local popover state closes and resets reliably.
+- Round 5 reviewed only that live-found fix. It found no P0/P1/material P2 and confirmed the hidden
+  zero-run control is zero-size, hit-test-disabled, and Accessibility-hidden without regressing
+  toast/pin identity, selection retention, worktree/mode transitions, or task cleanup.
+
+### Reviewed-head live E2E
+
+- With the macOS session locked, the reviewed `7c235988` Debug build launched, created a new terminal
+  surface, ran a captured shell command successfully, and launched a real Codex profile. This
+  directly covers the display-sleep/locked-session surface path; the later final delta only changes
+  toolbar view lifetime and received its own focused review and rebuilt-app E2E.
+- A real launch-role happy run completed through the generated `prowl workflow done -` command and
+  persisted its output with verdict `clean`.
+- Concurrent provisional runs exercised all delivery decisions: `Ask Again` injected the generated
+  remediation prompt and accepted a corrected re-delivery; `Accept as Delivered` persisted a valid
+  delivery with a missing required section; and the hover-open `Accept with Verdict` menu pinned the
+  panel and persisted the selected `clean` verdict.
+- Gone-role recovery replaced the dead p22 binding with a new p30 pane and resumed the step. A
+  separate run exercised the destructive Cancel confirmation and finished `cancelled` while keeping
+  its pane and outputs.
+- The watchdog reached attention through its real automatic nudge and idle grace. `Nudge Again`
+  delivered another completion reminder, `Keep Waiting` re-armed the grace period, and the next
+  attention state was actually skipped after confirming the displayed consequence.
+- Hover preview opened and closed without pinning; interacting with Skip and the verdict menu pinned
+  it across pointer exit and native confirmation/menu presentation. A real happy-path completion
+  showed its green toolbar toast while the pinned watchdog panel remained visible and retained its
+  selection, then restored the run indicator after the toast dismissed.
+- Role-chip focus selected the exact bound pane. Reveal Run Folder selected the exact persisted run
+  directory in Finder, and Open Log opened that run's `log.md`. The sidebar notification list showed
+  background attention/completion events, and selecting the watchdog notice focused its p26 pane.
+- Shelf, Default, and Canvas modes were inspected on the final build at the approximately 768-point
+  constrained width. The native toolbar item and panel remained legible and unclipped. Accessibility
+  exposed the attention-aware run title/count plus named recovery and footer controls.
+- The live-found zero-run regression was reproduced and then retested in a fresh installed Debug
+  process: pinned provisional run -> completed -> zero active runs -> toast dismissed -> new run in
+  the same worktree -> the first toolbar click opened the new panel. No worktree reselection was
+  required after `e301696e`.
