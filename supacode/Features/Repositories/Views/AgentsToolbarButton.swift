@@ -335,7 +335,6 @@ private struct AgentsPopoverRow: View {
   }
 }
 
-
 /// A runnable workflow row: the wide button starts it (skipping the sheet when
 /// nothing is undecided), the trailing control forces the start sheet — the
 /// "Run with Options…" escape hatch (docs-ai 063.011 decision 5).

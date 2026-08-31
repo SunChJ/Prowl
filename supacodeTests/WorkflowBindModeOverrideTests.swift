@@ -35,10 +35,11 @@ struct WorkflowBindModeOverrideTests {
 
     let normalized = WorkflowBindModeOverride.normalized(overrides)
 
-    #expect(normalized == [
-      WorkflowBindModeOverride(workflowKey: "user/a", mode: .ask),
-      WorkflowBindModeOverride(workflowKey: "user/b", mode: .auto),
-    ])
+    #expect(
+      normalized == [
+        WorkflowBindModeOverride(workflowKey: "user/a", mode: .ask),
+        WorkflowBindModeOverride(workflowKey: "user/b", mode: .auto),
+      ])
   }
 
   @Test func decodingWithoutTheKeyDefaultsToEmpty() throws {

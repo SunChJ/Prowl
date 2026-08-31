@@ -28,8 +28,9 @@ extension SupacodeApp {
         let snapshot = makeWorkflowRuntimeSnapshot(appStore: appStore, terminalManager: terminalManager)
         return makeWorkflowStartContext(
           workflowKey: workflowKey, worktreeID: worktreeID, preferredSourceSurfaceID: preferredSource,
-          snapshot: snapshot, appStore: appStore, terminalManager: terminalManager,
-          reservations: reservations)
+          assembly: WorkflowStartAssembly(
+            snapshot: snapshot, appStore: appStore, terminalManager: terminalManager,
+            reservations: reservations))
       },
       run: { request in
         guard let appStore = storeBox.store, let coordinator = coordinatorBox.coordinator else {
@@ -111,16 +112,25 @@ extension SupacodeApp {
 
   // MARK: - Context
 
+  /// The app-side facts one start-context assembly reads.
+  struct WorkflowStartAssembly {
+    let snapshot: WorkflowRuntimeSnapshot
+    let appStore: StoreOf<AppFeature>
+    let terminalManager: WorktreeTerminalManager
+    let reservations: WorkflowPaneReservations
+  }
+
   @MainActor
   private static func makeWorkflowStartContext(
     workflowKey: String,
     worktreeID: String,
     preferredSourceSurfaceID: UUID?,
-    snapshot: WorkflowRuntimeSnapshot,
-    appStore: StoreOf<AppFeature>,
-    terminalManager: WorktreeTerminalManager,
-    reservations: WorkflowPaneReservations
+    assembly: WorkflowStartAssembly
   ) -> WorkflowStartContext? {
+    let snapshot = assembly.snapshot
+    let appStore = assembly.appStore
+    let terminalManager = assembly.terminalManager
+    let reservations = assembly.reservations
     guard
       let entries = try? workflowCatalogEntries(worktreeID: worktreeID, snapshot: snapshot),
       let entry = entries.first(where: { candidate in
@@ -146,7 +156,7 @@ extension SupacodeApp {
       $0.worktreeID == worktreeID
     }
     let panesByID: [UUID: TargetResolutionSnapshot.Pane] = Dictionary(
-      uniqueKeysWithValues: worktree.tabs.flatMap(\.panes).map { ($0.id, $0) })
+      worktree.tabs.flatMap(\.panes).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
     func candidate(surfaceID: UUID) -> WorkflowStartPaneCandidate? {
       guard let pane = panesByID[surfaceID] else { return nil }
@@ -172,25 +182,61 @@ extension SupacodeApp {
         // The focused pane may be a bare shell: a valid source while no delivery survives.
         candidates.insert(bare, at: 0)
       }
+      let preselected = candidates.contains { $0.surfaceID == preferred } ? preferred : nil
       source = WorkflowStartSource(
         roleName: currentRole.name,
         candidates: candidates,
-        preselectedSurfaceID: candidates.contains { $0.surfaceID == preferred } ? preferred : nil)
+        preselectedSurfaceID: preselected,
+        isPreselectionFixed: preferredSourceSurfaceID != nil && preselected != nil)
     }
 
     let bindOverride = settings.workflowBindMode(for: workflowKey)
     let runScope = WorkflowRunAdmission.runScope(entry.file.scope, worktree: domainWorktree)
-    let repositoryRootURL = URL(filePath: worktree.rootPath, directoryHint: .isDirectory)
+    let launchRoles = makeStartLaunchRoles(
+      definition: definition, scope: runScope, bindOverride: bindOverride,
+      repositoryRootURL: URL(filePath: worktree.rootPath, directoryHint: .isDirectory),
+      settings: settings)
+
+    let pickRoles: [WorkflowStartPickRole] = definition.roles.compactMap { role in
+      guard role.source == .pick else { return nil }
+      return WorkflowStartPickRole(name: role.name, candidates: agentCandidates)
+    }
+
+    let cliStatus = CLIInstallClient.liveValue.installationStatus(cliDefaultInstallPath)
+    let cliInstalled = cliStatus != .notInstalled
+
+    return WorkflowStartContext(
+      item: item,
+      definition: definition,
+      worktreeID: worktreeID,
+      worktreeName: worktree.name,
+      source: source,
+      launchRoles: launchRoles,
+      pickRoles: pickRoles,
+      cliInstalled: cliInstalled,
+      bindModeOverride: bindOverride)
+  }
+
+  /// dsl-spec §3 binding resolution, presented: the resolver's pre-selection per launch role,
+  /// every enabled profile as a picker candidate with its rejection reason, and the suggestion
+  /// the inline create block starts from.
+  @MainActor
+  private static func makeStartLaunchRoles(
+    definition: WorkflowDefinition,
+    scope: WorkflowRunScope,
+    bindOverride: WorkflowBindModeOverride.Mode?,
+    repositoryRootURL: URL,
+    settings: UserGlobalSettings
+  ) -> [WorkflowStartLaunchRole] {
     @Shared(.userRepositorySettings(repositoryRootURL)) var repositorySettings
     let resolverContext = WorkflowBindingResolverContext(
       profiles: settings.agentProfiles,
       designatedProfileID: repositorySettings.defaultAgentProfileID,
       lastLaunchedProfileID: repositorySettings.lastLaunchedAgentProfileID)
-
-    let launchRoles: [WorkflowStartLaunchRole] = definition.roles.compactMap { role in
+    return definition.roles.compactMap { role in
       guard role.source == .launch, let requirements = role.launch else { return nil }
       let memoryKey = WorkflowBindingResolver.memoryKey(
-        scope: runScope, workflowID: definition.id, role: role)
+        scope: scope, workflowID: definition.id, role: role)
       let remembered = settings.rememberedWorkflowBinding(for: memoryKey)
       let result = WorkflowBindingResolver.resolve(
         role: role, remembered: remembered, override: nil, context: resolverContext)
@@ -223,25 +269,6 @@ extension SupacodeApp {
         suggestion: suggestion ?? requirements.suggest,
         rejectedNote: rejectedNote)
     }
-
-    let pickRoles: [WorkflowStartPickRole] = definition.roles.compactMap { role in
-      guard role.source == .pick else { return nil }
-      return WorkflowStartPickRole(name: role.name, candidates: agentCandidates)
-    }
-
-    let cliStatus = CLIInstallClient.liveValue.installationStatus(cliDefaultInstallPath)
-    let cliInstalled = cliStatus != .notInstalled
-
-    return WorkflowStartContext(
-      item: item,
-      definition: definition,
-      worktreeID: worktreeID,
-      worktreeName: worktree.name,
-      source: source,
-      launchRoles: launchRoles,
-      pickRoles: pickRoles,
-      cliInstalled: cliInstalled,
-      bindModeOverride: bindOverride)
   }
 
   private static func focusedSurfaceID(of worktree: TargetResolutionSnapshot.Worktree) -> UUID? {

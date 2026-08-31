@@ -52,6 +52,9 @@ extension AppFeature {
     if let effect = reduceCommandPaletteHandoffDelegate(delegate, state: &state) {
       return effect
     }
+    if let effect = reduceCommandPaletteWorkflowDelegate(delegate, state: &state) {
+      return effect
+    }
     if let effect = reduceCommandPalettePullRequestDelegate(delegate) {
       return effect
     }
@@ -299,10 +302,6 @@ extension AppFeature {
     case .launchAgentProfile(let profileID):
       return .send(.launchAgentProfile(profileID))
 
-    case .runWorkflow(let key):
-      return .send(
-        .openWorkflowStart(workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: false))
-
     case .ghosttyCommand(let action):
       guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
         return .none
@@ -343,6 +342,17 @@ extension AppFeature {
     // One execution path: the palette row opens the same staged HUD as the
     // toolbar capsule (docs-ai 049).
     return openHandoffHud(state: &state)
+  }
+
+  func reduceCommandPaletteWorkflowDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action>? {
+    guard case .runWorkflow(let key) = delegate else { return nil }
+    // One execution path: the palette row goes through the same opener as the
+    // Agents popover and the Active Agents menu (docs-ai 063.011 decision 1).
+    return openWorkflowStart(
+      state: &state, workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: false)
   }
 
   func reduceCommandPalettePullRequestDelegate(

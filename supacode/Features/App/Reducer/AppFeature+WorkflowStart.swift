@@ -23,7 +23,8 @@ extension AppFeature {
     guard let context = workflowStartClient.context(workflowKey, worktree.id, sourceSurfaceID)
     else {
       return .send(
-        .repositories(.showToast(.warning("This workflow cannot start — check its file with `prowl workflow validate`"))))
+        .repositories(
+          .showToast(.warning("This workflow cannot start — check its file with `prowl workflow validate`"))))
     }
     if !forceSheet, context.canStartImmediately {
       // dsl-spec §3 `bind: auto`: no sheet; C1's status center is the start feedback.

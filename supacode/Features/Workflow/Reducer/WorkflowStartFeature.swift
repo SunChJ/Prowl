@@ -33,13 +33,13 @@ struct WorkflowStartFeature {
       cliInstalled = context.cliInstalled
       selectedSourceSurfaceID = context.source?.preselectedSurfaceID
       launchSelections = Dictionary(
-        uniqueKeysWithValues: context.launchRoles.compactMap { role in
-          role.resolvedProfileID.map { (role.name, $0) }
-        })
+        context.launchRoles.compactMap { role in role.resolvedProfileID.map { (role.name, $0) } },
+        uniquingKeysWith: { first, _ in first })
       inputValues = Dictionary(
-        uniqueKeysWithValues: context.definition.inputs.compactMap { input in
+        context.definition.inputs.compactMap { input in
           input.defaultValue.map { (input.name, $0.stringValue) }
-        })
+        },
+        uniquingKeysWith: { first, _ in first })
       dontAskAgain = context.bindModeOverride == .auto
     }
 
@@ -121,11 +121,11 @@ struct WorkflowStartFeature {
     case runTapped
     case runResponse(WorkflowStartOutcome)
     case delegate(Delegate)
+  }
 
-    enum Delegate: Equatable {
-      case dismiss
-      case started
-    }
+  enum Delegate: Equatable {
+    case dismiss
+    case started
   }
 
   @Dependency(WorkflowStartClient.self) var workflowStartClient
@@ -140,114 +140,150 @@ struct WorkflowStartFeature {
 
   private func handle(state: inout State, action: Action) -> Effect<Action> {
     switch action {
-      case .sourceSelected(let surfaceID):
-        state.selectedSourceSurfaceID = surfaceID
-        return .none
+    case .sourceSelected, .launchProfileSelected, .pickPaneSelected, .inputChanged,
+      .skipToggled, .dontAskAgainToggled:
+      return handleEdit(state: &state, action: action)
+    case .createSuggestionTapped, .suggestionNameChanged, .createSuggestionConfirmed,
+      .createSuggestionCancelled:
+      return handleSuggestion(state: &state, action: action)
+    default:
+      return handleRemainder(state: &state, action: action)
+    }
+  }
 
-      case .launchProfileSelected(let role, let profileID):
-        state.launchSelections[role] = profileID
-        return .none
+  /// Selection, input, and skip edits: pure state changes with no effects.
+  private func handleEdit(state: inout State, action: Action) -> Effect<Action> {
+    switch action {
+    case .sourceSelected(let surfaceID):
+      guard state.context.source?.isPreselectionFixed != true else { return .none }
+      state.selectedSourceSurfaceID = surfaceID
+      return .none
 
-      case .pickPaneSelected(let role, let surfaceID):
-        state.pickSelections[role] = surfaceID
-        return .none
+    case .launchProfileSelected(let role, let profileID):
+      state.launchSelections[role] = profileID
+      return .none
 
-      case .inputChanged(let name, let value):
-        state.inputValues[name] = value
-        return .none
+    case .pickPaneSelected(let role, let surfaceID):
+      state.pickSelections[role] = surfaceID
+      return .none
 
-      case .skipToggled(let stepID):
-        if state.skippedSteps.contains(stepID) {
-          state.skippedSteps.remove(stepID)
-          return .none
-        }
-        // §9: a step without an `expect` offers no skip choice, and a skip whose output a
-        // later step needs is refused by admission; the sheet shows the consequence and
-        // never arms either.
-        guard let consequence = state.skipConsequence(for: stepID) else { return .none }
-        if case .endsRun = consequence { return .none }
-        state.skippedSteps.insert(stepID)
-        return .none
+    case .inputChanged(let name, let value):
+      state.inputValues[name] = value
+      return .none
 
-      case .dontAskAgainToggled(let isOn):
-        state.dontAskAgain = isOn
+    case .skipToggled(let stepID):
+      if state.skippedSteps.contains(stepID) {
+        state.skippedSteps.remove(stepID)
         return .none
+      }
+      // §9: a step without an `expect` offers no skip choice, and a skip whose output a
+      // later step needs is refused by admission; the sheet shows the consequence and
+      // never arms either.
+      guard let consequence = state.skipConsequence(for: stepID) else { return .none }
+      if case .endsRun = consequence { return .none }
+      state.skippedSteps.insert(stepID)
+      return .none
 
-      case .createSuggestionTapped(let role):
-        state.creatingSuggestionForRole = role
-        state.suggestionProfileName = Self.suggestedProfileName(role: role, state: state)
-        return .none
+    case .dontAskAgainToggled(let isOn):
+      state.dontAskAgain = isOn
+      return .none
 
-      case .suggestionNameChanged(let name):
-        state.suggestionProfileName = name
-        return .none
+    default:
+      assertionFailure("handle(state:action:) routes only edit actions here.")
+      return .none
+    }
+  }
 
-      case .createSuggestionConfirmed:
-        guard let roleName = state.creatingSuggestionForRole,
-          let role = state.context.launchRoles.first(where: { $0.name == roleName }),
-          let profile = Self.profile(
-            from: role.suggestion, name: state.suggestionProfileName, id: uuid())
-        else {
-          state.creatingSuggestionForRole = nil
-          return .none
-        }
-        // Synchronous inside the reducer, like AgentProfilesFeature.persist: a cancelled
-        // effect must not drop the new profile.
-        @Shared(.userGlobalSettings) var settings
-        $settings.withLock {
-          $0.agentProfiles = AgentProfile.normalizedProfiles($0.agentProfiles + [profile])
-        }
-        state.launchSelections[roleName] = profile.id
+  /// The inline "create profile from suggestion" block (011 decision 4).
+  private func handleSuggestion(state: inout State, action: Action) -> Effect<Action> {
+    switch action {
+    case .createSuggestionTapped(let role):
+      state.creatingSuggestionForRole = role
+      state.suggestionProfileName = Self.suggestedProfileName(role: role, state: state)
+      return .none
+
+    case .suggestionNameChanged(let name):
+      state.suggestionProfileName = name
+      return .none
+
+    case .createSuggestionConfirmed:
+      guard let roleName = state.creatingSuggestionForRole,
+        let role = state.context.launchRoles.first(where: { $0.name == roleName }),
+        let profile = Self.profile(
+          from: role.suggestion, name: state.suggestionProfileName, id: uuid())
+      else {
         state.creatingSuggestionForRole = nil
-        state.suggestionProfileName = ""
         return .none
+      }
+      // Synchronous inside the reducer, like AgentProfilesFeature.persist: a cancelled
+      // effect must not drop the new profile.
+      @Shared(.userGlobalSettings) var settings
+      $settings.withLock {
+        $0.agentProfiles = AgentProfile.normalizedProfiles($0.agentProfiles + [profile])
+      }
+      state.launchSelections[roleName] = profile.id
+      state.creatingSuggestionForRole = nil
+      state.suggestionProfileName = ""
+      return .none
 
-      case .createSuggestionCancelled:
-        state.creatingSuggestionForRole = nil
-        state.suggestionProfileName = ""
-        return .none
+    case .createSuggestionCancelled:
+      state.creatingSuggestionForRole = nil
+      state.suggestionProfileName = ""
+      return .none
 
-      case .installCLITapped:
-        return .run { [cliInstallClient] send in
-          do {
-            try await cliInstallClient.install(cliDefaultInstallPath)
-            await send(.cliInstallCompleted(success: true))
-          } catch {
-            await send(.cliInstallCompleted(success: false))
-          }
+    default:
+      assertionFailure("handle(state:action:) routes only suggestion actions here.")
+      return .none
+    }
+  }
+
+  private func handleRemainder(state: inout State, action: Action) -> Effect<Action> {
+    switch action {
+    case .installCLITapped:
+      return .run { [cliInstallClient] send in
+        do {
+          try await cliInstallClient.install(cliDefaultInstallPath)
+          await send(.cliInstallCompleted(success: true))
+        } catch {
+          await send(.cliInstallCompleted(success: false))
         }
+      }
 
-      case .cliInstallCompleted(let success):
-        if success {
-          state.cliInstalled = true
-        } else {
-          state.submissionError = "The prowl command line tool could not be installed."
-        }
-        return .none
+    case .cliInstallCompleted(let success):
+      if success {
+        state.cliInstalled = true
+      } else {
+        state.submissionError = "The prowl command line tool could not be installed."
+      }
+      return .none
 
-      case .cancelTapped:
-        return .send(.delegate(.dismiss))
+    case .cancelTapped:
+      return .send(.delegate(.dismiss))
 
-      case .runTapped:
-        guard state.canRun else { return .none }
-        state.isSubmitting = true
-        state.submissionError = nil
-        let request = state.request
-        return .run { send in
-          await send(.runResponse(workflowStartClient.run(request)))
-        }
+    case .runTapped:
+      guard state.canRun else { return .none }
+      state.isSubmitting = true
+      state.submissionError = nil
+      let request = state.request
+      return .run { send in
+        await send(.runResponse(workflowStartClient.run(request)))
+      }
 
-      case .runResponse(.started):
-        state.isSubmitting = false
-        Self.persistBindModeChoice(state: state)
-        return .send(.delegate(.started))
+    case .runResponse(.started):
+      state.isSubmitting = false
+      Self.persistBindModeChoice(state: state)
+      return .send(.delegate(.started))
 
-      case .runResponse(.failed(_, let message)):
-        state.isSubmitting = false
-        state.submissionError = message
-        return .none
+    case .runResponse(.failed(_, let message)):
+      state.isSubmitting = false
+      state.submissionError = message
+      return .none
 
     case .delegate:
+      return .none
+
+    default:
+      assertionFailure("handle(state:action:) routes edit and suggestion actions elsewhere.")
       return .none
     }
   }

@@ -128,7 +128,8 @@ struct WorkflowStartFeatureTests {
   }
 
   @Test func skippingTheOnlyDeliveryMakesABareShellSourceValid() async throws {
-    let context = try makeContext(yaml: Self.skippableNote, preselected: Self.shellPaneID,
+    let context = try makeContext(
+      yaml: Self.skippableNote, preselected: Self.shellPaneID,
       resolvedProfileID: Self.profileID)
     let store = TestStore(initialState: WorkflowStartFeature.State(context: context)) {
       WorkflowStartFeature()
@@ -237,7 +238,9 @@ struct WorkflowStartFeatureTests {
     }
 
     await store.send(.runTapped) { $0.isSubmitting = true }
-    await store.receive(.runResponse(.failed(code: "PANE_BUSY", message: "The source pane already belongs to a run."))) {
+    let failure = WorkflowStartOutcome.failed(
+      code: "PANE_BUSY", message: "The source pane already belongs to a run.")
+    await store.receive(.runResponse(failure)) {
       $0.isSubmitting = false
       $0.submissionError = "The source pane already belongs to a run."
     }
