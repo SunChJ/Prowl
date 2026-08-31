@@ -1,0 +1,93 @@
+# 063.011 — Workflow Start Sheet and Entry Points (C2)
+
+## Status
+
+Drafted 2026-08-31; decisions frozen in the grill session of 2026-09-01. C2 is the first
+R2b slice ([release plan](release-plan.md)), on B3 (#744) and C1 (#747), implemented on
+`feat/workflow-start-sheet-c2`.
+
+## Product contract
+
+R2a left exactly one way to start a workflow: `prowl workflow run` from a terminal. C2 gives
+GUI users the same power without changing what a run *is*: every start still goes through the
+same admission, binding resolution, and validation the CLI path uses, and the status center
+(C1) takes over the moment the run exists.
+
+Three entry points, per [000-plan](000-plan.md):
+
+- the Agents capsule popover gains a **Workflows** section (`Hand Off…` stays its first row);
+- the Command Palette gains `Run Workflow: <name>` commands;
+- Active Agents rows gain a `Run Workflow ▸` context menu, and rows that belong to a run show
+  an `in <workflow> · <role>` subtitle.
+
+The **start sheet** (`WorkflowStartOverlay`, the handoff HUD's centered keyboard-capturing
+card pattern — not window-modal) collects what the run needs before it exists:
+
+- title/description; a "You" source row for the `current` role (a picker — see decision 2);
+- one profile picker per `launch` role — filtered by `agents`, pre-selected from binding
+  resolution (dsl-spec §3), unavailable rows dimmed with the reason, and
+  "Create profile from suggestion…" when nothing matches;
+- one pane picker per `pick` role — detected agents in the source worktree, excluding panes
+  already in a run and the current pane;
+- inputs (defaults pre-filled), a "Skip <step title>" choice for steps skippable at start
+  (§9 `--skip` rule), and a "Don't ask again for this workflow" toggle when `bind: ask`;
+- a CLI-not-installed banner with an inline Install action that disables Run;
+- Cancel / Run.
+
+`bind: auto` with unambiguous resolution and fully defaulted inputs skips the sheet entirely.
+
+## Decisions frozen before implementation (grilled 2026-09-01)
+
+1. **One start path.** The GUI never grows its own run-creation logic: the sheet gathers the
+   same overrides/inputs/skips `workflow run` accepts and submits through the same
+   coordinator entry; admission errors surface with the CLI's error semantics.
+2. **The sheet's "You" row is a source picker** — the GUI equivalent of the CLI's `[source]`
+   positional. It pre-selects the selected worktree's focused pane (capsule popover, palette)
+   or the clicked row's pane (Active Agents menu, fixed there), and lets the user re-pick
+   among the source worktree's detected agent panes when the pre-selection is unqualified or
+   wrong. A workflow without a `current` role runs against the selected worktree. Run is
+   disabled inside the sheet only when the whole worktree holds no qualified source.
+3. **Entry-point visibility differs by surface.** Workflows disabled in Settings
+   (`disabledWorkflowIDs`) appear nowhere; validation-failing ones appear only in the capsule
+   popover, dimmed with the reason (the popover is the diagnostic surface); enabled + valid
+   ones appear in all three entry points.
+4. **"Create profile from suggestion…" is an inline confirm block** inside the picker: it
+   shows the profile about to be created (editable name defaulting from the role/agent, the
+   `suggest` fields as a read-only summary), and Create persists a normal profile and selects
+   it. No silent one-click creation, no round-trip to the Settings editor.
+5. **Bind-mode override is tri-state** (`nil` = follow the YAML `bind` / force `ask` / force
+   `auto`), keyed like `disabledWorkflowIDs` and stored beside the binding memory in
+   `UserGlobalSettings`; the sheet's "Don't ask again" writes `auto`, and D1's Settings page
+   drives the same value. The capsule popover row carries a secondary **"Run with Options…"**
+   action that forces the sheet — the GUI escape hatch matching an explicit CLI `--role`
+   (the only place it is offered).
+6. **Auto-skip needs no extra feedback and never skips required inputs.** When the sheet is
+   skipped, C1's toolbar status item is the start feedback; a workflow with a required,
+   defaultless input still presents the sheet to collect it.
+7. **C2 does not touch handoff.** The HUD keeps its choose stage until D3; "replaces" in the
+   000-plan is the end state, not this slice.
+8. **One atomic PR**, C1-style, with the 061 toolbar rules and Normal/Shelf/Canvas visual
+   verification for every entry-point surface.
+
+## Implementation shape
+
+- A pure start-sheet presentation model derived from the workflow definition, binding
+  resolution output, detected agents, and CLI install status; `WorkflowStartFeature` (TCA)
+  owns selection state and submits typed intents.
+- Binding resolution reuses B3's pure resolver; the sheet is only the `ask` tier's UI and
+  never re-derives eligibility.
+- Entry-point wiring: palette commands from the discovery list (enabled + valid definitions
+  visible to the worktree), capsule popover section, Active Agents context menu + subtitle.
+- Reducer tests for every sheet transition (resolution tiers, unavailable pickers, skip
+  consequences, banner gating, auto-skip path); no `Task.sleep`, `TestClock` only.
+
+## Verification
+
+`make check`, `make test`, `make build-app`; isolated-Debug E2E: an `ask` run started from
+each entry point end to end, an `auto` run that skips the sheet, the CLI-missing banner; 061
+visual verification in Normal, Shelf, and Canvas at normal and constrained widths.
+
+## Out of scope
+
+Settings › Workflows page and authoring skill (D1), built-in workflows (D2), handoff
+migration (D3), headless roles and the GUI editor (V2).
