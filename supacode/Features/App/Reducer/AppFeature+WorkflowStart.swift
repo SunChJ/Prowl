@@ -51,3 +51,21 @@ extension AppFeature {
     state.workflowPaletteItems = workflowStartClient.catalog(worktree.id)
   }
 }
+
+extension AppFeature {
+  /// The Active Agents rows' `in <workflow> · <role>` subtitles (000-plan entry points),
+  /// derived from the live runs' bindings whenever WorkflowRunsFeature state changes.
+  func syncWorkflowRoleBadges(state: inout State) {
+    var badges: [UUID: String] = [:]
+    for session in state.workflowRuns.activeSessions {
+      let name = session.run.definition.name
+      for (role, binding) in session.run.bindings {
+        guard let surfaceID = binding.pane?.surfaceID else { continue }
+        badges[surfaceID] = "in \(name) \u{00B7} \(role)"
+      }
+    }
+    if state.repositories.workflowRoleBadgesBySurfaceID != badges {
+      state.repositories.workflowRoleBadgesBySurfaceID = badges
+    }
+  }
+}

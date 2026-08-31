@@ -1013,6 +1013,12 @@ struct AppFeature {
       case .repositories(.activeAgents(.handOffTapped(let entryID))):
         return openHandoffHud(state: &state, entryID: entryID)
 
+      case .repositories(.activeAgents(.runWorkflowTapped(let entryID, let workflowKey))):
+        guard let entry = state.repositories.activeAgents.entries[id: entryID] else { return .none }
+        return openWorkflowStart(
+          state: &state, workflowKey: workflowKey, worktreeID: entry.worktreeID,
+          sourceSurfaceID: entry.surfaceID, forceSheet: false)
+
       case .repositories:
         return .none
 
@@ -1056,9 +1062,11 @@ struct AppFeature {
             break
           }
         }
+        syncWorkflowRoleBadges(state: &state)
         return .merge(effects)
 
       case .workflowRuns:
+        syncWorkflowRoleBadges(state: &state)
         return .none
 
       case .openHandoffHud:

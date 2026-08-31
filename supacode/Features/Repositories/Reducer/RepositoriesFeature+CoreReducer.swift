@@ -15,7 +15,8 @@ extension RepositoriesFeature {
       .workspaceCreation:
       return .none
 
-    case .activeAgents(.entryTapped(let id)), .activeAgents(.handOffTapped(let id)):
+    case .activeAgents(.entryTapped(let id)), .activeAgents(.handOffTapped(let id)),
+      .activeAgents(.runWorkflowTapped(let id, _)):
       guard let entry = state.activeAgents.entries[id: id] else { return .none }
       if state.isShowingCanvas {
         requestCanvasFocus(.tab(entry.tabID), openedWorktreeID: entry.worktreeID, state: &state)
