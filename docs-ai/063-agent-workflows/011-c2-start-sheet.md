@@ -87,6 +87,44 @@ card pattern — not window-modal) collects what the run needs before it exists:
 each entry point end to end, an `auto` run that skips the sheet, the CLI-missing banner; 061
 visual verification in Normal, Shelf, and Canvas at normal and constrained widths.
 
+## Implementation notes (decisions taken while building, recorded per the working agreement)
+
+- **The presentation model folded into `WorkflowStartFeature.State`.** The plan sketched a
+  separate pure model (C1's shape); the sheet's derived values (`canRun`, skip-aware source
+  requirement, per-step skip consequence) read naturally as State computed properties and are
+  tested through the reducer, so a parallel model type would only add indirection. The raw
+  material stays a separate pure layer (`WorkflowStartContext`, assembled by the live client).
+- **Start-time `endsRun` skips are never armed.** §9 refuses them at admission; the sheet
+  disables the toggle and shows the reason instead of letting Run fail. The consequence is
+  recomputed against the other chosen skips, so ordering effects (skipping a reader frees its
+  producer) present correctly. `WorkflowRunMachine.startSkipConsequence` exposes the existing
+  rule; the in-run Skip path is untouched.
+- **A pick-role workflow always presents the sheet**, mirroring the CLI, where `pick` bindings
+  are always explicit (`--role r=pN`).
+- **Popover rows for validation-failing files are inert** (dimmed, named, with the error
+  count); the "dimmed but clickable" rule stays specific to launcher availability warnings,
+  which are heuristic — a failing validation is not.
+- **The palette lists workflows from a state snapshot refreshed on palette open** — the
+  assembler runs on every body evaluation and must not scan the filesystem. In Canvas the
+  snapshot uses the reducer-side action target, which matches the palette's own target in
+  every case except a Canvas card focused between opening the palette and activating a row.
+- **The Active Agents subtitle is replaced, not appended**, while a pane is bound to an active
+  run (`in <workflow> · <role>`), synced from `WorkflowRunsFeature` state on every
+  `workflowRuns` action; the branch/title subtitle returns when the run ends.
+- **The CLI banner's Install acts inline** via the same `CLIInstallClient.install` path
+  Settings uses, and a success flips the sheet's own `cliInstalled` gate without reopening.
+- **`cliInstalled` treats `installedDifferentSource` as installed** — the slot holds a live
+  `prowl`; distinguishing foreign installs is Settings' business, not the sheet's.
+- **Keyboard**: the sheet relies on `keyboardShortcut(.cancelAction/.defaultAction)` and
+  focusable controls rather than the handoff HUD's swallow-everything key capture, because the
+  sheet hosts text fields. Verified live; if keys ever leak to the terminal below, a
+  conditional capture view is the follow-up.
+- **A dedicated `docs/components/workflows.md` page remains D1's deliverable**; C2 documents
+  the entry points in `command-palette.md`, `active-agents.md`, and `agent-profiles.md`.
+- **Toolchain note**: reducer bodies in this codebase must spell `some Reducer<State, Action>`
+  — `some ReducerOf<Self>` fails to satisfy the `Reducer` conformance under Swift 6.2's
+  default-MainActor isolation with no useful diagnostic.
+
 ## Out of scope
 
 Settings › Workflows page and authoring skill (D1), built-in workflows (D2), handoff

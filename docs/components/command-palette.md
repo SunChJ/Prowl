@@ -55,6 +55,12 @@ selected worktree has a pull request).
   **Launch Agent: <name>** row per enabled profile, the current worktree's
   Recommended profile first — the same launch action as the toolbar Agents
   menu. See [agent-profiles](agent-profiles.md).
+- **Workflows** (when a terminal worktree is selected): a
+  **Run Workflow: <name>** row per runnable workflow visible to the
+  action-target worktree (refreshed when the palette opens). Activation goes
+  through the workflow start sheet — or starts immediately when the workflow's
+  bindings resolve without a decision. Validation-failing files are not listed
+  here; the toolbar Agents popover names them with their reason.
 - **Debug** (Debug builds only): toast/update/dock simulations.
 
 ## Behavior notes
