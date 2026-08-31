@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import SwiftUI
 
 enum LeadingToolbarControlMetrics {
@@ -55,9 +56,13 @@ struct AgentsLauncherItem: Equatable, Identifiable {
 struct AgentsToolbarButton: View {
   let capsule: AgentsCapsuleState?
   let launcherItems: [AgentsLauncherItem]
+  /// The worktree whose workflows the popover lists; nil hides the section.
+  let workflowsWorktreeID: Worktree.ID?
   let onHandOff: () -> Void
   let onLaunchProfile: (AgentProfile.ID) -> Void
   let onManageProfiles: () -> Void
+  let onRunWorkflow: (String) -> Void
+  let onRunWorkflowWithOptions: (String) -> Void
   @State private var isPopoverPresented = false
 
   var body: some View {
@@ -73,6 +78,7 @@ struct AgentsToolbarButton: View {
       AgentsPopoverContent(
         capsule: capsule,
         launcherItems: launcherItems,
+        workflowsWorktreeID: workflowsWorktreeID,
         onHandOff: {
           isPopoverPresented = false
           onHandOff()
@@ -84,6 +90,14 @@ struct AgentsToolbarButton: View {
         onManageProfiles: {
           isPopoverPresented = false
           onManageProfiles()
+        },
+        onRunWorkflow: { key in
+          isPopoverPresented = false
+          onRunWorkflow(key)
+        },
+        onRunWorkflowWithOptions: { key in
+          isPopoverPresented = false
+          onRunWorkflowWithOptions(key)
         }
       )
     }
@@ -171,9 +185,14 @@ struct AgentsQuickLaunchButton: View {
 private struct AgentsPopoverContent: View {
   let capsule: AgentsCapsuleState?
   let launcherItems: [AgentsLauncherItem]
+  let workflowsWorktreeID: Worktree.ID?
   let onHandOff: () -> Void
   let onLaunchProfile: (AgentProfile.ID) -> Void
   let onManageProfiles: () -> Void
+  let onRunWorkflow: (String) -> Void
+  let onRunWorkflowWithOptions: (String) -> Void
+  @Dependency(WorkflowStartClient.self) private var workflowStartClient
+  @State private var workflowItems: [WorkflowStartCatalogItem] = []
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -184,9 +203,31 @@ private struct AgentsPopoverContent: View {
           systemImage: "arrow.left.arrow.right",
           action: onHandOff
         )
-        if !launcherItems.isEmpty {
+        if !launcherItems.isEmpty || !workflowItems.isEmpty {
           Divider().padding(.vertical, 4)
         }
+      }
+      if !workflowItems.isEmpty {
+        Text("Run a workflow")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 8)
+          .padding(.top, 4)
+          .padding(.bottom, 2)
+        ForEach(workflowItems) { item in
+          if let failure = item.validationFailure {
+            // The popover is the diagnostic surface (063.011 decision 3): a
+            // failing file stays listed with its reason but offers no action.
+            AgentsWorkflowInvalidRow(name: item.name, reason: failure)
+          } else {
+            AgentsWorkflowRow(
+              item: item,
+              onRun: { onRunWorkflow(item.key) },
+              onRunWithOptions: { onRunWorkflowWithOptions(item.key) }
+            )
+          }
+        }
+        Divider().padding(.vertical, 4)
       }
       if !launcherItems.isEmpty {
         Text("New agent in this worktree")
@@ -225,6 +266,11 @@ private struct AgentsPopoverContent: View {
     // Runtimes still warned about (or unanswered) re-probe on every open, so
     // a CLI installed mid-session clears its warning without a relaunch.
     .task { await AgentRuntimeAvailabilityProbe.refresh() }
+    // Workflows re-list on every open so file edits show without a relaunch.
+    .task {
+      guard let workflowsWorktreeID else { return }
+      workflowItems = workflowStartClient.catalog(workflowsWorktreeID)
+    }
   }
 }
 
@@ -286,5 +332,88 @@ private struct AgentsPopoverRow: View {
         .fill(isHovered ? Color.accentColor.opacity(0.2) : Color.clear)
     )
     .onHover { isHovered = $0 }
+  }
+}
+
+
+/// A runnable workflow row: the wide button starts it (skipping the sheet when
+/// nothing is undecided), the trailing control forces the start sheet — the
+/// "Run with Options…" escape hatch (docs-ai 063.011 decision 5).
+private struct AgentsWorkflowRow: View {
+  let item: WorkflowStartCatalogItem
+  let onRun: () -> Void
+  let onRunWithOptions: () -> Void
+  @State private var isHovered = false
+
+  var body: some View {
+    HStack(spacing: 0) {
+      Button(action: onRun) {
+        HStack(alignment: .top, spacing: 8) {
+          Image(systemName: "rectangle.stack.badge.play")
+            .frame(width: 16)
+            .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(item.name)
+              .lineLimit(1)
+            if let description = item.workflowDescription {
+              Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .help("Run \(item.name)")
+      Button(action: onRunWithOptions) {
+        Image(systemName: "ellipsis.circle")
+          .foregroundStyle(.secondary)
+          .frame(width: 20, height: 20)
+          .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .padding(.trailing, 6)
+      .help("Run \(item.name) with options…")
+      .accessibilityLabel("Run \(item.name) with options")
+    }
+    .background(
+      RoundedRectangle(cornerRadius: 6)
+        .fill(isHovered ? Color.accentColor.opacity(0.2) : Color.clear)
+    )
+    .onHover { isHovered = $0 }
+  }
+}
+
+/// A workflow file that failed validation: named so the author can find it,
+/// dimmed, and deliberately inert.
+private struct AgentsWorkflowInvalidRow: View {
+  let name: String
+  let reason: String
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(systemName: "exclamationmark.triangle")
+        .frame(width: 16)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(name)
+          .lineLimit(1)
+        Text(reason)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 6)
+    .opacity(0.5)
+    .help("Fix the file, then reopen this menu — `prowl workflow validate` shows the errors.")
   }
 }
