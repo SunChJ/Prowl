@@ -148,9 +148,13 @@ private struct WorkflowStartCard: View {
     VStack(alignment: .leading, spacing: 4) {
       Picker(selection: launchBinding(role: role.name)) {
         Text("Choose a profile…").tag(nil as UUID?)
-        ForEach(role.candidates) { candidate in
+        ForEach(store.state.candidates(for: role)) { candidate in
           if let reason = candidate.unavailableReason {
-            Text("\(candidate.name) — \(reason)").tag(candidate.profileID as UUID?)
+            // Contract: unavailable rows are dimmed with their reason and cannot be chosen.
+            Text("\(candidate.name) — \(reason)")
+              .foregroundStyle(.secondary)
+              .tag(candidate.profileID as UUID?)
+              .selectionDisabled()
           } else {
             Text(candidate.name).tag(candidate.profileID as UUID?)
           }
@@ -164,7 +168,7 @@ private struct WorkflowStartCard: View {
           .font(.footnote)
           .foregroundStyle(.secondary)
       }
-      if role.suggestion != nil, store.creatingSuggestionForRole != role.name {
+      if store.state.canCreateSuggestion(for: role.name), store.creatingSuggestionForRole != role.name {
         Button("Create profile from suggestion…") {
           store.send(.createSuggestionTapped(role: role.name))
         }

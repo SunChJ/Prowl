@@ -66,7 +66,8 @@ struct WorkflowStartFeatureTests {
     resolvedProfileID: UUID? = nil,
     suggestion: WorkflowProfileSuggestion? = nil,
     bindModeOverride: WorkflowBindModeOverride.Mode? = nil,
-    candidateUnavailableReason: String? = nil
+    candidateUnavailableReason: String? = nil,
+    includeCandidates: Bool = true
   ) throws -> WorkflowStartContext {
     let definition = try #require(WorkflowDocumentParser.parse(yaml).definition)
     let launchRoles = definition.roles.filter { $0.source == .launch }.map { role in
@@ -74,11 +75,12 @@ struct WorkflowStartFeatureTests {
         name: role.name,
         effectiveBind: bindModeOverride == .auto ? .auto : (role.launch?.bind ?? .ask),
         resolvedProfileID: resolvedProfileID,
-        candidates: [
-          WorkflowStartLaunchRole.Candidate(
-            profileID: Self.profileID, name: "Pi Reviewer", agentToken: "pi",
-            unavailableReason: candidateUnavailableReason)
-        ],
+        candidates: includeCandidates
+          ? [
+            WorkflowStartLaunchRole.Candidate(
+              profileID: Self.profileID, name: "Pi Reviewer", agentToken: "pi",
+              unavailableReason: candidateUnavailableReason)
+          ] : [],
         suggestion: suggestion,
         rejectedNote: nil)
     }
@@ -272,6 +274,13 @@ struct WorkflowStartFeatureTests {
         $0.creatingSuggestionForRole = nil
         $0.suggestionProfileName = ""
         $0.launchSelections = ["reviewer": expected]
+        $0.createdCandidatesByRole = [
+          "reviewer": [
+            WorkflowStartLaunchRole.Candidate(
+              profileID: expected, name: "Reviewer (Pi)", agentToken: "pi",
+              unavailableReason: nil)
+          ]
+        ]
       }
 
       @Shared(.userGlobalSettings) var settings: UserGlobalSettings
@@ -281,5 +290,47 @@ struct WorkflowStartFeatureTests {
       #expect(created.reasoningEffort == "xhigh")
       #expect(created.isEnabled)
     }
+  }
+
+  @Test func createFromSuggestionEnablesRunWhenNoProfileMatched() async throws {
+    let storage = UserGlobalSettingsTestStorage()
+    let url = URL(fileURLWithPath: "/tmp/prowl-global-settings-\(UUID().uuidString).json")
+    let suggestion = WorkflowProfileSuggestion(agent: "pi")
+    // The first-session path: no enabled profile qualifies for the role at all.
+    let context = try makeContext(suggestion: suggestion, includeCandidates: false)
+
+    try await withDependencies {
+      $0.settingsFileStorage = storage.storage
+      $0.userGlobalSettingsURL = url
+    } operation: {
+      var initial = WorkflowStartFeature.State(context: context)
+      initial.inputValues["goal"] = "ship C2"
+      let store = TestStore(initialState: initial) {
+        WorkflowStartFeature()
+      } withDependencies: {
+        $0.uuid = .incrementing
+      }
+      store.exhaustivity = .off
+
+      #expect(!store.state.canRun)
+      await store.send(.createSuggestionTapped(role: "reviewer"))
+      await store.send(.createSuggestionConfirmed)
+      #expect(store.state.canRun)
+      let created = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+      #expect(store.state.request.roleBindings == ["reviewer=\(created.uuidString)"])
+    }
+  }
+
+  @Test func suggestionWithoutAnAgentOffersNoCreateAction() throws {
+    // dsl-spec §3 allows a `suggest` that omits `agent`; it cannot form a profile, so the
+    // sheet must not offer a dead Create action for it.
+    let context = try makeContext(
+      suggestion: WorkflowProfileSuggestion(reasoningEffort: "xhigh"), includeCandidates: false)
+    let state = WorkflowStartFeature.State(context: context)
+    #expect(!state.canCreateSuggestion(for: "reviewer"))
+
+    let piContext = try makeContext(
+      suggestion: WorkflowProfileSuggestion(agent: "pi"), includeCandidates: false)
+    #expect(WorkflowStartFeature.State(context: piContext).canCreateSuggestion(for: "reviewer"))
   }
 }

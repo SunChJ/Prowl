@@ -1062,11 +1062,9 @@ struct AppFeature {
             break
           }
         }
-        syncWorkflowRoleBadges(state: &state)
         return .merge(effects)
 
       case .workflowRuns:
-        syncWorkflowRoleBadges(state: &state)
         return .none
 
       case .openHandoffHud:
@@ -1145,6 +1143,14 @@ struct AppFeature {
     }
     Scope(state: \.workflowRuns, action: \.workflowRuns) {
       WorkflowRunsFeature()
+    }
+    Reduce<State, Action> { state, action in
+      // Badge sync must observe the state WorkflowRunsFeature just reduced — running it in
+      // `core` (before the Scope) reads the pre-action sessions and a freshly started run's
+      // panes would stay unlabeled until some later event (review round 2 finding 2).
+      guard case .workflowRuns = action else { return .none }
+      syncWorkflowRoleBadges(state: &state)
+      return .none
     }
   }
 }

@@ -20,6 +20,10 @@ struct WorkflowStartFeature {
     var inputValues: [String: String]
     var skippedSteps: Set<String> = []
     var dontAskAgain: Bool
+    /// Candidates the sheet itself created from a suggestion, per role — the context's
+    /// candidate list is immutable, and a profile created inline must be pickable and
+    /// runnable immediately (review round 2 finding 1).
+    var createdCandidatesByRole: [String: [WorkflowStartLaunchRole.Candidate]] = [:]
     /// The launch role whose inline "create from suggestion" confirm block is open.
     var creatingSuggestionForRole: String?
     var suggestionProfileName: String = ""
@@ -41,6 +45,20 @@ struct WorkflowStartFeature {
         },
         uniquingKeysWith: { first, _ in first })
       dontAskAgain = context.bindModeOverride == .auto
+    }
+
+    /// The role's picker candidates: the resolver's list plus anything created inline.
+    func candidates(for role: WorkflowStartLaunchRole) -> [WorkflowStartLaunchRole.Candidate] {
+      role.candidates + (createdCandidatesByRole[role.name] ?? [])
+    }
+
+    /// A suggestion can only form a profile when it names a known runtime; a Create action
+    /// for anything else would be dead (dsl-spec §3 allows agent-less suggestions).
+    func canCreateSuggestion(for roleName: String) -> Bool {
+      guard let role = context.launchRoles.first(where: { $0.name == roleName }),
+        let agent = role.suggestion?.agent
+      else { return false }
+      return AgentProfileRuntime(rawValue: agent) != nil
     }
 
     /// Whether the chosen source must host a detected agent, given the current skip choices.
@@ -65,7 +83,7 @@ struct WorkflowStartFeature {
       }
       for role in context.launchRoles {
         guard let chosen = launchSelections[role.name],
-          let candidate = role.candidates.first(where: { $0.profileID == chosen }),
+          let candidate = candidates(for: role).first(where: { $0.profileID == chosen }),
           candidate.unavailableReason == nil
         else { return false }
       }
@@ -221,6 +239,10 @@ struct WorkflowStartFeature {
       $settings.withLock {
         $0.agentProfiles = AgentProfile.normalizedProfiles($0.agentProfiles + [profile])
       }
+      state.createdCandidatesByRole[roleName, default: []].append(
+        WorkflowStartLaunchRole.Candidate(
+          profileID: profile.id, name: profile.name,
+          agentToken: profile.runtime.agent.rawValue, unavailableReason: nil))
       state.launchSelections[roleName] = profile.id
       state.creatingSuggestionForRole = nil
       state.suggestionProfileName = ""

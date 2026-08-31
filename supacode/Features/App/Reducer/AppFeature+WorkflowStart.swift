@@ -57,16 +57,23 @@ extension AppFeature {
   /// The Active Agents rows' `in <workflow> · <role>` subtitles (000-plan entry points),
   /// derived from the live runs' bindings whenever WorkflowRunsFeature state changes.
   func syncWorkflowRoleBadges(state: inout State) {
+    let badges = Self.workflowRoleBadges(for: state.workflowRuns)
+    if state.repositories.workflowRoleBadgesBySurfaceID != badges {
+      state.repositories.workflowRoleBadgesBySurfaceID = badges
+    }
+  }
+
+  /// Pure derivation, unit-tested directly: every pane bound to an active run wears
+  /// `in <workflow> \u{00B7} <role>`.
+  static func workflowRoleBadges(for runs: WorkflowRunsFeature.State) -> [UUID: String] {
     var badges: [UUID: String] = [:]
-    for session in state.workflowRuns.activeSessions {
+    for session in runs.activeSessions {
       let name = session.run.definition.name
       for (role, binding) in session.run.bindings {
         guard let surfaceID = binding.pane?.surfaceID else { continue }
         badges[surfaceID] = "in \(name) \u{00B7} \(role)"
       }
     }
-    if state.repositories.workflowRoleBadgesBySurfaceID != badges {
-      state.repositories.workflowRoleBadgesBySurfaceID = badges
-    }
+    return badges
   }
 }
