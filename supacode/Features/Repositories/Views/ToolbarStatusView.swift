@@ -14,13 +14,13 @@ struct ToolbarStatusView: View {
       pullRequest: pullRequest
     )
     ZStack {
-      if !workflow.runs.isEmpty {
-        WorkflowStatusPopoverButton(
-          presentation: workflow,
-          isToolbarVisible: selection.isWorkflow,
-          onIntent: onWorkflowIntent
-        )
-      }
+      // Keep this mounted across the last-run transition so its local popover state observes the
+      // empty run list and resets before a later run appears.
+      WorkflowStatusPopoverButton(
+        presentation: workflow,
+        isToolbarVisible: selection.isWorkflow,
+        onIntent: onWorkflowIntent
+      )
       switch selection {
       case .toast(.inProgress(let message)):
         HStack(spacing: 6) {
