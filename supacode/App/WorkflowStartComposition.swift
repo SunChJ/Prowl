@@ -265,12 +265,24 @@ extension SupacodeApp {
             of: profile, requirements: requirements, context: resolverContext
           ).map { rejectionText($0, requirements: requirements) })
       }
+      // "Create profile from suggestion…" is for when nothing matches (011 decision 4):
+      // once an enabled, admissible profile already matches the suggestion exactly,
+      // creating another indistinguishable one would only clutter Settings.
+      let hasExactSuggestionMatch =
+        requirements.suggest.map { suggested in
+          settings.agentProfiles.contains { profile in
+            profile.isEnabled
+              && WorkflowBindingResolver.rejection(
+                of: profile, requirements: requirements, context: resolverContext) == nil
+              && WorkflowBindingResolver.matches(profile, suggestion: suggested)
+          }
+        } ?? false
       return WorkflowStartLaunchRole(
         name: role.name,
         effectiveBind: bindOverride.map { $0 == .auto ? WorkflowBindMode.auto : .ask } ?? requirements.bind,
         resolvedProfileID: resolvedProfileID,
         candidates: candidates,
-        suggestion: suggestion ?? requirements.suggest,
+        suggestion: hasExactSuggestionMatch ? nil : (suggestion ?? requirements.suggest),
         rejectedNote: rejectedNote)
     }
   }
