@@ -14,7 +14,7 @@ extension SupacodeApp {
     coordinatorBox: WorkflowCoordinatorBox,
     reservations: WorkflowPaneReservations
   ) -> WorkflowStartClient {
-    WorkflowStartClient(
+    let client = WorkflowStartClient(
       catalog: { worktreeID in
         guard let appStore = storeBox.store else { return [] }
         let snapshot = makeWorkflowRuntimeSnapshot(appStore: appStore, terminalManager: terminalManager)
@@ -59,6 +59,10 @@ extension SupacodeApp {
           message: response.error?.message ?? "The workflow could not be started.")
       }
     )
+    // Views outside the store scope (popover, context menu) resolve the global default,
+    // so the assembled client must be published there too.
+    WorkflowStartClientRegistry.shared.client = client
+    return client
   }
 
   // MARK: - Catalog

@@ -18,11 +18,24 @@ struct WorkflowStartClient: Sendable {
   var run: @MainActor @Sendable (_ request: WorkflowStartRequest) async -> WorkflowStartOutcome
 }
 
+/// The live client is assembled with the app store (`WorkflowStartComposition`) and published
+/// here as well: views read this dependency outside any store scope (the Agents popover, the
+/// Active Agents context menu), where `@Dependency` resolves the global default rather than
+/// the store's installed value.
+@MainActor
+final class WorkflowStartClientRegistry {
+  static let shared = WorkflowStartClientRegistry()
+  var client: WorkflowStartClient?
+}
+
 extension WorkflowStartClient: DependencyKey {
   static let liveValue = WorkflowStartClient(
-    catalog: { _ in [] },
-    context: { _, _, _ in nil },
-    run: { _ in .failed(code: CLIErrorCode.transportFailed, message: "Workflow runtime is not available.") }
+    catalog: { WorkflowStartClientRegistry.shared.client?.catalog($0) ?? [] },
+    context: { WorkflowStartClientRegistry.shared.client?.context($0, $1, $2) },
+    run: {
+      await WorkflowStartClientRegistry.shared.client?.run($0)
+        ?? .failed(code: CLIErrorCode.transportFailed, message: "Workflow runtime is not available.")
+    }
   )
 
   static let testValue = WorkflowStartClient(
