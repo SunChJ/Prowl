@@ -37,10 +37,14 @@ derived from `idle + unseen` and is never a fixture state.
    - `claude` consumes the full active screen. Commit the capture as read, without
      trimming; it must not exceed the terminal rows recorded in metadata. Trimming a
      Claude capture can delete the very row above the window that reproduces a bug.
-   - Every other agent consumes the bounded tail produced by the production
-     `agentDetectionRecentText` helper: start at the 24th non-empty line from the
-     bottom when at least 24 exist; otherwise retain the whole screen. Keep blank
-     lines and trailing screen rows inside that window.
+   - `pi` consumes a 32-line tail, so the pi-subagents widget keeps its header and
+     its live job row in one slice.
+   - Every other agent consumes the 24-line tail produced by the production
+     `agentDetectionRecentText` helper.
+
+   A tail starts at the budget-th non-empty line from the bottom when that many
+   exist; otherwise it retains the whole screen. Keep blank lines and trailing
+   screen rows inside that window.
 7. Redact paths, repositories, account identifiers, all real-session prompts/model output,
    and the counters a custom status line reports for the session — cost, token totals,
    quota percentages, elapsed time — without changing runtime chrome, line ordering,
@@ -63,9 +67,11 @@ scripts/make-detection-fixture.py .local/agent-screen-captures/capture.json \
 ```
 
 `--agent` is required and selects the step 6 reduction: `claude` keeps the full active
-screen, and every other agent value takes the bounded 24-line tail. The flag mirrors
-`DetectedAgent.detectionScreenText(from:)` rather than reading the agent from the
-capture, because the capture does not record which detector will consume it.
+screen, `pi` takes the bounded 32-line tail, and every other agent value takes the bounded
+24-line tail. The flag mirrors `DetectedAgent.detectionScreenText(from:)` rather than
+reading the agent from the capture, because the capture does not record which detector will
+consume it. A capture reduced under the wrong budget cannot be caught later: applying a
+wider tail to an already narrower fixture leaves the fixture unchanged.
 
 Each replacement is padded or trimmed in the spaces immediately following it, so every
 later column on the row — a closing box border, a second column of chrome — keeps its

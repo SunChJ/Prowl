@@ -8,10 +8,10 @@ detector reads for the given agent, and applies redactions without changing
 the visible width of any line.
 
 The reduction mirrors `DetectedAgent.detectionScreenText(from:)`: `claude`
-consumes the full active screen and is passed through untrimmed, while every
-other agent consumes the bounded 24-line tail. `--agent` selects between the
-two, and is required because the capture does not record which detector will
-consume it.
+consumes the full active screen and is passed through untrimmed, `pi` consumes a
+32-line tail, and every other agent consumes a 24-line tail. `--agent` selects
+among the three, and is required because the capture does not record which
+detector will consume it.
 
 Width matters. A fixture exists to pin how the classifier reads a real screen,
 and the agent CLIs wrap, shorten, and truncate their rows to the terminal width.
@@ -48,7 +48,11 @@ import re
 import sys
 import unicodedata
 
+# Ports of `agentDetectionRecentLineLimit` and `piAgentDetectionRecentLineLimit`
+# in `supacode/Infrastructure/AgentDetection/ScreenHeuristics.swift`.
+# `test_tail_limits_match_the_swift_constants` fails when either one drifts.
 DETECTOR_TAIL_LIMIT = 24
+PI_DETECTOR_TAIL_LIMIT = 32
 
 
 def canonical_tail(content: str, limit: int = DETECTOR_TAIL_LIMIT) -> str:
@@ -71,14 +75,44 @@ def canonical_tail(content: str, limit: int = DETECTOR_TAIL_LIMIT) -> str:
     return "\n".join(lines[start:])
 
 
+# The runtime names `DetectedAgent` carries, which are also the `<runtime>` path
+# component of a fixture. Two of them are not the case name (`cursor-agent`,
+# `qodercli`), so an unconstrained flag is easy to get wrong — and every wrong
+# value would take the bounded-tail branch below without saying so.
+# `test_agent_vocabulary_matches_the_swift_enum` fails when this list drifts.
+DETECTED_AGENTS = (
+    "pi",
+    "omp",
+    "claude",
+    "codex",
+    "gemini",
+    "cursor-agent",
+    "cline",
+    "opencode",
+    "copilot",
+    "kimi",
+    "droid",
+    "amp",
+    "qodercli",
+    "qwen",
+    "grok",
+)
+
+
 def detection_screen_text(text: str, agent: str) -> str:
     """Port of `DetectedAgent.detectionScreenText(from:)`.
 
-    `claude` consumes the full active screen; every other agent consumes the
-    bounded tail. The special case is deliberate on the Swift side: trimming a
-    Claude capture can delete the very row that reproduces a bug.
+    `claude` consumes the full active screen, `pi` a 32-line tail, and every
+    other agent a 24-line tail. Claude's case is deliberate on the Swift side:
+    trimming a Claude capture can delete the very row that reproduces a bug. Pi
+    keeps the wider tail so the pi-subagents widget holds its header and its live
+    job row in one slice.
     """
-    return text if agent == "claude" else canonical_tail(text)
+    if agent == "claude":
+        return text
+    if agent == "pi":
+        return canonical_tail(text, limit=PI_DETECTOR_TAIL_LIMIT)
+    return canonical_tail(text)
 
 
 class FixtureError(Exception):
@@ -234,10 +268,12 @@ def main() -> int:
     parser.add_argument(
         "--agent",
         required=True,
+        choices=DETECTED_AGENTS,
         metavar="AGENT",
         help="detector the fixture targets (the <runtime> path component, e.g. claude "
-        "or codex); claude keeps the full screen, every other agent takes the "
-        "bounded 24-line tail",
+        "or codex); claude keeps the full screen, pi takes the bounded 32-line "
+        "tail, every other agent the bounded 24-line tail. One of: "
+        + ", ".join(DETECTED_AGENTS),
     )
     parser.add_argument(
         "--redact",
