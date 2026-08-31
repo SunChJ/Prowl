@@ -81,7 +81,7 @@ struct WorkflowRunsFeatureTests {
     var typed: [WorkflowTypedLineRecord] = []
     var launches: [WorkflowLaunchRequest] = []
     var closed: [UUID] = []
-    var notifications: [String] = []
+    var notifications: [WorkflowRuntimeNotification] = []
     var opened: [UUID] = []
     var cancelled: [String] = []
     var abandoned: [(dispatchID: String, reason: String)] = []
@@ -142,7 +142,7 @@ struct WorkflowRunsFeatureTests {
           closed.append(surfaceID)
           return true
         },
-        notify: { [self] _, text in notifications.append(text) }
+        notify: { [self] _, notification in notifications.append(notification) }
       )
     }
 
@@ -1029,6 +1029,110 @@ struct WorkflowRunsFeatureTests {
     #expect(store.state.sessions[runID]?.run.status.attention?.message.contains("someone-elses-dispatch") == true)
     #expect(fixture.typed.isEmpty)
     await store.send(.userAction(runID: runID, .cancel))
+    await store.finish(timeout: Self.timeout)
+  }
+
+  // MARK: - Presentation notices
+
+  @Test(.dependencies) func statusEdgesEmitOneTypedNotice() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    let (session, _) = try fixture.session()
+    let runID = session.run.id
+    var expectedMachine = session.machine(now: { Self.now }, makeToken: { "unused" })
+    _ = expectedMachine.apply(.injectionFailed(ordinal: 1, .surfaceMissing))
+    let notice = try #require(
+      WorkflowRunNotice.statusEdge(from: session.run.status, to: expectedMachine.run)
+    )
+
+    await store.send(.started(session, effects: []))
+    await store.send(.event(runID: runID, .injectionFailed(ordinal: 1, .surfaceMissing)))
+    await store.receive(\.delegate.notice, notice)
+    #expect(notice.kind == .needsAttention)
+    #expect(notice.runID == runID)
+    #expect(notice.worktreeID == fixture.worktree.id)
+    #expect(notice.targetSurfaceID == Self.authorPane.surfaceID)
+    #expect(notice.body.contains("pane is gone"))
+
+    // A late event while the same attention state is active is ignored and emits no duplicate.
+    store.exhaustivity = .on
+    await store.send(.event(runID: runID, .injectionFailed(ordinal: 1, .surfaceMissing)))
+    _ = expectedMachine.apply(.user(.cancel))
+    await store.send(.userAction(runID: runID, .cancel)) {
+      $0.sessions[runID]?.run = expectedMachine.run
+    }
+    await store.finish(timeout: Self.timeout)
+  }
+
+  @Test func runNoticeCoversMeaningfulTerminalEdgesButNotExplicitCancellation() throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    var session = try fixture.session().0
+    let running = session.run.status
+
+    session.run.status = .completed
+    #expect(WorkflowRunNotice.statusEdge(from: running, to: session.run)?.kind == .completed)
+    session.run.status = .skipped(step: "brief", dependent: "launch")
+    #expect(WorkflowRunNotice.statusEdge(from: running, to: session.run)?.kind == .skipped)
+    session.run.status = .maxRoundsReached
+    #expect(WorkflowRunNotice.statusEdge(from: running, to: session.run)?.kind == .maxRoundsReached)
+    session.run.status = .cancelled
+    #expect(WorkflowRunNotice.statusEdge(from: running, to: session.run) == nil)
+    #expect(WorkflowRunNotice.statusEdge(from: .completed, to: session.run) == nil)
+  }
+
+  @Test func changedAttentionEmitsANewNoticeButIdenticalAttentionDoesNot() throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    var session = try fixture.session().0
+    let ordinal = try #require(session.run.currentInvocation?.ordinal)
+    let blocked = WorkflowAttention(
+      reason: .blocked,
+      stepID: "brief",
+      role: "author",
+      ordinal: ordinal,
+      actions: [.focusPane, .keepWaiting, .cancel],
+      message: "The role is blocked."
+    )
+    let waiting = WorkflowAttention(
+      reason: .idleWithoutDelivery,
+      stepID: "brief",
+      role: "author",
+      ordinal: ordinal,
+      actions: [.focusPane, .nudge, .keepWaiting, .skip, .cancel],
+      message: "The role went idle without delivering."
+    )
+    session.run.status = .needsAttention(waiting)
+
+    #expect(
+      WorkflowRunNotice.statusEdge(from: .needsAttention(blocked), to: session.run)?.kind == .needsAttention
+    )
+    #expect(WorkflowRunNotice.statusEdge(from: session.run.status, to: session.run) == nil)
+  }
+
+  @Test(.dependencies) func explicitFinalNotifySuppressesTheDuplicateGenericCompletionNotification() async throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanUp() }
+    let queue = RecordingQueue()
+    let store = makeStore(fixture, queue: queue.client)
+    var session = try fixture.session().0
+    session.run.status = .completed
+    let base = try #require(WorkflowRunNotice.statusEdge(from: nil, to: session.run))
+    let expected = WorkflowRunNotice(
+      kind: base.kind,
+      runID: base.runID,
+      worktreeID: base.worktreeID,
+      workflowName: base.workflowName,
+      title: base.title,
+      body: base.body,
+      targetSurfaceID: base.targetSurfaceID,
+      postsNotification: false
+    )
+
+    await store.send(.started(session, effects: [.notify("Custom completion")]))
+    await store.receive(\.delegate.notice, expected)
     await store.finish(timeout: Self.timeout)
   }
 

@@ -117,6 +117,7 @@ struct AppFeature {
   @Dependency(ExternalDiffToolClient.self) var externalDiffToolClient
   @Dependency(OutgoingChangesClient.self) var outgoingChangesClient
   @Dependency(GitClientDependency.self) var gitClient
+  @Dependency(WorkflowRuntimeClient.self) var workflowRuntimeClient
 
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in
@@ -1015,6 +1016,39 @@ struct AppFeature {
 
       case .commandPalette(let action):
         return reduceCommandPaletteAction(action, state: &state)
+
+      case .workflowRuns(.delegate(.notice(let notice))):
+        guard let worktree = state.repositories.worktree(for: notice.worktreeID) else {
+          return .none
+        }
+        var effects: [Effect<Action>] = []
+        if notice.postsNotification {
+          effects.append(
+            .run { @MainActor _ in
+              workflowRuntimeClient.notify(
+                worktree,
+                WorkflowRuntimeNotification(
+                  title: notice.title,
+                  body: notice.body,
+                  targetSurfaceID: notice.targetSurfaceID
+                )
+              )
+            }
+          )
+        }
+        if state.repositories.selectedWorktreeID == notice.worktreeID {
+          switch notice.kind {
+          case .completed:
+            effects.append(
+              .send(.repositories(.showToast(.success("\(notice.workflowName) completed"))))
+            )
+          case .skipped, .maxRoundsReached:
+            effects.append(.send(.repositories(.showToast(.warning(notice.title)))))
+          case .needsAttention:
+            break
+          }
+        }
+        return .merge(effects)
 
       case .workflowRuns:
         return .none

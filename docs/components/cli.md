@@ -4,7 +4,7 @@
 > an agent) can list panes, read their screens, run commands and capture output,
 > send keystrokes, focus, and open/close tabs and panes programmatically.
 
-**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl agents dispatch, prowl agents wait, prowl profiles list, prowl skills, skills install, agent skills, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
+**Keywords:** prowl cli, command line, prowl list, prowl agents, prowl agents read, prowl agents signal, prowl agents dispatch, prowl agents wait, prowl profiles list, prowl skills, skills install, agent skills, prowl workflow, workflow status center, workflow run panel, workflow attention, prowl read, prowl send, prowl key, prowl focus, prowl create, prowl close, prowl open, prowl handoff, pane id, agent, profile, automation, json, capture, socket
 
 **Related:** [terminal](terminal.md) · [concepts](../concepts.md) · [active-agents](active-agents.md) · [agent-detection](agent-detection.md) · the bundled **`prowl-cli` skill** (`skills/prowl-cli/SKILL.md`)
 
@@ -535,11 +535,21 @@ prowl workflow schema [--json]                          # JSON Schema (Draft 202
   run, live or, after an app restart, from its `run.json` (`.data.source` is `live` or
   `record`; a record has no activation and no tokens). Runs an earlier app instance left
   unfinished are marked `interrupted` at launch; V1 does not resume them.
+- While a run is active in the selected worktree, the toolbar's center status item shows its
+  current step (and the active-run count when several runs share the worktree). Hover previews the
+  run panel; click keeps it open. The panel lists all active runs in that worktree, their role panes,
+  repeat rounds and steps, the current instruction, run folder and log. A role chip focuses its
+  exact pane. When a run needs attention, the panel exposes every recovery the runner currently
+  permits: Focus Pane, Nudge Again, Keep Waiting, Retry, Relaunch Role, Accept as Delivered,
+  Accept with a declared verdict, Ask Again, Skip Step, and Cancel Run as applicable. Skip shows
+  whether the workflow continues or ends before confirmation. Successful completion uses the
+  toolbar success toast; background attention/completion also enters Notifications and focuses the
+  relevant pane when selected. When that worktree is already being viewed, the existing active-
+  surface notification preference decides whether external delivery stays quiet.
 - `cancel <run-id>` stops a live run: it stops advancing and injecting, abandons the pending
   activation, keeps every pane and output, and reports the ended run. Attention states a run
   reaches (an agent that went idle without delivering, a blocked or vanished pane, a
-  provisional delivery, a failed launch) are visible through `status` and, until the workflow
-  panel ships, resolvable only by `cancel`.
+  provisional delivery, a failed launch) are visible through `status` and the toolbar run panel.
 - `validate` prints every diagnostic as `path:line:column: error[code]: message` (warnings
   likewise) and ends with `OK <id> (<name>)` or `INVALID …`. Errors make the command fail
   with `WORKFLOW_INVALID`; in JSON the full validate payload (`path`, `valid`, `workflow`,

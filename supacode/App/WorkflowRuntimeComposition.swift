@@ -214,13 +214,36 @@ extension SupacodeApp {
         return terminalManager.stateIfExists(for: worktree.id)?.closeSurface(
           id: surfaceID, confirmation: .skip) ?? false
       },
-      notify: { worktree, text in
-        workflowLogger.notice("[\(worktree.name)] \(text)")
-        guard let appStore = storeBox.store, appStore.state.settings.systemNotificationsEnabled
-        else { return }
+      notify: { worktree, notification in
+        workflowLogger.notice("[\(worktree.name)] \(notification.title): \(notification.body)")
+        let state = terminalManager.stateIfExists(for: worktree.id)
+        let requestedSurface = notification.targetSurfaceID.flatMap { surfaceID in
+          terminalManager.isSurfaceLive(surfaceID) ? surfaceID : nil
+        }
+        let fallbackSurface = state?.tabManager.selectedTabId.flatMap { state?.activeSurfaceID(for: $0) }
+        if let surfaceID = requestedSurface ?? fallbackSurface, let state {
+          state.appendNotification(
+            title: notification.title,
+            body: notification.body,
+            surfaceId: surfaceID,
+            treatAsViewedWhenWorktreeIsVisible: notification.treatAsViewedWhenWorktreeIsVisible
+          )
+          return
+        }
+        guard let appStore = storeBox.store else { return }
+        let settings = appStore.state.settings
+        let isViewed = notification.treatAsViewedWhenWorktreeIsVisible && state?.isViewingWorktree() == true
+        guard !(settings.muteNotificationsForActiveSurface && isViewed), settings.systemNotificationsEnabled else {
+          return
+        }
         @Dependency(SystemNotificationClient.self) var notifications
         Task { @MainActor in
-          await notifications.send("Workflow · \(worktree.name)", text, worktree.id, nil)
+          await notifications.send(
+            notification.title,
+            notification.body,
+            worktree.id,
+            notification.targetSurfaceID
+          )
         }
       }
     )

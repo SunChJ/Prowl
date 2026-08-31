@@ -6,6 +6,7 @@ import SwiftUI
 struct WorktreeDetailView: View {
   private struct ToolbarSharedStateInput {
     let repositories: RepositoriesFeature.State
+    let workflowRuns: WorkflowRunsFeature.State
     let actionTargetWorktree: Worktree?
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
@@ -66,6 +67,7 @@ struct WorktreeDetailView: View {
     let sharedToolbarState = toolbarSharedState(
       input: ToolbarSharedStateInput(
         repositories: repositories,
+        workflowRuns: state.workflowRuns,
         actionTargetWorktree: actionTargetWorktree,
         notificationGroups: notificationGroups,
         unseenNotificationWorktreeCount: unseenNotificationWorktreeCount,
@@ -154,7 +156,8 @@ struct WorktreeDetailView: View {
       onActivateUpdateButton: { store.send(.updates(.activateUpdateButton)) },
       onHandOff: { store.send(.openHandoffHud) },
       onLaunchProfile: { store.send(.launchAgentProfile($0)) },
-      onManageProfiles: { store.send(.openAgentProfilesSettings) }
+      onManageProfiles: { store.send(.openAgentProfilesSettings) },
+      onWorkflowIntent: handleWorkflowIntent
     )
   }
 
@@ -165,6 +168,11 @@ struct WorktreeDetailView: View {
       agentsCapsule: agentsCapsuleState(for: input.actionTargetWorktree),
       agentsLauncherItems: agentsLauncherItems(for: input.actionTargetWorktree),
       statusToast: input.repositories.statusToast,
+      workflowStatus: WorkflowStatusCenterPresentation(
+        state: input.workflowRuns,
+        selectedWorktreeID: input.actionTargetWorktree?.id,
+        now: Date()
+      ),
       pullRequest: matchedPullRequest(
         for: input.actionTargetWorktree,
         repositories: input.repositories
@@ -207,8 +215,10 @@ struct WorktreeDetailView: View {
     ToolbarItem(placement: .principal) {
       ToolbarStatusView(
         toast: state.statusToast,
+        workflow: state.workflowStatus,
         pullRequest: state.pullRequest,
-        codeHost: state.codeHost
+        codeHost: state.codeHost,
+        onWorkflowIntent: handleWorkflowIntent
       )
       .padding(.horizontal)
     }
@@ -743,6 +753,20 @@ struct WorktreeDetailView: View {
     }
   }
 
+  private func handleWorkflowIntent(_ intent: WorkflowRunPanelIntent) {
+    switch intent {
+    case .focusPane(let worktreeID, let surfaceID):
+      store.send(.repositories(.selectWorktree(worktreeID)))
+      _ = terminalManager.stateIfExists(for: worktreeID)?.focusSurface(id: surfaceID)
+    case .userAction(let runID, let action):
+      store.send(.workflowRuns(.userAction(runID: runID, action)))
+    case .revealRunFolder(let url):
+      NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+    case .openLog(let url):
+      NSWorkspace.shared.open(url)
+    }
+  }
+
   /// Hashable identity of the inputs the focused actions capture, used as the
   /// `FocusedAction` token. The detail body re-runs on every OSC-9 progress
   /// tick during agent activity; without a stable token each run would look
@@ -785,6 +809,7 @@ struct WorktreeDetailView: View {
     let agentsCapsule: AgentsCapsuleState?
     let agentsLauncherItems: [AgentsLauncherItem]
     let statusToast: RepositoriesFeature.StatusToast?
+    let workflowStatus: WorkflowStatusCenterPresentation
     let pullRequest: GithubPullRequest?
     let codeHost: CodeHost
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
@@ -877,6 +902,7 @@ struct WorktreeDetailView: View {
     let onHandOff: () -> Void
     let onLaunchProfile: (AgentProfile.ID) -> Void
     let onManageProfiles: () -> Void
+    let onWorkflowIntent: (WorkflowRunPanelIntent) -> Void
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
     var body: some ToolbarContent {
@@ -899,8 +925,10 @@ struct WorktreeDetailView: View {
       ToolbarItem(placement: .principal) {
         ToolbarStatusView(
           toast: toolbarState.shared.statusToast,
+          workflow: toolbarState.shared.workflowStatus,
           pullRequest: toolbarState.shared.pullRequest,
-          codeHost: toolbarState.shared.codeHost
+          codeHost: toolbarState.shared.codeHost,
+          onWorkflowIntent: onWorkflowIntent
         )
         .padding(.horizontal)
       }

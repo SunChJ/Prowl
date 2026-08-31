@@ -255,6 +255,11 @@ private struct WorktreeToolbarPreview: View {
         ),
         agentsLauncherItems: [],
         statusToast: nil,
+        workflowStatus: WorkflowStatusCenterPresentation(
+          state: WorkflowRunsFeature.State(),
+          selectedWorktreeID: nil,
+          now: Date()
+        ),
         pullRequest: nil,
         codeHost: .github,
         notificationGroups: [],
@@ -310,7 +315,8 @@ private struct WorktreeToolbarPreview: View {
         onActivateUpdateButton: {},
         onHandOff: {},
         onLaunchProfile: { _ in },
-        onManageProfiles: {}
+        onManageProfiles: {},
+        onWorkflowIntent: { _ in }
       )
     }
     .environment(commandKeyObserver)

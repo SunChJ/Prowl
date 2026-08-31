@@ -29,12 +29,12 @@ user-facing surface may merge before "their" release and stay dormant. Four rele
 R2a, R2b, R3 (R2 was split on 2026-08-29); the [cadence rules](#cadence-and-working-rules)
 say when each is cut:
 
-### Status (2026-08-30)
+### Status (2026-08-31)
 
 | Release | State | Next action |
 | --- | --- | --- |
 | R1 | **Shipped** — v2026.8.29 (2026-08-29) | — |
-| R2a | In progress | B1 #740, #726 T0 #739, #733 #741, B2 #743, and B3 #744 merged; C1 is next ([063.008](008-b3-runner-wiring.md), [063.009](009-display-sleep-surface-spike.md)) |
+| R2a | In progress | B1 #740, #726 T0 #739, #733 #741, B2 #743, and B3 #744 merged; C1 #747 is in review ([063.010](010-c1-workflow-status-center.md)) |
 | R2b | Planned | after R2a ships |
 | R3 | Planned | after R2b ships |
 
