@@ -166,7 +166,8 @@ struct ContentView: View {
           actionTargetWorktreeID: store.repositories.isShowingCanvas
             ? terminalManager.canvasFocusedWorktreeID
             : nil,
-          ghosttyCommands: ghosttyShortcuts.commandPaletteEntries
+          ghosttyCommands: ghosttyShortcuts.commandPaletteEntries,
+          workflowItems: store.workflowPaletteItems
         ),
         resolvedKeybindings: store.resolvedKeybindings
       )

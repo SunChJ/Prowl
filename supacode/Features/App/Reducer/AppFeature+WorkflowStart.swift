@@ -38,3 +38,16 @@ extension AppFeature {
     return .none
   }
 }
+
+extension AppFeature {
+  /// Palette rows come from a state snapshot because the assembler runs on every body
+  /// evaluation; the catalog scan happens only when the palette opens.
+  func refreshWorkflowPaletteItems(state: inout State) {
+    guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
+      state.workflowPaletteItems = []
+      return
+    }
+    @Dependency(WorkflowStartClient.self) var workflowStartClient
+    state.workflowPaletteItems = workflowStartClient.catalog(worktree.id)
+  }
+}

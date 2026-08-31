@@ -90,6 +90,7 @@ struct CommandPaletteItem: Identifiable, Equatable {
     case runCustomCommand(EffectiveCustomCommand.Identifier, systemImage: String)
     case handOff
     case launchAgentProfile(AgentProfile.ID)
+    case runWorkflow(String)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -178,7 +179,8 @@ struct CommandPaletteItem: Identifiable, Equatable {
       .openRepositorySettings,
       .runCustomCommand,
       .handOff,
-      .launchAgentProfile:
+      .launchAgentProfile,
+      .runWorkflow:
       return nil
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

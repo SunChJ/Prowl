@@ -33,6 +33,8 @@ struct AppFeature {
     var leftSidebarVisibility: NavigationSplitViewVisibility = .all
     @Presents var handoffHud: HandoffHudFeature.State?
     @Presents var workflowStart: WorkflowStartFeature.State?
+    /// Workflows visible to the action-target worktree, refreshed when the palette opens.
+    var workflowPaletteItems: [WorkflowStartCatalogItem] = []
     @Presents var alert: AlertState<Alert>?
 
     init(

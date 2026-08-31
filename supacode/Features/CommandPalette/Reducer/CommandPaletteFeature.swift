@@ -74,6 +74,7 @@ struct CommandPaletteFeature {
     case runCustomCommand(EffectiveCustomCommand.Identifier)
     case handOff
     case launchAgentProfile(AgentProfile.ID)
+    case runWorkflow(String)
     #if DEBUG
       case debugTestToast(RepositoriesFeature.StatusToast)
       case debugSimulateUpdateFound
@@ -227,7 +228,8 @@ struct CommandPaletteFeature {
     customCommands: [EffectiveCustomCommand] = [],
     runScriptStatusByWorktreeID: [Worktree.ID: Bool] = [:],
     actionTargetWorktreeID: Worktree.ID? = nil,
-    ghosttyCommands: [GhosttyCommand] = []
+    ghosttyCommands: [GhosttyCommand] = [],
+    workflowItems: [WorkflowStartCatalogItem] = []
   ) -> [CommandPaletteItem] {
     let showsNewWorktreeAction =
       repositories.repositories.isEmpty
@@ -266,6 +268,9 @@ struct CommandPaletteFeature {
     }
     items.append(contentsOf: customCommandItems(customCommands))
     items.append(contentsOf: handoffCommandItems(repositories))
+    items.append(
+      contentsOf: workflowCommandItems(
+        workflowItems, repositories: repositories, actionTargetWorktreeID: worktreeActionTargetID))
     items.append(
       contentsOf: agentProfileLaunchItems(
         repositories,
@@ -586,6 +591,33 @@ func agentProfileLaunchItems(
       defaultSuggestion: false,
       keywords: ["launch", "agent", "profile", "start", profile.name],
       agentProfileIconSource: profile.iconSource
+    )
+  }
+}
+
+/// One `Run Workflow:` row per runnable workflow visible to the action-target
+/// worktree (docs-ai 063 C2). The list is refreshed when the palette opens;
+/// validation-failing files stay out of the palette (the Agents popover is the
+/// diagnostic surface, 011 decision 3).
+func workflowCommandItems(
+  _ workflows: [WorkflowStartCatalogItem],
+  repositories: RepositoriesFeature.State,
+  actionTargetWorktreeID: Worktree.ID? = nil
+) -> [CommandPaletteItem] {
+  guard
+    let worktree = repositories.actionTargetTerminalWorktree(
+      explicitTargetID: actionTargetWorktreeID
+    )
+  else { return [] }
+  return workflows.filter(\.isRunnable).map { item in
+    CommandPaletteItem(
+      id: CommandPaletteItemID.runWorkflow(item.key),
+      title: "Run Workflow: \(item.name)",
+      subtitle: item.workflowDescription ?? "Start this workflow in \(worktree.name)",
+      kind: .runWorkflow(item.key),
+      category: .terminal,
+      defaultSuggestion: false,
+      keywords: ["workflow", "run", item.name, item.workflowID]
     )
   }
 }

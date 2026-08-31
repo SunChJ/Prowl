@@ -111,10 +111,11 @@ extension AppFeature {
   ) -> Bool {
     switch delegate {
     case .selectWorktree, .jumpToLatestUnread, .viewArchivedWorktrees,
-      .newWorktree, .toggleCanvas, .renameBranch, .handOff:
+      .newWorktree, .toggleCanvas, .renameBranch, .handOff, .runWorkflow:
       // `.handOff` opens the HUD, whose key-capture view takes first
       // responder; restoring terminal focus here would steal it back and
-      // leak arrow keys into the live agent session.
+      // leak arrow keys into the live agent session. `.runWorkflow` presents
+      // the start sheet, whose controls own the keyboard the same way.
       return true
     default:
       return false

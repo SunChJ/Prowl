@@ -7,12 +7,19 @@ extension AppFeature {
     state: inout State
   ) -> Effect<Action> {
     switch action {
+    case .setPresented(true):
+      refreshWorkflowPaletteItems(state: &state)
+      return .none
+
     case .setPresented(false):
       guard state.commandPalette.isPresented else { return .none }
       return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
 
     case .togglePresented:
-      guard state.commandPalette.isPresented else { return .none }
+      guard state.commandPalette.isPresented else {
+        refreshWorkflowPaletteItems(state: &state)
+        return .none
+      }
       return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
 
     case .delegate(let delegate):
@@ -291,6 +298,10 @@ extension AppFeature {
 
     case .launchAgentProfile(let profileID):
       return .send(.launchAgentProfile(profileID))
+
+    case .runWorkflow(let key):
+      return .send(
+        .openWorkflowStart(workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: false))
 
     case .ghosttyCommand(let action):
       guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
