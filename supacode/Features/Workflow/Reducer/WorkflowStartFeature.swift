@@ -25,9 +25,12 @@ struct WorkflowStartFeature {
     var suggestionProfileName: String = ""
     var isSubmitting = false
     var submissionError: String?
+    /// Starts as the context's snapshot and flips when the inline Install succeeds.
+    var cliInstalled: Bool
 
     init(context: WorkflowStartContext) {
       self.context = context
+      cliInstalled = context.cliInstalled
       selectedSourceSurfaceID = context.source?.preselectedSurfaceID
       launchSelections = Dictionary(
         uniqueKeysWithValues: context.launchRoles.compactMap { role in
@@ -53,7 +56,7 @@ struct WorkflowStartFeature {
     }
 
     var canRun: Bool {
-      guard !isSubmitting, context.cliInstalled, context.item.isRunnable else { return false }
+      guard !isSubmitting, cliInstalled, context.item.isRunnable else { return false }
       if let source = context.source {
         guard let selected = selectedSourceSurfaceID,
           let candidate = source.candidates.first(where: { $0.surfaceID == selected })
@@ -112,6 +115,8 @@ struct WorkflowStartFeature {
     case suggestionNameChanged(String)
     case createSuggestionConfirmed
     case createSuggestionCancelled
+    case installCLITapped
+    case cliInstallCompleted(success: Bool)
     case cancelTapped
     case runTapped
     case runResponse(WorkflowStartOutcome)
@@ -124,6 +129,7 @@ struct WorkflowStartFeature {
   }
 
   @Dependency(WorkflowStartClient.self) var workflowStartClient
+  @Dependency(CLIInstallClient.self) var cliInstallClient
   @Dependency(\.uuid) var uuid
 
   var body: some Reducer<State, Action> {
@@ -199,6 +205,24 @@ struct WorkflowStartFeature {
       case .createSuggestionCancelled:
         state.creatingSuggestionForRole = nil
         state.suggestionProfileName = ""
+        return .none
+
+      case .installCLITapped:
+        return .run { [cliInstallClient] send in
+          do {
+            try await cliInstallClient.install(cliDefaultInstallPath)
+            await send(.cliInstallCompleted(success: true))
+          } catch {
+            await send(.cliInstallCompleted(success: false))
+          }
+        }
+
+      case .cliInstallCompleted(let success):
+        if success {
+          state.cliInstalled = true
+        } else {
+          state.submissionError = "The prowl command line tool could not be installed."
+        }
         return .none
 
       case .cancelTapped:
