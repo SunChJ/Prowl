@@ -177,10 +177,14 @@ extension SupacodeApp {
       var candidates = agentCandidates
       let preferred = preferredSourceSurfaceID ?? focusedSurfaceID(of: worktree)
       if let preferred, !candidates.contains(where: { $0.surfaceID == preferred }),
-        !busySurfaceIDs.contains(preferred), let bare = candidate(surfaceID: preferred)
+        preferredSourceSurfaceID != nil || !busySurfaceIDs.contains(preferred),
+        let extra = candidate(surfaceID: preferred)
       {
-        // The focused pane may be a bare shell: a valid source while no delivery survives.
-        candidates.insert(bare, at: 0)
+        // The focused pane may be a bare shell (a valid source while no delivery survives),
+        // and an explicitly pinned Active Agents pane stays the fixed source even while it
+        // is bound to a run — admission answers with the CLI's own PANE_BUSY instead of the
+        // sheet pre-judging it (011 decision 1).
+        candidates.insert(extra, at: 0)
       }
       let preselected = candidates.contains { $0.surfaceID == preferred } ? preferred : nil
       source = WorkflowStartSource(

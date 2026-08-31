@@ -197,7 +197,8 @@ struct ActiveAgentsPanel: View {
     Self.subtitle(
       for: entry,
       branchName: branchName(for: entry),
-      showTabTitles: showTabTitles
+      showTabTitles: showTabTitles,
+      workflowBadge: workflowBadges[entry.surfaceID]
     )
   }
 
@@ -228,9 +229,10 @@ struct ActiveAgentsPanel: View {
   static func subtitle(
     for entry: ActiveAgentEntry,
     branchName: String,
-    showTabTitles: Bool
+    showTabTitles: Bool,
+    workflowBadge: String? = nil
   ) -> String {
-    showTabTitles ? paneTitle(for: entry) : branchName
+    workflowBadge ?? (showTabTitles ? paneTitle(for: entry) : branchName)
   }
 
   static func helpText(
