@@ -508,7 +508,7 @@ enum WorkflowRunAdmission {
   }
 
   /// dsl-spec §3: a `current` role needs a detected agent only when a `message` to it survives the skips.
-  static func deliversToCurrentRole(_ definition: WorkflowDefinition, skipped: Set<String>) -> Bool {
+  nonisolated static func deliversToCurrentRole(_ definition: WorkflowDefinition, skipped: Set<String>) -> Bool {
     guard let current = definition.roles.first(where: { $0.source == .current }) else { return false }
     return definition.flattenedSteps.contains { step in
       if case .message(let role, _, _) = step.action, role == current.name { return !skipped.contains(step.id) }
