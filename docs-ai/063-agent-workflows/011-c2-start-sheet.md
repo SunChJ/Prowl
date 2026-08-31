@@ -4,7 +4,13 @@
 
 Drafted 2026-08-31; decisions frozen in the grill session of 2026-09-01. C2 is the first
 R2b slice ([release plan](release-plan.md)), on B3 (#744) and C1 (#747), implemented on
-`feat/workflow-start-sheet-c2`.
+`feat/workflow-start-sheet-c2` and opened as
+[#752](https://github.com/onevcat/Prowl/pull/752). Four adversarial review rounds ran over
+the PR (findings and dispositions in its comments): six findings fixed, one rejected with
+rationale, one coverage gap closed; the closing round reports no open P0/P1. A CLI
+regression smoke pass (isolated Debug instance, `workflow run` from a live Claude pane to a
+completed run record) is green; the GUI entry-point E2E and 061 visual verification remain
+before merge.
 
 ## Product contract
 
