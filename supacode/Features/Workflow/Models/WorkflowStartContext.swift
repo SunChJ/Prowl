@@ -111,7 +111,8 @@ nonisolated struct WorkflowStartContext: Equatable, Sendable {
 }
 
 /// What the sheet (or the immediate-start path) submits — the same vocabulary `workflow run`
-/// accepts, so admission stays the single authority.
+/// accepts, so admission stays the single authority. Persisting "Don't ask again" is the
+/// reducer's business, not the run's.
 nonisolated struct WorkflowStartRequest: Equatable, Sendable {
   let workflowID: String
   let worktreeID: String
@@ -122,13 +123,9 @@ nonisolated struct WorkflowStartRequest: Equatable, Sendable {
   /// `<name>=<value>` strings for inputs the user edited (defaults are left to admission).
   let inputValues: [String]
   let skippedSteps: [String]
-  /// "Don't ask again for this workflow": persist an `auto` bind-mode override on success.
-  let rememberAutoBind: Bool
-  /// The `<scope>/<id>` key the override is stored under.
-  let workflowKey: String
 }
 
 nonisolated enum WorkflowStartOutcome: Equatable, Sendable {
-  case started(runID: String)
+  case started
   case failed(code: String, message: String)
 }
