@@ -9,8 +9,18 @@ R2b slice ([release plan](release-plan.md)), on B3 (#744) and C1 (#747), impleme
 the PR (findings and dispositions in its comments): six findings fixed, one rejected with
 rationale, one coverage gap closed; the closing round reports no open P0/P1. A CLI
 regression smoke pass (isolated Debug instance, `workflow run` from a live Claude pane to a
-completed run record) is green; the GUI entry-point E2E and 061 visual verification remain
-before merge.
+completed run record) is green. The live GUI E2E pass is complete: an `ask` run started
+from the palette (sheet with source picker, defaulted + required inputs, skip choice,
+Run gating) ran to a completed record with both input values rendered into the typed
+instruction; the `auto` run started from the palette with no sheet; the Agents popover
+lists runnable rows with the "Run with Options…" escape hatch (verified to force the sheet)
+and names the validation-failing file as an inert diagnostic row; the Active Agents menu's
+`Run Workflow ▸` submenu starts with the row's pane pinned (read-only source row); the
+`in <workflow> · <role>` subtitle appears the moment a run starts; Esc dismisses via the
+key anchor; 061 visuals verified in Normal, Shelf, and Canvas plus a constrained-width
+window. The pass also caught a real integration bug — view-scope `@Dependency` readers
+(popover, context menu) resolved the empty `liveValue` stub instead of the assembled
+client — fixed by publishing the live client through `WorkflowStartClientRegistry`.
 
 ## Product contract
 
