@@ -70,6 +70,9 @@ nonisolated struct WorkflowStartSource: Equatable, Sendable {
   let roleName: String
   let candidates: [WorkflowStartPaneCandidate]
   let preselectedSurfaceID: UUID?
+  /// An Active Agents row pins its own pane as the source (011 decision 2 "fixed there");
+  /// the picker renders read-only and re-selection is refused.
+  var isPreselectionFixed = false
 }
 
 nonisolated struct WorkflowStartContext: Equatable, Sendable {

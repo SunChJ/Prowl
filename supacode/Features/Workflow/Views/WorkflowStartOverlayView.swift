@@ -3,6 +3,7 @@
 // source/role/input collection before a run exists. Every choice is sent as a typed action;
 // the reducer owns eligibility (011 decision 1) and the view renders its answers.
 
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -79,6 +80,15 @@ private struct WorkflowStartCard: View {
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
     .shadow(radius: 32, x: 0, y: 12)
     .padding(16)
+    .background {
+      // Pull the keyboard away from the terminal once when the sheet appears, so Esc and
+      // Return reach the sheet. Unlike the handoff HUD's capture view this never re-grabs:
+      // the sheet hosts text fields, and a focused field must keep the keyboard.
+      WorkflowStartKeyAnchor(
+        onEscape: { store.send(.cancelTapped) },
+        onReturn: { store.send(.runTapped) }
+      )
+    }
   }
 
   private var header: some View {
@@ -111,14 +121,21 @@ private struct WorkflowStartCard: View {
 
   private func sourceSection(_ source: WorkflowStartSource) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Picker(selection: sourceBinding) {
-        ForEach(source.candidates) { candidate in
-          Text(paneLabel(candidate)).tag(candidate.surfaceID as UUID?)
+      if source.isPreselectionFixed,
+        let fixed = source.candidates.first(where: { $0.surfaceID == source.preselectedSurfaceID })
+      {
+        LabeledContent("You (\(source.roleName))", value: paneLabel(fixed))
+          .help("This workflow was started from the Active Agents row, so its pane is the source.")
+      } else {
+        Picker(selection: sourceBinding) {
+          ForEach(source.candidates) { candidate in
+            Text(paneLabel(candidate)).tag(candidate.surfaceID as UUID?)
+          }
+        } label: {
+          Text("You (\(source.roleName))")
         }
-      } label: {
-        Text("You (\(source.roleName))")
+        .help("The pane this workflow runs from — the CLI's [source] argument.")
       }
-      .help("The pane this workflow runs from — the CLI's [source] argument.")
       if store.selectedSourceIsBareShell, store.sourceRequiresAgent {
         Text("A step messages this role, so the source pane must host a detected agent.")
           .font(.footnote)
@@ -359,5 +376,48 @@ extension WorkflowStartFeature.State {
       let candidate = source.candidates.first(where: { $0.surfaceID == selected })
     else { return false }
     return candidate.agentToken == nil
+  }
+}
+
+private struct WorkflowStartKeyAnchor: NSViewRepresentable {
+  let onEscape: () -> Void
+  let onReturn: () -> Void
+
+  func makeNSView(context: Context) -> AnchorNSView {
+    let view = AnchorNSView()
+    view.onEscape = onEscape
+    view.onReturn = onReturn
+    return view
+  }
+
+  func updateNSView(_ nsView: AnchorNSView, context: Context) {
+    nsView.onEscape = onEscape
+    nsView.onReturn = onReturn
+  }
+
+  final class AnchorNSView: NSView {
+    var onEscape: (() -> Void)?
+    var onReturn: (() -> Void)?
+    private var didGrabFocus = false
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      guard !didGrabFocus, let window else { return }
+      didGrabFocus = true
+      window.makeFirstResponder(self)
+    }
+
+    override func keyDown(with event: NSEvent) {
+      switch event.keyCode {
+      case 53:  // escape
+        onEscape?()
+      case 36, 76:  // return, keypad enter
+        onReturn?()
+      default:
+        super.keyDown(with: event)
+      }
+    }
   }
 }
