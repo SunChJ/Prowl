@@ -22,7 +22,7 @@ the cutout itself is reserved from layout using the screen's auxiliary menu-bar 
 
 | Active Agents state | Island behavior |
 |---|---|
-| **Working** | Compact, low-priority status. The most recently changed Working agent appears immediately; multiple Working agents rotate every four seconds. Hovering or opening the roster pauses rotation. |
+| **Working** | Compact, low-priority status. The most recently changed Working agent appears immediately; multiple Working agents rotate every four seconds. Hovering or opening the roster pauses rotation. A small Heixiu animation keeps the cat body stable while its tail periodically separates into a black ball and reconnects. |
 | **Blocked** | Strong **Needs input** card below the compact island. Blocked takes priority over Done. |
 | **Done** | Strong **Completed** card while the existing Active Agents entry remains unviewed. |
 | **Idle** | Appears only in the expanded roster. |
@@ -60,7 +60,8 @@ prefers a built-in notched display, then the macOS main display, then the first 
 display. A fixed display is stored by CoreGraphics display UUID. If it disconnects, placement
 temporarily uses Automatic without erasing the choice, and returns when that UUID reconnects.
 
-With Reduce Motion enabled, island expansion and status changes use fades instead of movement.
+With Reduce Motion enabled, island expansion and status changes use fades instead of movement,
+and Heixiu keeps its tail attached without continuous animation.
 
 ## Boundaries
 

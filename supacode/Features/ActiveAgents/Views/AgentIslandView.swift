@@ -136,7 +136,7 @@ struct AgentIslandView: View {
   private var notchedTrailingContent: some View {
     HStack(spacing: 5) {
       if agentsStore.islandCarouselEntry != nil {
-        BaguaWorkingIndicator()
+        HeixiuWorkingIndicator()
         if agentsStore.islandWorkingEntries.count > 1 {
           Text("\(agentsStore.islandWorkingEntries.count)")
             .font(.caption2.monospacedDigit().weight(.semibold))
@@ -173,13 +173,12 @@ struct AgentIslandView: View {
         }
         Spacer(minLength: 6)
         HStack(spacing: 4) {
-          BaguaWorkingIndicator()
+          HeixiuWorkingIndicator()
           if agentsStore.islandWorkingEntries.count > 1 {
             Text("\(agentsStore.islandWorkingEntries.count)")
               .font(.caption2.monospacedDigit().weight(.semibold))
           }
         }
-        .foregroundStyle(.orange)
       }
       .id(entry.id)
       .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))

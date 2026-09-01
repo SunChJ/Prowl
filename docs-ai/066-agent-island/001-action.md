@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | 2026-09-01 | Implemented the Active Agents-backed Agent Island, shared roster UI, display placement settings, navigation reuse, and regression coverage. | [#753](https://github.com/onevcat/Prowl/pull/753), [000-plan.md](000-plan.md) |
 | 2026-09-01 | Corrected built-in notch layout to reserve the physical camera cutout instead of treating notch presence as a boolean. | [#753](https://github.com/onevcat/Prowl/pull/753) |
+| 2026-09-01 | Replaced the island Working spinner with the Heixiu cat-and-detaching-tail animation. | [002-heixiu-working-animation.md](002-heixiu-working-animation.md) |
 
 ## Outcome
 
@@ -16,7 +17,8 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - The compact island shows the most recently changed Working entry, advances through multiple
   Working entries every four seconds, and pauses while hovered or while the roster is open.
   When no entry is Working, the compact area remains available as a neutral agent-count entry
-  point.
+  point. Working uses a subdued Heixiu animation: the black cat remains the visual anchor while
+  its tail periodically separates into a small black ball and reconnects.
 - Blocked and unviewed Done entries produce an automatically visible callout below the compact
   island. Blocked wins over Done, recency breaks ties, and `+N` represents additional attention
   entries. The callout disappears only when the corresponding Active Agents state changes or
@@ -46,12 +48,13 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   the exact cutout width between equal compact-content wings.
 - Settings adds **Agents → Agent Island**, enabled by default, with Automatic or fixed-display
   placement. Existing settings JSON decodes to the new defaults.
-- Reduce Motion replaces the default spring and scrolling transitions with opacity transitions.
+- Reduce Motion replaces the default spring and scrolling transitions with opacity transitions
+  and keeps Heixiu's tail attached without a continuous timeline.
 
 ## Verification
 
 - `make check` — passed: swift-format lint, strict SwiftLint, and project checks.
-- `make test` — passed: 2,938 app tests plus the 2-test secondary suite, zero failures.
+- `make test` — passed: 2,941 app tests plus the 2-test secondary suite, zero failures.
 - `make build-app` — passed: Debug build completed with zero errors and zero warnings.
 - Reducer tests cover recent-entry selection, four-second rotation, hover pause/restart,
   Blocked/Done priority, existing Done-to-Idle and Blocked-clear transitions, removal, expansion,

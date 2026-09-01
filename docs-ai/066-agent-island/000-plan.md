@@ -80,3 +80,6 @@ known name; if absent, placement temporarily follows Automatic and returns when 
   now retains the cutout rectangle derived from macOS auxiliary menu-bar areas. The panel aligns
   to that rectangle, and compact content uses equal left and right wings around an exact-width
   exclusion zone.
+- 2026-09-01 — The island-specific Working spinner was replaced by a Heixiu cat-and-tail animation
+  that connects the feature to Prowl's cat identity. See
+  [002-heixiu-working-animation.md](002-heixiu-working-animation.md).
