@@ -89,3 +89,6 @@ known name; if absent, placement temporarily follows Automatic and returns when 
 - Updated 2026-09-01: The projection adopted an AppIcon-derived filled silhouette, dark Agent
   nodes, and tail-origin spring motion after the outlined white-plate treatment proved visually
   dominant — see [004-app-icon-silhouette-and-motion.md](004-app-icon-silhouette-and-motion.md).
+- Updated 2026-09-01: Compact status presentation was isolated from shared Active Agents UI and
+  reduced to larger runtime icons with state-owned fluid rings; the decorative cat was removed —
+  see [005-island-owned-agent-rings.md](005-island-owned-agent-rings.md).

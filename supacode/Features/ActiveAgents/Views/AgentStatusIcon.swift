@@ -6,7 +6,6 @@ struct AgentStatusIcon: View {
   var pointSize: CGFloat = 20
   var indicatorSize: CGFloat = 9
   var showsPlate = false
-  var showsStatusSymbol = true
   var animatesWorking = false
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -25,10 +24,10 @@ struct AgentStatusIcon: View {
     ZStack {
       if showsPlate {
         Circle()
-          .fill(entry.displayState.foregroundStyle.opacity(0.14))
+          .fill(.white.opacity(0.94))
           .overlay {
             Circle()
-              .stroke(entry.displayState.foregroundStyle.opacity(0.48), lineWidth: 0.75)
+              .stroke(.black.opacity(0.16), lineWidth: 0.5)
           }
       }
       Group {
@@ -37,11 +36,10 @@ struct AgentStatusIcon: View {
         } else {
           Image(systemName: "sparkle")
             .font(.system(size: pointSize * 0.58, weight: .semibold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(showsPlate ? .black : .primary)
             .accessibilityHidden(true)
         }
       }
-      .foregroundStyle(.white.opacity(0.94))
     }
     .frame(width: pointSize, height: pointSize)
   }
@@ -69,12 +67,10 @@ struct AgentStatusIcon: View {
       Circle()
         .fill(entry.displayState.foregroundStyle)
         .padding(1)
-      if showsStatusSymbol {
-        Image(systemName: entry.displayState.statusSymbolName)
-          .font(.system(size: indicatorSize * 0.48, weight: .bold))
-          .foregroundStyle(.white)
-          .accessibilityHidden(true)
-      }
+      Image(systemName: entry.displayState.statusSymbolName)
+        .font(.system(size: indicatorSize * 0.48, weight: .bold))
+        .foregroundStyle(.white)
+        .accessibilityHidden(true)
     }
     .frame(width: indicatorSize, height: indicatorSize)
     .overlay {

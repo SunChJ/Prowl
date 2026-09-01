@@ -1,5 +1,9 @@
 # AppIcon Silhouette and Tail Motion
 
+> The decorative cat and shared-icon styling in this amendment are superseded by
+> [005-island-owned-agent-rings.md](005-island-owned-agent-rings.md). The roster projection,
+> priority, and Reduce Motion requirements remain applicable.
+
 ## Context
 
 The first Agent-icon projection removed the anonymous loading ball, but its shared visual

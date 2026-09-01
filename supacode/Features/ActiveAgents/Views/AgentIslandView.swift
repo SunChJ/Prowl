@@ -132,7 +132,7 @@ struct AgentIslandView: View {
 
   private var notchedTrailingContent: some View {
     HStack(spacing: 5) {
-      HeixiuAgentTrail(entries: islandEntries)
+      AgentIslandIconCluster(entries: islandEntries)
       compactChevron
     }
   }
@@ -158,7 +158,7 @@ struct AgentIslandView: View {
             .lineLimit(1)
         }
         Spacer(minLength: 6)
-        HeixiuAgentTrail(entries: islandEntries)
+        AgentIslandIconCluster(entries: islandEntries)
       }
       .id(entry.id)
       .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -170,7 +170,7 @@ struct AgentIslandView: View {
         Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
           .font(.callout.weight(.semibold))
         Spacer(minLength: 6)
-        HeixiuAgentTrail(entries: islandEntries)
+        AgentIslandIconCluster(entries: islandEntries)
       }
     }
   }

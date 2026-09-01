@@ -3,18 +3,17 @@ import Testing
 
 @testable import supacode
 
-struct HeixiuAgentTrailTests {
+struct AgentIslandIconClusterTests {
   @Test func projectionPrioritizesAttentionThenProgressThenRest() throws {
     let idle = entry(state: .idle, changedAt: 50)
     let working = entry(state: .working, changedAt: 40)
     let done = entry(state: .done, changedAt: 30)
     let blocked = entry(state: .blocked, changedAt: 20)
 
-    let projection = HeixiuAgentTrail.projection(for: [idle, working, done, blocked])
+    let projection = AgentIslandIconCluster.projection(for: [idle, working, done, blocked])
 
     #expect(projection.entries.map(\.id) == [blocked.id, done.id])
     #expect(projection.overflowCount == 2)
-    #expect(projection.dominantState == .blocked)
   }
 
   @Test func projectionUsesRecencyInsideTheSameState() {
@@ -22,35 +21,36 @@ struct HeixiuAgentTrailTests {
     let newer = entry(state: .working, changedAt: 20)
     let idle = entry(state: .idle, changedAt: 30)
 
-    let projection = HeixiuAgentTrail.projection(for: [older, idle, newer])
+    let projection = AgentIslandIconCluster.projection(for: [older, idle, newer])
 
     #expect(projection.entries.map(\.id) == [newer.id, older.id, idle.id])
     #expect(projection.overflowCount == 0)
-    #expect(projection.dominantState == .working)
   }
 
-  @Test func allStatesHaveDistinctCatStatusSymbols() {
-    let states: [AgentDisplayState] = [.working, .blocked, .done, .idle]
+  @Test func animatedRingSpeedsRemainDistinctAndPositive() {
+    let working = AgentIslandRingPresentation.presentation(for: .working)
+    let blocked = AgentIslandRingPresentation.presentation(for: .blocked)
+    let done = AgentIslandRingPresentation.presentation(for: .done)
+    let idle = AgentIslandRingPresentation.presentation(for: .idle)
 
-    #expect(Set(states.map(\.statusSymbolName)).count == states.count)
-    #expect(AgentDisplayState.working.statusSymbolName == "pawprint.fill")
-    #expect(AgentDisplayState.blocked.statusSymbolName == "exclamationmark")
-    #expect(AgentDisplayState.done.statusSymbolName == "sparkles")
-    #expect(AgentDisplayState.idle.statusSymbolName == "moon.zzz.fill")
+    #expect(
+      Set([working.rotationDuration, blocked.rotationDuration, done.rotationDuration]).count == 3)
+    #expect(blocked.rotationDuration > 0)
+    #expect(working.rotationDuration > 0)
+    #expect(done.rotationDuration > 0)
+    #expect(idle.rotationDuration == 0)
   }
 
-  @Test func catGeometryExpressesAgentStateWithoutChangingTheRosterModel() {
-    let working = ProwlCatGeometry.geometry(for: .working)
-    let blocked = ProwlCatGeometry.geometry(for: .blocked)
-    let done = ProwlCatGeometry.geometry(for: .done)
-    let idle = ProwlCatGeometry.geometry(for: .idle)
+  @Test func onlyNonIdleStatesAnimateTheirIslandRing() {
+    let working = AgentIslandRingPresentation.presentation(for: .working)
+    let blocked = AgentIslandRingPresentation.presentation(for: .blocked)
+    let done = AgentIslandRingPresentation.presentation(for: .done)
+    let idle = AgentIslandRingPresentation.presentation(for: .idle)
 
-    #expect(blocked.tailLift > done.tailLift)
-    #expect(done.tailLift > working.tailLift)
-    #expect(working.tailLift > idle.tailLift)
-    #expect(blocked.headLift > working.headLift)
-    #expect(working.headLift > idle.headLift)
-    #expect(working.forelegReach > idle.forelegReach)
+    #expect(working.animates)
+    #expect(blocked.animates)
+    #expect(done.animates)
+    #expect(!idle.animates)
   }
 
   private func entry(state: AgentDisplayState, changedAt: TimeInterval) -> ActiveAgentEntry {
