@@ -27,8 +27,12 @@ respawn.
 ## Launching
 
 - **Toolbar Agents capsule** — always opens a popover. With a detected agent it
-  leads with Hand Off; launch rows follow under a "New agent in this worktree"
-  section header, the current worktree's **Recommended** profile first. Each
+  leads with Hand Off; a "Run a workflow" section follows when the worktree can
+  see workflows (each row starts the workflow, its trailing `ellipsis.circle`
+  control — "Run with Options…" — forces the start sheet, and files that fail
+  validation are listed dimmed with their reason); launch rows follow under a
+  "New agent in this worktree" section header, the current worktree's
+  **Recommended** profile first. Each
   row shows the profile name with the runtime name trailing. Rows for runtimes
   that look unavailable are dimmed with a warning but stay clickable —
   availability signals can be wrong, so they never block a launch. "Manage

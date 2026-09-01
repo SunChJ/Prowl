@@ -7,6 +7,9 @@ struct ActiveAgentsPanel: View {
   /// Per-entry repository/branch labels resolved from each agent's working directory by the parent
   /// (see `SidebarListView.activeAgentRowDisplays`); keeps this view presentational.
   let rowDisplays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay]
+  /// `in <workflow> · <role>` labels for panes bound to an active run, resolved by AppFeature
+  /// (docs-ai 063 C2); replaces the branch/title subtitle while the run lives.
+  let workflowBadges: [UUID: String]
   let selectedSurfaceID: UUID?
   /// Merged "⌥⌃↑↓" hint shown while Cmd is held; `nil` hides it (bindings customized
   /// or Cmd not held). Resolved by the parent so the panel stays presentational.
@@ -124,12 +127,15 @@ struct ActiveAgentsPanel: View {
     min(maximumHeight, max(ActiveAgentsFeature.minimumPanelHeight, height))
   }
 
+  @Dependency(WorkflowStartClient.self) private var workflowStartClient
+
   @ViewBuilder
   private func contextMenu(for entry: ActiveAgentEntry) -> some View {
     Button("Hand Off…") {
       store.send(.handOffTapped(entry.id))
     }
     .help("Save this agent's progress and hand the task off to another agent")
+    runWorkflowMenu(for: entry)
     Button("Mark as Read") {
       store.send(.markAsReadTapped(entry.id))
     }
@@ -163,6 +169,22 @@ struct ActiveAgentsPanel: View {
     }
   }
 
+  /// The catalog is read when the menu opens, so file edits show without a relaunch.
+  @ViewBuilder
+  private func runWorkflowMenu(for entry: ActiveAgentEntry) -> some View {
+    let workflows = workflowStartClient.catalog(entry.worktreeID).filter(\.isRunnable)
+    if !workflows.isEmpty {
+      Menu("Run Workflow") {
+        ForEach(workflows) { item in
+          Button(item.name) {
+            store.send(.runWorkflowTapped(entry.id, workflowKey: item.key))
+          }
+          .help(item.workflowDescription ?? "Run \(item.name) from this agent's pane")
+        }
+      }
+    }
+  }
+
   private func repositoryName(for entry: ActiveAgentEntry) -> String {
     rowDisplays[entry.id]?.repositoryName ?? entry.worktreeName
   }
@@ -175,7 +197,8 @@ struct ActiveAgentsPanel: View {
     Self.subtitle(
       for: entry,
       branchName: branchName(for: entry),
-      showTabTitles: showTabTitles
+      showTabTitles: showTabTitles,
+      workflowBadge: workflowBadges[entry.surfaceID]
     )
   }
 
@@ -206,9 +229,10 @@ struct ActiveAgentsPanel: View {
   static func subtitle(
     for entry: ActiveAgentEntry,
     branchName: String,
-    showTabTitles: Bool
+    showTabTitles: Bool,
+    workflowBadge: String? = nil
   ) -> String {
-    showTabTitles ? paneTitle(for: entry) : branchName
+    workflowBadge ?? (showTabTitles ? paneTitle(for: entry) : branchName)
   }
 
   static func helpText(

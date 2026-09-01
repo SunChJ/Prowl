@@ -526,7 +526,7 @@ private struct CommandPaletteRowView: View {
       .toggleShelf, .showDiff, .outgoingChanges,
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
-      .openRepositorySettings, .runCustomCommand, .handOff, .launchAgentProfile:
+      .openRepositorySettings, .runCustomCommand, .handOff, .launchAgentProfile, .runWorkflow:
       return nil
     case .deleteWorktree:
       return "Delete"
@@ -625,6 +625,8 @@ private struct CommandPaletteRowView: View {
       return "arrow.left.arrow.right"
     case .launchAgentProfile:
       return "play.circle"
+    case .runWorkflow:
+      return "rectangle.stack.badge.play"
     #if DEBUG
       case .debugTestToast:
         return "ladybug"
@@ -650,7 +652,7 @@ private struct CommandPaletteRowView: View {
       .revealInFinder, .copyPath, .revealInSidebar,
       .runScript, .stopRunScript, .togglePinWorktree, .renameBranch,
       .openRepositorySettings,
-      .deleteWorktree, .runCustomCommand, .handOff, .launchAgentProfile:
+      .deleteWorktree, .runCustomCommand, .handOff, .launchAgentProfile, .runWorkflow:
       return true
     case .worktreeSelect:
       return false
@@ -821,6 +823,8 @@ private struct CommandPaletteRowView: View {
     case .handOff:
       base = row.title
     case .launchAgentProfile:
+      base = row.title
+    case .runWorkflow:
       base = row.title
     #if DEBUG
       case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

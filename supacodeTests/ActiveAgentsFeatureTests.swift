@@ -253,6 +253,23 @@ struct ActiveAgentsFeatureTests {
     )
   }
 
+  @Test func panelSubtitleShowsTheWorkflowBadgeWhileTheRunLives() {
+    let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
+
+    #expect(
+      ActiveAgentsPanel.subtitle(
+        for: entry, branchName: "main", showTabTitles: false,
+        workflowBadge: "in Adversarial Review \u{00B7} reviewer")
+        == "in Adversarial Review \u{00B7} reviewer"
+    )
+    // The branch/title subtitle returns when the run ends.
+    #expect(
+      ActiveAgentsPanel.subtitle(
+        for: entry, branchName: "main", showTabTitles: true, workflowBadge: nil)
+        == "Review issue 385"
+    )
+  }
+
   @Test func panelPaneTitleFallsBackForEmptyTitles() {
     let entry = entry(id: UUID(0), paneTitle: "   ", state: .idle, changedAt: Date())
 

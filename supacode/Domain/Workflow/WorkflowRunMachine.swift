@@ -231,7 +231,9 @@ nonisolated struct WorkflowRunMachine {
       guard step.action.expect != nil else { throw .skipNotExpecting(stepID) }
     }
     for stepID in skippedSteps.sorted() {
-      if case .endsRun(let dependent) = Self.skipConsequence(forStep: stepID, in: run, fromStart: true) {
+      if case .endsRun(let dependent) = Self.startConsequence(
+        forStep: stepID, definition: definition, preSkipped: skippedSteps)
+      {
         throw .skipNotAllowed(step: stepID, dependent: dependent)
       }
     }
@@ -522,13 +524,42 @@ nonisolated struct WorkflowRunMachine {
   // MARK: Skip consequence
 
   func skipConsequence(forStep stepID: String) -> WorkflowSkipConsequence {
-    Self.skipConsequence(forStep: stepID, in: run, fromStart: false)
+    Self.skipConsequence(forStep: stepID, in: run)
+  }
+
+  /// The §5 Skip rule at start time, for the start sheet and `--skip` validation alike: the
+  /// consequence of skipping `stepID` given the other steps already chosen to skip, or nil when
+  /// the step carries no `expect` (or does not exist) and so offers no skip choice.
+  static func startSkipConsequence(
+    forStep stepID: String, definition: WorkflowDefinition, alreadySkipped: Set<String>
+  ) -> WorkflowSkipConsequence? {
+    guard let step = definition.flattenedSteps.first(where: { $0.id == stepID }),
+      step.action.expect != nil
+    else { return nil }
+    return startConsequence(forStep: stepID, definition: definition, preSkipped: alreadySkipped)
+  }
+
+  /// The start-time slice of the Skip rule: only top-level steps up to (and including) the first
+  /// `repeat` without `until` can run — nothing after it does, so it ends the run as
+  /// `max_rounds_reached` and later readers never count.
+  private static func startConsequence(
+    forStep stepID: String, definition: WorkflowDefinition, preSkipped: Set<String>
+  ) -> WorkflowSkipConsequence {
+    guard let name = definition.flattenedSteps.first(where: { $0.id == stepID })?.outputName else {
+      return .noOutput
+    }
+    var remaining: [WorkflowStepDefinition] = []
+    for step in definition.steps {
+      remaining.append(step)
+      if case .repeat(_, nil, _) = step.action { break }
+    }
+    return consequence(of: name, forStep: stepID, remaining: remaining, preSkipped: preSkipped)
   }
 
   /// The §5 Skip rule, resolved at the moment of the skip (decision H11): every step that can
   /// still run — the rest of the current loop body (the next iteration re-reads all of it),
   /// its `until`, and the top-level steps after it — is scanned for a reader of the output.
-  private static func skipConsequence(forStep stepID: String, in run: WorkflowRun, fromStart: Bool)
+  private static func skipConsequence(forStep stepID: String, in run: WorkflowRun)
     -> WorkflowSkipConsequence
   {
     let steps = run.definition.steps
@@ -538,14 +569,7 @@ nonisolated struct WorkflowRunMachine {
     var remaining: [WorkflowStepDefinition] = []
     var loopUntil: WorkflowUntilCondition?
     var loopID: String?
-    if fromStart {
-      // Nothing after a `repeat` without `until` can run: it ends the run as `max_rounds_reached`.
-      remaining = []
-      for step in steps {
-        remaining.append(step)
-        if case .repeat(_, nil, _) = step.action { break }
-      }
-    } else if let loop = run.position.loop, case .repeat(_, let until, let body) = steps[run.position.index].action {
+    if let loop = run.position.loop, case .repeat(_, let until, let body) = steps[run.position.index].action {
       // Readers later in this iteration always count; readers earlier in the body only when
       // another iteration can follow; steps after the loop only when an `until` can exit it
       // (without one the loop ends the run as `max_rounds_reached`).
@@ -565,12 +589,21 @@ nonisolated struct WorkflowRunMachine {
     } else {
       remaining = Array(steps[(run.position.index + 1)...])
     }
+    return consequence(
+      of: name, forStep: stepID, remaining: remaining, preSkipped: run.preSkippedSteps,
+      loopUntil: loopUntil, loopID: loopID)
+  }
+
+  private static func consequence(
+    of name: String, forStep stepID: String, remaining: [WorkflowStepDefinition],
+    preSkipped: Set<String>, loopUntil: WorkflowUntilCondition? = nil, loopID: String? = nil
+  ) -> WorkflowSkipConsequence {
     var optional: [String] = []
     if let loopUntil, loopUntil.output == name, let loopID {
       return .endsRun(dependent: loopID)
     }
-    for step in remaining where step.id != stepID && !run.preSkippedSteps.contains(step.id) {
-      if let dependent = reader(of: name, in: step, run: run, optional: &optional) {
+    for step in remaining where step.id != stepID && !preSkipped.contains(step.id) {
+      if let dependent = reader(of: name, in: step, preSkipped: preSkipped, optional: &optional) {
         return .endsRun(dependent: dependent)
       }
     }
@@ -579,7 +612,7 @@ nonisolated struct WorkflowRunMachine {
 
   /// The id of the step that reads `name` in a way the Skip rule does not tolerate, or nil.
   private static func reader(
-    of name: String, in step: WorkflowStepDefinition, run: WorkflowRun, optional: inout [String]
+    of name: String, in step: WorkflowStepDefinition, preSkipped: Set<String>, optional: inout [String]
   ) -> String? {
     if let title = step.title, references(name, in: title) { return step.id }
     switch step.action {
@@ -602,8 +635,8 @@ nonisolated struct WorkflowRunMachine {
       }
     case .repeat(_, let until, let body):
       if until?.output == name { return step.id }
-      for inner in body where !run.preSkippedSteps.contains(inner.id) {
-        if let dependent = reader(of: name, in: inner, run: run, optional: &optional) { return dependent }
+      for inner in body where !preSkipped.contains(inner.id) {
+        if let dependent = reader(of: name, in: inner, preSkipped: preSkipped, optional: &optional) { return dependent }
       }
     }
     return nil

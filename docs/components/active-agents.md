@@ -47,6 +47,8 @@ Command Palette → "Toggle Active Agents Panel".
 
 Rows appear in the order agents are first detected. (See
 [agent-detection](agent-detection.md) for how these states are determined.)
+A row whose pane is bound to an active workflow run replaces its subtitle with
+`in <workflow> · <role>` for the life of the run.
 
 ## Interactions
 
@@ -57,6 +59,10 @@ Rows appear in the order agents are first detected. (See
     (selecting and focusing it first), regardless of which pane currently has
     focus. Same flow as the toolbar Agents capsule; see
     [handoff](handoff.md).
+  - **Run Workflow ▸** — one entry per runnable workflow visible to the
+    agent's worktree; starts it with this pane fixed as the `current` role's
+    source (opening the start sheet when something needs a decision). Shown
+    only when at least one runnable workflow exists.
   - **Mark as Read** — clears the pane's unread notifications without
     switching to it.
   - **Copy Path** / **Reveal in Finder** — the agent's working directory (or
