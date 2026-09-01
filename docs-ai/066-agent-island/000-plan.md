@@ -86,3 +86,6 @@ known name; if absent, placement temporarily follows Automatic and returns when 
 - Updated 2026-09-01: Heixiu became the persistent island identity and its tail now projects real
   Agent icons with state lamps instead of becoming an anonymous loading ball — see
   [003-agent-icon-tail-projection.md](003-agent-icon-tail-projection.md).
+- Updated 2026-09-01: The projection adopted an AppIcon-derived filled silhouette, dark Agent
+  nodes, and tail-origin spring motion after the outlined white-plate treatment proved visually
+  dominant — see [004-app-icon-silhouette-and-motion.md](004-app-icon-silhouette-and-motion.md).

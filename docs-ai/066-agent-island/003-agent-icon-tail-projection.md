@@ -1,5 +1,9 @@
 # Agent Icon Tail Projection
 
+> The white icon plates and outlined-cat styling in this amendment are superseded by
+> [004-app-icon-silhouette-and-motion.md](004-app-icon-silhouette-and-motion.md). The projection
+> priority and state-lamp model remain current.
+
 ## Context
 
 The first Heixiu follow-up treated the cat as a replacement for the Working spinner: its tail

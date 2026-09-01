@@ -39,6 +39,20 @@ struct HeixiuAgentTrailTests {
     #expect(AgentDisplayState.idle.statusSymbolName == "moon.zzz.fill")
   }
 
+  @Test func catGeometryExpressesAgentStateWithoutChangingTheRosterModel() {
+    let working = ProwlCatGeometry.geometry(for: .working)
+    let blocked = ProwlCatGeometry.geometry(for: .blocked)
+    let done = ProwlCatGeometry.geometry(for: .done)
+    let idle = ProwlCatGeometry.geometry(for: .idle)
+
+    #expect(blocked.tailLift > done.tailLift)
+    #expect(done.tailLift > working.tailLift)
+    #expect(working.tailLift > idle.tailLift)
+    #expect(blocked.headLift > working.headLift)
+    #expect(working.headLift > idle.headLift)
+    #expect(working.forelegReach > idle.forelegReach)
+  }
+
   private func entry(state: AgentDisplayState, changedAt: TimeInterval) -> ActiveAgentEntry {
     let id = UUID()
     return ActiveAgentEntry(

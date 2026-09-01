@@ -18,32 +18,33 @@ struct HeixiuAgentTrail: View {
   }
 
   var body: some View {
-    HStack(spacing: -3) {
+    HStack(spacing: -4) {
       HStack(spacing: 1) {
         if projection.overflowCount > 0 {
           Text("+\(projection.overflowCount)")
             .font(.system(size: 7, weight: .bold, design: .rounded))
-            .foregroundStyle(.white.opacity(0.78))
-            .frame(width: 18, height: 18)
-            .background(.white.opacity(0.12), in: Circle())
+            .foregroundStyle(.secondary)
+            .frame(width: 16, height: 16)
+            .background(.white.opacity(0.07), in: Circle())
+            .overlay {
+              Circle()
+                .stroke(.white.opacity(0.12), lineWidth: 0.5)
+            }
         }
         ForEach(Array(projection.entries.reversed())) { entry in
           AgentStatusIcon(
             entry: entry,
-            pointSize: 16,
-            indicatorSize: 7,
+            pointSize: 15,
+            indicatorSize: 6,
             showsPlate: true,
+            showsStatusSymbol: false,
             animatesWorking: true
           )
-          .transition(
-            reduceMotion
-              ? .opacity
-              : .scale(scale: 0.35, anchor: .trailing).combined(with: .opacity)
-          )
+          .transition(tailOriginTransition)
         }
       }
       HeixiuCatPose(state: projection.dominantState)
-        .frame(width: 39, height: 18)
+        .frame(width: 44, height: 20)
     }
     .frame(width: 92, height: 20, alignment: .trailing)
     .animation(
@@ -51,6 +52,18 @@ struct HeixiuAgentTrail: View {
       value: projection
     )
     .accessibilityHidden(true)
+  }
+
+  private var tailOriginTransition: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return .asymmetric(
+      insertion: .offset(x: 8)
+        .combined(with: .scale(scale: 0.18, anchor: .trailing))
+        .combined(with: .opacity),
+      removal: .offset(y: -4)
+        .combined(with: .scale(scale: 0.65))
+        .combined(with: .opacity)
+    )
   }
 
   static func projection(for entries: [ActiveAgentEntry]) -> Projection {
@@ -77,21 +90,78 @@ struct HeixiuAgentTrail: View {
   }
 }
 
+struct ProwlCatGeometry: Equatable {
+  let tailLift: CGFloat
+  let headLift: CGFloat
+  let forelegReach: CGFloat
+
+  static func geometry(for state: AgentDisplayState) -> Self {
+    switch state {
+    case .working:
+      return Self(tailLift: 0, headLift: 0, forelegReach: 1.2)
+    case .blocked:
+      return Self(tailLift: 5.5, headLift: 1.8, forelegReach: 0)
+    case .done:
+      return Self(tailLift: 3, headLift: 0.9, forelegReach: 0.8)
+    case .idle:
+      return Self(tailLift: -1.5, headLift: -0.6, forelegReach: 0)
+    }
+  }
+}
+
 private struct HeixiuCatPose: View {
   let state: AgentDisplayState
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     ZStack(alignment: .topTrailing) {
-      Canvas { context, _ in
-        drawTail(in: &context)
-        if state == .idle {
-          drawSleepingBody(in: &context)
-        } else {
-          drawProwlingBody(in: &context)
-        }
-      }
+      animatedCat
       stateAccent
     }
+  }
+
+  @ViewBuilder
+  private var animatedCat: some View {
+    if state == .working, !reduceMotion {
+      catBody
+        .phaseAnimator([false, true]) { content, advancing in
+          content
+            .scaleEffect(
+              x: advancing ? 1.018 : 0.988,
+              y: advancing ? 0.985 : 1.01,
+              anchor: .bottom
+            )
+            .offset(x: advancing ? 0.7 : -0.35, y: advancing ? -0.2 : 0.15)
+        } animation: { _ in
+          .easeInOut(duration: 1.1)
+        }
+    } else {
+      catBody
+    }
+  }
+
+  private var catBody: some View {
+    let geometry = ProwlCatGeometry.geometry(for: state)
+    return ProwlCatSilhouette(
+      tailLift: geometry.tailLift,
+      headLift: geometry.headLift,
+      forelegReach: geometry.forelegReach
+    )
+    .fill(
+      LinearGradient(
+        colors: [Color("ProwlAccent").opacity(0.72), Color("ProwlAccent")],
+        startPoint: .leading,
+        endPoint: .trailing
+      )
+    )
+    .shadow(color: Color("ProwlAccent").opacity(0.22), radius: 1.5)
+    .overlay(alignment: .topTrailing) {
+      Circle()
+        .fill(.white.opacity(0.94))
+        .frame(width: 1.6, height: 1.6)
+        .offset(x: -3.5, y: 9.8 - geometry.headLift)
+    }
+    .animation(.spring(duration: 0.32, bounce: 0.32), value: geometry)
   }
 
   @ViewBuilder
@@ -106,137 +176,167 @@ private struct HeixiuCatPose: View {
     case .idle:
       Text("z")
         .font(.system(size: 6, weight: .bold, design: .rounded))
-        .foregroundStyle(.white.opacity(0.7))
+        .foregroundStyle(.secondary)
         .offset(x: -1, y: 1)
     case .working, .blocked:
       EmptyView()
     }
   }
+}
 
-  private func drawTail(in context: inout GraphicsContext) {
-    var tail = Path()
-    tail.move(to: CGPoint(x: state == .idle ? 15 : 13, y: state == .idle ? 9.5 : 7.5))
-    switch state {
-    case .working:
-      tail.addCurve(
-        to: CGPoint(x: 3.7, y: 10.6),
-        control1: CGPoint(x: 9.5, y: 5.2),
-        control2: CGPoint(x: 8.2, y: 12.2)
-      )
-    case .blocked:
-      tail.addCurve(
-        to: CGPoint(x: 3.7, y: 5.2),
-        control1: CGPoint(x: 9.5, y: 6.8),
-        control2: CGPoint(x: 7, y: 5.3)
-      )
-    case .done:
-      tail.addCurve(
-        to: CGPoint(x: 3.7, y: 4.2),
-        control1: CGPoint(x: 8.5, y: 8.8),
-        control2: CGPoint(x: 8.4, y: 2.5)
-      )
-    case .idle:
-      tail.addCurve(
-        to: CGPoint(x: 4, y: 13.5),
-        control1: CGPoint(x: 9, y: 9.5),
-        control2: CGPoint(x: 9, y: 14.5)
-      )
+private struct ProwlCatSilhouette: Shape {
+  var tailLift: CGFloat
+  var headLift: CGFloat
+  var forelegReach: CGFloat
+
+  var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
+    get { AnimatablePair(tailLift, AnimatablePair(headLift, forelegReach)) }
+    set {
+      tailLift = newValue.first
+      headLift = newValue.second.first
+      forelegReach = newValue.second.second
     }
-    context.stroke(
-      tail,
-      with: .color(.white.opacity(0.62)),
-      style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+  }
+
+  func path(in rect: CGRect) -> Path {
+    let scaleX = rect.width / 48
+    let scaleY = rect.height / 22
+    let tailY = 13 - tailLift
+    let headY = -headLift
+    let point: (CGFloat, CGFloat) -> CGPoint = { xPosition, yPosition in
+      CGPoint(x: rect.minX + xPosition * scaleX, y: rect.minY + yPosition * scaleY)
+    }
+
+    var path = Path()
+    addBackAndHead(to: &path, point: point, tailY: tailY, headY: headY)
+    addLegsAndTail(to: &path, point: point, tailY: tailY)
+    path.closeSubpath()
+    return path
+  }
+
+  private func addBackAndHead(
+    to path: inout Path,
+    point: (CGFloat, CGFloat) -> CGPoint,
+    tailY: CGFloat,
+    headY: CGFloat
+  ) {
+    path.move(to: point(1, tailY))
+    path.addCurve(
+      to: point(12, 11.5),
+      control1: point(4, tailY + 1.2),
+      control2: point(9, 14.2)
     )
-    context.stroke(
-      tail,
-      with: .color(.black.opacity(0.94)),
-      style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+    path.addCurve(
+      to: point(18, 6.5),
+      control1: point(14.8, 10.4),
+      control2: point(15.4, 7.5)
+    )
+    path.addCurve(
+      to: point(28, 5.4),
+      control1: point(21.8, 3.7),
+      control2: point(25.2, 4.3)
+    )
+    path.addCurve(
+      to: point(34, 8.8 + headY),
+      control1: point(31, 5.8),
+      control2: point(31.7, 8.3 + headY)
+    )
+    path.addLine(to: point(36.5, 4 + headY))
+    path.addCurve(
+      to: point(37.5, 8.6 + headY),
+      control1: point(37, 4.4 + headY),
+      control2: point(37.4, 6.8 + headY)
+    )
+    path.addLine(to: point(41, 6.1 + headY))
+    path.addCurve(
+      to: point(40.3, 10 + headY),
+      control1: point(41.2, 7.1 + headY),
+      control2: point(40.8, 8.7 + headY)
+    )
+    path.addCurve(
+      to: point(45.2, 12.1 + headY),
+      control1: point(42.5, 10 + headY),
+      control2: point(44.1, 10.9 + headY)
+    )
+    path.addCurve(
+      to: point(47, 14.3 + headY),
+      control1: point(45.5, 13.2 + headY),
+      control2: point(46.2, 13.7 + headY)
+    )
+    path.addCurve(
+      to: point(43.1, 16.5 + headY),
+      control1: point(46, 15.7 + headY),
+      control2: point(44.7, 16.4 + headY)
     )
   }
 
-  private func drawProwlingBody(in context: inout GraphicsContext) {
-    let earTipY = state == .blocked ? 1.8 : 3.1
-    var body = Path()
-    body.move(to: CGPoint(x: 11.5, y: 7.2))
-    body.addCurve(
-      to: CGPoint(x: 28, y: 6.1),
-      control1: CGPoint(x: 15, y: 3.2),
-      control2: CGPoint(x: 23.5, y: 3.6)
+  private func addLegsAndTail(
+    to path: inout Path,
+    point: (CGFloat, CGFloat) -> CGPoint,
+    tailY: CGFloat
+  ) {
+    path.addCurve(
+      to: point(47 + forelegReach, 20.4),
+      control1: point(44.1, 17.9),
+      control2: point(46.2 + forelegReach, 19.2)
     )
-    body.addLine(to: CGPoint(x: 30.2, y: earTipY))
-    body.addLine(to: CGPoint(x: 31.1, y: 6))
-    body.addCurve(
-      to: CGPoint(x: 37.2, y: 9.4),
-      control1: CGPoint(x: 34.2, y: 5.7),
-      control2: CGPoint(x: 35.4, y: 7.2)
+    path.addCurve(
+      to: point(43.2, 21),
+      control1: point(48.5 + forelegReach, 21),
+      control2: point(45.5, 21.1)
     )
-    body.addCurve(
-      to: CGPoint(x: 32.2, y: 11.4),
-      control1: CGPoint(x: 36, y: 11.1),
-      control2: CGPoint(x: 34, y: 11.5)
+    path.addLine(to: point(37.3, 17))
+    path.addCurve(
+      to: point(39.4, 20.7),
+      control1: point(37.5, 18.2),
+      control2: point(39, 19.5)
     )
-    body.addLine(to: CGPoint(x: 34, y: 15.2))
-    body.addLine(to: CGPoint(x: 29.8, y: 15.2))
-    body.addLine(to: CGPoint(x: 27.5, y: 11.6))
-    body.addLine(to: CGPoint(x: 21.7, y: 12))
-    body.addLine(to: CGPoint(x: 24, y: 15.2))
-    body.addLine(to: CGPoint(x: 19.3, y: 15.2))
-    body.addLine(to: CGPoint(x: 16.4, y: 12.1))
-    body.addLine(to: CGPoint(x: 11.6, y: 11.5))
-    body.addLine(to: CGPoint(x: 10, y: 15.2))
-    body.addLine(to: CGPoint(x: 5.8, y: 15.2))
-    body.addLine(to: CGPoint(x: 8, y: 10.7))
-    body.closeSubpath()
-    context.fill(body, with: .color(.black.opacity(0.94)))
-    context.stroke(
-      body,
-      with: .color(.white.opacity(0.62)),
-      style: StrokeStyle(lineWidth: 0.8, lineJoin: .round)
+    path.addCurve(
+      to: point(34.5, 20.9),
+      control1: point(38.5, 21.2),
+      control2: point(35.3, 21.1)
     )
-
-    let eyeSize: CGFloat = state == .blocked ? 1.7 : 1.35
-    let eye = Path(ellipseIn: CGRect(x: 33.3, y: 7.2, width: eyeSize, height: eyeSize))
-    context.fill(eye, with: .color(.white.opacity(0.94)))
-  }
-
-  private func drawSleepingBody(in context: inout GraphicsContext) {
-    let body = Path(ellipseIn: CGRect(x: 9, y: 5.2, width: 25, height: 10.5))
-    context.fill(body, with: .color(.black.opacity(0.94)))
-    context.stroke(body, with: .color(.white.opacity(0.62)), lineWidth: 0.8)
-
-    var head = Path()
-    head.move(to: CGPoint(x: 28, y: 9))
-    head.addLine(to: CGPoint(x: 30.5, y: 5))
-    head.addLine(to: CGPoint(x: 32, y: 8.2))
-    head.addCurve(
-      to: CGPoint(x: 37, y: 11.2),
-      control1: CGPoint(x: 34.5, y: 7.4),
-      control2: CGPoint(x: 36.2, y: 9)
+    path.addLine(to: point(31.5, 16.1))
+    path.addCurve(
+      to: point(25.3, 15.8),
+      control1: point(29.2, 16.6),
+      control2: point(27, 16.6)
     )
-    head.addCurve(
-      to: CGPoint(x: 29, y: 13.6),
-      control1: CGPoint(x: 35.2, y: 13.6),
-      control2: CGPoint(x: 31.5, y: 14)
+    path.addCurve(
+      to: point(28.2, 20.7),
+      control1: point(25.2, 17.4),
+      control2: point(27.6, 19.2)
     )
-    head.closeSubpath()
-    context.fill(head, with: .color(.black.opacity(0.94)))
-    context.stroke(
-      head,
-      with: .color(.white.opacity(0.62)),
-      style: StrokeStyle(lineWidth: 0.8, lineJoin: .round)
+    path.addCurve(
+      to: point(23.2, 20.9),
+      control1: point(27.1, 21.2),
+      control2: point(24.2, 21.2)
     )
-
-    var closedEye = Path()
-    closedEye.move(to: CGPoint(x: 33, y: 10.4))
-    closedEye.addCurve(
-      to: CGPoint(x: 35.2, y: 10.4),
-      control1: CGPoint(x: 33.7, y: 11),
-      control2: CGPoint(x: 34.5, y: 11)
+    path.addLine(to: point(18.5, 16.4))
+    path.addCurve(
+      to: point(15.4, 20.8),
+      control1: point(18.1, 18.1),
+      control2: point(16.7, 19.6)
     )
-    context.stroke(
-      closedEye,
-      with: .color(.white.opacity(0.9)),
-      style: StrokeStyle(lineWidth: 0.8, lineCap: .round)
+    path.addCurve(
+      to: point(10.7, 20.7),
+      control1: point(14.2, 21.2),
+      control2: point(11.5, 21.1)
+    )
+    path.addCurve(
+      to: point(11.4, 15),
+      control1: point(9.6, 19.2),
+      control2: point(10.4, 16.8)
+    )
+    path.addCurve(
+      to: point(1, tailY + 2.5),
+      control1: point(8.4, 16.1),
+      control2: point(3.5, tailY + 3.8)
+    )
+    path.addCurve(
+      to: point(1, tailY),
+      control1: point(0.1, tailY + 2.1),
+      control2: point(0.1, tailY + 0.4)
     )
   }
 }
