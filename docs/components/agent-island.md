@@ -15,6 +15,8 @@ the same `Working`, `Blocked`, `Done`, and `Idle` entries used by the sidebar pa
 The island is visible whenever that roster contains at least one entry. It merges into the
 top edge on a notched display and uses a centered floating pill below the menu bar on other
 displays. It remains available across Spaces, fullscreen applications, and Stage Manager.
+On a notched display, compact content occupies equal wings beside the physical camera cutout;
+the cutout itself is reserved from layout using the screen's auxiliary menu-bar areas.
 
 ## Presentation states
 

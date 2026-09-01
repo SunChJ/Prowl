@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class AgentIslandPresentationModel {
-  var isNotched = false
+  var notchSize: CGSize?
 }
 
 struct AgentIslandView: View {
@@ -44,7 +44,7 @@ struct AgentIslandView: View {
           .transition(expansionTransition)
       }
     }
-    .frame(width: 420)
+    .frame(width: rootWidth)
     .fixedSize(horizontal: false, vertical: true)
     .onGeometryChange(for: CGSize.self) { proxy in
       proxy.size
@@ -68,20 +68,23 @@ struct AgentIslandView: View {
     Button {
       agentsStore.send(.islandToggleRoster)
     } label: {
-      HStack(spacing: 9) {
-        compactContent
-        Image(systemName: agentsStore.isIslandRosterExpanded ? "chevron.up" : "chevron.down")
-          .font(.caption2.weight(.bold))
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
+      Group {
+        if let notchLayout {
+          notchedCompactContent(layout: notchLayout)
+        } else {
+          HStack(spacing: 9) {
+            compactContent
+            compactChevron
+          }
+          .padding(.horizontal, 14)
+          .frame(width: 300, height: 40)
+        }
       }
-      .padding(.horizontal, 14)
-      .frame(width: presentation.isNotched ? 360 : 300, height: 40)
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
     .background(.black, in: compactShape)
-    .shadow(color: .black.opacity(presentation.isNotched ? 0 : 0.28), radius: 8, y: 3)
+    .shadow(color: .black.opacity(notchLayout == nil ? 0.28 : 0), radius: 8, y: 3)
     .help(agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents")
     .accessibilityLabel(
       agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents"
@@ -90,6 +93,68 @@ struct AgentIslandView: View {
     .onHover { isHovered in
       agentsStore.send(.islandHoverChanged(isHovered))
     }
+  }
+
+  private func notchedCompactContent(layout: AgentIslandNotchLayout) -> some View {
+    HStack(spacing: 0) {
+      notchedLeadingContent
+        .padding(.leading, 12)
+        .frame(width: layout.wingWidth, alignment: .leading)
+      Color.clear
+        .frame(width: layout.cutoutSize.width)
+        .accessibilityHidden(true)
+      notchedTrailingContent
+        .padding(.trailing, 12)
+        .frame(width: layout.wingWidth, alignment: .trailing)
+    }
+    .frame(width: layout.compactWidth, height: layout.compactHeight)
+  }
+
+  @ViewBuilder
+  private var notchedLeadingContent: some View {
+    if let entry = agentsStore.islandCarouselEntry {
+      HStack(spacing: 7) {
+        agentIcon(entry)
+        Text(entry.displayName)
+          .font(.callout.weight(.semibold))
+          .lineLimit(1)
+      }
+      .id(entry.id)
+      .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+    } else {
+      HStack(spacing: 7) {
+        Image(systemName: "person.crop.rectangle.stack")
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
+        Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
+          .font(.callout.weight(.semibold))
+          .lineLimit(1)
+      }
+    }
+  }
+
+  private var notchedTrailingContent: some View {
+    HStack(spacing: 5) {
+      if agentsStore.islandCarouselEntry != nil {
+        BaguaWorkingIndicator()
+        if agentsStore.islandWorkingEntries.count > 1 {
+          Text("\(agentsStore.islandWorkingEntries.count)")
+            .font(.caption2.monospacedDigit().weight(.semibold))
+        }
+      } else {
+        Text("Idle")
+          .font(.caption2.weight(.semibold))
+      }
+      compactChevron
+    }
+    .foregroundStyle(agentsStore.islandCarouselEntry == nil ? Color.secondary : Color.orange)
+  }
+
+  private var compactChevron: some View {
+    Image(systemName: agentsStore.isIslandRosterExpanded ? "chevron.up" : "chevron.down")
+      .font(.caption2.weight(.bold))
+      .foregroundStyle(.secondary)
+      .accessibilityHidden(true)
   }
 
   @ViewBuilder
@@ -251,7 +316,7 @@ struct AgentIslandView: View {
   }
 
   private var compactShape: AnyShape {
-    if presentation.isNotched {
+    if notchLayout != nil {
       return AnyShape(
         UnevenRoundedRectangle(
           topLeadingRadius: 0,
@@ -262,6 +327,14 @@ struct AgentIslandView: View {
       )
     }
     return AnyShape(Capsule())
+  }
+
+  private var notchLayout: AgentIslandNotchLayout? {
+    presentation.notchSize.map { AgentIslandNotchLayout(cutoutSize: $0) }
+  }
+
+  private var rootWidth: CGFloat {
+    notchLayout?.rootWidth ?? 420
   }
 
   private var isVisible: Bool {

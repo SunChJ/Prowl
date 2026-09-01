@@ -5,6 +5,7 @@
 | Date | Change | Ref |
 | --- | --- | --- |
 | 2026-09-01 | Implemented the Active Agents-backed Agent Island, shared roster UI, display placement settings, navigation reuse, and regression coverage. | [#753](https://github.com/onevcat/Prowl/pull/753), [000-plan.md](000-plan.md) |
+| 2026-09-01 | Corrected built-in notch layout to reserve the physical camera cutout instead of treating notch presence as a boolean. | [#753](https://github.com/onevcat/Prowl/pull/753) |
 
 ## Outcome
 
@@ -40,7 +41,9 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - `AgentIslandScreenLayout` resolves a fixed CoreGraphics display UUID when connected, otherwise
   temporarily follows Automatic placement without erasing the saved selection. Automatic uses
   the Prowl window's display, then a built-in notched display, the main display, and finally the
-  first connected display.
+  first connected display. On a notched screen it derives the physical cutout from
+  `auxiliaryTopLeftArea` and `auxiliaryTopRightArea`, aligns the panel to its center, and reserves
+  the exact cutout width between equal compact-content wings.
 - Settings adds **Agents → Agent Island**, enabled by default, with Automatic or fixed-display
   placement. Existing settings JSON decodes to the new defaults.
 - Reduce Motion replaces the default spring and scrolling transitions with opacity transitions.
@@ -48,7 +51,7 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 ## Verification
 
 - `make check` — passed: swift-format lint, strict SwiftLint, and project checks.
-- `make test` — passed: 2,936 app tests plus the 2-test secondary suite, zero failures.
+- `make test` — passed: 2,938 app tests plus the 2-test secondary suite, zero failures.
 - `make build-app` — passed: Debug build completed with zero errors and zero warnings.
 - Reducer tests cover recent-entry selection, four-second rotation, hover pause/restart,
   Blocked/Done priority, existing Done-to-Idle and Blocked-clear transitions, removal, expansion,
@@ -59,24 +62,29 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - Layout and persistence tests cover old JSON defaults, fixed UUID persistence, disconnect
   fallback and reconnect recovery, notched geometry, floating-pill geometry, and negative screen
   coordinates.
+- The notch regression fixture uses the connected built-in display's measured geometry:
+  `1512×982`, `32pt` safe-area inset, and a `185×32pt` cutout. Seven targeted screen-layout tests
+  pass, including exact auxiliary-area derivation and content exclusion.
 - Manual verification on an external MateView covered the floating pill, secondary roster,
   windowless persistence, **Open Prowl**, and entry-driven restoration and focus.
 
 ## Verification limits
 
-The connected Mac exposed only the external MateView during manual verification, so a physical
-built-in notch was not available. Stage Manager and cross-Space/fullscreen transitions were not
-toggled during the run. Their geometry and selection rules are covered by tests, and the panel's
-AppKit collection behavior is configured for those environments, but they remain candidates for
-hardware-level release verification.
+The built-in display was available for physical geometry inspection, but the already-running
+Debug instance was not restarted after the fix because it hosted live terminal sessions. The
+post-fix layout was therefore verified against its exact `NSScreen` geometry and regression tests
+rather than a restarted live panel. Stage Manager and cross-Space/fullscreen transitions were not
+toggled during the run; the panel's AppKit collection behavior is configured for those
+environments, but they remain candidates for release verification.
 
 ## Deviations from plan
 
 - No separate navigation helper was introduced in `RepositoriesFeature`: forwarding the island
   action to the existing `entryTapped` action after surfacing Prowl provides a smaller single
   focus path with the same behavior.
-- Manual coverage was completed on the available external display; physical-notch and Stage
-  Manager checks remain release verification items as described above.
+- Manual interaction coverage was completed on the external display; the physical-notch
+  correction was verified from the built-in display's exact auxiliary-area geometry as described
+  above.
 
 ## References
 

@@ -76,8 +76,31 @@ struct AgentIslandScreenTests {
       screen: display
     )
 
-    #expect(frame.midX == display.frame.midX)
+    #expect(frame.midX == display.notchFrame?.midX)
     #expect(frame.maxY == display.frame.maxY)
+  }
+
+  @Test func notchFrameUsesAuxiliaryAreasAsContentExclusionZone() throws {
+    let frame = CGRect(x: 0, y: 0, width: 1_512, height: 982)
+
+    let notchFrame = AgentIslandScreenLayout.notchFrame(
+      screenFrame: frame,
+      safeAreaTopInset: 32,
+      auxiliaryTopLeftArea: CGRect(x: 0, y: 950, width: 663, height: 32),
+      auxiliaryTopRightArea: CGRect(x: 848, y: 950, width: 664, height: 32)
+    )
+
+    #expect(try #require(notchFrame) == CGRect(x: 663, y: 950, width: 185, height: 32))
+  }
+
+  @Test func notchedCompactLayoutReservesThePhysicalCutout() {
+    let layout = AgentIslandNotchLayout(cutoutSize: CGSize(width: 185, height: 32))
+
+    #expect(layout.compactWidth == 425)
+    #expect(layout.compactHeight == 40)
+    #expect(layout.wingWidth == 120)
+    #expect(layout.rootWidth == 425)
+    #expect((layout.wingWidth * 2) + layout.cutoutSize.width == layout.compactWidth)
   }
 
   @Test func floatingPillUsesVisibleTopAndSupportsNegativeCoordinates() {
@@ -118,7 +141,9 @@ struct AgentIslandScreenTests {
         height: frame.height - visibleTopInset
       ),
       isBuiltIn: isBuiltIn,
-      hasNotch: hasNotch
+      notchFrame: hasNotch
+        ? CGRect(x: frame.midX - 92.5, y: frame.maxY - 32, width: 185, height: 32)
+        : nil
     )
   }
 }

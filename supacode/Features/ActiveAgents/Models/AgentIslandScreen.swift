@@ -8,11 +8,73 @@ struct AgentIslandScreenDescriptor: Equatable, Identifiable {
   let frame: CGRect
   let visibleFrame: CGRect
   let isBuiltIn: Bool
-  let hasNotch: Bool
+  let notchFrame: CGRect?
+
+  var hasNotch: Bool { notchFrame != nil }
+}
+
+struct AgentIslandNotchLayout: Equatable {
+  private static let minimumCompactWidth: CGFloat = 360
+  private static let minimumCompactHeight: CGFloat = 40
+  private static let minimumWingWidth: CGFloat = 120
+  private static let bottomExtension: CGFloat = 8
+
+  let cutoutSize: CGSize
+  let compactWidth: CGFloat
+  let compactHeight: CGFloat
+  let wingWidth: CGFloat
+
+  init(cutoutSize: CGSize) {
+    let cutoutSize = CGSize(
+      width: max(0, cutoutSize.width),
+      height: max(0, cutoutSize.height)
+    )
+    let compactWidth = max(
+      Self.minimumCompactWidth,
+      cutoutSize.width + (Self.minimumWingWidth * 2)
+    )
+    self.cutoutSize = cutoutSize
+    self.compactWidth = compactWidth
+    compactHeight = max(Self.minimumCompactHeight, cutoutSize.height + Self.bottomExtension)
+    wingWidth = (compactWidth - cutoutSize.width) / 2
+  }
+
+  var rootWidth: CGFloat {
+    max(420, compactWidth)
+  }
 }
 
 enum AgentIslandScreenLayout {
-  static let floatingTopOffset = 8.0
+  static let floatingTopOffset: CGFloat = 8
+
+  static func notchFrame(
+    screenFrame: CGRect,
+    safeAreaTopInset: CGFloat,
+    auxiliaryTopLeftArea: CGRect?,
+    auxiliaryTopRightArea: CGRect?
+  ) -> CGRect? {
+    guard safeAreaTopInset > 0 else { return nil }
+    let topBandMinY = screenFrame.maxY - safeAreaTopInset
+    if let auxiliaryTopLeftArea,
+      let auxiliaryTopRightArea,
+      auxiliaryTopRightArea.minX > auxiliaryTopLeftArea.maxX
+    {
+      return CGRect(
+        x: auxiliaryTopLeftArea.maxX,
+        y: topBandMinY,
+        width: auxiliaryTopRightArea.minX - auxiliaryTopLeftArea.maxX,
+        height: safeAreaTopInset
+      )
+    }
+
+    let fallbackWidth = min(220, max(180, screenFrame.width * 0.125))
+    return CGRect(
+      x: screenFrame.midX - (fallbackWidth / 2),
+      y: topBandMinY,
+      width: fallbackWidth,
+      height: safeAreaTopInset
+    )
+  }
 
   static func resolve(
     preference: AgentIslandDisplayPreference,
@@ -40,8 +102,9 @@ enum AgentIslandScreenLayout {
     screen: AgentIslandScreenDescriptor
   ) -> CGRect {
     let top = screen.hasNotch ? screen.frame.maxY : screen.visibleFrame.maxY - floatingTopOffset
+    let anchorX = screen.notchFrame?.midX ?? screen.frame.midX
     return CGRect(
-      x: screen.frame.midX - (contentSize.width / 2),
+      x: anchorX - (contentSize.width / 2),
       y: top - contentSize.height,
       width: contentSize.width,
       height: contentSize.height
@@ -89,13 +152,19 @@ final class AgentIslandDisplayCatalog {
       return nil
     }
     let id = CFUUIDCreateString(nil, displayUUID) as String
+    let notchFrame = AgentIslandScreenLayout.notchFrame(
+      screenFrame: screen.frame,
+      safeAreaTopInset: screen.safeAreaInsets.top,
+      auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
+      auxiliaryTopRightArea: screen.auxiliaryTopRightArea
+    )
     return AgentIslandScreenDescriptor(
       id: id,
       name: screen.localizedName,
       frame: screen.frame,
       visibleFrame: screen.visibleFrame,
       isBuiltIn: CGDisplayIsBuiltin(displayID) != 0,
-      hasNotch: screen.safeAreaInsets.top > 0
+      notchFrame: notchFrame
     )
   }
 }

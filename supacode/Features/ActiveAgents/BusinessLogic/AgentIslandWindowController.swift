@@ -106,7 +106,10 @@ final class AgentIslandWindowController {
       return
     }
 
-    presentation.isNotched = screen.hasNotch
+    let notchSize = screen.notchFrame?.size
+    if presentation.notchSize != notchSize {
+      presentation.notchSize = notchSize
+    }
     let frame = AgentIslandScreenLayout.panelFrame(contentSize: contentSize, screen: screen)
     panel.setFrame(frame, display: panel.isVisible)
     if isVisible {

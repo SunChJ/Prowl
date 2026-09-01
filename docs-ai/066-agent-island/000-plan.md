@@ -74,3 +74,9 @@ known name; if absent, placement temporarily follows Automatic and returns when 
   screen anchoring, and outside-click handling require AppKit ownership.
 
 ## Amendments
+
+- 2026-09-01 — Built-in display validation showed that a notch boolean was insufficient: the
+  compact HStack could place labels behind the physical camera housing. The screen descriptor
+  now retains the cutout rectangle derived from macOS auxiliary menu-bar areas. The panel aligns
+  to that rectangle, and compact content uses equal left and right wings around an exact-width
+  exclusion zone.
