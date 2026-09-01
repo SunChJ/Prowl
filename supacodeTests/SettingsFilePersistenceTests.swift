@@ -16,19 +16,19 @@ struct SettingsFilePersistenceTests {
     let legacyData = try JSONSerialization.data(withJSONObject: dictionary)
     let decoded = try JSONDecoder().decode(GlobalSettings.self, from: legacyData)
 
-    #expect(decoded.agentIslandEnabled)
+    #expect(!decoded.agentIslandEnabled)
     #expect(decoded.agentIslandDisplayPreference == .automatic)
   }
 
   @Test func agentIslandDisplayPreferenceRoundTripsStableDisplayID() throws {
     var settings = GlobalSettings.default
-    settings.agentIslandEnabled = false
+    settings.agentIslandEnabled = true
     settings.agentIslandDisplayPreference = .display(id: "display-uuid", name: "Studio Display")
 
     let data = try JSONEncoder().encode(settings)
     let decoded = try JSONDecoder().decode(GlobalSettings.self, from: data)
 
-    #expect(decoded.agentIslandEnabled == false)
+    #expect(decoded.agentIslandEnabled)
     #expect(
       decoded.agentIslandDisplayPreference == .display(id: "display-uuid", name: "Studio Display"))
   }

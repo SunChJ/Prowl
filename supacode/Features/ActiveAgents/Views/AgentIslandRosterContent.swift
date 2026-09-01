@@ -2,17 +2,40 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-/// Shared Active Agents roster content used by the sidebar panel and Agent Island.
-/// Status, ordering, row rendering, and context actions stay owned by the existing
-/// `ActiveAgentsFeature` store; containers control only their surrounding chrome.
-struct ActiveAgentsListContent: View {
+struct AgentIslandRosterLayout: Equatable {
+  static let estimatedRowHeight: CGFloat = 50
+  static let maximumViewportHeight: CGFloat = 360
+
+  let viewportHeight: CGFloat
+  let isScrollable: Bool
+
+  static func layout(
+    entryCount: Int,
+    measuredContentHeight: CGFloat?
+  ) -> Self {
+    let estimatedContentHeight = CGFloat(entryCount) * estimatedRowHeight
+    let contentHeight = max(0, measuredContentHeight ?? estimatedContentHeight)
+    return Self(
+      viewportHeight: min(contentHeight, maximumViewportHeight),
+      isScrollable: contentHeight > maximumViewportHeight
+    )
+  }
+}
+
+/// Agent Island's expanded roster, composed from the original Active Agents row.
+struct AgentIslandRosterContent: View {
   @Bindable var store: StoreOf<ActiveAgentsFeature>
   let rowDisplays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay]
   let selectedSurfaceID: UUID?
   let showTabTitles: Bool
   let entryAction: (ActiveAgentEntry.ID) -> ActiveAgentsFeature.Action
+  @State private var measuredContentHeight: CGFloat?
 
   var body: some View {
+    let layout = AgentIslandRosterLayout.layout(
+      entryCount: store.entries.count,
+      measuredContentHeight: measuredContentHeight
+    )
     ScrollView {
       LazyVStack(spacing: 0) {
         ForEach(store.entries) { entry in
@@ -34,8 +57,18 @@ struct ActiveAgentsListContent: View {
           }
         }
       }
+      .onGeometryChange(for: CGFloat.self) { proxy in
+        proxy.size.height
+      } action: { height in
+        measuredContentHeight = height
+      }
     }
     .scrollIndicators(.never)
+    .scrollDisabled(!layout.isScrollable)
+    .frame(height: layout.viewportHeight)
+    .onChange(of: store.entries.count) { _, _ in
+      measuredContentHeight = nil
+    }
   }
 
   @ViewBuilder

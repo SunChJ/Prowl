@@ -4,7 +4,7 @@ import Testing
 @testable import supacode
 
 struct AgentIslandIconClusterTests {
-  @Test func projectionPrioritizesAttentionThenProgressThenRest() throws {
+  @Test func projectionPlacesRecentNonIdleEntriesBeforeIdle() throws {
     let idle = entry(state: .idle, changedAt: 50)
     let working = entry(state: .working, changedAt: 40)
     let done = entry(state: .done, changedAt: 30)
@@ -12,19 +12,32 @@ struct AgentIslandIconClusterTests {
 
     let projection = AgentIslandIconCluster.projection(for: [idle, working, done, blocked])
 
-    #expect(projection.entries.map(\.id) == [blocked.id, done.id])
-    #expect(projection.overflowCount == 2)
+    #expect(projection.entries.map(\.id) == [working.id, done.id, blocked.id])
+    #expect(projection.overflowCount == 1)
   }
 
-  @Test func projectionUsesRecencyInsideTheSameState() {
-    let older = entry(state: .working, changedAt: 10)
-    let newer = entry(state: .working, changedAt: 20)
-    let idle = entry(state: .idle, changedAt: 30)
+  @Test func projectionKeepsIdleOnTheRightEvenWhenItIsNewer() {
+    let olderWorking = entry(state: .working, changedAt: 10)
+    let newerWorking = entry(state: .working, changedAt: 20)
+    let newestIdle = entry(state: .idle, changedAt: 30)
 
-    let projection = AgentIslandIconCluster.projection(for: [older, idle, newer])
+    let projection = AgentIslandIconCluster.projection(for: [
+      olderWorking, newestIdle, newerWorking,
+    ])
 
-    #expect(projection.entries.map(\.id) == [newer.id, older.id, idle.id])
+    #expect(projection.entries.map(\.id) == [newerWorking.id, olderWorking.id, newestIdle.id])
     #expect(projection.overflowCount == 0)
+  }
+
+  @Test func sixEntriesProjectThreeIconsAndThreeOverflow() {
+    let entries = (0..<6).map { index in
+      entry(state: .working, changedAt: TimeInterval(index))
+    }
+
+    let projection = AgentIslandIconCluster.projection(for: entries)
+
+    #expect(projection.entries.map(\.id) == [entries[5].id, entries[4].id, entries[3].id])
+    #expect(projection.overflowCount == 3)
   }
 
   @Test func animatedRingSpeedsRemainDistinctAndPositive() {

@@ -92,3 +92,13 @@ known name; if absent, placement temporarily follows Automatic and returns when 
 - Updated 2026-09-01: Compact status presentation was isolated from shared Active Agents UI and
   reduced to larger runtime icons with state-owned fluid rings; the decorative cat was removed —
   see [005-island-owned-agent-rings.md](005-island-owned-agent-rings.md).
+- Updated 2026-09-01: The original sidebar implementation was restored in full and strong
+  attention moved from a first-item stack projection to an island-owned compact collection — see
+  [006-sidebar-restoration-and-attention-collection.md](006-sidebar-restoration-and-attention-collection.md).
+- Updated 2026-09-01: Secondary-island expansion is now direct, without a custom transition. The
+  compact projection orders recent non-Idle entries before Idle, retains three complete icons, and
+  places only the remaining count at the trailing lower corner — see
+  [007-elastic-expansion-and-overflow.md](007-elastic-expansion-and-overflow.md).
+- Updated 2026-09-01: Agent Island is opt-in by default and its enable/display controls live in the
+  existing Notifications settings page instead of adding a toolbar button or a separate settings
+  destination.

@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -45,13 +46,29 @@ struct ActiveAgentsPanel: View {
           .offset(y: -8)
         Spacer(minLength: 0)
       } else {
-        ActiveAgentsListContent(
-          store: store,
-          rowDisplays: rowDisplays,
-          selectedSurfaceID: selectedSurfaceID,
-          showTabTitles: showTabTitles,
-          entryAction: ActiveAgentsFeature.Action.entryTapped
-        )
+        ScrollView {
+          LazyVStack(spacing: 0) {
+            ForEach(store.entries) { entry in
+              Button {
+                store.send(.entryTapped(entry.id))
+              } label: {
+                ActiveAgentRow(
+                  entry: entry,
+                  repositoryName: repositoryName(for: entry),
+                  subtitle: subtitle(for: entry),
+                  repositoryColor: repositoryColor(for: entry),
+                  isDimmed: isDimmed(entry)
+                )
+              }
+              .buttonStyle(.plain)
+              .help(helpText(for: entry))
+              .contextMenu {
+                contextMenu(for: entry)
+              }
+            }
+          }
+        }
+        .scrollIndicators(.never)
       }
     }
     .background {
@@ -107,16 +124,91 @@ struct ActiveAgentsPanel: View {
     min(maximumHeight, max(ActiveAgentsFeature.minimumPanelHeight, height))
   }
 
+  @ViewBuilder
+  private func contextMenu(for entry: ActiveAgentEntry) -> some View {
+    Button("Hand Off…") {
+      store.send(.handOffTapped(entry.id))
+    }
+    .help("Save this agent's progress and hand the task off to another agent")
+    Button("Mark as Read") {
+      store.send(.markAsReadTapped(entry.id))
+    }
+    .help("Clear this agent's unread notifications without switching to it")
+    if let directory = rowDisplays[entry.id]?.directory {
+      Divider()
+      Button("Copy Path") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(directory.path, forType: .string)
+      }
+      .help("Copy the agent's working directory path")
+      Button("Reveal in Finder") {
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: directory.path)
+      }
+      .help("Reveal the agent's working directory in Finder")
+    }
+    if let transcriptPath = entry.session?.transcriptPath {
+      Divider()
+      Button("Copy Session Path") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(transcriptPath.path, forType: .string)
+      }
+      .help("Copy the on-disk path of this agent's session log")
+      Button("Reveal Session in Finder") {
+        NSWorkspace.shared.selectFile(
+          transcriptPath.path,
+          inFileViewerRootedAtPath: transcriptPath.deletingLastPathComponent().path
+        )
+      }
+      .help("Select this agent's session log in Finder")
+    }
+  }
+
+  private func repositoryName(for entry: ActiveAgentEntry) -> String {
+    rowDisplays[entry.id]?.repositoryName ?? entry.worktreeName
+  }
+
+  private func branchName(for entry: ActiveAgentEntry) -> String {
+    rowDisplays[entry.id]?.branchName ?? entry.worktreeName
+  }
+
+  private func subtitle(for entry: ActiveAgentEntry) -> String {
+    Self.subtitle(
+      for: entry,
+      branchName: branchName(for: entry),
+      showTabTitles: showTabTitles
+    )
+  }
+
+  private func repositoryColor(for entry: ActiveAgentEntry) -> RepositoryColorChoice? {
+    rowDisplays[entry.id]?.color
+  }
+
+  private func isDimmed(_ entry: ActiveAgentEntry) -> Bool {
+    // Highlight the selected worktree's active surface. `entryTapped` now focuses
+    // the target surface before selecting its worktree, so `selectedSurfaceID` is
+    // already correct by the time the selection lands — no cross-worktree flash and
+    // no dependence on the reducer's focus anchor, which can go stale when the
+    // per-worktree `focusChanged` dedup suppresses an event.
+    if let selectedSurfaceID {
+      return entry.surfaceID != selectedSurfaceID
+    }
+    return false
+  }
+
+  private func helpText(for entry: ActiveAgentEntry) -> String {
+    Self.helpText(
+      for: entry,
+      branchName: branchName(for: entry),
+      showTabTitles: showTabTitles
+    )
+  }
+
   static func subtitle(
     for entry: ActiveAgentEntry,
     branchName: String,
     showTabTitles: Bool
   ) -> String {
-    ActiveAgentsListContent.subtitle(
-      for: entry,
-      branchName: branchName,
-      showTabTitles: showTabTitles
-    )
+    showTabTitles ? paneTitle(for: entry) : branchName
   }
 
   static func helpText(
@@ -124,15 +216,12 @@ struct ActiveAgentsPanel: View {
     branchName: String,
     showTabTitles: Bool
   ) -> String {
-    ActiveAgentsListContent.helpText(
-      for: entry,
-      branchName: branchName,
-      showTabTitles: showTabTitles
-    )
+    showTabTitles ? branchName : paneTitle(for: entry)
   }
 
   static func paneTitle(for entry: ActiveAgentEntry) -> String {
-    ActiveAgentsListContent.paneTitle(for: entry)
+    let trimmed = entry.paneTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "Untitled tab" : trimmed
   }
 
   private var panelBackgroundShape: RoundedRectangle {

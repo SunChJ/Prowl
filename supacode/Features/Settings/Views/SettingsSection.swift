@@ -10,7 +10,6 @@ enum SettingsSection: Hashable {
   case github
   case customCommands
   case profiles
-  case agentIsland
   case commandLineTool
   case repository(Repository.ID)
 }

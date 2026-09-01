@@ -1,5 +1,9 @@
 # 066.005 — Island-owned Agent Rings
 
+> [006-sidebar-restoration-and-attention-collection.md](006-sidebar-restoration-and-attention-collection.md)
+> completes the isolation boundary by restoring the pre-island sidebar row and panel code in
+> full. The compact runtime-icon and fluid-ring design in this amendment remains current.
+
 ## Context
 
 The AppIcon-derived cat improved brand recognition, but it still competed with the information

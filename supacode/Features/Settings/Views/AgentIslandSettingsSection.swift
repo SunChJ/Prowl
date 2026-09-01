@@ -1,44 +1,29 @@
 import ComposableArchitecture
 import SwiftUI
 
-struct AgentIslandSettingsView: View {
+struct AgentIslandSettingsSection: View {
   @Bindable var store: StoreOf<SettingsFeature>
   @State private var displayCatalog = AgentIslandDisplayCatalog.shared
 
   var body: some View {
-    Form {
-      Section("Agent Island") {
-        Toggle("Show Agent Island", isOn: $store.agentIslandEnabled)
-          .help("Show active agent status at the top of the selected display")
-        Picker("Display", selection: $store.agentIslandDisplayPreference) {
-          Text("Automatic").tag(AgentIslandDisplayPreference.automatic)
-          ForEach(displayPreferences, id: \.self) { preference in
-            Text(preference.displayName).tag(preference)
-          }
+    Section("Agent Island") {
+      Toggle(isOn: $store.agentIslandEnabled) {
+        Text("Show Agent Island")
+        Text("Working stays compact. Blocked and Done appear as stronger agent notifications.")
+      }
+      .help("Show active agent status at the top of the selected display")
+      Picker(selection: $store.agentIslandDisplayPreference) {
+        Text("Automatic").tag(AgentIslandDisplayPreference.automatic)
+        ForEach(displayPreferences, id: \.self) { preference in
+          Text(preference.displayName).tag(preference)
         }
-        .help("Choose where Agent Island appears")
-        .disabled(!store.agentIslandEnabled)
+      } label: {
+        Text("Display")
         Text(displayCaption)
-          .font(.callout)
-          .foregroundStyle(.secondary)
       }
-
-      Section("Behavior") {
-        LabeledContent("Working") {
-          Text("Compact carousel")
-            .foregroundStyle(.secondary)
-        }
-        LabeledContent("Blocked and Done") {
-          Text("Expanded attention card")
-            .foregroundStyle(.secondary)
-        }
-        LabeledContent("Idle") {
-          Text("Expanded roster only")
-            .foregroundStyle(.secondary)
-        }
-      }
+      .help("Choose where Agent Island appears")
+      .disabled(!store.agentIslandEnabled)
     }
-    .formStyle(.grouped)
   }
 
   private var displayPreferences: [AgentIslandDisplayPreference] {

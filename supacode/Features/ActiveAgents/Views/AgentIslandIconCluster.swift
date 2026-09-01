@@ -25,7 +25,7 @@ struct AgentIslandIconCluster: View {
     ) { context in
       iconRow(at: context.date)
     }
-    .frame(width: 72, height: 27, alignment: .trailing)
+    .frame(width: 78, height: 27, alignment: .trailing)
     .animation(
       reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.32),
       value: projection
@@ -34,26 +34,28 @@ struct AgentIslandIconCluster: View {
   }
 
   private func iconRow(at date: Date) -> some View {
-    HStack(spacing: -4) {
+    ZStack(alignment: .bottomTrailing) {
+      HStack(spacing: -4) {
+        ForEach(projection.entries) { entry in
+          AgentIslandRuntimeIcon(
+            entry: entry,
+            pointSize: 21,
+            animationDate: date,
+            reduceMotion: reduceMotion
+          )
+          .transition(iconTransition)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+
       if projection.overflowCount > 0 {
         Text("+\(projection.overflowCount)")
           .font(.system(size: 8, weight: .bold, design: .rounded))
-          .foregroundStyle(.secondary)
-          .frame(width: 21, height: 21)
-          .background(.white.opacity(0.06), in: Circle())
-          .overlay {
-            Circle()
-              .stroke(.secondary.opacity(0.32), lineWidth: 1)
-          }
-      }
-      ForEach(Array(projection.entries.reversed())) { entry in
-        AgentIslandProjectedIcon(
-          entry: entry,
-          pointSize: 21,
-          animationDate: date,
-          reduceMotion: reduceMotion
-        )
-        .transition(iconTransition)
+          .foregroundStyle(.white.opacity(0.82))
+          .padding(.horizontal, 2)
+          .background(.black.opacity(0.92), in: Capsule())
+          .offset(x: 2, y: 2)
+          .transition(reduceMotion ? .opacity : .scale(scale: 0.6, anchor: .bottomTrailing))
       }
     }
   }
@@ -66,18 +68,18 @@ struct AgentIslandIconCluster: View {
 
   private var iconTransition: AnyTransition {
     guard !reduceMotion else { return .opacity }
-    return .offset(x: 5)
-      .combined(with: .scale(scale: 0.55, anchor: .trailing))
+    return .offset(x: -5)
+      .combined(with: .scale(scale: 0.55, anchor: .leading))
       .combined(with: .opacity)
   }
 
   static func projection(for entries: [ActiveAgentEntry]) -> Projection {
     let ordered = entries.enumerated()
       .sorted { lhs, rhs in
-        let lhsPriority = lhs.element.displayState.islandProjectionPriority
-        let rhsPriority = rhs.element.displayState.islandProjectionPriority
-        if lhsPriority != rhsPriority {
-          return lhsPriority < rhsPriority
+        let lhsIsIdle = lhs.element.displayState == .idle
+        let rhsIsIdle = rhs.element.displayState == .idle
+        if lhsIsIdle != rhsIsIdle {
+          return !lhsIsIdle
         }
         if lhs.element.lastChangedAt != rhs.element.lastChangedAt {
           return lhs.element.lastChangedAt > rhs.element.lastChangedAt
@@ -85,11 +87,9 @@ struct AgentIslandIconCluster: View {
         return lhs.offset < rhs.offset
       }
       .map(\.element)
-    let visibleLimit =
-      ordered.count > maximumVisibleIcons ? maximumVisibleIcons - 1 : maximumVisibleIcons
     return Projection(
-      entries: Array(ordered.prefix(visibleLimit)),
-      overflowCount: max(0, ordered.count - visibleLimit)
+      entries: Array(ordered.prefix(maximumVisibleIcons)),
+      overflowCount: max(0, ordered.count - maximumVisibleIcons)
     )
   }
 }
@@ -112,7 +112,7 @@ struct AgentIslandRingPresentation: Equatable {
   }
 }
 
-private struct AgentIslandProjectedIcon: View {
+struct AgentIslandRuntimeIcon: View {
   let entry: ActiveAgentEntry
   let pointSize: CGFloat
   let animationDate: Date
@@ -142,6 +142,7 @@ private struct AgentIslandProjectedIcon: View {
       )
     }
     .padding(2)
+    .accessibilityHidden(true)
   }
 }
 

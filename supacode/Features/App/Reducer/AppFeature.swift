@@ -414,7 +414,7 @@ struct AppFeature {
           state.settings.repositorySettings = repoSettingsState
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
-        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github, .agentIsland,
+        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github,
           .commandLineTool:
           // `settings.agentSkills` is owned by SettingsFeature.setSelection.
           state.settings.repositorySettings = nil

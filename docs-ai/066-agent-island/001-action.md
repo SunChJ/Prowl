@@ -10,6 +10,10 @@
 | 2026-09-01 | Superseded the anonymous tail ball with real Agent icon projections and cat-like per-Agent status lamps. | [003-agent-icon-tail-projection.md](003-agent-icon-tail-projection.md) |
 | 2026-09-01 | Replaced the white icon plates and geometric outline with an AppIcon-derived mint silhouette, dark state nodes, and tail-origin motion. | [004-app-icon-silhouette-and-motion.md](004-app-icon-silhouette-and-motion.md) |
 | 2026-09-01 | Removed the decorative cat, restored shared Active Agents icon behavior, and isolated larger fluid status rings to the compact island. | [005-island-owned-agent-rings.md](005-island-owned-agent-rings.md) |
+| 2026-09-01 | Restored the original Active Agents panel implementation in full and replaced the single attention card with an island-owned compact Agent collection. | [006-sidebar-restoration-and-attention-collection.md](006-sidebar-restoration-and-attention-collection.md) |
+| 2026-09-01 | Removed custom secondary-island transitions and moved compact overflow to a plain trailing-lower counter while retaining three recent-first, Idle-last Agent icons. | [007-elastic-expansion-and-overflow.md](007-elastic-expansion-and-overflow.md) |
+| 2026-09-01 | Aligned attention copy with Active Agents, moved repository/worktree context into two trailing lines, and made the secondary roster content-sized with a `360pt` scrolling cap. | [006-sidebar-restoration-and-attention-collection.md](006-sidebar-restoration-and-attention-collection.md) |
+| 2026-09-01 | Made Agent Island opt-in and moved its controls into the existing Notifications settings page instead of adding a toolbar action or separate destination. | [000-plan.md](000-plan.md) |
 
 ## Outcome
 
@@ -20,16 +24,23 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - The compact island shows the most recently changed Working entry, advances through multiple
   Working entries every four seconds, and pauses while hovered or while the roster is open.
   When no entry is Working, the compact area remains available as a neutral agent-count entry
-  point. The trailing area projects only the real runtime icons for the highest-priority roster
-  entries. Idle receives a static muted outline; Working, Blocked, and Done receive state-colored
-  angular-gradient rings with different circulation speeds.
-- Blocked and unviewed Done entries produce an automatically visible callout below the compact
-  island. Blocked wins over Done, recency breaks ties, and `+N` represents additional attention
-  entries. The callout disappears only when the corresponding Active Agents state changes or
-  the entry leaves the roster.
+  point. The trailing area projects only real runtime icons: non-Idle entries sort by recency from
+  left to right and Idle entries stay on the right. Overflow keeps three icons visible and uses a
+  small unoutlined trailing-lower `+N` counter. Idle receives a static muted outline; Working, Blocked, and
+  Done receive state-colored angular-gradient rings with different circulation speeds.
+- Blocked and unviewed Done entries produce an automatically visible compact collection below the
+  compact island. One entry uses a narrow single column; multiple entries use two columns, with
+  three visible rows before scrolling. The left column shows the Agent and shared `Blocked` or
+  `Done` label; the right column uses the same repository and branch/tab subtitle as Active Agents.
+  Every entry remains visible and independently actionable; Blocked entries precede Done and
+  recency breaks ties. A cell disappears only when the
+  corresponding Active Agents state changes or the entry leaves the roster.
 - Clicking the compact area opens a secondary island without activating Prowl. Its roster uses
-  the same `ActiveAgentsListContent`, row display resolver, status pills, sorting, context menu,
-  and entry actions as the sidebar panel. Idle entries appear here alongside the other states.
+  an island-owned list wrapper around the original `ActiveAgentRow`, display resolution, sorting,
+  context menu actions, and entry actions. Idle entries appear here alongside the other states.
+  The roster appears directly without a custom movement, scale, fade, or spring transition,
+  keeping the compact island stationary while the panel adopts the expanded size. Its viewport
+  follows measured row content without bottom filler, caps at `360pt`, and scrolls only above the cap.
 - Clicking an island entry first surfaces the main Prowl window and then dispatches the existing
   Active Agents selection action, preserving the exact worktree, tab, pane, plain-folder, and
   Canvas focus behavior. **Open Prowl** surfaces the current main window without changing the
@@ -39,13 +50,15 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 
 - `ActiveAgentsFeature` owns the island's presentation state and injected-clock carousel effect.
   Derived Working and attention projections keep roster and lifecycle semantics in one reducer.
-- `ActiveAgentsListContent` and `ActiveAgentRowDisplayResolver` are shared by the sidebar panel
-  and Agent Island, removing the previous duplicated row implementations.
-- Shared `AgentStatusIcon` remains responsible for the existing sidebar and attention-card
-  visuals. The compact-only `AgentIslandIconCluster` prioritizes Blocked, Done, Working, then
-  Idle; it keeps up to three enlarged runtime icons visible and replaces lower-priority overflow
-  with `+N`. `AgentIslandStateRing` owns the fluid non-Idle outline without leaking animation or
-  styling into other Active Agents surfaces.
+- `ActiveAgentRow`, `ActiveAgentsPanel`, `SidebarActiveAgentsOverlay`, and the related
+  `SidebarListView` helpers match their pre-Agent-Island implementations. The island-owned
+  `AgentIslandRosterContent` composes the original row without introducing a shared UI layer.
+- `AgentIslandIconCluster` and `AgentIslandAttentionCollection` own all projected icon styling.
+  They render only the runtime glyph plus a state ring—never a lower-right badge. The compact
+  cluster orders recent non-Idle entries before Idle and moves overflow into a trailing-lower
+  plain `+N` label; the attention collection renders every Blocked or unviewed Done entry as its own cell.
+  `AgentIslandStateRing` owns the fluid non-Idle outline without leaking animation or styling into
+  other Active Agents surfaces.
 - `AgentIslandWindowController` owns one transparent nonactivating `NSPanel`. It anchors the top
   edge while content grows downward, joins all Spaces and fullscreen applications, and responds
   to display changes and main-window movement without participating in normal window cycling.
@@ -55,15 +68,15 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   first connected display. On a notched screen it derives the physical cutout from
   `auxiliaryTopLeftArea` and `auxiliaryTopRightArea`, aligns the panel to its center, and reserves
   the exact cutout width between equal compact-content wings.
-- Settings adds **Agents → Agent Island**, enabled by default, with Automatic or fixed-display
-  placement. Existing settings JSON decodes to the new defaults.
-- Reduce Motion replaces the default spring, scrolling, icon-replacement, and fluid-ring motion
-  with static presentation or opacity transitions.
+- Settings → Notifications contains an **Agent Island** section, disabled by default, with
+  Automatic or fixed-display placement. Existing settings JSON without the field decodes to off.
+- Reduce Motion replaces carousel, icon-replacement, and fluid-ring motion with static presentation
+  or opacity transitions. Secondary-island expansion has no custom animation in either mode.
 
 ## Verification
 
 - `make check` — passed: swift-format lint, strict SwiftLint, and project checks.
-- `make test` — passed: 2,940 app tests plus the 2-test secondary suite, zero failures.
+- `make test` — passed: 2,951 app tests plus the 2-test secondary suite, zero failures.
 - `make build-app` — passed: Debug build completed with zero errors and zero warnings.
 - Reducer tests cover recent-entry selection, four-second rotation, hover pause/restart,
   Blocked/Done priority, existing Done-to-Idle and Blocked-clear transitions, removal, expansion,
@@ -77,6 +90,10 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - The notch regression fixture uses the connected built-in display's measured geometry:
   `1512×982`, `32pt` safe-area inset, and a `185×32pt` cutout. Seven targeted screen-layout tests
   pass, including exact auxiliary-area derivation and content exclusion.
+- The restored sidebar source files match the `origin/main` merge-base byte-for-byte. Targeted
+  coverage passes for the original Bagua indicator, island icon projection, and attention layout;
+  the latter verifies narrow single-entry presentation, two-column multi-entry layout, and
+  scrolling after three rows.
 - Manual verification on an external MateView covered the floating pill, secondary roster,
   windowless persistence, **Open Prowl**, and entry-driven restoration and focus. The latest
   compact-only projection was checked with one and two Idle runtime icons plus two captured frames
@@ -88,9 +105,11 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 
 The latest compact visual was checked on the external display. Built-in notch placement did not
 change and remains covered by the exact `NSScreen` geometry fixtures rather than another physical
-notch run. Stage Manager and cross-Space/fullscreen transitions were not toggled during the run;
-the panel's AppKit collection behavior is configured for those environments, but they remain
-candidates for release verification.
+notch run. The attention-collection revision was not loaded by restarting the existing Debug
+process because that process was hosting an active Agent session; its geometry is covered by the
+targeted layout tests and clean Debug build. Stage Manager and cross-Space/fullscreen transitions
+were not toggled during the run; the panel's AppKit collection behavior is configured for those
+environments, but they remain candidates for release verification.
 
 ## Deviations from plan
 

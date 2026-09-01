@@ -625,8 +625,8 @@ struct SettingsFeatureTests {
       SettingsFeature()
     }
 
-    await store.send(.binding(.set(\.agentIslandEnabled, false))) {
-      $0.agentIslandEnabled = false
+    await store.send(.binding(.set(\.agentIslandEnabled, true))) {
+      $0.agentIslandEnabled = true
     }
     await store.receive(\.delegate.settingsChanged)
     await store.send(
@@ -641,7 +641,7 @@ struct SettingsFeatureTests {
     }
     await store.receive(\.delegate.settingsChanged)
 
-    #expect(settingsFile.global.agentIslandEnabled == false)
+    #expect(settingsFile.global.agentIslandEnabled)
     #expect(
       settingsFile.global.agentIslandDisplayPreference
         == .display(id: "display-uuid", name: "Studio Display")

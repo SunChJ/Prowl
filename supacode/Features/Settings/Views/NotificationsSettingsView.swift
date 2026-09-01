@@ -56,6 +56,7 @@ struct NotificationsSettingsView: View {
           }
           .help("Bounce the Prowl app icon in the Dock when a notification is received.")
         }
+        AgentIslandSettingsSection(store: store)
         Section("System") {
           Toggle(
             "System notifications",

@@ -38,10 +38,13 @@ struct AgentIslandView: View {
       compactIsland
       if agentsStore.isIslandRosterExpanded {
         rosterIsland
-          .transition(expansionTransition)
-      } else if let attention = agentsStore.islandAttentionEntries.first {
-        attentionIsland(attention)
-          .transition(expansionTransition)
+      } else if !agentsStore.islandAttentionEntries.isEmpty {
+        AgentIslandAttentionCollection(
+          entries: agentsStore.islandAttentionEntries,
+          rowDisplays: rowDisplays,
+          showTabTitles: appStore.repositories.showActiveAgentTabTitles,
+          onTap: { agentsStore.send(.islandEntryTapped($0)) }
+        )
       }
     }
     .frame(width: rootWidth)
@@ -58,9 +61,6 @@ struct AgentIslandView: View {
     .onChange(of: appStore.settings.agentIslandDisplayPreference, initial: true) { _, _ in
       publishPresentation()
     }
-    .animation(
-      reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.28), value: displayMode
-    )
     .preferredColorScheme(.dark)
   }
 
@@ -175,54 +175,6 @@ struct AgentIslandView: View {
     }
   }
 
-  private func attentionIsland(_ entry: ActiveAgentEntry) -> some View {
-    Button {
-      agentsStore.send(.islandEntryTapped(entry.id))
-    } label: {
-      HStack(spacing: 10) {
-        AgentStatusIcon(entry: entry, pointSize: 21, indicatorSize: 9)
-        VStack(alignment: .leading, spacing: 3) {
-          HStack(spacing: 6) {
-            Text(entry.displayState == .blocked ? "Needs input" : "Completed")
-              .font(.headline)
-              .foregroundStyle(entry.displayState.foregroundStyle)
-            Text(entry.displayName)
-              .font(.callout.weight(.medium))
-              .foregroundStyle(.primary)
-              .lineLimit(1)
-          }
-          Text(repositoryName(for: entry))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
-        Spacer(minLength: 8)
-        let additionalCount = agentsStore.islandAttentionEntries.count - 1
-        if additionalCount > 0 {
-          Text("+\(additionalCount)")
-            .font(.caption.monospacedDigit().weight(.semibold))
-            .foregroundStyle(.secondary)
-        }
-        Image(systemName: "arrow.up.forward.app")
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-      }
-      .padding(.horizontal, 14)
-      .frame(width: 380)
-      .frame(minHeight: 68)
-      .contentShape(.rect)
-    }
-    .buttonStyle(.plain)
-    .background(.black, in: RoundedRectangle(cornerRadius: 17))
-    .overlay {
-      RoundedRectangle(cornerRadius: 17)
-        .stroke(entry.displayState.foregroundStyle.opacity(0.45), lineWidth: 1)
-    }
-    .shadow(color: .black.opacity(0.24), radius: 10, y: 4)
-    .help("Open \(entry.displayName) in Prowl")
-    .accessibilityIdentifier("agent-island-attention")
-  }
-
   private var rosterIsland: some View {
     VStack(spacing: 0) {
       HStack {
@@ -243,14 +195,13 @@ struct AgentIslandView: View {
 
       Divider()
 
-      ActiveAgentsListContent(
+      AgentIslandRosterContent(
         store: agentsStore,
         rowDisplays: rowDisplays,
         selectedSurfaceID: agentsStore.focusedSurfaceID,
         showTabTitles: appStore.repositories.showActiveAgentTabTitles,
         entryAction: ActiveAgentsFeature.Action.islandEntryTapped
       )
-      .frame(height: min(CGFloat(agentsStore.entries.count) * 54, 360))
     }
     .frame(width: 420)
     .background(.black, in: RoundedRectangle(cornerRadius: 19))
@@ -264,12 +215,12 @@ struct AgentIslandView: View {
 
   private var rowDisplays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay] {
     let repositories = appStore.repositories.repositories
-    let metadata = ActiveAgentRowDisplayResolver.worktreeMetadata(
+    let metadata = SidebarListView.activeAgentWorktreeMetadata(
       repositories: repositories,
       customTitles: appStore.repositories.repositoryCustomTitles,
       repositoryAppearances: repositoryAppearances
     )
-    return ActiveAgentRowDisplayResolver.rowDisplays(
+    return SidebarListView.activeAgentRowDisplays(
       entries: agentsStore.entries,
       repositories: repositories,
       metadata: metadata
@@ -308,16 +259,6 @@ struct AgentIslandView: View {
 
   private var isVisible: Bool {
     appStore.settings.agentIslandEnabled && !agentsStore.entries.isEmpty
-  }
-
-  private var displayMode: String {
-    if agentsStore.isIslandRosterExpanded { return "roster" }
-    if let entry = agentsStore.islandAttentionEntries.first { return "attention-\(entry.id)" }
-    return "compact"
-  }
-
-  private var expansionTransition: AnyTransition {
-    reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
   }
 
   private func publishPresentation(size: CGSize? = nil) {

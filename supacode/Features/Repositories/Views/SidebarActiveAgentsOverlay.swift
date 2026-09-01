@@ -29,12 +29,12 @@ struct SidebarActiveAgentsOverlay: View {
 
   var body: some View {
     let state = store.state
-    let metadata = ActiveAgentRowDisplayResolver.worktreeMetadata(
+    let metadata = SidebarListView.activeAgentWorktreeMetadata(
       repositories: state.repositories,
       customTitles: state.repositoryCustomTitles,
       repositoryAppearances: repositoryAppearances
     )
-    let rowDisplays = ActiveAgentRowDisplayResolver.rowDisplays(
+    let rowDisplays = SidebarListView.activeAgentRowDisplays(
       entries: state.activeAgents.entries,
       repositories: state.repositories,
       metadata: metadata
