@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented |
 | **Anchor date** | 2026-09-01 |
-| **Primary PRs** | TBD |
+| **Primary PRs** | [#753](https://github.com/onevcat/Prowl/pull/753) |
 | **Related** | [029-active-agents-panel](../029-active-agents-panel/000-plan.md), [036-window-management-hardening](../036-window-management-hardening/000-plan.md), [064-agent-completion-signals](../064-agent-completion-signals/000-plan.md), `docs/components/active-agents.md` |
 
 ## Background

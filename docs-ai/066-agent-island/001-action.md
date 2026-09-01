@@ -4,7 +4,7 @@
 
 | Date | Change | Ref |
 | --- | --- | --- |
-| 2026-09-01 | Implemented the Active Agents-backed Agent Island, shared roster UI, display placement settings, navigation reuse, and regression coverage. | TBD, [000-plan.md](000-plan.md) |
+| 2026-09-01 | Implemented the Active Agents-backed Agent Island, shared roster UI, display placement settings, navigation reuse, and regression coverage. | [#753](https://github.com/onevcat/Prowl/pull/753), [000-plan.md](000-plan.md) |
 
 ## Outcome
 
@@ -80,6 +80,6 @@ hardware-level release verification.
 
 ## References
 
-- Primary PR: TBD
+- Primary PR: [#753](https://github.com/onevcat/Prowl/pull/753)
 - Plan: [000-plan.md](000-plan.md)
 - User manual: [Agent Island](../../docs/components/agent-island.md)
