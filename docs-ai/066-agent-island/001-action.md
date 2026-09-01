@@ -7,6 +7,7 @@
 | 2026-09-01 | Implemented the Active Agents-backed Agent Island, shared roster UI, display placement settings, navigation reuse, and regression coverage. | [#753](https://github.com/onevcat/Prowl/pull/753), [000-plan.md](000-plan.md) |
 | 2026-09-01 | Corrected built-in notch layout to reserve the physical camera cutout instead of treating notch presence as a boolean. | [#753](https://github.com/onevcat/Prowl/pull/753) |
 | 2026-09-01 | Replaced the island Working spinner with the Heixiu cat-and-detaching-tail animation. | [002-heixiu-working-animation.md](002-heixiu-working-animation.md) |
+| 2026-09-01 | Superseded the anonymous tail ball with real Agent icon projections and cat-like per-Agent status lamps. | [003-agent-icon-tail-projection.md](003-agent-icon-tail-projection.md) |
 
 ## Outcome
 
@@ -17,8 +18,10 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - The compact island shows the most recently changed Working entry, advances through multiple
   Working entries every four seconds, and pauses while hovered or while the roster is open.
   When no entry is Working, the compact area remains available as a neutral agent-count entry
-  point. Working uses a subdued Heixiu animation: the black cat remains the visual anchor while
-  its tail periodically separates into a small black ball and reconnects.
+  point. Heixiu remains the visual anchor while its tail projects the real runtime icons for the
+  highest-priority roster entries. Each icon owns a cat-like state lamp: orange paw for Working,
+  red exclamation for Blocked, blue sparkle for Done, and a sleeping moon for Idle. The cat pose
+  follows the highest-priority projected state instead of acting as a loading spinner.
 - Blocked and unviewed Done entries produce an automatically visible callout below the compact
   island. Blocked wins over Done, recency breaks ties, and `+N` represents additional attention
   entries. The callout disappears only when the corresponding Active Agents state changes or
@@ -37,6 +40,10 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   Derived Working and attention projections keep roster and lifecycle semantics in one reducer.
 - `ActiveAgentsListContent` and `ActiveAgentRowDisplayResolver` are shared by the sidebar panel
   and Agent Island, removing the previous duplicated row implementations.
+- `AgentStatusIcon` gives sidebar, attention, and projected icons the same status-lamp language.
+  `HeixiuAgentTrail` prioritizes Blocked, Done, Working, then Idle; it keeps up to three separate
+  runtime-icon plates visible, replaces lower-priority overflow with `+N`, and joins the nearest
+  high-priority icon to Heixiu's outlined tail without a shared loading-track background.
 - `AgentIslandWindowController` owns one transparent nonactivating `NSPanel`. It anchors the top
   edge while content grows downward, joins all Spaces and fullscreen applications, and responds
   to display changes and main-window movement without participating in normal window cycling.
@@ -48,13 +55,13 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   the exact cutout width between equal compact-content wings.
 - Settings adds **Agents → Agent Island**, enabled by default, with Automatic or fixed-display
   placement. Existing settings JSON decodes to the new defaults.
-- Reduce Motion replaces the default spring and scrolling transitions with opacity transitions
-  and keeps Heixiu's tail attached without a continuous timeline.
+- Reduce Motion replaces the default spring, scrolling, icon-replacement, and Working-lamp
+  transitions with static presentation or opacity transitions.
 
 ## Verification
 
 - `make check` — passed: swift-format lint, strict SwiftLint, and project checks.
-- `make test` — passed: 2,941 app tests plus the 2-test secondary suite, zero failures.
+- `make test` — passed: 2,939 app tests plus the 2-test secondary suite, zero failures.
 - `make build-app` — passed: Debug build completed with zero errors and zero warnings.
 - Reducer tests cover recent-entry selection, four-second rotation, hover pause/restart,
   Blocked/Done priority, existing Done-to-Idle and Blocked-clear transitions, removal, expansion,
@@ -69,7 +76,10 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   `1512×982`, `32pt` safe-area inset, and a `185×32pt` cutout. Seven targeted screen-layout tests
   pass, including exact auxiliary-area derivation and content exclusion.
 - Manual verification on an external MateView covered the floating pill, secondary roster,
-  windowless persistence, **Open Prowl**, and entry-driven restoration and focus.
+  windowless persistence, **Open Prowl**, and entry-driven restoration and focus. A follow-up
+  Debug run covered simultaneous Pi and Codex icons in Idle and mixed Working/Idle projections:
+  the icons stayed separate, Working moved nearest the tail, the paw lamp remained legible, and
+  the compact content fit without right-wing clipping.
 
 ## Verification limits
 

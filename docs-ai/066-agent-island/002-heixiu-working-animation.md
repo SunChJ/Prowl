@@ -1,5 +1,9 @@
 # Heixiu Working Animation
 
+> Superseded by [003-agent-icon-tail-projection.md](003-agent-icon-tail-projection.md). The
+> anonymous black-ball cycle described here was a loading-level interpretation and is no longer
+> the current design.
+
 ## Context
 
 Agent Island initially reused the Active Agents bagua spinner for its compact Working state.

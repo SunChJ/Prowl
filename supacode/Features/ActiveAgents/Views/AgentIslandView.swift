@@ -113,14 +113,11 @@ struct AgentIslandView: View {
   @ViewBuilder
   private var notchedLeadingContent: some View {
     if let entry = agentsStore.islandCarouselEntry {
-      HStack(spacing: 7) {
-        agentIcon(entry)
-        Text(entry.displayName)
-          .font(.callout.weight(.semibold))
-          .lineLimit(1)
-      }
-      .id(entry.id)
-      .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+      Text(entry.displayName)
+        .font(.callout.weight(.semibold))
+        .lineLimit(1)
+        .id(entry.id)
+        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
     } else {
       HStack(spacing: 7) {
         Image(systemName: "person.crop.rectangle.stack")
@@ -135,19 +132,9 @@ struct AgentIslandView: View {
 
   private var notchedTrailingContent: some View {
     HStack(spacing: 5) {
-      if agentsStore.islandCarouselEntry != nil {
-        HeixiuWorkingIndicator()
-        if agentsStore.islandWorkingEntries.count > 1 {
-          Text("\(agentsStore.islandWorkingEntries.count)")
-            .font(.caption2.monospacedDigit().weight(.semibold))
-        }
-      } else {
-        Text("Idle")
-          .font(.caption2.weight(.semibold))
-      }
+      HeixiuAgentTrail(entries: islandEntries)
       compactChevron
     }
-    .foregroundStyle(agentsStore.islandCarouselEntry == nil ? Color.secondary : Color.orange)
   }
 
   private var compactChevron: some View {
@@ -161,7 +148,6 @@ struct AgentIslandView: View {
   private var compactContent: some View {
     if let entry = agentsStore.islandCarouselEntry {
       HStack(spacing: 8) {
-        agentIcon(entry)
         VStack(alignment: .leading, spacing: 1) {
           Text(entry.displayName)
             .font(.callout.weight(.semibold))
@@ -172,13 +158,7 @@ struct AgentIslandView: View {
             .lineLimit(1)
         }
         Spacer(minLength: 6)
-        HStack(spacing: 4) {
-          HeixiuWorkingIndicator()
-          if agentsStore.islandWorkingEntries.count > 1 {
-            Text("\(agentsStore.islandWorkingEntries.count)")
-              .font(.caption2.monospacedDigit().weight(.semibold))
-          }
-        }
+        HeixiuAgentTrail(entries: islandEntries)
       }
       .id(entry.id)
       .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -190,9 +170,7 @@ struct AgentIslandView: View {
         Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
           .font(.callout.weight(.semibold))
         Spacer(minLength: 6)
-        Text("Idle")
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(.secondary)
+        HeixiuAgentTrail(entries: islandEntries)
       }
     }
   }
@@ -202,7 +180,7 @@ struct AgentIslandView: View {
       agentsStore.send(.islandEntryTapped(entry.id))
     } label: {
       HStack(spacing: 10) {
-        agentIcon(entry)
+        AgentStatusIcon(entry: entry, pointSize: 21, indicatorSize: 9)
         VStack(alignment: .leading, spacing: 3) {
           HStack(spacing: 6) {
             Text(entry.displayState == .blocked ? "Needs input" : "Completed")
@@ -302,16 +280,8 @@ struct AgentIslandView: View {
     rowDisplays[entry.id]?.repositoryName ?? entry.worktreeName
   }
 
-  private func agentIcon(_ entry: ActiveAgentEntry) -> some View {
-    Group {
-      if let icon = entry.iconSource {
-        TabIconImage(rawName: icon.storageString, pointSize: 17)
-      } else {
-        Image(systemName: "sparkle")
-      }
-    }
-    .frame(width: 21, height: 21)
-    .accessibilityHidden(true)
+  private var islandEntries: [ActiveAgentEntry] {
+    Array(agentsStore.entries)
   }
 
   private var compactShape: AnyShape {

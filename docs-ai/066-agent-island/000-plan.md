@@ -83,3 +83,6 @@ known name; if absent, placement temporarily follows Automatic and returns when 
 - 2026-09-01 — The island-specific Working spinner was replaced by a Heixiu cat-and-tail animation
   that connects the feature to Prowl's cat identity. See
   [002-heixiu-working-animation.md](002-heixiu-working-animation.md).
+- Updated 2026-09-01: Heixiu became the persistent island identity and its tail now projects real
+  Agent icons with state lamps instead of becoming an anonymous loading ball — see
+  [003-agent-icon-tail-projection.md](003-agent-icon-tail-projection.md).

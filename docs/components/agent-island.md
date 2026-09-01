@@ -22,10 +22,17 @@ the cutout itself is reserved from layout using the screen's auxiliary menu-bar 
 
 | Active Agents state | Island behavior |
 |---|---|
-| **Working** | Compact, low-priority status. The most recently changed Working agent appears immediately; multiple Working agents rotate every four seconds. Hovering or opening the roster pauses rotation. A small Heixiu animation keeps the cat body stable while its tail periodically separates into a black ball and reconnects. |
+| **Working** | Compact, low-priority status. The most recently changed Working agent appears immediately; multiple Working agents rotate every four seconds. Hovering or opening the roster pauses rotation. Its projected runtime icon carries an orange paw lamp and Heixiu takes a prowling pose. |
 | **Blocked** | Strong **Needs input** card below the compact island. Blocked takes priority over Done. |
 | **Done** | Strong **Completed** card while the existing Active Agents entry remains unviewed. |
-| **Idle** | Appears only in the expanded roster. |
+| **Idle** | Full details appear in the expanded roster. A projected compact icon may remain visible with a sleeping-moon lamp when higher-priority entries do not displace it. |
+
+Heixiu is the compact island's persistent identity. Its outlined black silhouette and tail project
+the real runtime icons for up to three agents; each icon is a separate light plate with its own
+state lamp. The nearest icon is the highest-priority entry (`Blocked`, `Done`, `Working`, then
+`Idle`), recency breaks ties, and larger rosters show two icons plus `+N`. The corresponding cat
+pose is alert, celebratory, prowling, or sleeping. This is a compact roster projection rather
+than a loading animation and does not create another source of agent state.
 
 When several entries need attention, the island shows the highest-priority, most-recent entry
 and a `+N` count. These callouts cannot be dismissed independently: Blocked clears only when
@@ -61,7 +68,7 @@ display. A fixed display is stored by CoreGraphics display UUID. If it disconnec
 temporarily uses Automatic without erasing the choice, and returns when that UUID reconnects.
 
 With Reduce Motion enabled, island expansion and status changes use fades instead of movement,
-and Heixiu keeps its tail attached without continuous animation.
+and Heixiu plus its projected agent icons remain static without continuous animation.
 
 ## Boundaries
 
