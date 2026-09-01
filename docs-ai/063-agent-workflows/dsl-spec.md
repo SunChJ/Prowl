@@ -460,6 +460,9 @@ rewritten around the workflow commands in the same change.
 
 ## 12. Reserved for V2
 
+Observed evidence for several of these items is collected in
+[012-v1-boundary-observations.md](012-v1-boundary-observations.md).
+
 `when:` (conditions on verdicts), `count:` / `wait: { all: […] }` (fan-out),
 `expect.status: idle` + `capture: result` (observe mode via `agents read`), `kind:
 headless` roles backed by a specified `HeadlessAgentExecutor` (cwd/env, stdout/stderr
