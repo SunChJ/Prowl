@@ -32,6 +32,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   var autoShowActiveAgentsPanel: Bool
   var showActiveAgentTabTitles: Bool
   var showActiveAgentStatusInShelf: Bool
+  var agentIslandEnabled: Bool
+  var agentIslandDisplayPreference: AgentIslandDisplayPreference
   var windowTintMode: WindowTintMode
   var windowTintCustomColor: TintColor
   var showRunButtonInToolbar: Bool
@@ -78,6 +80,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     autoShowActiveAgentsPanel: false,
     showActiveAgentTabTitles: false,
     showActiveAgentStatusInShelf: true,
+    agentIslandEnabled: true,
+    agentIslandDisplayPreference: .automatic,
     windowTintMode: .repositoryColor,
     windowTintCustomColor: .default,
     showRunButtonInToolbar: true,
@@ -122,6 +126,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     autoShowActiveAgentsPanel: Bool = false,
     showActiveAgentTabTitles: Bool = false,
     showActiveAgentStatusInShelf: Bool = true,
+    agentIslandEnabled: Bool = true,
+    agentIslandDisplayPreference: AgentIslandDisplayPreference = .automatic,
     windowTintMode: WindowTintMode = .repositoryColor,
     windowTintCustomColor: TintColor = .default,
     showRunButtonInToolbar: Bool = true,
@@ -164,6 +170,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.autoShowActiveAgentsPanel = autoShowActiveAgentsPanel
     self.showActiveAgentTabTitles = showActiveAgentTabTitles
     self.showActiveAgentStatusInShelf = showActiveAgentStatusInShelf
+    self.agentIslandEnabled = agentIslandEnabled
+    self.agentIslandDisplayPreference = agentIslandDisplayPreference
     self.windowTintMode = windowTintMode
     self.windowTintCustomColor = windowTintCustomColor
     self.showRunButtonInToolbar = showRunButtonInToolbar
@@ -209,6 +217,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     try container.encode(autoShowActiveAgentsPanel, forKey: .autoShowActiveAgentsPanel)
     try container.encode(showActiveAgentTabTitles, forKey: .showActiveAgentTabTitles)
     try container.encode(showActiveAgentStatusInShelf, forKey: .showActiveAgentStatusInShelf)
+    try container.encode(agentIslandEnabled, forKey: .agentIslandEnabled)
+    try container.encode(agentIslandDisplayPreference, forKey: .agentIslandDisplayPreference)
     try container.encode(windowTintMode, forKey: .windowTintMode)
     try container.encode(windowTintCustomColor, forKey: .windowTintCustomColor)
     try container.encode(showRunButtonInToolbar, forKey: .showRunButtonInToolbar)
@@ -256,6 +266,8 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     case autoShowActiveAgentsPanel
     case showActiveAgentTabTitles
     case showActiveAgentStatusInShelf
+    case agentIslandEnabled
+    case agentIslandDisplayPreference
     case windowTintMode
     case windowTintCustomColor
     case showRunButtonInToolbar
@@ -359,6 +371,7 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     showActiveAgentStatusInShelf =
       try container.decodeIfPresent(Bool.self, forKey: .showActiveAgentStatusInShelf)
       ?? Self.default.showActiveAgentStatusInShelf
+    (agentIslandEnabled, agentIslandDisplayPreference) = try Self.decodeAgentIslandSettings(from: container)
     (windowTintMode, windowTintCustomColor) = try Self.decodeWindowTint(from: container)
     (shelfSpineTintFallback, shelfSpineTintFollowsRepositoryColor) = try Self.decodeShelfSpineTint(from: container)
     (externalDiffToolID, externalDiffCustomCommand) = try Self.decodeExternalDiffSettings(from: container)
@@ -370,6 +383,19 @@ nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     showDefaultEditorInToolbar = toolbarAndDock.showDefaultEditorInToolbar
     dockBounceMode = toolbarAndDock.dockBounceMode
     showNotificationDotOnDock = toolbarAndDock.showNotificationDotOnDock
+  }
+
+  private static func decodeAgentIslandSettings(
+    from container: KeyedDecodingContainer<CodingKeys>
+  ) throws -> (Bool, AgentIslandDisplayPreference) {
+    let enabled =
+      try container.decodeIfPresent(Bool.self, forKey: .agentIslandEnabled)
+      ?? Self.default.agentIslandEnabled
+    let preference =
+      try container.decodeIfPresent(
+        AgentIslandDisplayPreference.self, forKey: .agentIslandDisplayPreference)
+      ?? Self.default.agentIslandDisplayPreference
+    return (enabled, preference)
   }
 
   private static func decodeViewSettings(

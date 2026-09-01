@@ -44,6 +44,7 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
   }
   var terminalManager: WorktreeTerminalManager?
   var cliSocketServer: CLISocketServer?
+  var agentIslandWindowController: AgentIslandWindowController?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     WindowLifecycleDiagnostics.startMainThreadHeartbeat()
@@ -56,6 +57,7 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     ])
     AgentProfileSeeder.seedIfNeeded()
     Task { await AgentRuntimeAvailabilityProbe.refresh() }
+    agentIslandWindowController?.start()
     appStore?.send(.appLaunched)
   }
 
@@ -83,7 +85,10 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     WindowLifecycleDiagnostics.logWithWindows("applicationWillTerminate")
-    defer { cliSocketServer?.stop() }
+    defer {
+      agentIslandWindowController?.stop()
+      cliSocketServer?.stop()
+    }
     guard appStore?.state.settings.restoreTerminalLayoutOnLaunch == true else { return }
     guard appStore?.state.suppressLayoutSaveUntilRelaunch != true else { return }
     terminalManager?.persistLayoutSnapshotSync()
@@ -273,6 +278,7 @@ struct SupacodeApp: App {
     appDelegate.appStore = appStore
     appDelegate.terminalManager = terminalManager
     appDelegate.cliSocketServer = cliServer
+    appDelegate.agentIslandWindowController = AgentIslandWindowController(store: appStore)
     #if DEBUG
       DebugWindowManager.shared.configure(store: appStore)
     #endif

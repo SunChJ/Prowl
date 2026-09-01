@@ -5,7 +5,7 @@
 
 **Keywords:** active agents, agents panel, running agents, status list, working, blocked, done, idle, jump to agent, roster
 
-**Related:** [agent-detection](agent-detection.md) · [cli](cli.md) · [notifications](notifications.md) · [command-palette](command-palette.md) · [canvas](canvas.md)
+**Related:** [agent-island](agent-island.md) · [agent-detection](agent-detection.md) · [cli](cli.md) · [notifications](notifications.md) · [command-palette](command-palette.md) · [canvas](canvas.md)
 
 ## What it is
 
@@ -84,6 +84,8 @@ When nothing is running: "New agents will appear here".
 - `showActiveAgentStatusInShelf` — show detected agent status markers on Shelf
   tab icons.
 - Panel height and hidden/shown state are persisted automatically.
+- [Agent Island](agent-island.md) projects this same roster at the top of a selected display;
+  its Working carousel and Blocked/Done callouts do not introduce separate state or read logic.
 
 ## Relationship to other features
 

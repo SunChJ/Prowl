@@ -40,6 +40,8 @@ struct SettingsView: View {
         Section("Agents") {
           Label("Profiles", systemImage: "person.crop.circle")
             .tag(SettingsSection.profiles)
+          Label("Agent Island", systemImage: "capsule.tophalf.filled")
+            .tag(SettingsSection.agentIsland)
           Label("CLI & Skills", systemImage: "terminal")
             .tag(SettingsSection.commandLineTool)
         }
@@ -118,6 +120,11 @@ struct SettingsView: View {
             ProgressView()
               .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
+        }
+      case .agentIsland:
+        SettingsDetailView {
+          AgentIslandSettingsView(store: settingsStore)
+            .navigationTitle("Agent Island")
         }
       case .commandLineTool:
         SettingsDetailView {

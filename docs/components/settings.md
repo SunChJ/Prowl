@@ -34,6 +34,7 @@ and opens that section's root.
 | **Commands** | Global Custom Commands. Enabled commands appear in the window toolbar; each repo can independently hide a Global command. → [custom-actions](custom-actions.md) |
 | **Advanced** | Analytics, crash reports, restore terminal layout on launch (experimental) + clear saved layout. |
 | **Agents → Profiles** | Named launch presets for supported agent runtimes (model, effort, execution mode, tab/split placement, extra arguments, opt-in dedicated home for a separate account) with a live launch preview. List order is the recommendation fallback. → [agent-profiles](agent-profiles.md) |
+| **Agents → Agent Island** | Enable the notch-aware Active Agents island and choose Automatic placement or a fixed display. Disconnected fixed displays temporarily fall back to Automatic. → [agent-island](agent-island.md) |
 | **Agents → CLI & Skills** | Install/status for the bundled `prowl` CLI, the local socket path it uses to reach the app, and the **Agent Skills** section that links the bundled skills into your agents' skill folders. → [cli](cli.md) |
 | **Repositories / Repo Settings** | Per-repository: setup/archive/run scripts, **Custom Commands**, Global-command visibility, **Default Agent Profile**, default base ref & directory, copy-files overrides, open-with app, custom title, icon & color, PR merge strategy, line-diff & PR-state fetching. Reached from the sidebar context menu → "Repo Settings". → [custom-actions](custom-actions.md), [repositories-and-worktrees](repositories-and-worktrees.md) |
 

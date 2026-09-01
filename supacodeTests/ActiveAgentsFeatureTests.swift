@@ -17,7 +17,8 @@ struct ActiveAgentsFeatureTests {
     let blocked = entry(id: UUID(1), state: .blocked, changedAt: old)
     let working = entry(id: UUID(2), state: .working, changedAt: new)
     let done = entry(id: UUID(3), state: .done, changedAt: new)
-    let updatedIdle = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 30))
+    let updatedIdle = entry(
+      id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 30))
 
     await store.send(.agentEntryChanged(idle, autoShowPanel: false)) {
       $0.entries = [idle]
@@ -27,12 +28,14 @@ struct ActiveAgentsFeatureTests {
     }
     await store.send(.agentEntryChanged(working, autoShowPanel: false)) {
       $0.entries = [idle, blocked, working]
+      $0.islandCarouselEntryID = working.id
     }
     await store.send(.agentEntryChanged(done, autoShowPanel: false)) {
       $0.entries = [idle, blocked, working, done]
     }
     await store.send(.agentEntryChanged(updatedIdle, autoShowPanel: false)) {
       $0.entries = [updatedIdle, blocked, working, done]
+      $0.islandCarouselEntryID = working.id
     }
   }
 
@@ -46,6 +49,7 @@ struct ActiveAgentsFeatureTests {
 
     await store.send(.agentEntryChanged(agent, autoShowPanel: true)) {
       $0.entries = [agent]
+      $0.islandCarouselEntryID = agent.id
       $0.$isPanelHidden.withLock { $0 = false }
     }
   }
@@ -106,7 +110,9 @@ struct ActiveAgentsFeatureTests {
     // Launch aliases with their own icon token keep their name…
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "omp", agent: .omp) == "omp")
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "oh-my-pi", agent: .omp) == "oh-my-pi")
-    #expect(ActiveAgentEntry.displayName(iconLookupToken: "cursor-agent", agent: .cursor) == "cursor-agent")
+    #expect(
+      ActiveAgentEntry.displayName(iconLookupToken: "cursor-agent", agent: .cursor)
+        == "cursor-agent")
     // …tokens without an icon entry and the generic `agent` entrypoint fall
     // back to the semantic agent name.
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "omx", agent: .codex) == "codex")
@@ -114,31 +120,48 @@ struct ActiveAgentsFeatureTests {
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "", agent: .claude) == "claude")
     // No pane token at all: the agent names itself.
     #expect(
-      ActiveAgentEntry.displayName(iconLookupToken: DetectedAgent.pi.iconLookupToken, agent: .pi) == "pi"
+      ActiveAgentEntry.displayName(iconLookupToken: DetectedAgent.pi.iconLookupToken, agent: .pi)
+        == "pi"
     )
   }
 
   @Test func navigationReturnsNilForEmptyList() {
     let entries: IdentifiedArrayOf<ActiveAgentEntry> = []
     #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == nil)
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == nil)
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == nil)
   }
 
   @Test func navigationWithoutAnchorStartsFromEdges() {
     let entries = sampleEntries()
     // No focus, or focus on a surface that is not in the list, anchors on an edge.
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == UUID(2))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .next, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .previous, in: entries) == UUID(2))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == UUID(0))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == UUID(2)
+    )
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .next, in: entries)
+        == UUID(0))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .previous, in: entries)
+        == UUID(2))
   }
 
   @Test func navigationStepsAndWrapsAroundAnchor() {
     let entries = sampleEntries()
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .next, in: entries) == UUID(1))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(2), direction: .next, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(1), direction: .previous, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .previous, in: entries) == UUID(2))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .next, in: entries) == UUID(1)
+    )
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(2), direction: .next, in: entries) == UUID(0)
+    )
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(1), direction: .previous, in: entries)
+        == UUID(0))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .previous, in: entries)
+        == UUID(2))
   }
 
   @Test func selectNextEntryAdvancesAnchorAndTapsNeighbour() async {
@@ -229,6 +252,172 @@ struct ActiveAgentsFeatureTests {
     }
     await store.send(.focusedSurfaceChanged(nil)) {
       $0.focusedSurfaceID = nil
+    }
+  }
+
+  @Test func islandSelectsMostRecentlyChangedWorkingEntry() async {
+    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
+      ActiveAgentsFeature()
+    }
+    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
+    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
+
+    await store.send(.agentEntryChanged(older, autoShowPanel: false)) {
+      $0.entries = [older]
+      $0.islandCarouselEntryID = older.id
+    }
+    await store.send(.agentEntryChanged(newer, autoShowPanel: false)) {
+      $0.entries = [older, newer]
+      $0.islandCarouselEntryID = newer.id
+    }
+  }
+
+  @Test func islandCarouselAdvancesEveryFourSeconds() async {
+    let clock = TestClock()
+    var state = ActiveAgentsFeature.State()
+    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
+    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    state.entries = [older, newer]
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    } withDependencies: {
+      $0.continuousClock = clock
+    }
+
+    await store.send(.islandEnabledChanged(true)) {
+      $0.isIslandEnabled = true
+      $0.islandCarouselEntryID = newer.id
+    }
+    await clock.advance(by: .seconds(4))
+    await store.receive(.islandCarouselTick) {
+      $0.islandCarouselEntryID = older.id
+    }
+    await store.send(.islandEnabledChanged(false)) {
+      $0.isIslandEnabled = false
+      $0.isIslandRosterExpanded = false
+    }
+  }
+
+  @Test func islandHoverPausesAndRestartsCarousel() async {
+    let clock = TestClock()
+    var state = ActiveAgentsFeature.State()
+    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
+    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    state.entries = [older, newer]
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    } withDependencies: {
+      $0.continuousClock = clock
+    }
+
+    await store.send(.islandEnabledChanged(true)) {
+      $0.isIslandEnabled = true
+      $0.islandCarouselEntryID = newer.id
+    }
+    await store.send(.islandHoverChanged(true)) {
+      $0.isIslandHovered = true
+    }
+    await clock.advance(by: .seconds(8))
+    await store.send(.islandHoverChanged(false)) {
+      $0.isIslandHovered = false
+    }
+    await clock.advance(by: .seconds(4))
+    await store.receive(.islandCarouselTick) {
+      $0.islandCarouselEntryID = older.id
+    }
+    await store.send(.islandEnabledChanged(false)) {
+      $0.isIslandEnabled = false
+      $0.isIslandRosterExpanded = false
+    }
+  }
+
+  @Test func islandAttentionOrdersBlockedBeforeDoneThenByRecency() {
+    var state = ActiveAgentsFeature.State()
+    let done = entry(id: UUID(0), state: .done, changedAt: Date(timeIntervalSince1970: 30))
+    let olderBlocked = entry(
+      id: UUID(1), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    let newerBlocked = entry(
+      id: UUID(2), state: .blocked, changedAt: Date(timeIntervalSince1970: 20))
+    let working = entry(id: UUID(3), state: .working, changedAt: Date(timeIntervalSince1970: 40))
+    state.entries = [done, olderBlocked, newerBlocked, working]
+
+    #expect(state.islandAttentionEntries.map(\.id) == [newerBlocked.id, olderBlocked.id, done.id])
+  }
+
+  @Test func islandAttentionClearsWhenExistingStateTransitionsClearIt() async {
+    let id = UUID(0)
+    let blocked = entry(id: id, state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    let working = entry(id: id, state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    let done = entry(id: id, state: .done, changedAt: Date(timeIntervalSince1970: 30))
+    let idle = entry(id: id, state: .idle, changedAt: Date(timeIntervalSince1970: 40))
+    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.agentEntryChanged(blocked, autoShowPanel: false)) {
+      $0.entries = [blocked]
+    }
+    #expect(store.state.islandAttentionEntries == [blocked])
+    await store.send(.agentEntryChanged(working, autoShowPanel: false)) {
+      $0.entries = [working]
+      $0.islandCarouselEntryID = id
+    }
+    #expect(store.state.islandAttentionEntries.isEmpty)
+    await store.send(.agentEntryChanged(done, autoShowPanel: false)) {
+      $0.entries = [done]
+      $0.islandCarouselEntryID = nil
+    }
+    #expect(store.state.islandAttentionEntries == [done])
+    await store.send(.agentEntryChanged(idle, autoShowPanel: false)) {
+      $0.entries = [idle]
+    }
+    #expect(store.state.islandAttentionEntries.isEmpty)
+  }
+
+  @Test func islandRosterToggleDoesNotMutateAttentionState() async {
+    var state = ActiveAgentsFeature.State()
+    let blocked = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    state.entries = [blocked]
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandToggleRoster) {
+      $0.isIslandRosterExpanded = true
+    }
+    #expect(store.state.islandAttentionEntries == [blocked])
+    await store.send(.islandCollapseRoster) {
+      $0.isIslandRosterExpanded = false
+    }
+    #expect(store.state.entries[id: blocked.id]?.displayState == .blocked)
+  }
+
+  @Test func islandEntryTapCollapsesRosterAndMovesFocusAnchor() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandEntryTapped(UUID(2))) {
+      $0.isIslandRosterExpanded = false
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
+  @Test func removingLastEntryCollapsesIslandRoster() async {
+    let agent = entry(id: UUID(0), state: .idle, changedAt: Date(timeIntervalSince1970: 10))
+    var state = ActiveAgentsFeature.State()
+    state.entries = [agent]
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.agentEntryRemoved(agent.id)) {
+      $0.entries = []
+      $0.isIslandRosterExpanded = false
     }
   }
 

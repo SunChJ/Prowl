@@ -95,6 +95,7 @@ struct AppFeatureSettingsChangedTests {
     }
     await store.receive(\.repositories.activeAgents.agentEntryChanged) {
       $0.repositories.activeAgents.entries = [entry]
+      $0.repositories.activeAgents.islandCarouselEntryID = entry.id
     }
   }
 
@@ -112,6 +113,7 @@ struct AppFeatureSettingsChangedTests {
     await store.send(.terminalEvent(.agentEntryChanged(entry)))
     await store.receive(\.repositories.activeAgents.agentEntryChanged) {
       $0.repositories.activeAgents.entries = [entry]
+      $0.repositories.activeAgents.islandCarouselEntryID = entry.id
     }
   }
 
@@ -122,6 +124,15 @@ struct AppFeatureSettingsChangedTests {
     let state = AppFeature.State(settings: settings)
 
     #expect(state.repositories.showActiveAgentTabTitles == true)
+  }
+
+  @Test func appStateInitializesAgentIslandFromSettings() {
+    var settings = SettingsFeature.State()
+    settings.agentIslandEnabled = false
+
+    let state = AppFeature.State(settings: settings)
+
+    #expect(state.repositories.activeAgents.isIslandEnabled == false)
   }
 
   @Test(.dependencies) func settingsChangedRecomputesResolvedKeybindings() async {

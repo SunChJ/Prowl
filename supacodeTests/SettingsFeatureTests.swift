@@ -292,7 +292,9 @@ struct SettingsFeatureTests {
     #expect(store.state.defaultWorktreeBaseDirectoryPath == expectedPath)
   }
 
-  @Test(.dependencies) func changingDefaultWorktreeBaseDirectoryUpdatesRepositorySettingsState() async {
+  @Test(.dependencies) func changingDefaultWorktreeBaseDirectoryUpdatesRepositorySettingsState()
+    async
+  {
     let rootURL = URL(fileURLWithPath: "/tmp/repo")
     let expectedPath = SupacodePaths.normalizedWorktreeBaseDirectoryPath(" ~/worktrees ")!
     @Shared(.settingsFile) var settingsFile
@@ -612,6 +614,38 @@ struct SettingsFeatureTests {
     await store.receive(\.delegate.settingsChanged)
 
     #expect(settingsFile.global.showActiveAgentStatusInShelf == false)
+  }
+
+  @Test(.dependencies) func agentIslandSettingsPersistChanges() async {
+    let initialSettings = GlobalSettings.default
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.agentIslandEnabled, false))) {
+      $0.agentIslandEnabled = false
+    }
+    await store.receive(\.delegate.settingsChanged)
+    await store.send(
+      .binding(
+        .set(
+          \.agentIslandDisplayPreference,
+          .display(id: "display-uuid", name: "Studio Display")
+        )
+      )
+    ) {
+      $0.agentIslandDisplayPreference = .display(id: "display-uuid", name: "Studio Display")
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.agentIslandEnabled == false)
+    #expect(
+      settingsFile.global.agentIslandDisplayPreference
+        == .display(id: "display-uuid", name: "Studio Display")
+    )
   }
 
   @Test(.dependencies) func disablingAnalyticsResetsClient() async {

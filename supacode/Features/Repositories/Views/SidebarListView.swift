@@ -546,35 +546,10 @@ struct SidebarListView: View {
     customTitles: [Repository.ID: String],
     repositoryAppearances: [Repository.ID: RepositoryAppearance] = [:]
   ) -> ActiveAgentWorktreeMetadata {
-    var repositoryNamesByWorktreeID: [Worktree.ID: String] = [:]
-    var branchNamesByWorktreeID: [Worktree.ID: String] = [:]
-    var repositoryColorsByWorktreeID: [Worktree.ID: RepositoryColorChoice] = [:]
-
-    for repository in repositories {
-      let repositoryName = customTitles[repository.id] ?? repository.name
-      let repositoryColor = repositoryAppearances[repository.id]?.color
-      if repository.capabilities.supportsRunnableFolderActions
-        && !repository.capabilities.supportsWorktrees
-      {
-        repositoryNamesByWorktreeID[repository.id] = repositoryName
-        branchNamesByWorktreeID[repository.id] = repository.name
-        if let repositoryColor {
-          repositoryColorsByWorktreeID[repository.id] = repositoryColor
-        }
-      }
-      for worktree in repository.worktrees {
-        repositoryNamesByWorktreeID[worktree.id] = repositoryName
-        branchNamesByWorktreeID[worktree.id] = worktree.name
-        if let repositoryColor {
-          repositoryColorsByWorktreeID[worktree.id] = repositoryColor
-        }
-      }
-    }
-
-    return ActiveAgentWorktreeMetadata(
-      repositoryNamesByWorktreeID: repositoryNamesByWorktreeID,
-      branchNamesByWorktreeID: branchNamesByWorktreeID,
-      repositoryColorsByWorktreeID: repositoryColorsByWorktreeID
+    ActiveAgentRowDisplayResolver.worktreeMetadata(
+      repositories: repositories,
+      customTitles: customTitles,
+      repositoryAppearances: repositoryAppearances
     )
   }
 
@@ -585,26 +560,11 @@ struct SidebarListView: View {
     repositories: IdentifiedArrayOf<Repository>,
     metadata: ActiveAgentWorktreeMetadata
   ) -> [ActiveAgentEntry.ID: ActiveAgentRowDisplay] {
-    // Resolutions are memoized across renders, not just shared within this batch. The index made
-    // the *build* side cheap; the lookup still normalizes the queried directory, and that
-    // normalization is a filesystem round-trip. This view re-runs whenever an agent's state
-    // changes, so re-resolving unchanged directories put N `stat`s plus N symlink walks on the
-    // main thread per frame.
-    let resolvedWorktreeIDs = WorktreeDirectoryIndexCache.worktreeIDs(
-      forWorkingDirectories: entries.compactMap(\.workingDirectory),
-      in: repositories
+    ActiveAgentRowDisplayResolver.rowDisplays(
+      entries: entries,
+      repositories: repositories,
+      metadata: metadata
     )
-    var displays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay] = [:]
-    for entry in entries {
-      let resolvedWorktreeID = entry.workingDirectory.flatMap { resolvedWorktreeIDs[$0] }
-      displays[entry.id] = activeAgentRowDisplay(
-        for: entry,
-        repositories: repositories,
-        metadata: metadata,
-        resolvedWorktreeID: resolvedWorktreeID
-      )
-    }
-    return displays
   }
 
   /// Three-tier resolution for the displayed name/branch of a single agent:
@@ -622,15 +582,11 @@ struct SidebarListView: View {
     metadata: ActiveAgentWorktreeMetadata,
     directoryIndex: WorktreeDirectoryIndex? = nil
   ) -> ActiveAgentRowDisplay {
-    let resolvedWorktreeID = entry.workingDirectory.flatMap { workingDirectory in
-      (directoryIndex ?? WorktreeDirectoryIndex(repositories: repositories))
-        .worktreeID(forWorkingDirectory: workingDirectory)
-    }
-    return activeAgentRowDisplay(
+    ActiveAgentRowDisplayResolver.rowDisplay(
       for: entry,
       repositories: repositories,
       metadata: metadata,
-      resolvedWorktreeID: resolvedWorktreeID
+      directoryIndex: directoryIndex
     )
   }
 
@@ -642,29 +598,11 @@ struct SidebarListView: View {
     metadata: ActiveAgentWorktreeMetadata,
     resolvedWorktreeID: Worktree.ID?
   ) -> ActiveAgentRowDisplay {
-    if let workingDirectory = entry.workingDirectory {
-      if let key = resolvedWorktreeID {
-        let fallbackName = workingDirectory.lastPathComponent
-        return ActiveAgentRowDisplay(
-          repositoryName: metadata.repositoryNamesByWorktreeID[key] ?? fallbackName,
-          branchName: metadata.branchNamesByWorktreeID[key] ?? fallbackName,
-          color: metadata.repositoryColorsByWorktreeID[key],
-          directory: workingDirectory
-        )
-      }
-      let name = Repository.name(for: workingDirectory)
-      return ActiveAgentRowDisplay(
-        repositoryName: name,
-        branchName: name,
-        color: nil,
-        directory: workingDirectory
-      )
-    }
-    return ActiveAgentRowDisplay(
-      repositoryName: metadata.repositoryNamesByWorktreeID[entry.worktreeID] ?? entry.worktreeName,
-      branchName: metadata.branchNamesByWorktreeID[entry.worktreeID] ?? entry.worktreeName,
-      color: metadata.repositoryColorsByWorktreeID[entry.worktreeID],
-      directory: directory(forWorktreeID: entry.worktreeID, in: repositories)
+    ActiveAgentRowDisplayResolver.rowDisplay(
+      for: entry,
+      repositories: repositories,
+      metadata: metadata,
+      resolvedWorktreeID: resolvedWorktreeID
     )
   }
 
@@ -676,8 +614,10 @@ struct SidebarListView: View {
     forWorkingDirectory workingDirectory: URL,
     in repositories: IdentifiedArrayOf<Repository>
   ) -> Worktree.ID? {
-    WorktreeDirectoryIndex(repositories: repositories)
-      .worktreeID(forWorkingDirectory: workingDirectory)
+    ActiveAgentRowDisplayResolver.resolveWorktreeID(
+      forWorkingDirectory: workingDirectory,
+      in: repositories
+    )
   }
 
   /// Directory of the surface's owning worktree, used when the agent hasn't
@@ -686,15 +626,7 @@ struct SidebarListView: View {
     forWorktreeID worktreeID: Worktree.ID,
     in repositories: IdentifiedArrayOf<Repository>
   ) -> URL? {
-    for repository in repositories {
-      if let worktree = repository.worktrees[id: worktreeID] {
-        return worktree.workingDirectory
-      }
-    }
-    guard let repository = repositories[id: worktreeID],
-      repository.capabilities.supportsRunnableFolderActions
-    else { return nil }
-    return repository.rootURL
+    ActiveAgentRowDisplayResolver.directory(forWorktreeID: worktreeID, in: repositories)
   }
 }
 
@@ -744,21 +676,6 @@ private struct RepositoryListHeaderToggle: View {
     .foregroundStyle(.secondary)
     .help(action.helpText)
   }
-}
-
-struct ActiveAgentWorktreeMetadata: Equatable {
-  let repositoryNamesByWorktreeID: [Worktree.ID: String]
-  let branchNamesByWorktreeID: [Worktree.ID: String]
-  let repositoryColorsByWorktreeID: [Worktree.ID: RepositoryColorChoice]
-}
-
-struct ActiveAgentRowDisplay: Equatable {
-  let repositoryName: String
-  let branchName: String
-  let color: RepositoryColorChoice?
-  /// The directory the agent runs in (or its owning worktree's directory as a
-  /// fallback); drives the context menu's Copy Path / Reveal in Finder.
-  let directory: URL?
 }
 
 extension SidebarItem {
