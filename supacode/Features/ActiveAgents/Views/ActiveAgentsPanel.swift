@@ -7,6 +7,9 @@ struct ActiveAgentsPanel: View {
   /// Per-entry repository/branch labels resolved from each agent's working directory by the parent
   /// (see `SidebarListView.activeAgentRowDisplays`); keeps this view presentational.
   let rowDisplays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay]
+  /// `in <workflow> · <role>` labels for panes bound to an active run, resolved by AppFeature
+  /// (docs-ai 063 C2); replaces the branch/title subtitle while the run lives.
+  let workflowBadges: [UUID: String]
   let selectedSurfaceID: UUID?
   /// Merged "⌥⌃↑↓" hint shown while Cmd is held; `nil` hides it (bindings customized
   /// or Cmd not held). Resolved by the parent so the panel stays presentational.
@@ -63,7 +66,11 @@ struct ActiveAgentsPanel: View {
               .buttonStyle(.plain)
               .help(helpText(for: entry))
               .contextMenu {
-                contextMenu(for: entry)
+                ActiveAgentRowContextMenu(
+                  entry: entry,
+                  directory: rowDisplays[entry.id]?.directory,
+                  send: { store.send($0) }
+                )
               }
             }
           }
@@ -124,45 +131,6 @@ struct ActiveAgentsPanel: View {
     min(maximumHeight, max(ActiveAgentsFeature.minimumPanelHeight, height))
   }
 
-  @ViewBuilder
-  private func contextMenu(for entry: ActiveAgentEntry) -> some View {
-    Button("Hand Off…") {
-      store.send(.handOffTapped(entry.id))
-    }
-    .help("Save this agent's progress and hand the task off to another agent")
-    Button("Mark as Read") {
-      store.send(.markAsReadTapped(entry.id))
-    }
-    .help("Clear this agent's unread notifications without switching to it")
-    if let directory = rowDisplays[entry.id]?.directory {
-      Divider()
-      Button("Copy Path") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(directory.path, forType: .string)
-      }
-      .help("Copy the agent's working directory path")
-      Button("Reveal in Finder") {
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: directory.path)
-      }
-      .help("Reveal the agent's working directory in Finder")
-    }
-    if let transcriptPath = entry.session?.transcriptPath {
-      Divider()
-      Button("Copy Session Path") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(transcriptPath.path, forType: .string)
-      }
-      .help("Copy the on-disk path of this agent's session log")
-      Button("Reveal Session in Finder") {
-        NSWorkspace.shared.selectFile(
-          transcriptPath.path,
-          inFileViewerRootedAtPath: transcriptPath.deletingLastPathComponent().path
-        )
-      }
-      .help("Select this agent's session log in Finder")
-    }
-  }
-
   private func repositoryName(for entry: ActiveAgentEntry) -> String {
     rowDisplays[entry.id]?.repositoryName ?? entry.worktreeName
   }
@@ -172,10 +140,11 @@ struct ActiveAgentsPanel: View {
   }
 
   private func subtitle(for entry: ActiveAgentEntry) -> String {
-    Self.subtitle(
+    ActiveAgentRowPresentation.subtitle(
       for: entry,
       branchName: branchName(for: entry),
-      showTabTitles: showTabTitles
+      showTabTitles: showTabTitles,
+      workflowBadge: workflowBadges[entry.surfaceID]
     )
   }
 
@@ -196,32 +165,11 @@ struct ActiveAgentsPanel: View {
   }
 
   private func helpText(for entry: ActiveAgentEntry) -> String {
-    Self.helpText(
+    ActiveAgentRowPresentation.helpText(
       for: entry,
       branchName: branchName(for: entry),
       showTabTitles: showTabTitles
     )
-  }
-
-  static func subtitle(
-    for entry: ActiveAgentEntry,
-    branchName: String,
-    showTabTitles: Bool
-  ) -> String {
-    showTabTitles ? paneTitle(for: entry) : branchName
-  }
-
-  static func helpText(
-    for entry: ActiveAgentEntry,
-    branchName: String,
-    showTabTitles: Bool
-  ) -> String {
-    showTabTitles ? branchName : paneTitle(for: entry)
-  }
-
-  static func paneTitle(for entry: ActiveAgentEntry) -> String {
-    let trimmed = entry.paneTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? "Untitled tab" : trimmed
   }
 
   private var panelBackgroundShape: RoundedRectangle {

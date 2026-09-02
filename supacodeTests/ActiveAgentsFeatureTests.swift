@@ -35,7 +35,6 @@ struct ActiveAgentsFeatureTests {
     }
     await store.send(.agentEntryChanged(updatedIdle, autoShowPanel: false)) {
       $0.entries = [updatedIdle, blocked, working, done]
-      $0.islandCarouselEntryID = working.id
     }
   }
 
@@ -230,6 +229,18 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
+  @Test func runWorkflowTappedUpdatesFocusAnchorLikeEntryTapped() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.runWorkflowTapped(UUID(2), workflowKey: "review")) {
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
   @Test func markAsReadTappedIsLocalNoOp() async {
     var state = ActiveAgentsFeature.State()
     state.entries = sampleEntries()
@@ -292,6 +303,48 @@ struct ActiveAgentsFeatureTests {
     await store.receive(.islandCarouselTick) {
       $0.islandCarouselEntryID = older.id
     }
+    await store.send(.islandEnabledChanged(false)) {
+      $0.isIslandEnabled = false
+      $0.isIslandRosterExpanded = false
+    }
+  }
+
+  @Test func islandCarouselSurvivesContinuousTitleRefreshes() async {
+    let clock = TestClock()
+    var state = ActiveAgentsFeature.State()
+    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
+    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    state.entries = [older, newer]
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    } withDependencies: {
+      $0.continuousClock = clock
+    }
+
+    await store.send(.islandEnabledChanged(true)) {
+      $0.isIslandEnabled = true
+      $0.islandCarouselEntryID = newer.id
+    }
+
+    var refreshed = newer
+    for second in 1...8 {
+      await clock.advance(by: .seconds(1))
+      if second == 4 {
+        await store.receive(.islandCarouselTick) {
+          $0.islandCarouselEntryID = older.id
+        }
+      } else if second == 8 {
+        await store.receive(.islandCarouselTick) {
+          $0.islandCarouselEntryID = newer.id
+        }
+      }
+
+      refreshed.paneTitle = "Title refresh \(second)"
+      await store.send(.agentEntryChanged(refreshed, autoShowPanel: false)) {
+        $0.entries[id: refreshed.id] = refreshed
+      }
+    }
+
     await store.send(.islandEnabledChanged(false)) {
       $0.isIslandEnabled = false
       $0.isIslandRosterExpanded = false
@@ -421,31 +474,49 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
-  @Test func panelSubtitleAndHelpSwapPaneTitleAndBranchWhenEnabled() {
+  @Test func sharedRowSubtitleAndHelpSwapPaneTitleAndBranchWhenEnabled() {
     let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .idle, changedAt: Date())
 
     #expect(
-      ActiveAgentsPanel.subtitle(for: entry, branchName: "main", showTabTitles: false)
+      ActiveAgentRowPresentation.subtitle(for: entry, branchName: "main", showTabTitles: false)
         == "main"
     )
     #expect(
-      ActiveAgentsPanel.helpText(for: entry, branchName: "main", showTabTitles: false)
+      ActiveAgentRowPresentation.helpText(for: entry, branchName: "main", showTabTitles: false)
         == "Review issue 385"
     )
     #expect(
-      ActiveAgentsPanel.subtitle(for: entry, branchName: "main", showTabTitles: true)
+      ActiveAgentRowPresentation.subtitle(for: entry, branchName: "main", showTabTitles: true)
         == "Review issue 385"
     )
     #expect(
-      ActiveAgentsPanel.helpText(for: entry, branchName: "main", showTabTitles: true)
+      ActiveAgentRowPresentation.helpText(for: entry, branchName: "main", showTabTitles: true)
         == "main"
+    )
+  }
+
+  @Test func sharedRowSubtitleShowsTheWorkflowBadgeWhileTheRunLives() {
+    let entry = entry(
+      id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
+
+    #expect(
+      ActiveAgentRowPresentation.subtitle(
+        for: entry, branchName: "main", showTabTitles: false,
+        workflowBadge: "in Adversarial Review \u{00B7} reviewer")
+        == "in Adversarial Review \u{00B7} reviewer"
+    )
+    // The branch/title subtitle returns when the run ends.
+    #expect(
+      ActiveAgentRowPresentation.subtitle(
+        for: entry, branchName: "main", showTabTitles: true, workflowBadge: nil)
+        == "Review issue 385"
     )
   }
 
   @Test func panelPaneTitleFallsBackForEmptyTitles() {
     let entry = entry(id: UUID(0), paneTitle: "   ", state: .idle, changedAt: Date())
 
-    #expect(ActiveAgentsPanel.paneTitle(for: entry) == "Untitled tab")
+    #expect(ActiveAgentRowPresentation.paneTitle(for: entry) == "Untitled tab")
   }
 
   private func sampleEntries() -> IdentifiedArrayOf<ActiveAgentEntry> {

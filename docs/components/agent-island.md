@@ -22,9 +22,9 @@ the cutout itself is reserved from layout using the screen's auxiliary menu-bar 
 
 | Active Agents state | Island behavior |
 |---|---|
-| **Working** | Compact, low-priority status. The most recently changed Working agent appears immediately; multiple Working agents rotate every four seconds. Hovering or opening the roster pauses rotation. Its projected runtime icon uses a fluid rotating orange outline. |
-| **Blocked** | Compact **Needs input** cell below the compact island. Blocked entries appear before Done entries. |
-| **Done** | Compact **Completed** cell while the existing Active Agents entry remains unviewed. |
+| **Working** | Compact, low-priority status. The most recently changed Working agent appears immediately; multiple Working agents rotate every four seconds. Title-only refreshes preserve the current item and timer. Hovering or opening the roster pauses rotation. Its projected runtime icon uses a fluid rotating orange outline. |
+| **Blocked** | Compact **Blocked** cell below the compact island. Blocked entries appear before Done entries. |
+| **Done** | Compact **Done** cell while the existing Active Agents entry remains unviewed. |
 | **Idle** | Full details appear in the expanded roster. A projected compact icon may remain visible with a quiet static outline when higher-priority entries do not displace it. |
 
 The compact trailing area projects only real runtime icons, keeping status presentation scoped
@@ -53,13 +53,14 @@ compact island shows a neutral agent count so the roster remains reachable.
 ## Interactions
 
 - Click the compact island to open or close the full roster without bringing Prowl forward.
-- Click a Needs input or Completed cell to bring Prowl forward and focus its exact worktree,
+- Click a Blocked or Done cell to bring Prowl forward and focus its exact worktree,
   tab, and pane.
 - The expanded roster composes the original Active Agents row and display semantics without
-  changing the [Active Agents panel](active-agents.md). It retains ordering, titles, and context
-  menu actions. Clicking a row first restores Prowl, then uses the panel's existing exact-focus
-  path. Its viewport tracks the rows' measured content height and caps at `360pt`, enabling
-  scrolling only after the content exceeds that limit.
+  changing the [Active Agents panel](active-agents.md). It retains ordering, titles, Workflow
+  role badges, and the shared context menu, including **Run Workflow**. Clicking a row first
+  restores Prowl, then uses the panel's existing exact-focus path. Its viewport tracks the rows'
+  measured content height and caps at `360pt`, enabling scrolling only after the content exceeds
+  that limit.
 - Click **Open Prowl** in the roster header to restore and activate the current Prowl main
   window without changing the selected agent.
 - Click outside the roster or press `Esc` to collapse it. This does not mark Blocked or Done

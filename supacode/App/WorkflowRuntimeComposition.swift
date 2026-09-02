@@ -52,6 +52,7 @@ struct WorkflowRuntimeInstallation {
   let watchdog: WorkflowWatchdogClient
   let queue: WorkflowEffectQueueClient
   let responder: WorkflowCLIResponderClient
+  let start: WorkflowStartClient
 
   func install(into values: inout DependencyValues) {
     values.workflowActivationClient = activation
@@ -59,6 +60,7 @@ struct WorkflowRuntimeInstallation {
     values.workflowWatchdogClient = watchdog
     values.workflowEffectQueue = queue
     values.workflowCLIResponder = responder
+    values.workflowStartClient = start
   }
 }
 
@@ -84,7 +86,10 @@ extension SupacodeApp {
       queue: WorkflowEffectQueue().client,
       responder: WorkflowCLIResponderClient(respond: { requestID, resolution in
         coordinatorBox.coordinator?.resolve(requestID, resolution)
-      })
+      }),
+      start: makeWorkflowStartClient(
+        terminalManager: terminalManager, storeBox: storeBox,
+        coordinatorBox: coordinatorBox, reservations: reservations)
     )
   }
 

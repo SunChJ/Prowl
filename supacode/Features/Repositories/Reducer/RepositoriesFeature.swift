@@ -379,6 +379,9 @@ struct RepositoriesFeature {
     var nextCanvasCommandRequestID = 0
     var pendingCanvasCommandRequest: CanvasCommandRequest?
     var activeAgents = ActiveAgentsFeature.State()
+    /// `in <workflow> · <role>` labels for panes bound to an active run, synced by AppFeature
+    /// from WorkflowRunsFeature state (docs-ai 063 C2).
+    var workflowRoleBadgesBySurfaceID: [UUID: String] = [:]
     @Shared(.appStorage("sidebarCollapsedRepositoryIDs")) var collapsedRepositoryIDs: [Repository.ID] = []
     @Presents var worktreeCreationPrompt: WorktreeCreationPromptFeature.State?
     @Presents var workspaceCreationPrompt: WorkspaceCreationPromptFeature.State?

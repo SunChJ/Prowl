@@ -735,6 +735,50 @@ struct WorkflowRunMachineTests {
     #expect(machine.run.status == .maxRoundsReached)
   }
 
+  @Test func startSkipConsequenceForTheStartSheet() throws {
+    let review = try definition(Self.adversarialReview)
+    #expect(
+      WorkflowRunMachine.startSkipConsequence(forStep: "brief", definition: review, alreadySkipped: [])
+        == .endsRun(dependent: "launch"))
+    // A step without an `expect` offers no skip choice at all.
+    #expect(WorkflowRunMachine.startSkipConsequence(forStep: "done", definition: review, alreadySkipped: []) == nil)
+    #expect(WorkflowRunMachine.startSkipConsequence(forStep: "nope", definition: review, alreadySkipped: []) == nil)
+
+    let handoff = try definition(Self.handoff)
+    #expect(
+      WorkflowRunMachine.startSkipConsequence(forStep: "brief", definition: handoff, alreadySkipped: [])
+        == .continues(optionalInputs: ["transition"]))
+  }
+
+  @Test func startSkipConsequenceIgnoresReadersAlreadySkipped() throws {
+    let chain = try definition(
+      """
+      schema: prowl.workflow/v1
+      id: chain
+      name: Chain
+      roles:
+        author:
+          source: current
+      steps:
+        - id: produce
+          message: author
+          text: "Write it."
+          expect: { output: draft }
+        - id: consume
+          message: author
+          text: "Polish {{ outputs.draft.path }}."
+          expect: { output: final }
+        - id: done
+          notify: "done"
+      """)
+    #expect(
+      WorkflowRunMachine.startSkipConsequence(forStep: "produce", definition: chain, alreadySkipped: [])
+        == .endsRun(dependent: "consume"))
+    #expect(
+      WorkflowRunMachine.startSkipConsequence(forStep: "produce", definition: chain, alreadySkipped: ["consume"])
+        == .continues(optionalInputs: []))
+  }
+
   @Test func startTimeSkipIgnoresReadersAfterALoopWithoutUntil() throws {
     let yaml = """
       schema: prowl.workflow/v1

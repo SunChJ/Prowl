@@ -232,6 +232,7 @@ struct AgentIslandView: View {
       AgentIslandRosterContent(
         store: agentsStore,
         rowDisplays: rowDisplays,
+        workflowBadges: appStore.repositories.workflowRoleBadgesBySurfaceID,
         selectedSurfaceID: agentsStore.focusedSurfaceID,
         showTabTitles: appStore.repositories.showActiveAgentTabTitles,
         entryAction: ActiveAgentsFeature.Action.islandEntryTapped

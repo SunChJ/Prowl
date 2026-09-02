@@ -46,6 +46,10 @@ enum CommandPaletteItemID {
     "agent-profile.launch.\(id.uuidString)"
   }
 
+  static func runWorkflow(_ key: String) -> String {
+    "workflow.run.\(key)"
+  }
+
   static var globalIDs: [CommandPaletteItem.ID] {
     [
       globalCheckForUpdates,
@@ -152,6 +156,9 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
   if let appAction = appDelegateAction(for: kind) {
     return appAction
   }
+  if let agentAction = agentDelegateAction(for: kind) {
+    return agentAction
+  }
   switch kind {
   case .worktreeSelect(let id):
     return .selectWorktree(id)
@@ -167,10 +174,6 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
     return .openRepositorySettings(repositoryID)
   case .runCustomCommand(let id, _):
     return .runCustomCommand(id)
-  case .handOff:
-    return .handOff
-  case .launchAgentProfile(let profileID):
-    return .launchAgentProfile(profileID)
   case .openPullRequest,
     .openRepositoryOnCodeHost,
     .markPullRequestReady,
@@ -216,6 +219,23 @@ func delegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.
     .stopRunScript,
     .renameBranch:
     fatalError("appDelegateAction should handle app-level command palette actions")
+  case .handOff, .launchAgentProfile, .runWorkflow:
+    fatalError("agentDelegateAction should handle agent-scoped command palette actions")
+  }
+}
+
+/// The agent-scoped kinds, split out to keep `delegateAction`'s switch within the
+/// complexity budget.
+func agentDelegateAction(for kind: CommandPaletteItem.Kind) -> CommandPaletteFeature.Delegate? {
+  switch kind {
+  case .handOff:
+    return .handOff
+  case .launchAgentProfile(let profileID):
+    return .launchAgentProfile(profileID)
+  case .runWorkflow(let key):
+    return .runWorkflow(key)
+  default:
+    return nil
   }
 }
 
@@ -353,7 +373,8 @@ func pullRequestDelegateAction(
     .openRepositorySettings,
     .runCustomCommand,
     .handOff,
-    .launchAgentProfile:
+    .launchAgentProfile,
+    .runWorkflow:
     return nil
   #if DEBUG
     case .debugTestToast, .debugSimulateUpdateFound, .debugLightDockNotificationDot:

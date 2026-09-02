@@ -7,12 +7,19 @@ extension AppFeature {
     state: inout State
   ) -> Effect<Action> {
     switch action {
+    case .setPresented(true):
+      refreshWorkflowPaletteItems(state: &state)
+      return .none
+
     case .setPresented(false):
       guard state.commandPalette.isPresented else { return .none }
       return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
 
     case .togglePresented:
-      guard state.commandPalette.isPresented else { return .none }
+      guard state.commandPalette.isPresented else {
+        refreshWorkflowPaletteItems(state: &state)
+        return .none
+      }
       return restoreCommandPaletteTerminalFocusEffect(repositories: state.repositories)
 
     case .delegate(let delegate):
@@ -43,6 +50,9 @@ extension AppFeature {
       return effect
     }
     if let effect = reduceCommandPaletteHandoffDelegate(delegate, state: &state) {
+      return effect
+    }
+    if let effect = reduceCommandPaletteWorkflowDelegate(delegate, state: &state) {
       return effect
     }
     if let effect = reduceCommandPalettePullRequestDelegate(delegate) {
@@ -332,6 +342,17 @@ extension AppFeature {
     // One execution path: the palette row opens the same staged HUD as the
     // toolbar capsule (docs-ai 049).
     return openHandoffHud(state: &state)
+  }
+
+  func reduceCommandPaletteWorkflowDelegate(
+    _ delegate: CommandPaletteFeature.Delegate,
+    state: inout State
+  ) -> Effect<Action>? {
+    guard case .runWorkflow(let key) = delegate else { return nil }
+    // One execution path: the palette row goes through the same opener as the
+    // Agents popover and the Active Agents menu (docs-ai 063.011 decision 1).
+    return openWorkflowStart(
+      state: &state, workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: false)
   }
 
   func reduceCommandPalettePullRequestDelegate(

@@ -248,6 +248,7 @@ private struct WorktreeToolbarPreview: View {
   init() {
     toolbarState = WorktreeDetailView.WorktreeToolbarState(
       shared: WorktreeDetailView.ToolbarSharedState(
+        actionTargetWorktreeID: nil,
         agentsCapsule: AgentsCapsuleState(
           displayName: "codex",
           iconSource: CommandIconMap.iconForFirstToken("codex"),
@@ -316,6 +317,8 @@ private struct WorktreeToolbarPreview: View {
         onHandOff: {},
         onLaunchProfile: { _ in },
         onManageProfiles: {},
+        onRunWorkflow: { _ in },
+        onRunWorkflowWithOptions: { _ in },
         onWorkflowIntent: { _ in }
       )
     }
@@ -348,9 +351,12 @@ private struct CanvasToolbarPreview: View {
             agentsLauncherItems: [],
             notificationGroups: [],
             unseenNotificationWorktreeCount: 0,
+            workflowsWorktreeID: nil,
             onHandOff: {},
             onLaunchProfile: { _ in },
             onManageProfiles: {},
+            onRunWorkflow: { _ in },
+            onRunWorkflowWithOptions: { _ in },
             onSelectNotification: { _, _ in },
             onDismissAllNotifications: {},
             isUpdateAvailable: true,

@@ -41,6 +41,9 @@ struct ActiveAgentsFeature {
     /// Context-menu "Hand Off…": parents perform the selection (Repositories)
     /// and open the HUD for this entry's pane (App).
     case handOffTapped(ActiveAgentEntry.ID)
+    /// Context-menu "Run Workflow ▸": parents select the entry (Repositories) and open the
+    /// start sheet with this entry's pane fixed as the source (App, docs-ai 063 C2).
+    case runWorkflowTapped(ActiveAgentEntry.ID, workflowKey: String)
     /// Context-menu "Mark as Read": handled by RepositoriesFeature.
     case markAsReadTapped(ActiveAgentEntry.ID)
     case focusedSurfaceChanged(UUID?)
@@ -63,26 +66,29 @@ struct ActiveAgentsFeature {
     Reduce { state, action in
       switch action {
       case .agentEntryChanged(let entry, let autoShowPanel):
+        let previousWorkingEntryIDs = state.islandWorkingEntries.map(\.id)
         state.entries[id: entry.id] = entry
-        state.islandCarouselEntryID = state.mostRecentWorkingEntry?.id
         if autoShowPanel, state.isPanelHidden {
           state.$isPanelHidden.withLock { $0 = false }
         }
-        return updateIslandCarousel(state)
+        return updateIslandCarouselIfNeeded(
+          &state,
+          previousWorkingEntryIDs: previousWorkingEntryIDs
+        )
 
       case .agentEntryRemoved(let id):
+        let previousWorkingEntryIDs = state.islandWorkingEntries.map(\.id)
         state.entries.remove(id: id)
         if state.entries.isEmpty {
           state.isIslandRosterExpanded = false
         }
-        if let carouselEntryID = state.islandCarouselEntryID,
-          state.entries[id: carouselEntryID] == nil
-        {
-          state.islandCarouselEntryID = state.mostRecentWorkingEntry?.id
-        }
-        return updateIslandCarousel(state)
+        return updateIslandCarouselIfNeeded(
+          &state,
+          previousWorkingEntryIDs: previousWorkingEntryIDs
+        )
 
-      case .entryTapped(let id), .handOffTapped(let id), .islandEntryTapped(let id):
+      case .entryTapped(let id), .handOffTapped(let id), .runWorkflowTapped(let id, _),
+        .islandEntryTapped(let id):
         // Mirror the tapped surface into the focus anchor so the panel highlight and
         // keyboard navigation step from the just-selected agent immediately. The async
         // `focusChanged` event can't be relied on here: it is deduplicated per worktree
@@ -165,6 +171,18 @@ struct ActiveAgentsFeature {
       }
     }
     .cancellable(id: AgentIslandCarouselCancelID.timer, cancelInFlight: true)
+  }
+
+  private func updateIslandCarouselIfNeeded(
+    _ state: inout State,
+    previousWorkingEntryIDs: [ActiveAgentEntry.ID]
+  ) -> Effect<Action> {
+    let workingEntryIDs = state.islandWorkingEntries.map(\.id)
+    guard workingEntryIDs != previousWorkingEntryIDs else {
+      return .none
+    }
+    state.islandCarouselEntryID = state.mostRecentWorkingEntry?.id
+    return updateIslandCarousel(state)
   }
 
   /// Moves the keyboard anchor to the neighbouring entry and reuses `entryTapped`

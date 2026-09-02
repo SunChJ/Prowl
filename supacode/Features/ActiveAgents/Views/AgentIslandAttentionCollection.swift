@@ -54,7 +54,7 @@ struct AgentIslandAttentionPresentation: Equatable {
       agentName: entry.displayName,
       statusLabel: entry.displayState.label,
       repositoryName: repositoryName,
-      subtitle: AgentIslandRosterContent.subtitle(
+      subtitle: ActiveAgentRowPresentation.subtitle(
         for: entry,
         branchName: branchName,
         showTabTitles: showTabTitles

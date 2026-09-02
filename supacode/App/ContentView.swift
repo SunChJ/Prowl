@@ -166,7 +166,8 @@ struct ContentView: View {
           actionTargetWorktreeID: store.repositories.isShowingCanvas
             ? terminalManager.canvasFocusedWorktreeID
             : nil,
-          ghosttyCommands: ghosttyShortcuts.commandPaletteEntries
+          ghosttyCommands: ghosttyShortcuts.commandPaletteEntries,
+          workflowItems: store.workflowPaletteItems
         ),
         resolvedKeybindings: store.resolvedKeybindings
       )
@@ -174,6 +175,11 @@ struct ContentView: View {
     .overlay {
       if let handoffHudStore = store.scope(state: \.handoffHud, action: \.handoffHud.presented) {
         HandoffHudOverlayView(store: handoffHudStore)
+      }
+    }
+    .overlay {
+      if let workflowStartStore = store.scope(state: \.workflowStart, action: \.workflowStart.presented) {
+        WorkflowStartOverlayView(store: workflowStartStore)
       }
     }
     .background(WindowTabbingDisabler())

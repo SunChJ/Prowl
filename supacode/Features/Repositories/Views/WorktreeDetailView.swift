@@ -157,6 +157,12 @@ struct WorktreeDetailView: View {
       onHandOff: { store.send(.openHandoffHud) },
       onLaunchProfile: { store.send(.launchAgentProfile($0)) },
       onManageProfiles: { store.send(.openAgentProfilesSettings) },
+      onRunWorkflow: { key in
+        store.send(.openWorkflowStart(workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: false))
+      },
+      onRunWorkflowWithOptions: { key in
+        store.send(.openWorkflowStart(workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: true))
+      },
       onWorkflowIntent: handleWorkflowIntent
     )
   }
@@ -165,6 +171,7 @@ struct WorktreeDetailView: View {
     input: ToolbarSharedStateInput
   ) -> ToolbarSharedState {
     ToolbarSharedState(
+      actionTargetWorktreeID: input.actionTargetWorktree?.id,
       agentsCapsule: agentsCapsuleState(for: input.actionTargetWorktree),
       agentsLauncherItems: agentsLauncherItems(for: input.actionTargetWorktree),
       statusToast: input.repositories.statusToast,
@@ -199,9 +206,16 @@ struct WorktreeDetailView: View {
       agentsLauncherItems: state.agentsLauncherItems,
       notificationGroups: state.notificationGroups,
       unseenNotificationWorktreeCount: state.unseenNotificationWorktreeCount,
+      workflowsWorktreeID: state.actionTargetWorktreeID,
       onHandOff: { store.send(.openHandoffHud) },
       onLaunchProfile: { store.send(.launchAgentProfile($0)) },
       onManageProfiles: { store.send(.openAgentProfilesSettings) },
+      onRunWorkflow: { key in
+        store.send(.openWorkflowStart(workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: false))
+      },
+      onRunWorkflowWithOptions: { key in
+        store.send(.openWorkflowStart(workflowKey: key, worktreeID: nil, sourceSurfaceID: nil, forceSheet: true))
+      },
       onSelectNotification: selectToolbarNotification,
       onDismissAllNotifications: {
         dismissAllToolbarNotifications(in: state.notificationGroups)
@@ -806,6 +820,7 @@ struct WorktreeDetailView: View {
   }
 
   struct ToolbarSharedState {
+    let actionTargetWorktreeID: Worktree.ID?
     let agentsCapsule: AgentsCapsuleState?
     let agentsLauncherItems: [AgentsLauncherItem]
     let statusToast: RepositoriesFeature.StatusToast?
@@ -839,9 +854,12 @@ struct WorktreeDetailView: View {
     let agentsLauncherItems: [AgentsLauncherItem]
     let notificationGroups: [ToolbarNotificationRepositoryGroup]
     let unseenNotificationWorktreeCount: Int
+    let workflowsWorktreeID: Worktree.ID?
     let onHandOff: () -> Void
     let onLaunchProfile: (AgentProfile.ID) -> Void
     let onManageProfiles: () -> Void
+    let onRunWorkflow: (String) -> Void
+    let onRunWorkflowWithOptions: (String) -> Void
     let onSelectNotification: (Worktree.ID, WorktreeTerminalNotification) -> Void
     let onDismissAllNotifications: () -> Void
     let isUpdateAvailable: Bool
@@ -854,9 +872,12 @@ struct WorktreeDetailView: View {
         AgentsToolbarButton(
           capsule: agentsCapsule,
           launcherItems: agentsLauncherItems,
+          workflowsWorktreeID: workflowsWorktreeID,
           onHandOff: onHandOff,
           onLaunchProfile: onLaunchProfile,
-          onManageProfiles: onManageProfiles
+          onManageProfiles: onManageProfiles,
+          onRunWorkflow: onRunWorkflow,
+          onRunWorkflowWithOptions: onRunWorkflowWithOptions
         )
         if let quickLaunchItem = agentsLauncherItems.first {
           AgentsQuickLaunchButton(item: quickLaunchItem, onLaunch: onLaunchProfile)
@@ -902,6 +923,8 @@ struct WorktreeDetailView: View {
     let onHandOff: () -> Void
     let onLaunchProfile: (AgentProfile.ID) -> Void
     let onManageProfiles: () -> Void
+    let onRunWorkflow: (String) -> Void
+    let onRunWorkflowWithOptions: (String) -> Void
     let onWorkflowIntent: (WorkflowRunPanelIntent) -> Void
     @Environment(\.resolvedKeybindings) private var resolvedKeybindings
 
@@ -911,9 +934,12 @@ struct WorktreeDetailView: View {
         agentsLauncherItems: toolbarState.shared.agentsLauncherItems,
         notificationGroups: toolbarState.shared.notificationGroups,
         unseenNotificationWorktreeCount: toolbarState.shared.unseenNotificationWorktreeCount,
+        workflowsWorktreeID: toolbarState.shared.actionTargetWorktreeID,
         onHandOff: onHandOff,
         onLaunchProfile: onLaunchProfile,
         onManageProfiles: onManageProfiles,
+        onRunWorkflow: onRunWorkflow,
+        onRunWorkflowWithOptions: onRunWorkflowWithOptions,
         onSelectNotification: onSelectNotification,
         onDismissAllNotifications: onDismissAllNotifications,
         isUpdateAvailable: toolbarState.shared.isUpdateAvailable,

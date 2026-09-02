@@ -106,3 +106,6 @@ known name; if absent, placement temporarily follows Automatic and returns when 
   moving ring motion off SwiftUI's display-linked timeline, preventing the panel from becoming
   key, and limiting hidden UI and event monitors — see
   [008-render-and-focus-isolation.md](008-render-and-focus-isolation.md).
+- Updated 2026-09-02: Title-only entry refreshes must preserve the live carousel timer, and the
+  island roster now shares current Workflow badges and context-menu behavior with Active Agents —
+  see [009-carousel-stability-and-workflow-parity.md](009-carousel-stability-and-workflow-parity.md).
