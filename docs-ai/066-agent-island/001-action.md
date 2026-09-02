@@ -84,8 +84,6 @@ Key files:
   on this branch; the panel's collection behavior is configured for them but unverified.
 - The compact bar is `max(40, cutout + 8)`pt tall, so it overhangs a 32pt notch by 8pt; aligning
   it to the cutout is planned.
-- Carousel icons are not directly clickable (the whole bar toggles the roster); direct focus from
-  an icon is planned.
 - While the roster is expanded, the local monitor swallows Escape from Prowl's own key window and
   the key-state poll fires a second collapse; dropping the local interception is planned.
 - `AgentIslandWindowController.start()` creates the panel and observers at launch regardless of

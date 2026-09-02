@@ -105,6 +105,8 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
 - **Toolbar button or dedicated settings destination** — rejected; opt-in section in
   Notifications.
 - **Custom expansion transition** — removed; the roster appears directly while the panel resizes.
+- **Directly clickable carousel icons** — considered on 2026-09-02 and declined: the compact bar
+  stays a single toggle, and per-agent focus lives in the attention cells and the roster.
 
 ## Amendments
 
