@@ -1022,22 +1022,17 @@ struct AppFeature {
       case .repositories(.activeAgents(.handOffTapped(let entryID))):
         return openHandoffHud(state: &state, entryID: entryID)
 
-      case .repositories(.activeAgents(.islandEntryTapped(let entryID))):
-        _ = appLifecycleClient.surfaceMainWindow()
-        return .send(.repositories(.activeAgents(.entryTapped(entryID))))
-
-      case .repositories(.activeAgents(.islandHandOffTapped(let entryID))):
-        _ = appLifecycleClient.surfaceMainWindow()
-        return .send(.repositories(.activeAgents(.handOffTapped(entryID))))
-
-      case .repositories(.activeAgents(.islandRunWorkflowTapped(let entryID, let workflowKey))):
-        _ = appLifecycleClient.surfaceMainWindow()
-        return .send(.repositories(.activeAgents(.runWorkflowTapped(entryID, workflowKey: workflowKey))))
-
-      case .repositories(.activeAgents(.islandOpenProwlTapped)):
-        return .run { @MainActor _ in
+      case .repositories(.activeAgents(.island(let action))):
+        // The child reducer forwards `action` after this pass, so the window is up before the
+        // sidebar path focuses a pane or presents the handoff HUD / workflow sheet.
+        if action.surfacesProwl {
           _ = appLifecycleClient.surfaceMainWindow()
         }
+        return .none
+
+      case .repositories(.activeAgents(.islandOpenProwlTapped)):
+        _ = appLifecycleClient.surfaceMainWindow()
+        return .none
 
       case .repositories(.activeAgents(.runWorkflowTapped(let entryID, let workflowKey))):
         guard let entry = state.repositories.activeAgents.entries[id: entryID] else { return .none }

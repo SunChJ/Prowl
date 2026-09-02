@@ -433,10 +433,33 @@ struct ActiveAgentsFeatureTests {
       ActiveAgentsFeature()
     }
 
-    await store.send(.islandEntryTapped(UUID(2))) {
+    await store.send(.island(.entryTapped(UUID(2)))) {
       $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.entryTapped(UUID(2))) {
       $0.focusedSurfaceID = UUID(2)
     }
+  }
+
+  @Test func islandForwardsNonPresentingActionsWithoutCollapsing() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    // "Mark as Read" is handled by parents and shows no Prowl UI, so the roster stays open.
+    await store.send(.island(.markAsReadTapped(UUID(0))))
+    await store.receive(.markAsReadTapped(UUID(0)))
+  }
+
+  @Test func onlyActionsThatPresentProwlUISurfaceTheWindow() {
+    #expect(ActiveAgentsFeature.Action.entryTapped(UUID(0)).surfacesProwl)
+    #expect(ActiveAgentsFeature.Action.handOffTapped(UUID(0)).surfacesProwl)
+    #expect(ActiveAgentsFeature.Action.runWorkflowTapped(UUID(0), workflowKey: "review").surfacesProwl)
+    #expect(!ActiveAgentsFeature.Action.markAsReadTapped(UUID(0)).surfacesProwl)
+    #expect(!ActiveAgentsFeature.Action.islandToggleRoster.surfacesProwl)
   }
 
   @Test func islandContextActionsCollapseRosterAndMoveFocusAnchor() async {
@@ -447,15 +470,19 @@ struct ActiveAgentsFeatureTests {
       ActiveAgentsFeature()
     }
 
-    await store.send(.islandHandOffTapped(UUID(1))) {
+    await store.send(.island(.handOffTapped(UUID(1)))) {
       $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.handOffTapped(UUID(1))) {
       $0.focusedSurfaceID = UUID(1)
     }
     await store.send(.islandToggleRoster) {
       $0.isIslandRosterExpanded = true
     }
-    await store.send(.islandRunWorkflowTapped(UUID(2), workflowKey: "review")) {
+    await store.send(.island(.runWorkflowTapped(UUID(2), workflowKey: "review"))) {
       $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.runWorkflowTapped(UUID(2), workflowKey: "review")) {
       $0.focusedSurfaceID = UUID(2)
     }
   }
@@ -475,8 +502,10 @@ struct ActiveAgentsFeatureTests {
       $0.continuousClock = clock
     }
 
-    await store.send(.islandEntryTapped(newer.id)) {
+    await store.send(.island(.entryTapped(newer.id))) {
       $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.entryTapped(newer.id)) {
       $0.focusedSurfaceID = newer.surfaceID
     }
     await clock.advance(by: .seconds(4))

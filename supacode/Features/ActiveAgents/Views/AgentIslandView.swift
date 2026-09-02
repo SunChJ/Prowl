@@ -97,7 +97,7 @@ struct AgentIslandView: View {
           rowDisplays: rowDisplays,
           workflowBadges: appStore.repositories.workflowRoleBadgesBySurfaceID,
           showTabTitles: appStore.repositories.showActiveAgentTabTitles,
-          onTap: { agentsStore.send(.islandEntryTapped($0)) }
+          onTap: { agentsStore.send(.island(.entryTapped($0))) }
         )
       }
     }
@@ -240,8 +240,7 @@ struct AgentIslandView: View {
         rowDisplays: rowDisplays,
         workflowBadges: appStore.repositories.workflowRoleBadgesBySurfaceID,
         selectedSurfaceID: agentsStore.focusedSurfaceID,
-        showTabTitles: appStore.repositories.showActiveAgentTabTitles,
-        entryAction: ActiveAgentsFeature.Action.islandEntryTapped
+        showTabTitles: appStore.repositories.showActiveAgentTabTitles
       )
     }
     .frame(width: 420)

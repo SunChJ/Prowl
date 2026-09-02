@@ -5,28 +5,6 @@ import Testing
 @testable import supacode
 
 struct AgentIslandRosterContentTests {
-  @Test func islandContextRouterMarksProwlOwnedPresentationActions() {
-    let entryID = UUID()
-
-    #expect(
-      AgentIslandContextActionRouter.route(.handOffTapped(entryID))
-        == .islandHandOffTapped(entryID)
-    )
-    #expect(
-      AgentIslandContextActionRouter.route(.runWorkflowTapped(entryID, workflowKey: "review"))
-        == .islandRunWorkflowTapped(entryID, workflowKey: "review")
-    )
-  }
-
-  @Test func islandContextRouterPreservesActionsThatDoNotPresentProwlUI() {
-    let entryID = UUID()
-
-    #expect(
-      AgentIslandContextActionRouter.route(.markAsReadTapped(entryID))
-        == .markAsReadTapped(entryID)
-    )
-  }
-
   @Test func measuredContentUsesItsIntrinsicHeight() {
     let layout = AgentIslandRosterLayout.layout(
       entryCount: 4,

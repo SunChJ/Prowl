@@ -1,19 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-enum AgentIslandContextActionRouter {
-  static func route(_ action: ActiveAgentsFeature.Action) -> ActiveAgentsFeature.Action {
-    switch action {
-    case .handOffTapped(let id):
-      return .islandHandOffTapped(id)
-    case .runWorkflowTapped(let id, let workflowKey):
-      return .islandRunWorkflowTapped(id, workflowKey: workflowKey)
-    default:
-      return action
-    }
-  }
-}
-
 struct AgentIslandRosterLayout: Equatable {
   static let estimatedRowHeight: CGFloat = 50
   static let maximumViewportHeight: CGFloat = 360
@@ -41,7 +28,6 @@ struct AgentIslandRosterContent: View {
   let workflowBadges: [UUID: String]
   let selectedSurfaceID: UUID?
   let showTabTitles: Bool
-  let entryAction: (ActiveAgentEntry.ID) -> ActiveAgentsFeature.Action
   @State private var measuredContentHeight: CGFloat?
 
   var body: some View {
@@ -53,7 +39,7 @@ struct AgentIslandRosterContent: View {
       LazyVStack(spacing: 0) {
         ForEach(store.entries) { entry in
           Button {
-            store.send(entryAction(entry.id))
+            store.send(.island(.entryTapped(entry.id)))
           } label: {
             ActiveAgentRow(
               entry: entry,
@@ -69,7 +55,7 @@ struct AgentIslandRosterContent: View {
             ActiveAgentRowContextMenu(
               entry: entry,
               directory: rowDisplays[entry.id]?.directory,
-              send: { store.send(AgentIslandContextActionRouter.route($0)) }
+              send: { store.send(.island($0)) }
             )
           }
         }

@@ -52,9 +52,10 @@ struct ActiveAgentsFeature {
     case islandCollapseRoster
     case islandHoverChanged(Bool)
     case islandCarouselTick
-    case islandEntryTapped(ActiveAgentEntry.ID)
-    case islandHandOffTapped(ActiveAgentEntry.ID)
-    case islandRunWorkflowTapped(ActiveAgentEntry.ID, workflowKey: String)
+    /// A sidebar action raised from the island roster or attention cells. The reducer forwards
+    /// the wrapped action unchanged; when it presents Prowl UI (`surfacesProwl`) the roster
+    /// collapses first and `AppFeature` surfaces the main window before the action runs.
+    indirect case island(Action)
     case islandOpenProwlTapped
     case selectNextEntry
     case selectPreviousEntry
@@ -92,22 +93,19 @@ struct ActiveAgentsFeature {
           previousWorkingEntryIDs: previousWorkingEntryIDs
         )
 
-      case .entryTapped(let id), .handOffTapped(let id), .runWorkflowTapped(let id, _),
-        .islandEntryTapped(let id), .islandHandOffTapped(let id),
-        .islandRunWorkflowTapped(let id, _):
+      case .entryTapped(let id), .handOffTapped(let id), .runWorkflowTapped(let id, _):
         // Mirror the tapped surface into the focus anchor so the panel highlight and
         // keyboard navigation step from the just-selected agent immediately. The async
         // `focusChanged` event can't be relied on here: it is deduplicated per worktree
         // (`emitFocusChangedIfNeeded`), so re-focusing a worktree's previously focused
         // surface emits nothing and would leave the anchor stale.
         state.focusedSurfaceID = state.entries[id: id]?.surfaceID
-        switch action {
-        case .islandEntryTapped, .islandHandOffTapped, .islandRunWorkflowTapped:
-          state.isIslandRosterExpanded = false
-          return updateIslandCarousel(state)
-        default:
-          return .none
-        }
+        return .none
+
+      case .island(let action):
+        guard action.surfacesProwl else { return .send(action) }
+        state.isIslandRosterExpanded = false
+        return .merge(.send(action), updateIslandCarousel(state))
 
       case .markAsReadTapped:
         return .none
@@ -240,6 +238,19 @@ struct ActiveAgentsFeature {
 
   static func maximumPanelHeight(forContainerHeight height: Double) -> Double {
     max(minimumPanelHeight, min(maximumPanelHeight, height - reservedSidebarListHeight))
+  }
+}
+
+extension ActiveAgentsFeature.Action {
+  /// Actions that end in Prowl-owned UI: pane focus, the handoff HUD, or the workflow start
+  /// sheet. Raised from the island, these collapse the roster and surface the main window first.
+  var surfacesProwl: Bool {
+    switch self {
+    case .entryTapped, .handOffTapped, .runWorkflowTapped:
+      return true
+    default:
+      return false
+    }
   }
 }
 
