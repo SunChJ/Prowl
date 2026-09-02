@@ -45,26 +45,30 @@ rebuilt only when the ordered Working membership or one of those gates changes, 
 title refreshes never restart it. `islandWorkingEntries` and `islandAttentionEntries` are derived
 projections of `displayState`; nothing island-specific mutates or masks an entry.
 
-Island-originated actions (`islandEntryTapped`, `islandHandOffTapped`,
-`islandRunWorkflowTapped`, `islandOpenProwlTapped`) collapse the roster in the reducer and are
-intercepted by `AppFeature` (`supacode/Features/App/Reducer/AppFeature.swift`), which surfaces the
-main window through `AppLifecycleClient` and then forwards to the unchanged sidebar action so
-focus, the handoff HUD, and workflow start stay single-sourced. `agentIslandEnabled` is mirrored
-into the reducer from settings the same way `showActiveAgentTabTitles` already is.
+Actions raised from the island wrap the sidebar action they stand for: `island(Action)`. The
+reducer forwards the wrapped action unchanged and collapses the roster only when it presents
+Prowl UI (`Action.surfacesProwl`: pane focus, handoff HUD, workflow start); `AppFeature`
+(`supacode/Features/App/Reducer/AppFeature.swift`) intercepts the same case to surface the main
+window through `AppLifecycleClient` before the forwarded action runs, so focus and the HUD/sheet
+paths stay single-sourced. `islandOpenProwlTapped` only surfaces the window. `agentIslandEnabled`
+is mirrored into the reducer from settings the same way `showActiveAgentTabTitles` already is.
 
 `AgentIslandWindowController`
 (`supacode/Features/ActiveAgents/BusinessLogic/AgentIslandWindowController.swift`) owns one
 borderless, nonactivating `NSPanel` that cannot become key or main, sits one level above the menu
 bar, joins all Spaces and fullscreen applications, and hosts `AgentIslandView` scoped to the app
-store. Outside-click monitors and a low-frequency Escape key-state poll exist only while the
-roster is expanded. `supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` holds the
-pure geometry (`AgentIslandScreenLayout`: cutout rectangle from the screen's auxiliary menu-bar
-areas, display resolution order, panel frame) and `AgentIslandDisplayCatalog`, which keys screens
-by CoreGraphics display UUID and refreshes on screen-parameter changes.
+store. It observes the enabled setting and creates or tears down the panel accordingly, so a
+disabled island costs nothing at launch. Outside-click monitors and a low-frequency Escape
+key-state poll exist only while the roster is expanded.
+`supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` holds the pure geometry
+(`AgentIslandScreenLayout`: cutout rectangle from the screen's auxiliary menu-bar areas, display
+resolution order, panel frame); `AgentIslandDisplayCatalog` (`BusinessLogic/`) keys screens by
+CoreGraphics display UUID and refreshes on screen-parameter changes.
 
 The views under `supacode/Features/ActiveAgents/Views/` are island-owned: `AgentIslandView`
 (compact bar with equal wings around the physical cutout, attention collection, roster
-container), `AgentIslandIconCluster` (up to three runtime icons, recent non-Idle first and Idle
+container), `AgentIslandStateSummary` (the notched leading wing: per-state counts as
+state-colored symbols in attention order), `AgentIslandIconCluster` (up to three runtime icons, recent non-Idle first and Idle
 last, `+N` overflow, Core Animation state rings), `AgentIslandAttentionCollection` (one or two
 columns, three rows before scrolling), and `AgentIslandRosterContent` (composes the sidebar's
 `ActiveAgentRow`, content-sized up to a 360pt cap). Sharing with the sidebar is deliberately

@@ -23,12 +23,14 @@ stays visible across Spaces and over fullscreen applications and never becomes t
 
 | Active Agents state | Island behavior |
 |---|---|
-| **Working** | Compact, low-priority. The bar shows the most recently changed Working agent; with several, it rotates every four seconds and pauses while hovered or expanded. |
+| **Working** | Compact, low-priority. On a notched display the bar shows a count per state; on other displays it shows the most recently changed Working agent and, with several, rotates every four seconds, pausing while hovered or expanded. |
 | **Blocked** | A **Blocked** cell below the bar. Blocked cells sort before Done. |
 | **Done** | A **Done** cell while the entry is still unviewed in Active Agents. |
 | **Idle** | Listed in the expanded roster; may also appear as a quiet icon in the compact cluster. |
 
-The trailing edge of the bar shows up to three runtime icons: non-Idle agents first by recency,
+On a notched display the leading wing lists how many agents are in each state, in attention
+order (blocked, done, working, idle), each as a state-colored symbol and a number; states with no
+agents are left out. The trailing edge of the bar shows up to three runtime icons: non-Idle agents first by recency,
 Idle agents last, and a small `+N` for the rest. Idle icons have a static outline; Working,
 Blocked, and Done icons have a rotating orange, red, or blue ring. When no agent is Working, the
 bar shows a neutral agent count instead of a name.
@@ -48,8 +50,8 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
 - **The roster** lists every entry with the same rows, ordering, Workflow badges, and context menu
   as the [Active Agents panel](active-agents.md), including **Hand Off…** and **Run Workflow**.
   Clicking a row, or choosing one of those actions, brings Prowl forward first and then behaves
-  exactly as it does in the sidebar. The roster grows with its content up to `360pt`, then
-  scrolls.
+  exactly as it does in the sidebar. The roster is as wide as the bar above it and grows with its
+  content up to `360pt`, then scrolls.
 - **Open Prowl** in the roster header brings the main window forward without changing the
   selected agent.
 - **Click outside, type, or press `Esc`** to collapse the roster. While Prowl is frontmost the
