@@ -524,6 +524,48 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
+  @Test func removingLastEntryClearsHoverSoCarouselCanResume() async {
+    let clock = TestClock()
+    let lone = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
+    var state = ActiveAgentsFeature.State()
+    state.entries = [lone]
+    state.isIslandEnabled = true
+    state.islandCarouselEntryID = lone.id
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    } withDependencies: {
+      $0.continuousClock = clock
+    }
+
+    await store.send(.islandHoverChanged(true)) {
+      $0.isIslandHovered = true
+    }
+    // The compact island unmounts with its last entry, so no hover-exit is delivered.
+    await store.send(.agentEntryRemoved(lone.id)) {
+      $0.entries = []
+      $0.isIslandHovered = false
+      $0.islandCarouselEntryID = nil
+    }
+
+    let older = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    let newer = entry(id: UUID(2), state: .working, changedAt: Date(timeIntervalSince1970: 30))
+    await store.send(.agentEntryChanged(older, autoShowPanel: false)) {
+      $0.entries = [older]
+      $0.islandCarouselEntryID = older.id
+    }
+    await store.send(.agentEntryChanged(newer, autoShowPanel: false)) {
+      $0.entries = [older, newer]
+      $0.islandCarouselEntryID = newer.id
+    }
+    await clock.advance(by: .seconds(4))
+    await store.receive(.islandCarouselTick) {
+      $0.islandCarouselEntryID = older.id
+    }
+    await store.send(.islandEnabledChanged(false)) {
+      $0.isIslandEnabled = false
+    }
+  }
+
   @Test func sharedRowSubtitleAndHelpSwapPaneTitleAndBranchWhenEnabled() {
     let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .idle, changedAt: Date())
 

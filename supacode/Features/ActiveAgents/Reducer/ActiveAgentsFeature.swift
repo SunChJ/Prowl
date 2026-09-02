@@ -82,7 +82,10 @@ struct ActiveAgentsFeature {
         let previousWorkingEntryIDs = state.islandWorkingEntries.map(\.id)
         state.entries.remove(id: id)
         if state.entries.isEmpty {
+          // The compact island unmounts with its last entry, so SwiftUI never delivers the
+          // trailing hover-exit. A stale hover flag would keep the carousel paused forever.
           state.isIslandRosterExpanded = false
+          state.isIslandHovered = false
         }
         return updateIslandCarouselIfNeeded(
           &state,
