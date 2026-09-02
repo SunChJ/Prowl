@@ -14,6 +14,7 @@
 | 2026-09-01 | Removed custom secondary-island transitions and moved compact overflow to a plain trailing-lower counter while retaining three recent-first, Idle-last Agent icons. | [007-elastic-expansion-and-overflow.md](007-elastic-expansion-and-overflow.md) |
 | 2026-09-01 | Aligned attention copy with Active Agents, moved repository/worktree context into two trailing lines, and made the secondary roster content-sized with a `360pt` scrolling cap. | [006-sidebar-restoration-and-attention-collection.md](006-sidebar-restoration-and-attention-collection.md) |
 | 2026-09-01 | Made Agent Island opt-in and moved its controls into the existing Notifications settings page instead of adding a toolbar action or separate destination. | [000-plan.md](000-plan.md) |
+| 2026-09-02 | Isolated Agent Island from terminal rendering and focus by moving ring rotation to Core Animation, preventing the panel from becoming key, and scoping hidden content and event monitors to active island UI. | [008-render-and-focus-isolation.md](008-render-and-focus-isolation.md) |
 
 ## Outcome
 
@@ -57,11 +58,13 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   They render only the runtime glyph plus a state ring—never a lower-right badge. The compact
   cluster orders recent non-Idle entries before Idle and moves overflow into a trailing-lower
   plain `+N` label; the attention collection renders every Blocked or unviewed Done entry as its own cell.
-  `AgentIslandStateRing` owns the fluid non-Idle outline without leaking animation or styling into
-  other Active Agents surfaces.
+  `AgentIslandStateRingView` owns the fluid non-Idle outline as a Core Animation layer, without a
+  display-linked SwiftUI timeline or styling changes in other Active Agents surfaces.
 - `AgentIslandWindowController` owns one transparent nonactivating `NSPanel`. It anchors the top
   edge while content grows downward, joins all Spaces and fullscreen applications, and responds
-  to display changes and main-window movement without participating in normal window cycling.
+  to display changes and main-window movement without participating in normal window cycling. The
+  panel cannot become key, and its local/global event monitors exist only while the visible
+  secondary roster is expanded.
 - `AgentIslandScreenLayout` resolves a fixed CoreGraphics display UUID when connected, otherwise
   temporarily follows Automatic placement without erasing the saved selection. Automatic uses
   the Prowl window's display, then a built-in notched display, the main display, and finally the
@@ -76,7 +79,7 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 ## Verification
 
 - `make check` — passed: swift-format lint, strict SwiftLint, and project checks.
-- `make test` — passed: 2,951 app tests plus the 2-test secondary suite, zero failures.
+- `make test` — passed: 2,955 app tests plus the 2-test secondary suite, zero failures.
 - `make build-app` — passed: Debug build completed with zero errors and zero warnings.
 - Reducer tests cover recent-entry selection, four-second rotation, hover pause/restart,
   Blocked/Done priority, existing Done-to-Idle and Blocked-clear transitions, removal, expansion,
@@ -94,6 +97,10 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   coverage passes for the original Bagua indicator, island icon projection, and attention layout;
   the latter verifies narrow single-entry presentation, two-column multi-entry layout, and
   scrolling after three rows.
+- Isolation coverage verifies that the panel cannot become key, event monitors are limited to a
+  visible expanded roster, the compact panel does not retain the `420pt` roster width, and Core
+  Animation rotation stops for Idle and Reduce Motion. The PR changes no files under
+  `supacode/Infrastructure/Ghostty` or `supacode/Features/Terminal`.
 - Manual verification on an external MateView covered the floating pill, secondary roster,
   windowless persistence, **Open Prowl**, and entry-driven restoration and focus. The latest
   compact-only projection was checked with one and two Idle runtime icons plus two captured frames
@@ -103,13 +110,13 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 
 ## Verification limits
 
-The latest compact visual was checked on the external display. Built-in notch placement did not
-change and remains covered by the exact `NSScreen` geometry fixtures rather than another physical
-notch run. The attention-collection revision was not loaded by restarting the existing Debug
-process because that process was hosting an active Agent session; its geometry is covered by the
-targeted layout tests and clean Debug build. Stage Manager and cross-Space/fullscreen transitions
-were not toggled during the run; the panel's AppKit collection behavior is configured for those
-environments, but they remain candidates for release verification.
+The latest compact visual was checked on the external display before the render-isolation pass.
+The Core Animation ring replacement preserves the same geometry, state colors, and durations in
+code and passes the layer-lifecycle tests, but it has not received another in-app visual pass.
+Built-in notch placement did not change and remains covered by the exact `NSScreen` geometry
+fixtures rather than another physical notch run. Stage Manager and cross-Space/fullscreen
+transitions were not toggled during the run; the panel's AppKit collection behavior is configured
+for those environments, but they remain candidates for release verification.
 
 ## Deviations from plan
 

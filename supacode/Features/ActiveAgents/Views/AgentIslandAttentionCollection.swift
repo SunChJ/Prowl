@@ -69,22 +69,18 @@ struct AgentIslandAttentionCollection: View {
   let showTabTitles: Bool
   let onTap: (ActiveAgentEntry.ID) -> Void
 
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
   var body: some View {
     let layout = AgentIslandAttentionLayout.layout(entryCount: entries.count)
-    TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
-      ScrollView(.vertical) {
-        LazyVGrid(columns: columns(for: layout), spacing: AgentIslandAttentionLayout.spacing) {
-          ForEach(entries) { entry in
-            attentionCell(entry, animationDate: context.date)
-          }
+    ScrollView(.vertical) {
+      LazyVGrid(columns: columns(for: layout), spacing: AgentIslandAttentionLayout.spacing) {
+        ForEach(entries) { entry in
+          attentionCell(entry)
         }
       }
-      .scrollIndicators(.never)
-      .scrollDisabled(!layout.isScrollable)
-      .frame(height: layout.viewportHeight)
     }
+    .scrollIndicators(.never)
+    .scrollDisabled(!layout.isScrollable)
+    .frame(height: layout.viewportHeight)
     .padding(6)
     .frame(width: layout.width)
     .background(.black, in: RoundedRectangle(cornerRadius: 14))
@@ -103,10 +99,7 @@ struct AgentIslandAttentionCollection: View {
     )
   }
 
-  private func attentionCell(
-    _ entry: ActiveAgentEntry,
-    animationDate: Date
-  ) -> some View {
+  private func attentionCell(_ entry: ActiveAgentEntry) -> some View {
     let presentation = AgentIslandAttentionPresentation.presentation(
       for: entry,
       rowDisplay: rowDisplays[entry.id],
@@ -118,9 +111,7 @@ struct AgentIslandAttentionCollection: View {
       HStack(spacing: 7) {
         AgentIslandRuntimeIcon(
           entry: entry,
-          pointSize: 19,
-          animationDate: animationDate,
-          reduceMotion: reduceMotion
+          pointSize: 19
         )
         VStack(alignment: .leading, spacing: 1) {
           Text(presentation.agentName)

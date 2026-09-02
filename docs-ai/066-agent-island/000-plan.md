@@ -102,3 +102,7 @@ known name; if absent, placement temporarily follows Automatic and returns when 
 - Updated 2026-09-01: Agent Island is opt-in by default and its enable/display controls live in the
   existing Notifications settings page instead of adding a toolbar button or a separate settings
   destination.
+- Updated 2026-09-02: The island window is being isolated from terminal rendering and focus by
+  moving ring motion off SwiftUI's display-linked timeline, preventing the panel from becoming
+  key, and limiting hidden UI and event monitors — see
+  [008-render-and-focus-isolation.md](008-render-and-focus-isolation.md).

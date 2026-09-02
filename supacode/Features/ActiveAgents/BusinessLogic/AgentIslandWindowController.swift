@@ -2,9 +2,18 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-private final class AgentIslandPanel: NSPanel {
-  override var canBecomeKey: Bool { true }
+final class AgentIslandPanel: NSPanel {
+  override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
+}
+
+enum AgentIslandInteractionPolicy {
+  static func shouldInstallEventMonitors(
+    isVisible: Bool,
+    isRosterExpanded: Bool
+  ) -> Bool {
+    isVisible && isRosterExpanded
+  }
 }
 
 @MainActor
@@ -18,6 +27,7 @@ final class AgentIslandWindowController {
   private var localEventMonitor: Any?
   private var globalEventMonitor: Any?
   private var isVisible = false
+  private var isRosterExpanded = false
   private var displayPreference: AgentIslandDisplayPreference = .automatic
   private var contentSize = CGSize(width: 420, height: 40)
 
@@ -44,7 +54,7 @@ final class AgentIslandWindowController {
     panel.hidesOnDeactivate = false
     panel.isReleasedWhenClosed = false
     panel.isExcludedFromWindowsMenu = true
-    panel.becomesKeyOnlyIfNeeded = true
+    panel.becomesKeyOnlyIfNeeded = false
     panel.tabbingMode = .disallowed
     panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
     panel.collectionBehavior = [
@@ -59,13 +69,17 @@ final class AgentIslandWindowController {
       rootView: AgentIslandView(
         store: appStore,
         presentation: presentation
-      ) { [weak self] isVisible, preference, size in
-        self?.updatePresentation(isVisible: isVisible, preference: preference, size: size)
+      ) { [weak self] isVisible, isRosterExpanded, preference, size in
+        self?.updatePresentation(
+          isVisible: isVisible,
+          isRosterExpanded: isRosterExpanded,
+          preference: preference,
+          size: size
+        )
       }
     )
     self.panel = panel
     installObservers()
-    installEventMonitors()
     refreshPlacement()
   }
 
@@ -78,20 +92,22 @@ final class AgentIslandWindowController {
 
   private func updatePresentation(
     isVisible: Bool,
+    isRosterExpanded: Bool,
     preference: AgentIslandDisplayPreference,
     size: CGSize
   ) {
     self.isVisible = isVisible
+    self.isRosterExpanded = isRosterExpanded
     displayPreference = preference
     if size.width > 0, size.height > 0 {
       contentSize = size
     }
+    updateEventMonitors()
     refreshPlacement()
   }
 
   private func refreshPlacement() {
     guard let panel else { return }
-    displayCatalog.refresh()
     let mainWindowScreenID = displayCatalog.descriptor(for: mainProwlWindow?.screen)?.id
     let mainScreenID = displayCatalog.descriptor(for: NSScreen.main)?.id
     guard
@@ -163,6 +179,7 @@ final class AgentIslandWindowController {
   }
 
   private func installEventMonitors() {
+    guard localEventMonitor == nil, globalEventMonitor == nil else { return }
     localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [
       .leftMouseDown, .rightMouseDown, .keyDown,
     ]) {
@@ -199,7 +216,14 @@ final class AgentIslandWindowController {
     }
   }
 
-  private var isRosterExpanded: Bool {
-    appStore.repositories.activeAgents.isIslandRosterExpanded
+  private func updateEventMonitors() {
+    if AgentIslandInteractionPolicy.shouldInstallEventMonitors(
+      isVisible: isVisible,
+      isRosterExpanded: isRosterExpanded
+    ) {
+      installEventMonitors()
+    } else {
+      removeEventMonitors()
+    }
   }
 }

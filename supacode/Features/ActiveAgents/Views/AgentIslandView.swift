@@ -9,6 +9,25 @@ final class AgentIslandPresentationModel {
   var notchSize: CGSize?
 }
 
+struct AgentIslandRootLayout {
+  static let floatingCompactWidth: CGFloat = 300
+  static let rosterWidth: CGFloat = 420
+
+  static func width(
+    notchCompactWidth: CGFloat?,
+    isRosterExpanded: Bool,
+    attentionEntryCount: Int
+  ) -> CGFloat {
+    let compactWidth = notchCompactWidth ?? floatingCompactWidth
+    if isRosterExpanded {
+      return max(compactWidth, rosterWidth)
+    }
+    guard attentionEntryCount > 0 else { return compactWidth }
+    let attentionWidth = AgentIslandAttentionLayout.layout(entryCount: attentionEntryCount).width
+    return max(compactWidth, attentionWidth)
+  }
+}
+
 struct AgentIslandView: View {
   @Bindable private var appStore: StoreOf<AppFeature>
   @Bindable private var agentsStore: StoreOf<ActiveAgentsFeature>
@@ -16,13 +35,13 @@ struct AgentIslandView: View {
   @Shared(.repositoryAppearances) private var repositoryAppearances
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  let presentationChanged: (Bool, AgentIslandDisplayPreference, CGSize) -> Void
+  let presentationChanged: (Bool, Bool, AgentIslandDisplayPreference, CGSize) -> Void
   @State private var contentSize = CGSize(width: 420, height: 40)
 
   init(
     store: StoreOf<AppFeature>,
     presentation: AgentIslandPresentationModel,
-    presentationChanged: @escaping (Bool, AgentIslandDisplayPreference, CGSize) -> Void
+    presentationChanged: @escaping (Bool, Bool, AgentIslandDisplayPreference, CGSize) -> Void
   ) {
     appStore = store
     agentsStore = store.scope(
@@ -34,6 +53,35 @@ struct AgentIslandView: View {
   }
 
   var body: some View {
+    Group {
+      if isVisible {
+        islandContent
+      } else {
+        Color.clear
+          .frame(width: 1, height: 1)
+      }
+    }
+    .fixedSize(horizontal: false, vertical: true)
+    .onGeometryChange(for: CGSize.self) { proxy in
+      proxy.size
+    } action: { newSize in
+      guard isVisible else { return }
+      contentSize = newSize
+      publishPresentation(size: newSize)
+    }
+    .onChange(of: isVisible, initial: true) { _, _ in
+      publishPresentation()
+    }
+    .onChange(of: agentsStore.isIslandRosterExpanded, initial: true) { _, _ in
+      publishPresentation()
+    }
+    .onChange(of: appStore.settings.agentIslandDisplayPreference, initial: true) { _, _ in
+      publishPresentation()
+    }
+    .preferredColorScheme(.dark)
+  }
+
+  private var islandContent: some View {
     VStack(spacing: 6) {
       compactIsland
       if agentsStore.isIslandRosterExpanded {
@@ -48,20 +96,6 @@ struct AgentIslandView: View {
       }
     }
     .frame(width: rootWidth)
-    .fixedSize(horizontal: false, vertical: true)
-    .onGeometryChange(for: CGSize.self) { proxy in
-      proxy.size
-    } action: { newSize in
-      contentSize = newSize
-      publishPresentation(size: newSize)
-    }
-    .onChange(of: isVisible, initial: true) { _, _ in
-      publishPresentation()
-    }
-    .onChange(of: appStore.settings.agentIslandDisplayPreference, initial: true) { _, _ in
-      publishPresentation()
-    }
-    .preferredColorScheme(.dark)
   }
 
   private var compactIsland: some View {
@@ -254,7 +288,11 @@ struct AgentIslandView: View {
   }
 
   private var rootWidth: CGFloat {
-    notchLayout?.rootWidth ?? 420
+    AgentIslandRootLayout.width(
+      notchCompactWidth: notchLayout?.compactWidth,
+      isRosterExpanded: agentsStore.isIslandRosterExpanded,
+      attentionEntryCount: agentsStore.islandAttentionEntries.count
+    )
   }
 
   private var isVisible: Bool {
@@ -264,6 +302,7 @@ struct AgentIslandView: View {
   private func publishPresentation(size: CGSize? = nil) {
     presentationChanged(
       isVisible,
+      agentsStore.isIslandRosterExpanded,
       appStore.settings.agentIslandDisplayPreference,
       size ?? contentSize
     )

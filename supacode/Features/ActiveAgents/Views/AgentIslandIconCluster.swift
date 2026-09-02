@@ -1,3 +1,5 @@
+import AppKit
+import QuartzCore
 import SwiftUI
 
 /// A compact, island-owned projection of the real Active Agents roster.
@@ -17,31 +19,22 @@ struct AgentIslandIconCluster: View {
   }
 
   var body: some View {
-    TimelineView(
+    iconRow
+      .frame(width: 78, height: 27, alignment: .trailing)
       .animation(
-        minimumInterval: 1 / 30,
-        paused: reduceMotion || !hasAnimatedRing
+        reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.32),
+        value: projection
       )
-    ) { context in
-      iconRow(at: context.date)
-    }
-    .frame(width: 78, height: 27, alignment: .trailing)
-    .animation(
-      reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.32),
-      value: projection
-    )
-    .accessibilityHidden(true)
+      .accessibilityHidden(true)
   }
 
-  private func iconRow(at date: Date) -> some View {
+  private var iconRow: some View {
     ZStack(alignment: .bottomTrailing) {
       HStack(spacing: -4) {
         ForEach(projection.entries) { entry in
           AgentIslandRuntimeIcon(
             entry: entry,
-            pointSize: 21,
-            animationDate: date,
-            reduceMotion: reduceMotion
+            pointSize: 21
           )
           .transition(iconTransition)
         }
@@ -57,12 +50,6 @@ struct AgentIslandIconCluster: View {
           .offset(x: 2, y: 2)
           .transition(reduceMotion ? .opacity : .scale(scale: 0.6, anchor: .bottomTrailing))
       }
-    }
-  }
-
-  private var hasAnimatedRing: Bool {
-    projection.entries.contains {
-      AgentIslandRingPresentation.presentation(for: $0.displayState).animates
     }
   }
 
@@ -115,8 +102,7 @@ struct AgentIslandRingPresentation: Equatable {
 struct AgentIslandRuntimeIcon: View {
   let entry: ActiveAgentEntry
   let pointSize: CGFloat
-  let animationDate: Date
-  let reduceMotion: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     ZStack {
@@ -137,69 +123,171 @@ struct AgentIslandRuntimeIcon: View {
     .overlay {
       AgentIslandStateRing(
         state: entry.displayState,
-        animationDate: animationDate,
         reduceMotion: reduceMotion
       )
+      .allowsHitTesting(false)
     }
     .padding(2)
     .accessibilityHidden(true)
   }
 }
 
-private struct AgentIslandStateRing: View {
+private struct AgentIslandStateRing: NSViewRepresentable {
   let state: AgentDisplayState
-  let animationDate: Date
   let reduceMotion: Bool
 
-  var body: some View {
-    let presentation = AgentIslandRingPresentation.presentation(for: state)
-    ring(
-      angle: reduceMotion ? .zero : rotationAngle(at: animationDate, presentation: presentation),
-      presentation: presentation
-    )
+  func makeNSView(context: Context) -> AgentIslandStateRingView {
+    let view = AgentIslandStateRingView()
+    view.update(state: state, reduceMotion: reduceMotion)
+    return view
   }
 
-  private func ring(
-    angle: Angle,
-    presentation: AgentIslandRingPresentation
-  ) -> some View {
-    ZStack {
-      Circle()
-        .stroke(
-          state.foregroundStyle.opacity(presentation.animates ? 0.2 : 0.42),
-          lineWidth: presentation.animates ? 1.1 : 1
-        )
-      if presentation.animates {
-        Circle()
-          .stroke(
-            AngularGradient(
-              stops: [
-                .init(color: state.foregroundStyle.opacity(0.08), location: 0),
-                .init(color: state.foregroundStyle.opacity(0.34), location: 0.18),
-                .init(color: state.foregroundStyle, location: 0.36),
-                .init(color: state.foregroundStyle.opacity(0.28), location: 0.62),
-                .init(color: state.foregroundStyle.opacity(0.72), location: 0.82),
-                .init(color: state.foregroundStyle.opacity(0.08), location: 1),
-              ],
-              center: .center
-            ),
-            style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
-          )
-          .rotationEffect(angle)
-          .shadow(color: state.foregroundStyle.opacity(0.3), radius: 1.4)
-      }
+  func updateNSView(_ nsView: AgentIslandStateRingView, context: Context) {
+    nsView.update(state: state, reduceMotion: reduceMotion)
+  }
+}
+
+@MainActor
+final class AgentIslandStateRingView: NSView {
+  private static let rotationAnimationKey = "agent-island-ring-rotation"
+
+  private let baseRingLayer = CAShapeLayer()
+  private let animatedRingLayer = CAGradientLayer()
+  private let animatedRingMask = CAShapeLayer()
+  private var rotationDuration: TimeInterval?
+  private var currentState = AgentDisplayState.idle
+  private var currentReduceMotion = false
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    baseRingLayer.fillColor = NSColor.clear.cgColor
+    animatedRingLayer.type = .conic
+    animatedRingLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
+    animatedRingLayer.endPoint = CGPoint(x: 0.5, y: 0)
+    animatedRingLayer.mask = animatedRingMask
+    animatedRingMask.fillColor = NSColor.clear.cgColor
+    animatedRingMask.strokeColor = NSColor.white.cgColor
+    animatedRingMask.lineWidth = 2.2
+    animatedRingMask.lineCap = .round
+    layer?.addSublayer(baseRingLayer)
+    layer?.addSublayer(animatedRingLayer)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func layout() {
+    super.layout()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let ringBounds = bounds.insetBy(dx: 1.2, dy: 1.2)
+    let path = CGPath(ellipseIn: ringBounds, transform: nil)
+    baseRingLayer.frame = bounds
+    baseRingLayer.path = path
+    animatedRingLayer.frame = bounds
+    animatedRingMask.frame = bounds
+    animatedRingMask.path = path
+    CATransaction.commit()
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    updateContentsScale()
+  }
+
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    updateContentsScale()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    applyPresentation()
+  }
+
+  func update(state: AgentDisplayState, reduceMotion: Bool) {
+    currentState = state
+    currentReduceMotion = reduceMotion
+    applyPresentation()
+  }
+
+  var isRotationActive: Bool {
+    animatedRingLayer.animation(forKey: Self.rotationAnimationKey) != nil
+  }
+
+  private func applyPresentation() {
+    let presentation = AgentIslandRingPresentation.presentation(for: currentState)
+    let color = resolvedColor(for: currentState)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    baseRingLayer.strokeColor = color.withAlphaComponent(presentation.animates ? 0.2 : 0.42).cgColor
+    baseRingLayer.lineWidth = presentation.animates ? 1.1 : 1
+    animatedRingLayer.isHidden = !presentation.animates
+    animatedRingLayer.colors = Self.gradientAlphas.map {
+      color.withAlphaComponent($0).cgColor
+    }
+    animatedRingLayer.locations = Self.gradientLocations
+    animatedRingLayer.shadowColor = color.cgColor
+    animatedRingLayer.shadowOpacity = presentation.animates ? 0.3 : 0
+    animatedRingLayer.shadowRadius = 1.4
+    animatedRingLayer.shadowOffset = .zero
+    CATransaction.commit()
+
+    if presentation.animates, !currentReduceMotion {
+      startRotation(duration: presentation.rotationDuration)
+    } else {
+      stopRotation()
     }
   }
 
-  private func rotationAngle(
-    at date: Date,
-    presentation: AgentIslandRingPresentation
-  ) -> Angle {
-    guard presentation.animates else { return .zero }
-    let progress =
-      date.timeIntervalSinceReferenceDate
-      .truncatingRemainder(dividingBy: presentation.rotationDuration)
-      / presentation.rotationDuration
-    return .degrees(progress * 360)
+  private func startRotation(duration: TimeInterval) {
+    guard rotationDuration != duration || !isRotationActive else { return }
+    let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+    animation.fromValue = 0
+    animation.toValue = Double.pi * 2
+    animation.duration = duration
+    animation.repeatCount = .infinity
+    animation.isRemovedOnCompletion = false
+    animatedRingLayer.add(animation, forKey: Self.rotationAnimationKey)
+    rotationDuration = duration
   }
+
+  private func stopRotation() {
+    animatedRingLayer.removeAnimation(forKey: Self.rotationAnimationKey)
+    rotationDuration = nil
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    animatedRingLayer.transform = CATransform3DIdentity
+    CATransaction.commit()
+  }
+
+  private func updateContentsScale() {
+    let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+    baseRingLayer.contentsScale = scale
+    animatedRingLayer.contentsScale = scale
+    animatedRingMask.contentsScale = scale
+  }
+
+  private func resolvedColor(for state: AgentDisplayState) -> NSColor {
+    var color: NSColor?
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      color =
+        switch state {
+        case .working:
+          .systemOrange
+        case .blocked:
+          .systemRed
+        case .done:
+          .systemBlue
+        case .idle:
+          .secondaryLabelColor
+        }
+    }
+    return color ?? .secondaryLabelColor
+  }
+
+  private static let gradientAlphas: [CGFloat] = [0.08, 0.34, 1, 0.28, 0.72, 0.08]
+  private static let gradientLocations: [NSNumber] = [0, 0.18, 0.36, 0.62, 0.82, 1]
 }
