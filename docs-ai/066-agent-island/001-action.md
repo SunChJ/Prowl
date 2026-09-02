@@ -84,8 +84,10 @@ Key files:
   on this branch; the panel's collection behavior is configured for them but unverified.
 - The compact bar is `max(40, cutout + 8)`pt tall, so it overhangs a 32pt notch by 8pt; aligning
   it to the cutout is planned.
-- While the roster is expanded, the local monitor swallows Escape from Prowl's own key window and
-  the key-state poll fires a second collapse; dropping the local interception is planned.
+- While Prowl is frontmost, the first keystroke after expanding the roster collapses it; Escape
+  is consumed by the island, any other key passes through. In another application only the
+  key-state poll runs, so Escape collapses the roster and still reaches that application. The
+  asymmetry is a known limitation, not a planned change (2026-09-02).
 - `AgentIslandWindowController.start()` creates the panel and observers at launch regardless of
   the setting; starting it only when enabled would tighten the opt-in boundary.
 - `AgentIslandNotchLayout.rootWidth` has no callers.

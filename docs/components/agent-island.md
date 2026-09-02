@@ -51,8 +51,10 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
   scrolls.
 - **Open Prowl** in the roster header brings the main window forward without changing the
   selected agent.
-- **Click outside or press `Esc`** to collapse the roster, including while another application is
-  active. Collapsing never marks an entry as handled.
+- **Click outside, type, or press `Esc`** to collapse the roster. While Prowl is frontmost the
+  first keystroke after expanding collapses it: `Esc` is taken by the island, any other key is
+  passed on to Prowl as usual. In another application `Esc` also collapses the roster but still
+  reaches that application. Collapsing never marks an entry as handled.
 
 ## Settings
 
