@@ -14,8 +14,9 @@ track acknowledgement on its own: every label and transition comes from the same
 `Blocked`, `Done`, and `Idle` entries the sidebar panel shows.
 
 The island is off by default. When enabled it appears whenever the roster has at least one
-entry. On a notched display it merges with the top edge, with content in two wings on either side
-of the camera cutout; on other displays it is a centered floating pill below the menu bar. It
+entry. On a notched display it merges with the top edge, exactly as tall as the menu bar, with
+content in two wings on either side of the camera cutout; on other displays it is a centered
+floating pill below the menu bar. It
 stays visible across Spaces and over fullscreen applications and never becomes the active window.
 
 ## Presentation

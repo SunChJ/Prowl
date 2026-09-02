@@ -97,10 +97,17 @@ struct AgentIslandScreenTests {
     let layout = AgentIslandNotchLayout(cutoutSize: CGSize(width: 185, height: 32))
 
     #expect(layout.compactWidth == 425)
-    #expect(layout.compactHeight == 40)
+    #expect(layout.compactHeight == 32)
     #expect(layout.wingWidth == 120)
     #expect(layout.rootWidth == 425)
     #expect((layout.wingWidth * 2) + layout.cutoutSize.width == layout.compactWidth)
+  }
+
+  @Test func notchedCompactHeightFollowsTheCutoutWithAFloorForTheIconCluster() {
+    // "More Space" scaling reports a shorter inset; "Larger Text" a taller one. Both stay flush.
+    #expect(AgentIslandNotchLayout(cutoutSize: CGSize(width: 165, height: 27)).compactHeight == 28)
+    #expect(AgentIslandNotchLayout(cutoutSize: CGSize(width: 185, height: 32)).compactHeight == 32)
+    #expect(AgentIslandNotchLayout(cutoutSize: CGSize(width: 208, height: 36)).compactHeight == 36)
   }
 
   @Test func floatingPillUsesVisibleTopAndSupportsNegativeCoordinates() {

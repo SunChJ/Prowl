@@ -15,9 +15,10 @@ struct AgentIslandScreenDescriptor: Equatable, Identifiable {
 
 struct AgentIslandNotchLayout: Equatable {
   private static let minimumCompactWidth: CGFloat = 360
-  private static let minimumCompactHeight: CGFloat = 40
+  /// The compact bar matches the cutout height so it ends flush with the menu bar. The floor
+  /// only guards the 27pt icon cluster against an unusually short safe-area inset.
+  private static let minimumCompactHeight: CGFloat = 28
   private static let minimumWingWidth: CGFloat = 120
-  private static let bottomExtension: CGFloat = 8
 
   let cutoutSize: CGSize
   let compactWidth: CGFloat
@@ -35,7 +36,7 @@ struct AgentIslandNotchLayout: Equatable {
     )
     self.cutoutSize = cutoutSize
     self.compactWidth = compactWidth
-    compactHeight = max(Self.minimumCompactHeight, cutoutSize.height + Self.bottomExtension)
+    compactHeight = max(Self.minimumCompactHeight, cutoutSize.height)
     wingWidth = (compactWidth - cutoutSize.width) / 2
   }
 
