@@ -68,6 +68,22 @@ struct AgentIslandAttentionCollectionTests {
     #expect(presentation.subtitle == "Implementation")
   }
 
+  @Test func presentationUsesTheSharedWorkflowBadgeBeforeBranchOrTabTitle() {
+    let presentation = AgentIslandAttentionPresentation.presentation(
+      for: entry(state: .blocked, paneTitle: "Implementation"),
+      rowDisplay: ActiveAgentRowDisplay(
+        repositoryName: "Prowl",
+        branchName: "feature/island",
+        color: nil,
+        directory: nil
+      ),
+      showTabTitles: true,
+      workflowBadge: "reviewer"
+    )
+
+    #expect(presentation.subtitle == "reviewer")
+  }
+
   private func entry(state: AgentDisplayState, paneTitle: String) -> ActiveAgentEntry {
     let id = UUID()
     return ActiveAgentEntry(

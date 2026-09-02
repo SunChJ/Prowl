@@ -459,6 +459,56 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
+  @Test func islandContextActionsCollapseRosterAndMoveFocusAnchor() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandHandOffTapped(UUID(1))) {
+      $0.isIslandRosterExpanded = false
+      $0.focusedSurfaceID = UUID(1)
+    }
+    await store.send(.islandToggleRoster) {
+      $0.isIslandRosterExpanded = true
+    }
+    await store.send(.islandRunWorkflowTapped(UUID(2), workflowKey: "review")) {
+      $0.isIslandRosterExpanded = false
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
+  @Test func islandSelectionRestartsCarouselAfterRosterCollapses() async {
+    let clock = TestClock()
+    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
+    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    var state = ActiveAgentsFeature.State()
+    state.entries = [older, newer]
+    state.isIslandEnabled = true
+    state.isIslandRosterExpanded = true
+    state.islandCarouselEntryID = newer.id
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    } withDependencies: {
+      $0.continuousClock = clock
+    }
+
+    await store.send(.islandEntryTapped(newer.id)) {
+      $0.isIslandRosterExpanded = false
+      $0.focusedSurfaceID = newer.surfaceID
+    }
+    await clock.advance(by: .seconds(4))
+    await store.receive(.islandCarouselTick) {
+      $0.islandCarouselEntryID = older.id
+    }
+    await store.send(.islandEnabledChanged(false)) {
+      $0.isIslandEnabled = false
+      $0.isIslandRosterExpanded = false
+    }
+  }
+
   @Test func removingLastEntryCollapsesIslandRoster() async {
     let agent = entry(id: UUID(0), state: .idle, changedAt: Date(timeIntervalSince1970: 10))
     var state = ActiveAgentsFeature.State()

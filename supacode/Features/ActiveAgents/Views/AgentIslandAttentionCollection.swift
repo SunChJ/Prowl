@@ -46,7 +46,8 @@ struct AgentIslandAttentionPresentation: Equatable {
   static func presentation(
     for entry: ActiveAgentEntry,
     rowDisplay: ActiveAgentRowDisplay?,
-    showTabTitles: Bool
+    showTabTitles: Bool,
+    workflowBadge: String? = nil
   ) -> Self {
     let repositoryName = rowDisplay?.repositoryName ?? entry.worktreeName
     let branchName = rowDisplay?.branchName ?? entry.worktreeName
@@ -57,7 +58,8 @@ struct AgentIslandAttentionPresentation: Equatable {
       subtitle: ActiveAgentRowPresentation.subtitle(
         for: entry,
         branchName: branchName,
-        showTabTitles: showTabTitles
+        showTabTitles: showTabTitles,
+        workflowBadge: workflowBadge
       )
     )
   }
@@ -66,6 +68,7 @@ struct AgentIslandAttentionPresentation: Equatable {
 struct AgentIslandAttentionCollection: View {
   let entries: [ActiveAgentEntry]
   let rowDisplays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay]
+  let workflowBadges: [UUID: String]
   let showTabTitles: Bool
   let onTap: (ActiveAgentEntry.ID) -> Void
 
@@ -103,7 +106,8 @@ struct AgentIslandAttentionCollection: View {
     let presentation = AgentIslandAttentionPresentation.presentation(
       for: entry,
       rowDisplay: rowDisplays[entry.id],
-      showTabTitles: showTabTitles
+      showTabTitles: showTabTitles,
+      workflowBadge: workflowBadges[entry.surfaceID]
     )
     return Button {
       onTap(entry.id)

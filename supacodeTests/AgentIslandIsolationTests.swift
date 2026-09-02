@@ -40,6 +40,32 @@ struct AgentIslandIsolationTests {
       ))
   }
 
+  @Test func escapeTrackerReportsOnlyNewKeyDownEdges() {
+    var tracker = AgentIslandEscapeKeyTracker(isPressed: false)
+    let initialRelease = tracker.observe(isPressed: false)
+    let firstPress = tracker.observe(isPressed: true)
+    let heldPress = tracker.observe(isPressed: true)
+    let release = tracker.observe(isPressed: false)
+    let secondPress = tracker.observe(isPressed: true)
+
+    #expect(!initialRelease)
+    #expect(firstPress)
+    #expect(!heldPress)
+    #expect(!release)
+    #expect(secondPress)
+  }
+
+  @Test func escapeTrackerDoesNotTreatAnAlreadyHeldKeyAsANewPress() {
+    var tracker = AgentIslandEscapeKeyTracker(isPressed: true)
+    let heldPress = tracker.observe(isPressed: true)
+    let release = tracker.observe(isPressed: false)
+    let nextPress = tracker.observe(isPressed: true)
+
+    #expect(!heldPress)
+    #expect(!release)
+    #expect(nextPress)
+  }
+
   @Test func compactPanelDoesNotRetainExpandedRosterWidth() {
     #expect(
       AgentIslandRootLayout.width(

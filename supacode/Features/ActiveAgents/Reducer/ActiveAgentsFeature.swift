@@ -53,6 +53,8 @@ struct ActiveAgentsFeature {
     case islandHoverChanged(Bool)
     case islandCarouselTick
     case islandEntryTapped(ActiveAgentEntry.ID)
+    case islandHandOffTapped(ActiveAgentEntry.ID)
+    case islandRunWorkflowTapped(ActiveAgentEntry.ID, workflowKey: String)
     case islandOpenProwlTapped
     case selectNextEntry
     case selectPreviousEntry
@@ -88,17 +90,21 @@ struct ActiveAgentsFeature {
         )
 
       case .entryTapped(let id), .handOffTapped(let id), .runWorkflowTapped(let id, _),
-        .islandEntryTapped(let id):
+        .islandEntryTapped(let id), .islandHandOffTapped(let id),
+        .islandRunWorkflowTapped(let id, _):
         // Mirror the tapped surface into the focus anchor so the panel highlight and
         // keyboard navigation step from the just-selected agent immediately. The async
         // `focusChanged` event can't be relied on here: it is deduplicated per worktree
         // (`emitFocusChangedIfNeeded`), so re-focusing a worktree's previously focused
         // surface emits nothing and would leave the anchor stale.
         state.focusedSurfaceID = state.entries[id: id]?.surfaceID
-        if case .islandEntryTapped = action {
+        switch action {
+        case .islandEntryTapped, .islandHandOffTapped, .islandRunWorkflowTapped:
           state.isIslandRosterExpanded = false
+          return updateIslandCarousel(state)
+        default:
+          return .none
         }
-        return .none
 
       case .markAsReadTapped:
         return .none
@@ -136,7 +142,7 @@ struct ActiveAgentsFeature {
 
       case .islandOpenProwlTapped:
         state.isIslandRosterExpanded = false
-        return .none
+        return updateIslandCarousel(state)
 
       case .selectNextEntry:
         return navigate(&state, direction: .next)

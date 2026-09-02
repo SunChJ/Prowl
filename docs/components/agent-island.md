@@ -43,7 +43,8 @@ stack summary. A single entry uses a narrow one-column surface; multiple entries
 with up to three visible rows before vertical scrolling. Each cell retains the existing
 Blocked-before-Done, then recency ordering. The Agent name and shared `Blocked` or `Done` state
 appear on the left, while the same repository and branch/tab subtitle used by Active Agents appear
-as two trailing lines. These callouts cannot be dismissed independently: Blocked clears only when
+as two trailing lines. A live Workflow role badge takes the subtitle position just as it does in
+Active Agents and the expanded roster. These callouts cannot be dismissed independently: Blocked clears only when
 the agent leaves that state, Done clears when existing seen handling changes it to Idle, and removed
 Active Agents entries disappear automatically.
 
@@ -60,11 +61,13 @@ compact island shows a neutral agent count so the roster remains reachable.
   role badges, and the shared context menu, including **Run Workflow**. Clicking a row first
   restores Prowl, then uses the panel's existing exact-focus path. Its viewport tracks the rows'
   measured content height and caps at `360pt`, enabling scrolling only after the content exceeds
-  that limit.
+  that limit. Choosing **Hand Off…** or **Run Workflow** from an island row also restores Prowl
+  before presenting the existing HUD or sheet.
 - Click **Open Prowl** in the roster header to restore and activate the current Prowl main
   window without changing the selected agent.
-- Click outside the roster or press `Esc` to collapse it. This does not mark Blocked or Done
-  entries as handled.
+- Click outside the roster or press `Esc` to collapse it, including while another application
+  remains active. This does not mark Blocked or Done entries as handled or make the island panel
+  a key window.
 
 The secondary roster appears directly below the compact island without a custom movement, scale,
 fade, or spring transition.
@@ -80,6 +83,8 @@ Automatic follows the display containing Prowl's main window. With no main windo
 prefers a built-in notched display, then the macOS main display, then the first available
 display. A fixed display is stored by CoreGraphics display UUID. If it disconnects, placement
 temporarily uses Automatic without erasing the choice, and returns when that UUID reconnects.
+Screen-parameter changes refresh the connected-display catalog before the island frame is resolved,
+so hot-plug placement does not depend on notification-observer ordering.
 
 With Reduce Motion enabled, compact carousel changes use fades and projected Agent outlines retain
 their state colors without continuous rotation. Secondary-island expansion is static for everyone.

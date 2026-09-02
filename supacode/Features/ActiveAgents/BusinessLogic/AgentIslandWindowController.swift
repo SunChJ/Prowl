@@ -16,6 +16,19 @@ enum AgentIslandInteractionPolicy {
   }
 }
 
+struct AgentIslandEscapeKeyTracker {
+  private var wasPressed: Bool
+
+  init(isPressed: Bool = false) {
+    wasPressed = isPressed
+  }
+
+  mutating func observe(isPressed: Bool) -> Bool {
+    defer { wasPressed = isPressed }
+    return isPressed && !wasPressed
+  }
+}
+
 @MainActor
 @Observable
 final class AgentIslandWindowController {
@@ -26,6 +39,8 @@ final class AgentIslandWindowController {
   private var observers: [NSObjectProtocol] = []
   private var localEventMonitor: Any?
   private var globalEventMonitor: Any?
+  private var escapePollTimer: Timer?
+  private var escapeKeyTracker = AgentIslandEscapeKeyTracker()
   private var isVisible = false
   private var isRosterExpanded = false
   private var displayPreference: AgentIslandDisplayPreference = .automatic
@@ -141,14 +156,20 @@ final class AgentIslandWindowController {
 
   private func installObservers() {
     observe(NSApplication.didChangeScreenParametersNotification, object: nil) { [weak self] _ in
-      self?.refreshPlacement()
+      guard let self else { return }
+      self.displayCatalog.refresh()
+      self.refreshPlacement()
     }
     observe(NSWindow.didMoveNotification, object: nil) { [weak self] windowIdentifier in
-      guard let self, windowIdentifier == self.mainProwlWindow.map(ObjectIdentifier.init) else { return }
+      guard let self, windowIdentifier == self.mainProwlWindow.map(ObjectIdentifier.init) else {
+        return
+      }
       self.refreshPlacement()
     }
     observe(NSWindow.didChangeScreenNotification, object: nil) { [weak self] windowIdentifier in
-      guard let self, windowIdentifier == self.mainProwlWindow.map(ObjectIdentifier.init) else { return }
+      guard let self, windowIdentifier == self.mainProwlWindow.map(ObjectIdentifier.init) else {
+        return
+      }
       self.refreshPlacement()
     }
   }
@@ -203,6 +224,7 @@ final class AgentIslandWindowController {
         self.appStore.send(.repositories(.activeAgents(.islandCollapseRoster)))
       }
     }
+    startEscapePolling()
   }
 
   private func removeEventMonitors() {
@@ -214,6 +236,31 @@ final class AgentIslandWindowController {
       NSEvent.removeMonitor(globalEventMonitor)
       self.globalEventMonitor = nil
     }
+    escapePollTimer?.invalidate()
+    escapePollTimer = nil
+  }
+
+  private func startEscapePolling() {
+    guard escapePollTimer == nil else { return }
+    escapeKeyTracker = AgentIslandEscapeKeyTracker(isPressed: Self.isEscapePressed)
+    let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated {
+        self?.pollEscapeKey()
+      }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    escapePollTimer = timer
+  }
+
+  private func pollEscapeKey() {
+    guard isRosterExpanded else { return }
+    if escapeKeyTracker.observe(isPressed: Self.isEscapePressed) {
+      appStore.send(.repositories(.activeAgents(.islandCollapseRoster)))
+    }
+  }
+
+  private static var isEscapePressed: Bool {
+    CGEventSource.keyState(.combinedSessionState, key: 53)
   }
 
   private func updateEventMonitors() {

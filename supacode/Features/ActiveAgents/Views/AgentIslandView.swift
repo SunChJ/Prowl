@@ -90,6 +90,7 @@ struct AgentIslandView: View {
         AgentIslandAttentionCollection(
           entries: agentsStore.islandAttentionEntries,
           rowDisplays: rowDisplays,
+          workflowBadges: appStore.repositories.workflowRoleBadgesBySurfaceID,
           showTabTitles: appStore.repositories.showActiveAgentTabTitles,
           onTap: { agentsStore.send(.islandEntryTapped($0)) }
         )

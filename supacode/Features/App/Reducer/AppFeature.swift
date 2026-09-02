@@ -1050,6 +1050,18 @@ struct AppFeature {
         _ = appLifecycleClient.surfaceMainWindow()
         return .send(.repositories(.activeAgents(.entryTapped(entryID))))
 
+      case .repositories(.activeAgents(.islandHandOffTapped(let entryID))):
+        _ = appLifecycleClient.surfaceMainWindow()
+        return .send(.repositories(.activeAgents(.handOffTapped(entryID))))
+
+      case .repositories(
+        .activeAgents(.islandRunWorkflowTapped(let entryID, let workflowKey))
+      ):
+        _ = appLifecycleClient.surfaceMainWindow()
+        return .send(
+          .repositories(.activeAgents(.runWorkflowTapped(entryID, workflowKey: workflowKey)))
+        )
+
       case .repositories(.activeAgents(.islandOpenProwlTapped)):
         return .run { @MainActor _ in
           _ = appLifecycleClient.surfaceMainWindow()

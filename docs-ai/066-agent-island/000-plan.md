@@ -109,3 +109,7 @@ known name; if absent, placement temporarily follows Automatic and returns when 
 - Updated 2026-09-02: Title-only entry refreshes must preserve the live carousel timer, and the
   island roster now shares current Workflow badges and context-menu behavior with Active Agents —
   see [009-carousel-stability-and-workflow-parity.md](009-carousel-stability-and-workflow-parity.md).
+- Updated 2026-09-02: Nonactivating roster Escape handling, island-originated context actions,
+  strong-alert Workflow badges, and synchronous display-catalog refresh close the remaining
+  interaction and hot-plug gaps — see
+  [010-nonactivating-interaction-and-display-refresh.md](010-nonactivating-interaction-and-display-refresh.md).

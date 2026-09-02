@@ -15,6 +15,7 @@
 | 2026-09-01 | Aligned attention copy with Active Agents, moved repository/worktree context into two trailing lines, and made the secondary roster content-sized with a `360pt` scrolling cap. | [006-sidebar-restoration-and-attention-collection.md](006-sidebar-restoration-and-attention-collection.md) |
 | 2026-09-01 | Made Agent Island opt-in and moved its controls into the existing Notifications settings page instead of adding a toolbar action or separate destination. | [000-plan.md](000-plan.md) |
 | 2026-09-02 | Isolated Agent Island from terminal rendering and focus by moving ring rotation to Core Animation, preventing the panel from becoming key, and scoping hidden content and event monitors to active island UI. | [008-render-and-focus-isolation.md](008-render-and-focus-isolation.md) |
+| 2026-09-02 | Closed nonactivating Escape, island context-action surfacing, attention Workflow badge, carousel resume, and display hot-plug ordering gaps. | [010-nonactivating-interaction-and-display-refresh.md](010-nonactivating-interaction-and-display-refresh.md) |
 
 ## Outcome
 
@@ -45,7 +46,9 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - Clicking an island entry first surfaces the main Prowl window and then dispatches the existing
   Active Agents selection action, preserving the exact worktree, tab, pane, plain-folder, and
   Canvas focus behavior. **Open Prowl** surfaces the current main window without changing the
-  selected entry. Outside click and Escape only collapse the secondary island.
+  selected entry. Island-originated **Hand Off…** and **Run Workflow** actions also surface Prowl
+  before forwarding to their unchanged shared actions. Outside click and Escape only collapse the
+  secondary island, including while another application remains active.
 
 ## Implementation
 
@@ -71,6 +74,12 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   first connected display. On a notched screen it derives the physical cutout from
   `auxiliaryTopLeftArea` and `auxiliaryTopRightArea`, aligns the panel to its center, and reserves
   the exact cutout width between equal compact-content wings.
+- The Blocked/Done collection passes the current Workflow role badge through the same subtitle
+  resolver as Active Agents and the expanded roster.
+- The expanded roster keeps its non-key panel and local/global mouse monitors. A low-frequency
+  combined-session Escape key-state poll detects only new key-down edges while expanded, avoiding
+  a global keyboard event monitor and its permission/focus implications. Screen-parameter handling
+  refreshes the display catalog synchronously before recomputing the panel frame.
 - Settings → Notifications contains an **Agent Island** section, disabled by default, with
   Automatic or fixed-display placement. Existing settings JSON without the field decodes to off.
 - Reduce Motion replaces carousel, icon-replacement, and fluid-ring motion with static presentation
@@ -79,8 +88,11 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 ## Verification
 
 - `make check` — passed: swift-format lint, strict SwiftLint, and project checks.
-- `make test` — passed: 2,955 app tests plus the 2-test secondary suite, zero failures.
+- `make test` — passed: 2,998 app tests plus the 2-test secondary suite, zero failures.
 - `make build-app` — passed: Debug build completed with zero errors and zero warnings.
+- The 54-test focused Agent Island/App group passes, including Escape edge detection, context-menu
+  routing, Prowl-before-action forwarding, Workflow badge projection, carousel resume after roster
+  actions, and the continuous title-refresh checks at four and eight seconds.
 - Reducer tests cover recent-entry selection, four-second rotation, hover pause/restart,
   Blocked/Done priority, existing Done-to-Idle and Blocked-clear transitions, removal, expansion,
   collapse, and entry selection.
@@ -98,8 +110,9 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
   the latter verifies narrow single-entry presentation, two-column multi-entry layout, and
   scrolling after three rows.
 - Isolation coverage verifies that the panel cannot become key, event monitors are limited to a
-  visible expanded roster, the compact panel does not retain the `420pt` roster width, and Core
-  Animation rotation stops for Idle and Reduce Motion. The PR changes no files under
+  visible expanded roster, combined-session Escape detection fires once per key-down edge, the
+  compact panel does not retain the `420pt` roster width, and Core Animation rotation stops for
+  Idle and Reduce Motion. The PR changes no files under
   `supacode/Infrastructure/Ghostty` or `supacode/Features/Terminal`.
 - Manual verification on an external MateView covered the floating pill, secondary roster,
   windowless persistence, **Open Prowl**, and entry-driven restoration and focus. The latest

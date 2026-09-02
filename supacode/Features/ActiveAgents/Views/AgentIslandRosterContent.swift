@@ -1,6 +1,19 @@
 import ComposableArchitecture
 import SwiftUI
 
+enum AgentIslandContextActionRouter {
+  static func route(_ action: ActiveAgentsFeature.Action) -> ActiveAgentsFeature.Action {
+    switch action {
+    case .handOffTapped(let id):
+      return .islandHandOffTapped(id)
+    case .runWorkflowTapped(let id, let workflowKey):
+      return .islandRunWorkflowTapped(id, workflowKey: workflowKey)
+    default:
+      return action
+    }
+  }
+}
+
 struct AgentIslandRosterLayout: Equatable {
   static let estimatedRowHeight: CGFloat = 50
   static let maximumViewportHeight: CGFloat = 360
@@ -56,7 +69,7 @@ struct AgentIslandRosterContent: View {
             ActiveAgentRowContextMenu(
               entry: entry,
               directory: rowDisplays[entry.id]?.directory,
-              send: { store.send($0) }
+              send: { store.send(AgentIslandContextActionRouter.route($0)) }
             )
           }
         }

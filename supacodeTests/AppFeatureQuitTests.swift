@@ -80,6 +80,54 @@ struct AppFeatureQuitTests {
     #expect(surfaced.value == 1)
   }
 
+  @Test(.dependencies) func agentIslandHandOffSurfacesProwlBeforeForwardingSharedAction() async {
+    let entryID = UUID()
+    var state = AppFeature.State()
+    state.repositories.activeAgents.isIslandRosterExpanded = true
+    let surfaced = LockIsolated(0)
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    } withDependencies: {
+      $0.appLifecycleClient.surfaceMainWindow = {
+        surfaced.withValue { $0 += 1 }
+        return true
+      }
+    }
+
+    await store.send(.repositories(.activeAgents(.islandHandOffTapped(entryID)))) {
+      $0.repositories.activeAgents.isIslandRosterExpanded = false
+    }
+    await store.receive(\.repositories.activeAgents.handOffTapped, entryID)
+
+    #expect(surfaced.value == 1)
+  }
+
+  @Test(.dependencies) func agentIslandWorkflowSurfacesProwlBeforeForwardingSharedAction() async {
+    let entryID = UUID()
+    var state = AppFeature.State()
+    state.repositories.activeAgents.isIslandRosterExpanded = true
+    let surfaced = LockIsolated(0)
+    let store = TestStore(initialState: state) {
+      AppFeature()
+    } withDependencies: {
+      $0.appLifecycleClient.surfaceMainWindow = {
+        surfaced.withValue { $0 += 1 }
+        return true
+      }
+    }
+
+    await store.send(
+      .repositories(
+        .activeAgents(.islandRunWorkflowTapped(entryID, workflowKey: "review"))
+      )
+    ) {
+      $0.repositories.activeAgents.isIslandRosterExpanded = false
+    }
+    await store.receive(\.repositories.activeAgents.runWorkflowTapped)
+
+    #expect(surfaced.value == 1)
+  }
+
   @Test(.dependencies) func requestQuitWithConfirmationSurfacesMainWindowAndShowsAlert() async {
     var settings = SettingsFeature.State()
     settings.confirmBeforeQuit = true
