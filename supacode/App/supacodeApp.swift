@@ -57,7 +57,7 @@ final class SupacodeAppDelegate: NSObject, NSApplicationDelegate {
     ])
     AgentProfileSeeder.seedIfNeeded()
     Task { await AgentRuntimeAvailabilityProbe.refresh() }
-    agentIslandWindowController?.start()
+    agentIslandWindowController?.activate()
     appStore?.send(.appLaunched)
   }
 

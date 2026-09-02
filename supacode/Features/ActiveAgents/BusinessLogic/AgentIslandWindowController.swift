@@ -54,6 +54,36 @@ final class AgentIslandWindowController {
     self.displayCatalog = displayCatalog
   }
 
+  /// Runs the panel only while the setting is on, re-evaluating whenever it changes.
+  func activate() {
+    refreshLifecycle()
+    observeEnabledSetting()
+  }
+
+  var isRunning: Bool { panel != nil }
+
+  /// The synchronous half of `activate()`, shared by the observer and by tests.
+  func refreshLifecycle() {
+    if appStore.settings.agentIslandEnabled {
+      start()
+    } else {
+      stop()
+    }
+  }
+
+  private func observeEnabledSetting() {
+    withObservationTracking {
+      _ = appStore.settings.agentIslandEnabled
+    } onChange: { [weak self] in
+      // `onChange` fires before the new value lands; hop once so the read below sees it.
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.refreshLifecycle()
+        self.observeEnabledSetting()
+      }
+    }
+  }
+
   func start() {
     guard panel == nil else { return }
     let panel = AgentIslandPanel(

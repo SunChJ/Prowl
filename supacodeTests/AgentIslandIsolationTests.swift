@@ -1,10 +1,32 @@
 import AppKit
+import ComposableArchitecture
+import DependenciesTestSupport
 import Testing
 
 @testable import supacode
 
 @MainActor
 struct AgentIslandIsolationTests {
+  @Test(.dependencies) func panelRunsOnlyWhileTheSettingIsEnabled() {
+    let store: StoreOf<AppFeature> = Store(initialState: AppFeature.State()) {
+      Scope(state: \.settings, action: \.settings) {
+        BindingReducer()
+      }
+    }
+    let controller = AgentIslandWindowController(store: store)
+
+    controller.activate()
+    #expect(!controller.isRunning)
+
+    store.send(.settings(.binding(.set(\.agentIslandEnabled, true))))
+    controller.refreshLifecycle()
+    #expect(controller.isRunning)
+
+    store.send(.settings(.binding(.set(\.agentIslandEnabled, false))))
+    controller.refreshLifecycle()
+    #expect(!controller.isRunning)
+  }
+
   @Test func panelCannotTakeKeyWindowStatusFromGhostty() {
     let panel = AgentIslandPanel(
       contentRect: CGRect(x: 0, y: 0, width: 300, height: 40),
