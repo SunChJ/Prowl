@@ -54,9 +54,10 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 
 - `ActiveAgentsFeature` owns the island's presentation state and injected-clock carousel effect.
   Derived Working and attention projections keep roster and lifecycle semantics in one reducer.
-- `ActiveAgentRow`, `ActiveAgentsPanel`, `SidebarActiveAgentsOverlay`, and the related
-  `SidebarListView` helpers match their pre-Agent-Island implementations. The island-owned
-  `AgentIslandRosterContent` composes the original row without introducing a shared UI layer.
+- `ActiveAgentsPanel` keeps its original row layout and behavior. Narrow shared
+  `ActiveAgentRowPresentation` and `ActiveAgentRowContextMenu` helpers keep subtitles, Workflow
+  badges, and context-menu actions aligned between the sidebar and `AgentIslandRosterContent`,
+  while the island continues to own its container and layout.
 - `AgentIslandIconCluster` and `AgentIslandAttentionCollection` own all projected icon styling.
   They render only the runtime glyph plus a state ring—never a lower-right badge. The compact
   cluster orders recent non-Idle entries before Idle and moves overflow into a trailing-lower
@@ -105,10 +106,11 @@ Done, and Idle remain interpretations of `ActiveAgentsFeature.entries`.
 - The notch regression fixture uses the connected built-in display's measured geometry:
   `1512×982`, `32pt` safe-area inset, and a `185×32pt` cutout. Seven targeted screen-layout tests
   pass, including exact auxiliary-area derivation and content exclusion.
-- The restored sidebar source files match the `origin/main` merge-base byte-for-byte. Targeted
-  coverage passes for the original Bagua indicator, island icon projection, and attention layout;
-  the latter verifies narrow single-entry presentation, two-column multi-entry layout, and
-  scrolling after three rows.
+- The sidebar row layout and behavior remain equivalent to `origin/main`; only the narrow shared
+  presentation and context-menu helpers were extracted after `main` added Workflow badges and
+  **Run Workflow**. Targeted coverage passes for the original Bagua indicator, island icon
+  projection, and attention layout; the latter verifies narrow single-entry presentation,
+  two-column multi-entry layout, and scrolling after three rows.
 - Isolation coverage verifies that the panel cannot become key, event monitors are limited to a
   visible expanded roster, combined-session Escape detection fires once per key-down edge, the
   compact panel does not retain the `420pt` roster width, and Core Animation rotation stops for
