@@ -149,24 +149,9 @@ struct AgentIslandView: View {
     .frame(width: layout.compactWidth, height: layout.compactHeight)
   }
 
-  @ViewBuilder
+  /// The wing is too narrow for names, so it carries per-state counts instead.
   private var notchedLeadingContent: some View {
-    if let entry = agentsStore.islandCarouselEntry {
-      Text(entry.displayName)
-        .font(.callout.weight(.semibold))
-        .lineLimit(1)
-        .id(entry.id)
-        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-    } else {
-      HStack(spacing: 7) {
-        Image(systemName: "person.crop.rectangle.stack")
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-        Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
-          .font(.callout.weight(.semibold))
-          .lineLimit(1)
-      }
-    }
+    AgentIslandStateSummaryView(summary: AgentIslandStateSummary(entries: islandEntries))
   }
 
   private var notchedTrailingContent: some View {
