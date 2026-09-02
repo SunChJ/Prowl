@@ -292,9 +292,7 @@ struct SettingsFeatureTests {
     #expect(store.state.defaultWorktreeBaseDirectoryPath == expectedPath)
   }
 
-  @Test(.dependencies) func changingDefaultWorktreeBaseDirectoryUpdatesRepositorySettingsState()
-    async
-  {
+  @Test(.dependencies) func changingDefaultWorktreeBaseDirectoryUpdatesRepositorySettingsState() async {
     let rootURL = URL(fileURLWithPath: "/tmp/repo")
     let expectedPath = SupacodePaths.normalizedWorktreeBaseDirectoryPath(" ~/worktrees ")!
     @Shared(.settingsFile) var settingsFile

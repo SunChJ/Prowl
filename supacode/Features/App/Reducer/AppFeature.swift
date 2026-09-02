@@ -47,8 +47,7 @@ struct AppFeature {
       self.repositories = repositories
       self.settings = settings
       lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
-      launchRestoreMode =
-        settings.restoreTerminalLayoutOnLaunch ? .restoreLayout : .lastFocusedWorktree
+      launchRestoreMode = settings.restoreTerminalLayoutOnLaunch ? .restoreLayout : .lastFocusedWorktree
     }
   }
 
@@ -100,8 +99,7 @@ struct AppFeature {
     /// Open the workflow start sheet — or start at once when nothing is undecided (063 C2).
     /// `worktreeID` pins an entry's worktree (Active Agents menu); nil uses the action target.
     /// `forceSheet` is the "Run with Options…" escape hatch.
-    case openWorkflowStart(
-      workflowKey: String, worktreeID: Worktree.ID?, sourceSurfaceID: UUID?, forceSheet: Bool)
+    case openWorkflowStart(workflowKey: String, worktreeID: Worktree.ID?, sourceSurfaceID: UUID?, forceSheet: Bool)
     case workflowStart(PresentationAction<WorkflowStartFeature.Action>)
     /// A CLI handoff completed (announced by the socket-service handler); the
     /// HUD uses it to observe the request it injected into the source pane.
@@ -135,9 +133,7 @@ struct AppFeature {
       switch action {
       case .appLaunched:
         try? SupacodePaths.migrateLegacyCacheFilesIfNeeded()
-        appLogger.info(
-          "[LayoutRestore] appLaunched: launchRestoreMode=\(String(describing: state.launchRestoreMode))"
-        )
+        appLogger.info("[LayoutRestore] appLaunched: launchRestoreMode=\(String(describing: state.launchRestoreMode))")
         state.launchedAt = now
         state.repositories.launchRestoreMode = state.launchRestoreMode
         analyticsClient.capture("app_launched", nil)
@@ -183,8 +179,7 @@ struct AppFeature {
             !state.suppressLayoutSaveUntilRelaunch,
             state.launchRestoreMode != .restoreLayout
           {
-            appLogger.info(
-              "[LayoutRestore] scenePhase=\(String(describing: phase)), saving layout snapshot")
+            appLogger.info("[LayoutRestore] scenePhase=\(String(describing: phase)), saving layout snapshot")
             effects.append(.run { _ in await terminalClient.send(.saveLayoutSnapshot) })
           }
           return .merge(effects)
@@ -259,8 +254,7 @@ struct AppFeature {
         )
         effects.append(
           .run { _ in
-            await worktreeInfoWatcher.send(
-              .setSelectedWorktreeID(isPlainFolderSelection ? nil : worktree.id))
+            await worktreeInfoWatcher.send(.setSelectedWorktreeID(isPlainFolderSelection ? nil : worktree.id))
           }
         )
         effects.append(
@@ -312,16 +306,12 @@ struct AppFeature {
           state.launchRestoreMode = .lastFocusedWorktree
           state.repositories.selection = nil
         }
-        state.runScriptStatusByWorktreeID = state.runScriptStatusByWorktreeID.filter {
-          ids.contains($0.key)
-        }
+        state.runScriptStatusByWorktreeID = state.runScriptStatusByWorktreeID.filter { ids.contains($0.key) }
         let restorableWorktrees = makeTerminalRestorableWorktrees(from: Array(repositories))
         appLogger.info("[LayoutRestore] restorableWorktrees count=\(restorableWorktrees.count)")
         var allEffects: [Effect<Action>] = [
           // Runs a previous app instance left behind are marked interrupted (dsl-spec §10 Restart).
-          .send(
-            .workflowRuns(
-              .markInterruptedRuns(worktreeRoots: workflowRunRoots(of: Array(repositories)))))
+          .send(.workflowRuns(.markInterruptedRuns(worktreeRoots: workflowRunRoots(of: Array(repositories)))))
         ]
         if !shouldDeferDefaultView {
           allEffects.append(applyDefaultViewMode(into: &state))
@@ -426,16 +416,13 @@ struct AppFeature {
             appearance: repositoryAppearances[repository.id] ?? .empty
           )
           repoSettingsState.workspace = repository.workspace
-          repoSettingsState.globalCopyIgnoredOnWorktreeCreate =
-            state.settings.copyIgnoredOnWorktreeCreate
-          repoSettingsState.globalCopyUntrackedOnWorktreeCreate =
-            state.settings.copyUntrackedOnWorktreeCreate
+          repoSettingsState.globalCopyIgnoredOnWorktreeCreate = state.settings.copyIgnoredOnWorktreeCreate
+          repoSettingsState.globalCopyUntrackedOnWorktreeCreate = state.settings.copyUntrackedOnWorktreeCreate
           repoSettingsState.globalPullRequestMergeStrategy = state.settings.pullRequestMergeStrategy
           state.settings.repositorySettings = repoSettingsState
           state.settings.globalCustomCommands = nil
           state.settings.agentProfiles = nil
-        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github,
-          .commandLineTool:
+        case .general, .notifications, .shortcuts, .worktree, .updates, .advanced, .github, .commandLineTool:
           // `settings.agentSkills` is owned by SettingsFeature.setSelection.
           state.settings.repositorySettings = nil
           state.settings.globalCustomCommands = nil
@@ -490,9 +477,7 @@ struct AppFeature {
         return .merge(
           cancelIconDetections,
           updateAgentIsland,
-          .send(
-            .repositories(
-              .githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
+          .send(.repositories(.githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
           .send(
             .repositories(
               .githubIntegration(
@@ -555,9 +540,7 @@ struct AppFeature {
                 )
               }
             case .denied:
-              await send(
-                .systemNotificationsPermissionFailed(
-                  errorMessage: "Authorization status is denied."))
+              await send(.systemNotificationsPermissionFailed(errorMessage: "Authorization status is denied."))
             }
           },
           .run { _ in
@@ -583,8 +566,7 @@ struct AppFeature {
         case .installed(let skill, let target):
           return .send(.repositories(.showToast(.success("\(skill) skill linked for \(target)"))))
         case .removed(let skill, let target):
-          return .send(
-            .repositories(.showToast(.success("\(skill) skill link removed for \(target)"))))
+          return .send(.repositories(.showToast(.success("\(skill) skill link removed for \(target)"))))
         case .failed(let message):
           return .send(.repositories(.showToast(.warning("Skill link failed: \(message)"))))
         }
@@ -637,8 +619,7 @@ struct AppFeature {
         return .send(.openSelectedWorktree)
 
       case .openSelectedWorktree:
-        return .send(
-          .openWorktree(OpenWorktreeAction.availableSelection(state.openActionSelection)))
+        return .send(.openWorktree(OpenWorktreeAction.availableSelection(state.openActionSelection)))
 
       case .showSelectedWorktreeDiff:
         return openSelectedWorktreeDiffEffect(state: state)
@@ -710,8 +691,7 @@ struct AppFeature {
           return .none
         }
         analyticsClient.capture("terminal_tab_created", nil)
-        let shouldRunSetupScript = state.repositories.pendingSetupScriptWorktreeIDs.contains(
-          worktree.id)
+        let shouldRunSetupScript = state.repositories.pendingSetupScriptWorktreeIDs.contains(worktree.id)
         return .run { _ in
           await terminalClient.send(.createTab(worktree, runSetupScriptIfNew: shouldRunSetupScript))
         }
@@ -722,8 +702,7 @@ struct AppFeature {
           return .none
         }
         guard state.repositories.worktree(for: location.worktreeID) != nil else {
-          notificationJumpLogger.warning(
-            "Unread notification worktree vanished: \(location.worktreeID)")
+          notificationJumpLogger.warning("Unread notification worktree vanished: \(location.worktreeID)")
           return .none
         }
         analyticsClient.capture("notifications_jump_to_latest_unread", nil)
@@ -736,8 +715,7 @@ struct AppFeature {
         )
 
       case .toggleLeftSidebar:
-        state.leftSidebarVisibility =
-          state.leftSidebarVisibility == .detailOnly ? .all : .detailOnly
+        state.leftSidebarVisibility = state.leftSidebarVisibility == .detailOnly ? .all : .detailOnly
         return .none
 
       case .showLeftSidebar:
@@ -777,9 +755,7 @@ struct AppFeature {
         guard let worktree = actionTargetWorktree(repositories: state.repositories) else {
           return .none
         }
-        guard
-          let effectiveCommand = state.selectedCustomCommands.first(where: { $0.id == commandID })
-        else {
+        guard let effectiveCommand = state.selectedCustomCommands.first(where: { $0.id == commandID }) else {
           return .none
         }
         let customCommand = effectiveCommand.command
@@ -1054,13 +1030,9 @@ struct AppFeature {
         _ = appLifecycleClient.surfaceMainWindow()
         return .send(.repositories(.activeAgents(.handOffTapped(entryID))))
 
-      case .repositories(
-        .activeAgents(.islandRunWorkflowTapped(let entryID, let workflowKey))
-      ):
+      case .repositories(.activeAgents(.islandRunWorkflowTapped(let entryID, let workflowKey))):
         _ = appLifecycleClient.surfaceMainWindow()
-        return .send(
-          .repositories(.activeAgents(.runWorkflowTapped(entryID, workflowKey: workflowKey)))
-        )
+        return .send(.repositories(.activeAgents(.runWorkflowTapped(entryID, workflowKey: workflowKey))))
 
       case .repositories(.activeAgents(.islandOpenProwlTapped)):
         return .run { @MainActor _ in
