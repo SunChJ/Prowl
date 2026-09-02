@@ -12,15 +12,19 @@ struct AgentIslandIconCluster: View {
   private static let maximumVisibleIcons = 3
 
   let projection: Projection
+  /// Icon diameter; the notched bar passes a smaller size because it is only as tall as the cutout.
+  let pointSize: CGFloat
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  init(entries: [ActiveAgentEntry]) {
+  init(entries: [ActiveAgentEntry], pointSize: CGFloat = 21) {
     projection = Self.projection(for: entries)
+    self.pointSize = pointSize
   }
 
   var body: some View {
     iconRow
-      .frame(width: 78, height: 27, alignment: .trailing)
+      // Each icon carries 2pt of padding, so the cluster is exactly one padded icon tall.
+      .frame(width: 78, height: pointSize + 4, alignment: .trailing)
       .animation(
         reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.32),
         value: projection
@@ -34,7 +38,7 @@ struct AgentIslandIconCluster: View {
         ForEach(projection.entries) { entry in
           AgentIslandRuntimeIcon(
             entry: entry,
-            pointSize: 21
+            pointSize: pointSize
           )
           .transition(iconTransition)
         }

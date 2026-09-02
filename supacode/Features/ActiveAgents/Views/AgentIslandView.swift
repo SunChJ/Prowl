@@ -167,7 +167,7 @@ struct AgentIslandView: View {
 
   private var notchedTrailingContent: some View {
     HStack(spacing: 5) {
-      AgentIslandIconCluster(entries: islandEntries)
+      AgentIslandIconCluster(entries: islandEntries, pointSize: 20)
       compactChevron
     }
   }
@@ -276,8 +276,8 @@ struct AgentIslandView: View {
       return AnyShape(
         UnevenRoundedRectangle(
           topLeadingRadius: 0,
-          bottomLeadingRadius: 17,
-          bottomTrailingRadius: 17,
+          bottomLeadingRadius: 12,
+          bottomTrailingRadius: 12,
           topTrailingRadius: 0
         )
       )
