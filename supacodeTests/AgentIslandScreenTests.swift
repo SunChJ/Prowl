@@ -122,8 +122,56 @@ struct AgentIslandScreenTests {
     )
   }
 
+  // MARK: Settings picker selection
+
+  @Test func displaySelectionMatchesStoredDisplayByIDOnly() {
+    // `localizedName` changes with the system language; the picker must still find the tag.
+    let stored = AgentIslandDisplayPreference.display(id: "uuid-1", name: "Built-in Display")
+    let renamed = AgentIslandDisplayPreference.display(id: "uuid-1", name: "内建显示器")
+
+    #expect(AgentIslandDisplaySelection(stored) == .display(id: "uuid-1"))
+    #expect(AgentIslandDisplaySelection(stored) == AgentIslandDisplaySelection(renamed))
+    #expect(AgentIslandDisplaySelection(.automatic) == .automatic)
+  }
+
+  @Test func displaySelectionTakesTheConnectedDisplayNameFromTheCatalog() {
+    let connected = screen(id: "uuid-1", name: "内建显示器")
+    let stored = AgentIslandDisplayPreference.display(id: "uuid-1", name: "Built-in Display")
+
+    let resolved = AgentIslandDisplaySelection.display(id: "uuid-1")
+      .preference(screens: [connected], current: stored)
+
+    #expect(resolved == .display(id: "uuid-1", name: "内建显示器"))
+  }
+
+  @Test func displaySelectionKeepsTheStoredNameOfADisconnectedDisplay() {
+    let stored = AgentIslandDisplayPreference.display(id: "uuid-2", name: "Studio Display")
+
+    let resolved = AgentIslandDisplaySelection.display(id: "uuid-2")
+      .preference(screens: [screen(id: "uuid-1")], current: stored)
+
+    #expect(resolved == stored)
+  }
+
+  @Test func displaySelectionFallsBackToTheIDWhenNoNameIsKnown() {
+    let resolved = AgentIslandDisplaySelection.display(id: "uuid-3")
+      .preference(screens: [], current: .automatic)
+
+    #expect(resolved == .display(id: "uuid-3", name: "uuid-3"))
+  }
+
+  @Test func automaticSelectionClearsThePinnedDisplay() {
+    let stored = AgentIslandDisplayPreference.display(id: "uuid-1", name: "Studio Display")
+
+    let resolved = AgentIslandDisplaySelection.automatic
+      .preference(screens: [screen(id: "uuid-1")], current: stored)
+
+    #expect(resolved == .automatic)
+  }
+
   private func screen(
     id: String,
+    name: String? = nil,
     origin: CGPoint = .zero,
     visibleTopInset: CGFloat = 24,
     isBuiltIn: Bool = false,
@@ -132,7 +180,7 @@ struct AgentIslandScreenTests {
     let frame = CGRect(origin: origin, size: CGSize(width: 1_920, height: 1_080))
     return AgentIslandScreenDescriptor(
       id: id,
-      name: id,
+      name: name ?? id,
       frame: frame,
       visibleFrame: CGRect(
         x: frame.minX,
