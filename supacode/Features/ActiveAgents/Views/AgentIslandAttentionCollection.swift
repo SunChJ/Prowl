@@ -91,7 +91,6 @@ struct AgentIslandAttentionCollection: View {
       RoundedRectangle(cornerRadius: 14)
         .stroke(.white.opacity(0.12), lineWidth: 0.75)
     }
-    .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
     .accessibilityIdentifier("agent-island-attention")
   }
 

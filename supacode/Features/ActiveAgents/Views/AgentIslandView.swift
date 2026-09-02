@@ -124,7 +124,6 @@ struct AgentIslandView: View {
     }
     .buttonStyle(.plain)
     .background(.black, in: compactShape)
-    .shadow(color: .black.opacity(notchLayout == nil ? 0.28 : 0), radius: 8, y: 3)
     .help(agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents")
     .accessibilityLabel(
       agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents"
@@ -243,13 +242,13 @@ struct AgentIslandView: View {
         showTabTitles: appStore.repositories.showActiveAgentTabTitles
       )
     }
-    .frame(width: 420)
+    // Same width as the bar above it: the notched bar is wider than the floating roster.
+    .frame(width: rootWidth)
     .background(.black, in: RoundedRectangle(cornerRadius: 19))
     .overlay {
       RoundedRectangle(cornerRadius: 19)
         .stroke(.separator.opacity(0.55), lineWidth: 1)
     }
-    .shadow(color: .black.opacity(0.3), radius: 14, y: 5)
     .accessibilityIdentifier("agent-island-roster")
   }
 
