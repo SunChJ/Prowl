@@ -7,6 +7,18 @@ struct AgentIslandIconCluster: View {
   struct Projection: Equatable {
     let entries: [ActiveAgentEntry]
     let overflowCount: Int
+
+    var identity: ProjectionIdentity {
+      ProjectionIdentity(ids: entries.map(\.id), overflowCount: overflowCount)
+    }
+  }
+
+  /// What the swap animation reacts to. Entries refresh every second (titles, timestamps), and
+  /// keying the animation on the full value would open an animated transaction on each refresh,
+  /// animating any concurrent layout shift; only membership, order, and overflow move icons.
+  struct ProjectionIdentity: Equatable {
+    let ids: [ActiveAgentEntry.ID]
+    let overflowCount: Int
   }
 
   private static let maximumVisibleIcons = 3
@@ -27,7 +39,7 @@ struct AgentIslandIconCluster: View {
       .frame(width: 78, height: pointSize + 4, alignment: .trailing)
       .animation(
         reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.32),
-        value: projection
+        value: projection.identity
       )
       .accessibilityHidden(true)
   }

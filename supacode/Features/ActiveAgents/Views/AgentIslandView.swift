@@ -78,6 +78,11 @@ struct AgentIslandView: View {
     .onChange(of: appStore.settings.agentIslandDisplayPreference, initial: true) { _, _ in
       publishPresentation()
     }
+    // The panel is resized to fit after SwiftUI has laid out the new content. Without an explicit
+    // top alignment the hosting view centers the content vertically, so for that one pass a taller
+    // or shorter island is offset from the top edge and every animated child springs back into
+    // place once the frame catches up. Pinning to the top keeps the compact bar at y = 0 throughout.
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .preferredColorScheme(.dark)
   }
 
@@ -181,8 +186,10 @@ struct AgentIslandView: View {
 
   @ViewBuilder
   private var compactContent: some View {
-    if let entry = agentsStore.islandCarouselEntry {
-      HStack(spacing: 8) {
+    // Only the carousel text carries the per-entry identity; the icon cluster must keep its own
+    // identity across rotations or every swap tears it down and re-inserts it with the transition.
+    HStack(spacing: 8) {
+      if let entry = agentsStore.islandCarouselEntry {
         VStack(alignment: .leading, spacing: 1) {
           Text(entry.displayName)
             .font(.callout.weight(.semibold))
@@ -192,21 +199,19 @@ struct AgentIslandView: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
-        Spacer(minLength: 6)
-        AgentIslandIconCluster(entries: islandEntries)
+        .id(entry.id)
+        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+      } else {
+        HStack(spacing: 8) {
+          Image(systemName: "person.crop.rectangle.stack")
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+          Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
+            .font(.callout.weight(.semibold))
+        }
       }
-      .id(entry.id)
-      .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-    } else {
-      HStack(spacing: 8) {
-        Image(systemName: "person.crop.rectangle.stack")
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-        Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
-          .font(.callout.weight(.semibold))
-        Spacer(minLength: 6)
-        AgentIslandIconCluster(entries: islandEntries)
-      }
+      Spacer(minLength: 6)
+      AgentIslandIconCluster(entries: islandEntries)
     }
   }
 

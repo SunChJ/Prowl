@@ -11,7 +11,7 @@
 | 2026-09-02 | Render and focus isolation: ring rotation moved to Core Animation, panel made non-key, event monitors scoped to an expanded roster, compact footprint no longer keeps the 420pt roster width. | #753 |
 | 2026-09-02 | Review round 1: carousel survives per-second title refreshes; `main` merged; `ActiveAgentRowPresentation` and `ActiveAgentRowContextMenu` extracted so the island roster shows Workflow badges and Run Workflow. | #753 |
 | 2026-09-02 | Review round 2: Escape collapses the roster while another app is active via a key-state poll; island Hand Off / Run Workflow surface Prowl first; Workflow badge in attention cells; synchronous catalog refresh on screen changes; carousel restarts after roster actions. | #753 |
-| 2026-09-02 | Fork-owned continuation: `isIslandHovered` reset when the roster empties (review round 3 blocker); unrelated 100-column reflow reverted; display picker matched by UUID; compact bar height aligned to the cutout instead of overhanging it by 8pt; working-note amendments folded into the plan. | #756 |
+| 2026-09-02 | Fork-owned continuation: `isIslandHovered` reset when the roster empties (review round 3 blocker); unrelated 100-column reflow reverted; display picker matched by UUID; compact bar height aligned to the cutout instead of overhanging it by 8pt (12pt corners, 20pt icons); island content pinned to the top of the hosting view so panel resizes no longer make the icon cluster spring back into place, and the floating pill's carousel identity no longer tears the cluster down; working-note amendments folded into the plan. | #756 |
 
 ## Outcome & current state (as of 2026-09-02)
 
