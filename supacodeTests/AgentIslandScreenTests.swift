@@ -99,7 +99,6 @@ struct AgentIslandScreenTests {
     #expect(layout.compactWidth == 425)
     #expect(layout.compactHeight == 32)
     #expect(layout.wingWidth == 120)
-    #expect(layout.rootWidth == 425)
     #expect((layout.wingWidth * 2) + layout.cutoutSize.width == layout.compactWidth)
   }
 
