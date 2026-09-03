@@ -17,8 +17,9 @@
 | 2026-09-03 | Contextual exposure formalized as a product rule: each control, hint, and callout must have a relevant, actionable state instead of exposing the island's full capability set at once. | #758 |
 | 2026-09-03 | Runtime ring motion was tested as breathing, then restored to the original state-paced rotation only in attention cards. Compact-bar icons now use static state-colored outlines; a reserved center band, compact four-state metrics, and a stable 340pt width prevent compression and layout jumps. | #758 |
 | 2026-09-03 | Strong reminders capped at a non-scrolling 2×3 grid; lower-priority overflow is summarized by a bottom-right `+N` badge. | #758 |
+| 2026-09-03 | Review hardening: Command–Option digits documented as the intentional strong-reminder chord; the shortcut projection capped at nine; unchanged Carbon registrations deduplicated; silent-opacity persistence deferred until editing ends. | #758 |
 
-## Outcome & current state (as of 2026-09-02)
+## Outcome & current state (as of 2026-09-03)
 
 Agent Island projects the existing Active Agents roster into one top-of-screen panel. It adds no
 agent state, acknowledgement flag, or lifecycle signal.
@@ -39,9 +40,10 @@ agent state, acknowledgement flag, or lifecycle signal.
   Hand Off / Run Workflow surfaces the main window first and then dispatches the unchanged sidebar
   action. Open Prowl only surfaces the window. Outside click or Escape collapses the roster.
 - **Placement** — notched screens merge the bar with the cutout at the physical top edge; other
-  screens get a floating pill under the menu bar. Automatic follows the Prowl window's display,
-  then a notched built-in display, then the main display. A pinned display is stored by CG UUID
-  and falls back to Automatic while disconnected.
+  screens get a floating pill that overlays the menu-bar band at the same height. Its center grip
+  supports horizontal-only movement and persists a normalized position per display. Automatic
+  follows the Prowl window's display, then a notched built-in display, then the main display. A
+  pinned display is stored by CG UUID and falls back to Automatic while disconnected.
 
 Key files:
 
@@ -50,7 +52,9 @@ Key files:
 - `supacode/Features/App/Reducer/AppFeature.swift` — surface-then-forward for island actions;
   settings mirror.
 - `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandWindowController.swift` — panel
-  lifecycle bound to the setting, observers, expanded-only event monitors and Escape poll.
+  lifecycle bound to the setting, placement, observers, and global hot-key registration.
+- `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandKeyboard.swift` — expanded-roster
+  key handling plus global toggle and attention-slot hot keys.
 - `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandDisplayCatalog.swift` — connected
   screens keyed by display UUID.
 - `supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` — `AgentIslandScreenLayout`,
@@ -62,7 +66,8 @@ Key files:
   menu shared with `ActiveAgentsPanel.swift`.
 - `supacode/Features/Settings/Models/AgentIslandDisplayPreference.swift`,
   `supacode/Features/Settings/Views/AgentIslandSettingsSection.swift` — preference model and the
-  Notifications section; `GlobalSettings.swift` carries the two fields with legacy defaults.
+  Notifications section; `GlobalSettings.swift` carries enablement, display preference, floating
+  positions, and silent opacity with legacy defaults.
 - `supacode/App/supacodeApp.swift` — controller start/stop in the app delegate.
 
 ## Verification
@@ -87,8 +92,8 @@ Key files:
 - The planned "one extracted list-content view" shared with the sidebar became a narrower
   extraction (presentation + context menu) plus an island-owned roster wrapper, so the sidebar
   row and panel files stay byte-identical to their pre-island state.
-- Escape uses a key-state poll instead of a global keyboard monitor to avoid the
-  Accessibility/Input Monitoring prompt.
+- Once expanded, the nonactivating key panel handles navigation and Escape locally; global entry
+  uses Carbon registration without requiring Accessibility or Input Monitoring permission.
 
 ## Open questions
 
@@ -98,7 +103,3 @@ Key files:
   intercept clicks there while agents are running (raised by the 2026-09-03 adversarial review).
   Documented as a limitation; narrowing the wings or offering a floating placement on notched
   displays is a product decision still open.
-- While Prowl is frontmost, the first keystroke after expanding the roster collapses it; Escape
-  is consumed by the island, any other key passes through. In another application only the
-  key-state poll runs, so Escape collapses the roster and still reaches that application. The
-  asymmetry is a known limitation, not a planned change (2026-09-02).

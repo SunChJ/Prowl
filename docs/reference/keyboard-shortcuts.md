@@ -59,7 +59,8 @@ current-page row; and `Esc` closes.
 While the roster is closed, `⌘⌥1`…`⌘⌥9` globally open the first nine strong Agent Island
 reminders. Their slot order matches the attention collection: Blocked before unviewed Done, newest
 first within each state. Only slots backed by a current reminder are registered; opening the
-roster unregisters the strong-reminder shortcuts until it closes again.
+roster unregisters the strong-reminder shortcuts until it closes again. Command–Option is used
+instead of Command–Shift to avoid common macOS and application shortcut collisions.
 
 ## Shelf view
 

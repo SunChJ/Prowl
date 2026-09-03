@@ -157,7 +157,7 @@ struct ActiveAgentsFeature {
         return .send(.island(.entryTapped(id)))
 
       case .islandActivateAttentionSlot(let index):
-        let attentionEntries = state.islandAttentionEntries
+        let attentionEntries = state.islandAttentionShortcutEntries
         guard !state.isIslandRosterExpanded, attentionEntries.indices.contains(index) else {
           return .none
         }
@@ -253,6 +253,10 @@ extension ActiveAgentsFeature.State {
         }
         return lhs.lastChangedAt > rhs.lastChangedAt
       }
+  }
+
+  var islandAttentionShortcutEntries: [ActiveAgentEntry] {
+    Array(islandAttentionEntries.prefix(AgentIslandAttentionShortcut.slotLimit))
   }
 
 }

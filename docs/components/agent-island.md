@@ -58,8 +58,8 @@ collection does not scroll or page. Each cell shows the agent name and state on 
 repository plus the same branch/tab subtitle as Active Agents on the right; a live Workflow role
 badge takes the subtitle position, as in the sidebar. The first nine priority slots use
 `⌘⌥1`…`⌘⌥9`; each visible card shows its assigned shortcut in an inset tag centered along the top
-edge. While the roster is closed,
-those global shortcuts open the matching strong reminder directly. The mapping follows the
+edge. While the roster is closed, those global shortcuts open the matching strong reminder
+directly. The mapping follows the
 displayed priority order: Blocked first, then unviewed Done, newest first within each state. Cells
 cannot be dismissed from the island. A
 Blocked cell clears when the agent leaves that state, a Done cell clears once the entry is viewed,
@@ -76,8 +76,8 @@ and a removed entry disappears with the roster.
   The island returns to full opacity on hover and fades to the chosen level three seconds after
   the pointer leaves. Any Blocked or unviewed Done reminder keeps the full island at 100% opacity
   until all strong reminders clear. Opening the roster by click or `⌘⇧P` also keeps it fully
-  opaque; after the roster closes, a new three-second delay begins. This control is not shown on
-  notched displays.
+  opaque; after the roster closes, a new three-second delay begins. Slider changes remain local
+  while dragging and persist once the adjustment ends. This control is not shown on notched displays.
 - **Press the Agent Island shortcut** (`⌘⇧P` by default) to open or close the roster like a hot
   window. It is separate from the Active Agents panel shortcut and can be changed, cleared, or
   reset under Settings → Shortcuts.

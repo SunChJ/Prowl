@@ -125,6 +125,42 @@ enum AgentIslandAttentionShortcut {
   }
 }
 
+struct AgentIslandGlobalHotKeyConfiguration: Equatable {
+  struct Changes: OptionSet, Equatable {
+    let rawValue: Int
+
+    static let toggle = Self(rawValue: 1 << 0)
+    static let attentionSlots = Self(rawValue: 1 << 1)
+  }
+
+  let toggleBinding: Keybinding?
+  let attentionSlotCount: Int
+
+  init(
+    toggleBinding: Keybinding?,
+    isRosterExpanded: Bool,
+    attentionEntryCount: Int
+  ) {
+    self.toggleBinding = toggleBinding
+    attentionSlotCount = AgentIslandAttentionShortcut.slotCount(
+      isRosterExpanded: isRosterExpanded,
+      attentionEntryCount: attentionEntryCount
+    )
+  }
+
+  func changes(from previous: Self?, force: Bool = false) -> Changes {
+    guard !force, let previous else { return [.toggle, .attentionSlots] }
+    var changes: Changes = []
+    if toggleBinding != previous.toggleBinding {
+      changes.insert(.toggle)
+    }
+    if attentionSlotCount != previous.attentionSlotCount {
+      changes.insert(.attentionSlots)
+    }
+    return changes
+  }
+}
+
 private struct AgentIslandCarbonHotKeyDescriptor {
   let keyCode: UInt32
   let modifiers: UInt32
@@ -196,7 +232,8 @@ final class AgentIslandGlobalHotKeys {
         else {
           return OSStatus(eventNotHandledErr)
         }
-        let registrar = Unmanaged<AgentIslandGlobalHotKeys>.fromOpaque(userData).takeUnretainedValue()
+        let registrar = Unmanaged<AgentIslandGlobalHotKeys>.fromOpaque(userData)
+          .takeUnretainedValue()
         MainActor.assumeIsolated {
           registrar.action(command)
         }

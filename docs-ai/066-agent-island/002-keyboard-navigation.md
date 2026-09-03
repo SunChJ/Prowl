@@ -23,8 +23,10 @@ Agents panel command.
 - Use `⌘1`…`⌘9` for direct activation of the nine visible slots, not globally numbered agents.
   Every visible row keeps its current shortcut label at the tab bar's caption scale; the mapping
   restarts at `⌘1` after paging.
-- Register `⌘⌥1`…`⌘⌥9` for the first nine strong-reminder slots while the roster is closed. The
-  mapping follows the existing attention projection (Blocked before unviewed Done, newest first
+- Register `⌘⌥1`…`⌘⌥9` for the first nine strong-reminder slots while the roster is closed.
+  Command–Option is deliberate: Command–Shift digits commonly collide with macOS and application
+  shortcuts. The shortcut projection is explicitly capped at nine and follows the existing
+  attention projection (Blocked before unviewed Done, newest first
   within each state), and every assigned attention cell keeps its shortcut in an inset tag centered
   along the card's top edge without competing with its metadata. Only currently
   backed slots are registered; roster expansion removes them until it collapses again.
@@ -48,11 +50,15 @@ Agents panel command.
   island to remain fully opaque. An expanded roster—whether opened by pointer or `⌘⇧P`—also stays
   fully opaque; closing it starts a fresh three-second delay. When multiple displays are connected,
   the roster header exposes an icon-only display menu for switching the island's target without
-  opening Settings; single-display setups omit the redundant control.
+  opening Settings; single-display setups omit the redundant control. Slider movement stays in a
+  local draft and persists once editing ends, avoiding full settings synchronization for every
+  intermediate value.
 
 The global entry uses Carbon hot-key registration, which consumes the configured chord without
-requiring Accessibility or Input Monitoring permission. Once expanded, ordinary navigation keys
-are handled locally by the key panel, so they do not leak into the previously frontmost app.
+requiring Accessibility or Input Monitoring permission. Registration is diffed by toggle binding
+and attention-slot count, with a forced refresh only when the keyboard layout changes. Once
+expanded, ordinary navigation keys are handled locally by the key panel, so they do not leak into
+the previously frontmost app.
 
 ## Refs
 

@@ -72,6 +72,7 @@ struct AgentIslandView: View {
   @State private var isHovering = false
   @State private var isSilent = false
   @State private var isOpacityControlPresented = false
+  @State private var silentOpacityDraft: Double?
 
   init(
     store: StoreOf<AppFeature>,
@@ -147,7 +148,7 @@ struct AgentIslandView: View {
         isSilent: isSilent,
         isRosterExpanded: agentsStore.isIslandRosterExpanded,
         hasAttentionEntries: !agentsStore.islandAttentionEntries.isEmpty,
-        silentOpacity: appStore.settings.agentIslandSilentOpacity
+        silentOpacity: effectiveSilentOpacity
       )
     )
     .animation(.easeOut(duration: 0.2), value: isSilent)
@@ -222,6 +223,9 @@ struct AgentIslandView: View {
 
   private var floatingOpacityControl: some View {
     Button {
+      if !isOpacityControlPresented {
+        silentOpacityDraft = appStore.settings.agentIslandSilentOpacity
+      }
       isOpacityControlPresented.toggle()
     } label: {
       Image(systemName: "circle.lefthalf.filled")
@@ -245,12 +249,23 @@ struct AgentIslandView: View {
         }
         Slider(
           value: silentOpacityBinding,
-          in: AgentIslandOpacityPolicy.minimumSilentOpacity...AgentIslandOpacityPolicy.maximumSilentOpacity,
-          step: 0.05
+          in: AgentIslandOpacityPolicy
+            .minimumSilentOpacity...AgentIslandOpacityPolicy.maximumSilentOpacity,
+          step: 0.05,
+          onEditingChanged: { isEditing in
+            if !isEditing {
+              commitSilentOpacity()
+            }
+          }
         )
       }
       .padding(12)
       .frame(width: 220)
+    }
+    .onChange(of: isOpacityControlPresented) { _, isPresented in
+      if !isPresented {
+        commitSilentOpacity()
+      }
     }
   }
 
@@ -397,7 +412,8 @@ struct AgentIslandView: View {
       Button {
         setDisplayPreference(.automatic)
       } label: {
-        displayMenuLabel("Automatic", isSelected: appStore.settings.agentIslandDisplayPreference == .automatic)
+        displayMenuLabel(
+          "Automatic", isSelected: appStore.settings.agentIslandDisplayPreference == .automatic)
       }
       Divider()
       ForEach(displayCatalog.screens) { screen in
@@ -439,13 +455,24 @@ struct AgentIslandView: View {
 
   private var silentOpacityBinding: Binding<Double> {
     Binding(
-      get: { appStore.settings.agentIslandSilentOpacity },
-      set: { appStore.send(.settings(.setAgentIslandSilentOpacity($0))) }
+      get: { effectiveSilentOpacity },
+      set: { silentOpacityDraft = AgentIslandOpacityPolicy.normalizedSilentOpacity($0) }
     )
   }
 
+  private var effectiveSilentOpacity: Double {
+    silentOpacityDraft ?? appStore.settings.agentIslandSilentOpacity
+  }
+
   private var silentOpacityPercentage: String {
-    "\(Int((appStore.settings.agentIslandSilentOpacity * 100).rounded()))%"
+    "\(Int((effectiveSilentOpacity * 100).rounded()))%"
+  }
+
+  private func commitSilentOpacity() {
+    guard let silentOpacityDraft else { return }
+    self.silentOpacityDraft = nil
+    guard silentOpacityDraft != appStore.settings.agentIslandSilentOpacity else { return }
+    appStore.send(.settings(.setAgentIslandSilentOpacity(silentOpacityDraft)))
   }
 
   private var notchLayout: AgentIslandNotchLayout? {

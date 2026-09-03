@@ -17,7 +17,8 @@ struct ActiveAgentsFeatureTests {
     let blocked = entry(id: UUID(1), state: .blocked, changedAt: old)
     let working = entry(id: UUID(2), state: .working, changedAt: new)
     let done = entry(id: UUID(3), state: .done, changedAt: new)
-    let updatedIdle = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 30))
+    let updatedIdle = entry(
+      id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 30))
 
     await store.send(.agentEntryChanged(idle, autoShowPanel: false)) {
       $0.entries = [idle]
@@ -106,7 +107,9 @@ struct ActiveAgentsFeatureTests {
     // Launch aliases with their own icon token keep their name…
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "omp", agent: .omp) == "omp")
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "oh-my-pi", agent: .omp) == "oh-my-pi")
-    #expect(ActiveAgentEntry.displayName(iconLookupToken: "cursor-agent", agent: .cursor) == "cursor-agent")
+    #expect(
+      ActiveAgentEntry.displayName(iconLookupToken: "cursor-agent", agent: .cursor)
+        == "cursor-agent")
     // …tokens without an icon entry and the generic `agent` entrypoint fall
     // back to the semantic agent name.
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "omx", agent: .codex) == "codex")
@@ -114,31 +117,48 @@ struct ActiveAgentsFeatureTests {
     #expect(ActiveAgentEntry.displayName(iconLookupToken: "", agent: .claude) == "claude")
     // No pane token at all: the agent names itself.
     #expect(
-      ActiveAgentEntry.displayName(iconLookupToken: DetectedAgent.pi.iconLookupToken, agent: .pi) == "pi"
+      ActiveAgentEntry.displayName(iconLookupToken: DetectedAgent.pi.iconLookupToken, agent: .pi)
+        == "pi"
     )
   }
 
   @Test func navigationReturnsNilForEmptyList() {
     let entries: IdentifiedArrayOf<ActiveAgentEntry> = []
     #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == nil)
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == nil)
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == nil)
   }
 
   @Test func navigationWithoutAnchorStartsFromEdges() {
     let entries = sampleEntries()
     // No focus, or focus on a surface that is not in the list, anchors on an edge.
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == UUID(2))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .next, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .previous, in: entries) == UUID(2))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .next, in: entries) == UUID(0))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: nil, direction: .previous, in: entries) == UUID(2)
+    )
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .next, in: entries)
+        == UUID(0))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(99), direction: .previous, in: entries)
+        == UUID(2))
   }
 
   @Test func navigationStepsAndWrapsAroundAnchor() {
     let entries = sampleEntries()
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .next, in: entries) == UUID(1))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(2), direction: .next, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(1), direction: .previous, in: entries) == UUID(0))
-    #expect(ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .previous, in: entries) == UUID(2))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .next, in: entries) == UUID(1)
+    )
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(2), direction: .next, in: entries) == UUID(0)
+    )
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(1), direction: .previous, in: entries)
+        == UUID(0))
+    #expect(
+      ActiveAgentsFeature.entryID(navigatingFrom: UUID(0), direction: .previous, in: entries)
+        == UUID(2))
   }
 
   @Test func selectNextEntryAdvancesAnchorAndTapsNeighbour() async {
@@ -324,6 +344,25 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
+  @Test func islandAttentionShortcutProjectionCapsAtNinePriorityEntries() {
+    var state = ActiveAgentsFeature.State()
+    state.entries = IdentifiedArray(
+      uniqueElements: (0..<12).map { index in
+        entry(
+          id: UUID(index),
+          state: .blocked,
+          changedAt: Date(timeIntervalSince1970: Double(index))
+        )
+      }
+    )
+
+    #expect(state.islandAttentionShortcutEntries.count == 9)
+    #expect(
+      state.islandAttentionShortcutEntries.map(\.id)
+        == (3..<12).reversed().map { UUID($0) }
+    )
+  }
+
   @Test func islandAttentionShortcutIsInactiveWhileRosterIsExpanded() async {
     var state = ActiveAgentsFeature.State()
     let blocked = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
@@ -471,7 +510,8 @@ struct ActiveAgentsFeatureTests {
   @Test func onlyActionsThatPresentProwlUISurfaceTheWindow() {
     #expect(ActiveAgentsFeature.Action.entryTapped(UUID(0)).surfacesProwl)
     #expect(ActiveAgentsFeature.Action.handOffTapped(UUID(0)).surfacesProwl)
-    #expect(ActiveAgentsFeature.Action.runWorkflowTapped(UUID(0), workflowKey: "review").surfacesProwl)
+    #expect(
+      ActiveAgentsFeature.Action.runWorkflowTapped(UUID(0), workflowKey: "review").surfacesProwl)
     #expect(!ActiveAgentsFeature.Action.markAsReadTapped(UUID(0)).surfacesProwl)
     #expect(!ActiveAgentsFeature.Action.islandToggleRoster.surfacesProwl)
   }
@@ -542,7 +582,8 @@ struct ActiveAgentsFeatureTests {
   }
 
   @Test func sharedRowSubtitleShowsTheWorkflowBadgeWhileTheRunLives() {
-    let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
+    let entry = entry(
+      id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
 
     #expect(
       ActiveAgentRowPresentation.subtitle(
@@ -559,7 +600,8 @@ struct ActiveAgentsFeatureTests {
   }
 
   @Test func islandRosterSubtitleShowsTitleAndBranchUnlessABadgeLives() {
-    let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
+    let entry = entry(
+      id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
 
     #expect(
       ActiveAgentRowPresentation.combinedSubtitle(for: entry, branchName: "main")

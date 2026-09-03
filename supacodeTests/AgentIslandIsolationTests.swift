@@ -94,20 +94,71 @@ struct AgentIslandIsolationTests {
       ) == 0)
   }
 
+  @Test func globalHotKeyConfigurationOnlyRefreshesChangedRegistrationGroups() {
+    let binding = Keybinding(
+      key: "p",
+      modifiers: KeybindingModifiers(command: true, shift: true)
+    )
+    let initial = AgentIslandGlobalHotKeyConfiguration(
+      toggleBinding: binding,
+      isRosterExpanded: false,
+      attentionEntryCount: 2
+    )
+
+    #expect(initial.changes(from: nil) == [.toggle, .attentionSlots])
+    #expect(initial.changes(from: initial).isEmpty)
+
+    let differentCount = AgentIslandGlobalHotKeyConfiguration(
+      toggleBinding: binding,
+      isRosterExpanded: false,
+      attentionEntryCount: 3
+    )
+    #expect(differentCount.changes(from: initial) == [.attentionSlots])
+
+    let differentBinding = AgentIslandGlobalHotKeyConfiguration(
+      toggleBinding: nil,
+      isRosterExpanded: false,
+      attentionEntryCount: 2
+    )
+    #expect(differentBinding.changes(from: initial) == [.toggle])
+    #expect(initial.changes(from: initial, force: true) == [.toggle, .attentionSlots])
+  }
+
   @Test func expandedRosterKeyMapSupportsArrowsVimiumActivationAndCommandNumbers() {
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 126, characters: nil, modifiers: []) == .move(.previous))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 125, characters: nil, modifiers: []) == .move(.next))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "k", modifiers: []) == .move(.previous))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "j", modifiers: []) == .move(.next))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 123, characters: nil, modifiers: []) == .page(.previous))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 124, characters: nil, modifiers: []) == .page(.next))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "h", modifiers: []) == .page(.previous))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "l", modifiers: []) == .page(.next))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 126, characters: nil, modifiers: [])
+        == .move(.previous))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 125, characters: nil, modifiers: [])
+        == .move(.next))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "k", modifiers: [])
+        == .move(.previous))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "j", modifiers: []) == .move(.next)
+    )
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 123, characters: nil, modifiers: [])
+        == .page(.previous))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 124, characters: nil, modifiers: [])
+        == .page(.next))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "h", modifiers: [])
+        == .page(.previous))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "l", modifiers: []) == .page(.next)
+    )
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "u", modifiers: []) == nil)
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "d", modifiers: []) == nil)
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 36, characters: nil, modifiers: []) == .activateSelection)
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 49, characters: nil, modifiers: []) == .activateSelection)
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 53, characters: nil, modifiers: []) == .collapse)
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 36, characters: nil, modifiers: [])
+        == .activateSelection)
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 49, characters: nil, modifiers: [])
+        == .activateSelection)
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 53, characters: nil, modifiers: []) == .collapse)
     #expect(
       AgentIslandKeyboardCommand.resolve(keyCode: 18, characters: "1", modifiers: .command)
         == .activateVisibleEntry(0))
