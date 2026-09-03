@@ -45,9 +45,9 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
 ## Interactions
 
 - **Click the bar** to open or close the full roster. This does not bring Prowl forward.
-- **Press the Active Agents shortcut** (`⌘⌥P` by default) from another application to open
-  or close the roster like a hot window. The shortcut follows Settings → Shortcuts; while Prowl
-  is frontmost it retains its existing behavior and toggles the sidebar's Active Agents panel.
+- **Press the Agent Island shortcut** (`⌘⇧P` by default) to open or close the roster like a hot
+  window. It is separate from the Active Agents panel shortcut and can be changed, cleared, or
+  reset under Settings → Shortcuts.
 - **Click a Blocked or Done cell** to bring Prowl forward and focus that agent's exact worktree,
   tab, and pane.
 - **The roster** lists every entry with the same rows, ordering, Workflow badges, and context menu
@@ -59,8 +59,9 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
   it; under the floating pill it is wider than the pill. The roster shows up to nine agents per
   page.
 - **Keyboard navigation stays available while the roster is open.** Arrow Up/Down or `j`/`k`
-  moves the highlight without focusing a terminal; `u`/`d` moves one page; Space or Return opens
-  the highlighted agent; and `⌘1`…`⌘9` opens the corresponding agent on the current page.
+  moves the highlight without focusing a terminal; Arrow Left/Right or `h`/`l` moves one page;
+  Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the corresponding agent on
+  the current page.
   These are visible-slot shortcuts, not permanent agent numbers: every page labels its visible
   rows from `⌘1` again. The row labels and a compact legend for movement, paging, and confirmation
   stay visible.

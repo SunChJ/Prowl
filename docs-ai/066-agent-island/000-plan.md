@@ -55,7 +55,7 @@ borderless, nonactivating `NSPanel` that cannot become main, sits one level abov
 joins all Spaces and fullscreen applications, and hosts `AgentIslandView` scoped to the app store.
 The compact panel cannot become key; the expanded roster temporarily becomes key without
 activating Prowl so it can own local keyboard navigation. The controller observes the enabled
-setting and creates or tears down the panel and global Active Agents hot key accordingly; while
+setting and creates or tears down the panel and dedicated Agent Island hot key accordingly; while
 disabled, nothing beyond the controller object and that observation exists (the display catalog
 is resolved on first use). Outside-click and local key monitors exist only while the roster is
 expanded.

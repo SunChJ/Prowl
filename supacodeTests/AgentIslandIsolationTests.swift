@@ -60,28 +60,19 @@ struct AgentIslandIsolationTests {
     #expect(!panel.canBecomeMain)
   }
 
-  @Test func globalHotKeyPreservesTheInAppActionAndTogglesTheIslandElsewhere() {
+  @Test func dedicatedGlobalHotKeyOnlyTogglesTheIsland() {
     #expect(
       AgentIslandHotKeyAction.resolve(
-        appIsActive: true,
-        isRosterExpanded: false,
-        hasEntries: true
-      ) == .toggleSidebarPanel)
-    #expect(
-      AgentIslandHotKeyAction.resolve(
-        appIsActive: false,
         isRosterExpanded: false,
         hasEntries: true
       ) == .toggleIslandRoster)
     #expect(
       AgentIslandHotKeyAction.resolve(
-        appIsActive: true,
         isRosterExpanded: true,
         hasEntries: true
       ) == .collapseIsland)
     #expect(
       AgentIslandHotKeyAction.resolve(
-        appIsActive: false,
         isRosterExpanded: false,
         hasEntries: false
       ) == nil)
@@ -92,8 +83,12 @@ struct AgentIslandIsolationTests {
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 125, characters: nil, modifiers: []) == .move(.next))
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "k", modifiers: []) == .move(.previous))
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "j", modifiers: []) == .move(.next))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "u", modifiers: []) == .page(.previous))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "d", modifiers: []) == .page(.next))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 123, characters: nil, modifiers: []) == .page(.previous))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 124, characters: nil, modifiers: []) == .page(.next))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "h", modifiers: []) == .page(.previous))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "l", modifiers: []) == .page(.next))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "u", modifiers: []) == nil)
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "d", modifiers: []) == nil)
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 36, characters: nil, modifiers: []) == .activateSelection)
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 49, characters: nil, modifiers: []) == .activateSelection)
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 53, characters: nil, modifiers: []) == .collapse)

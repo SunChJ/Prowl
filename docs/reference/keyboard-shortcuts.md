@@ -40,7 +40,8 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 | Action | Default | Command ID | Remappable |
 |--------|---------|------------|------------|
 | Toggle Left Sidebar | ⌘⌃S | `toggle_left_sidebar` | yes |
-| Toggle Active Agents Panel / Agent Island hot window | ⌘⌥P | `toggle_active_agents_panel` | yes |
+| Toggle Active Agents Panel | ⌘⌥P | `toggle_active_agents_panel` | yes |
+| Toggle Agent Island hot window | ⌘⇧P | `toggle_agent_island` | yes |
 | Select Next Agent (in panel) | ⌥⌃↓ | `select_next_active_agent` | yes |
 | Select Previous Agent (in panel) | ⌥⌃↑ | `select_previous_active_agent` | yes |
 | Jump to Latest Unread | ⌘⌥U | `jump_to_latest_unread` | yes |
@@ -49,10 +50,11 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 | Toggle Canvas | ⌘⌥↩ | `toggle_canvas` | yes |
 | Toggle Shelf | ⌘⇧↩ | `toggle_shelf` | yes |
 
-When Agent Island is enabled, the resolved **Toggle Active Agents** shortcut is also registered
-globally. It toggles the island roster from another application while retaining the sidebar-panel
-behavior inside Prowl. In the open island roster, Arrow Up/Down or `j`/`k` selects, `u`/`d` pages,
-Space or Return opens, `⌘1`…`⌘9` directly opens a current-page row, and `Esc` closes.
+When Agent Island is enabled, its resolved shortcut is registered globally. It is independent
+from the Active Agents panel shortcut and can be changed, cleared, or restored to `⌘⇧P` under
+Settings → Shortcuts. In the open island roster, Arrow Up/Down or `j`/`k` selects, Arrow
+Left/Right or `h`/`l` pages, Space or Return opens, `⌘1`…`⌘9` directly opens a current-page row,
+and `Esc` closes.
 
 ## Shelf view
 

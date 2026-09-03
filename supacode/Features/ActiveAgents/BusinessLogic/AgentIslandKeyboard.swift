@@ -2,20 +2,15 @@ import AppKit
 import Carbon
 
 enum AgentIslandHotKeyAction: Equatable {
-  case toggleSidebarPanel
   case toggleIslandRoster
   case collapseIsland
 
   static func resolve(
-    appIsActive: Bool,
     isRosterExpanded: Bool,
     hasEntries: Bool
   ) -> Self? {
     if isRosterExpanded {
       return .collapseIsland
-    }
-    if appIsActive {
-      return .toggleSidebarPanel
     }
     return hasEntries ? .toggleIslandRoster : nil
   }
@@ -46,6 +41,10 @@ enum AgentIslandKeyboardCommand: Equatable {
       return .move(.previous)
     case 125:
       return .move(.next)
+    case 123:
+      return .page(.previous)
+    case 124:
+      return .page(.next)
     case 36, 49, 76:
       return .activateSelection
     default:
@@ -57,9 +56,9 @@ enum AgentIslandKeyboardCommand: Equatable {
       return .move(.previous)
     case "j":
       return .move(.next)
-    case "u":
+    case "h":
       return .page(.previous)
-    case "d":
+    case "l":
       return .page(.next)
     default:
       return nil

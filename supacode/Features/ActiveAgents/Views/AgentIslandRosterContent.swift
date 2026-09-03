@@ -97,7 +97,7 @@ struct AgentIslandRosterContent: View {
           }
           .buttonStyle(.borderless)
           .disabled(layout.pageIndex == 0)
-          .help("Previous page (U)")
+          .help("Previous page (← or H)")
 
           Text("\(layout.pageIndex + 1) / \(layout.pageCount)")
             .font(.caption.monospacedDigit())
@@ -111,14 +111,14 @@ struct AgentIslandRosterContent: View {
           }
           .buttonStyle(.borderless)
           .disabled(layout.pageIndex == layout.pageCount - 1)
-          .help("Next page (D)")
+          .help("Next page (→ or L)")
         }
         .frame(height: 24)
       }
 
       HStack(spacing: 14) {
         keyboardLegend(keys: "↑↓  J K", action: "Select")
-        keyboardLegend(keys: "U D", action: "Page")
+        keyboardLegend(keys: "←→  H L", action: "Page")
         keyboardLegend(keys: "Space  ↩", action: "Open")
       }
       .frame(height: 24)

@@ -321,7 +321,6 @@ final class AgentIslandWindowController {
     let activeAgents = appStore.repositories.activeAgents
     guard
       let action = AgentIslandHotKeyAction.resolve(
-        appIsActive: NSApplication.shared.isActive,
         isRosterExpanded: activeAgents.isIslandRosterExpanded,
         hasEntries: !activeAgents.entries.isEmpty
       )
@@ -329,8 +328,6 @@ final class AgentIslandWindowController {
       return
     }
     switch action {
-    case .toggleSidebarPanel:
-      appStore.send(.repositories(.activeAgents(.togglePanelVisibility)))
     case .toggleIslandRoster:
       appStore.send(.repositories(.activeAgents(.islandToggleRoster)))
     case .collapseIsland:
@@ -341,7 +338,7 @@ final class AgentIslandWindowController {
   private func refreshGlobalHotKey() {
     globalHotKey?.register(
       binding: appStore.resolvedKeybindings.keybinding(
-        for: AppShortcuts.CommandID.toggleActiveAgentsPanel
+        for: AppShortcuts.CommandID.toggleAgentIsland
       )
     )
   }
@@ -349,7 +346,7 @@ final class AgentIslandWindowController {
   private func observeGlobalHotKeyBinding() {
     withObservationTracking {
       _ = appStore.resolvedKeybindings.keybinding(
-        for: AppShortcuts.CommandID.toggleActiveAgentsPanel
+        for: AppShortcuts.CommandID.toggleAgentIsland
       )
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in

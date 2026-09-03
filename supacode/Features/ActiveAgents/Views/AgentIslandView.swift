@@ -129,7 +129,7 @@ struct AgentIslandView: View {
     .help(
       AppShortcuts.helpText(
         title: agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents",
-        commandID: AppShortcuts.CommandID.toggleActiveAgentsPanel,
+        commandID: AppShortcuts.CommandID.toggleAgentIsland,
         in: appStore.resolvedKeybindings
       )
     )
