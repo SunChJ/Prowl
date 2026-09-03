@@ -18,6 +18,7 @@ enum AgentIslandFloatingDragEvent {
 
 struct AgentIslandRootLayout {
   static let floatingCompactWidth: CGFloat = 300
+  static let floatingControlsReservedWidth: CGFloat = 68
   static let fallbackFloatingCompactHeight: CGFloat = 40
   static let rosterWidth: CGFloat = 420
 
@@ -50,6 +51,10 @@ struct AgentIslandRootLayout {
 
   static func showsDisplayControl(connectedDisplayCount: Int) -> Bool {
     connectedDisplayCount > 1
+  }
+
+  static func usesCompactFloatingSummary(stateCount: Int) -> Bool {
+    stateCount >= AgentIslandStateSummary.order.count
   }
 }
 
@@ -284,11 +289,20 @@ struct AgentIslandView: View {
 
   /// The floating pill shows the same per-state counts as the notched wing, one size up.
   private var compactContent: some View {
-    HStack(spacing: 8) {
-      AgentIslandStateSummaryView(summary: stateSummary, size: .regular)
-      Spacer(minLength: 6)
+    HStack(spacing: 0) {
+      AgentIslandStateSummaryView(summary: stateSummary, size: floatingSummarySize)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      Color.clear
+        .frame(width: AgentIslandRootLayout.floatingControlsReservedWidth)
+        .accessibilityHidden(true)
       AgentIslandIconCluster(entries: islandEntries)
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
+  }
+
+  private var floatingSummarySize: AgentIslandStateSummaryView.Size {
+    AgentIslandRootLayout.usesCompactFloatingSummary(stateCount: stateSummary.items.count)
+      ? .compact : .regular
   }
 
   private var stateSummary: AgentIslandStateSummary {

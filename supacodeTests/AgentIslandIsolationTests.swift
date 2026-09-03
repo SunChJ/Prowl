@@ -186,19 +186,30 @@ struct AgentIslandIsolationTests {
     #expect(AgentIslandRootLayout.showsDisplayControl(connectedDisplayCount: 2))
   }
 
+  @Test func floatingBarCompactsTheSummaryWhenAllStatesArePresent() {
+    #expect(!AgentIslandRootLayout.usesCompactFloatingSummary(stateCount: 3))
+    #expect(AgentIslandRootLayout.usesCompactFloatingSummary(stateCount: 4))
+  }
+
   @Test func coreAnimationRingStopsForReduceMotionAndIdle() {
     let ring = AgentIslandStateRingView(frame: CGRect(x: 0, y: 0, width: 21, height: 21))
 
     ring.update(state: .working, reduceMotion: false)
-    #expect(ring.isBreathingActive)
-    #expect(ring.isDriftActive)
+    #expect(ring.isRotationActive)
 
     ring.update(state: .working, reduceMotion: true)
-    #expect(!ring.isBreathingActive)
-    #expect(!ring.isDriftActive)
+    #expect(!ring.isRotationActive)
 
     ring.update(state: .idle, reduceMotion: false)
-    #expect(!ring.isBreathingActive)
-    #expect(!ring.isDriftActive)
+    #expect(!ring.isRotationActive)
+  }
+
+  @Test func compactBarRingUsesOnlyTheStaticStateOutline() {
+    let ring = AgentIslandStateRingView(frame: CGRect(x: 0, y: 0, width: 21, height: 21))
+
+    ring.update(state: .working, reduceMotion: false, allowsAnimation: false)
+
+    #expect(!ring.isRotationActive)
+    #expect(!ring.isAnimatedRingVisible)
   }
 }

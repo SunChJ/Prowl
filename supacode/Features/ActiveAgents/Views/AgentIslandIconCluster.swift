@@ -51,7 +51,8 @@ struct AgentIslandIconCluster: View {
         ForEach(projection.entries) { entry in
           AgentIslandRuntimeIcon(
             entry: entry,
-            pointSize: pointSize
+            pointSize: pointSize,
+            allowsRingAnimation: false
           )
           .transition(iconTransition)
         }
@@ -100,19 +101,18 @@ struct AgentIslandIconCluster: View {
 
 struct AgentIslandRingPresentation: Equatable {
   let animates: Bool
-  let breathingDuration: TimeInterval
-  let driftDuration: TimeInterval
+  let rotationDuration: TimeInterval
 
   static func presentation(for state: AgentDisplayState) -> Self {
     switch state {
     case .working:
-      return Self(animates: true, breathingDuration: 1.8, driftDuration: 14)
+      return Self(animates: true, rotationDuration: 2.6)
     case .blocked:
-      return Self(animates: true, breathingDuration: 1.2, driftDuration: 11)
+      return Self(animates: true, rotationDuration: 1.35)
     case .done:
-      return Self(animates: true, breathingDuration: 2.4, driftDuration: 17)
+      return Self(animates: true, rotationDuration: 3.4)
     case .idle:
-      return Self(animates: false, breathingDuration: 0, driftDuration: 0)
+      return Self(animates: false, rotationDuration: 0)
     }
   }
 }
@@ -120,7 +120,18 @@ struct AgentIslandRingPresentation: Equatable {
 struct AgentIslandRuntimeIcon: View {
   let entry: ActiveAgentEntry
   let pointSize: CGFloat
+  let allowsRingAnimation: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  init(
+    entry: ActiveAgentEntry,
+    pointSize: CGFloat,
+    allowsRingAnimation: Bool = true
+  ) {
+    self.entry = entry
+    self.pointSize = pointSize
+    self.allowsRingAnimation = allowsRingAnimation
+  }
 
   var body: some View {
     ZStack {
@@ -138,12 +149,13 @@ struct AgentIslandRuntimeIcon: View {
       .foregroundStyle(.white.opacity(0.92))
     }
     // The ring circle is one point wider in radius than the glyph budget so the glyph and the
-    // breathing ring do not touch.
+    // state ring do not touch.
     .frame(width: pointSize + 2, height: pointSize + 2)
     .overlay {
       AgentIslandStateRing(
         state: entry.displayState,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        allowsAnimation: allowsRingAnimation
       )
       .allowsHitTesting(false)
     }
@@ -155,31 +167,30 @@ struct AgentIslandRuntimeIcon: View {
 private struct AgentIslandStateRing: NSViewRepresentable {
   let state: AgentDisplayState
   let reduceMotion: Bool
+  let allowsAnimation: Bool
 
   func makeNSView(context: Context) -> AgentIslandStateRingView {
     let view = AgentIslandStateRingView()
-    view.update(state: state, reduceMotion: reduceMotion)
+    view.update(state: state, reduceMotion: reduceMotion, allowsAnimation: allowsAnimation)
     return view
   }
 
   func updateNSView(_ nsView: AgentIslandStateRingView, context: Context) {
-    nsView.update(state: state, reduceMotion: reduceMotion)
+    nsView.update(state: state, reduceMotion: reduceMotion, allowsAnimation: allowsAnimation)
   }
 }
 
 @MainActor
 final class AgentIslandStateRingView: NSView {
-  private static let breathingAnimationKey = "agent-island-ring-breathing"
-  private static let driftAnimationKey = "agent-island-ring-drift"
+  private static let rotationAnimationKey = "agent-island-ring-rotation"
 
   private let baseRingLayer = CAShapeLayer()
-  private let breathingRingLayer = CALayer()
   private let animatedRingLayer = CAGradientLayer()
   private let animatedRingMask = CAShapeLayer()
-  private var breathingDuration: TimeInterval?
-  private var driftDuration: TimeInterval?
+  private var rotationDuration: TimeInterval?
   private var currentState = AgentDisplayState.idle
   private var currentReduceMotion = false
+  private var currentAllowsAnimation = true
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
@@ -193,9 +204,8 @@ final class AgentIslandStateRingView: NSView {
     animatedRingMask.strokeColor = NSColor.white.cgColor
     animatedRingMask.lineWidth = 2.2
     animatedRingMask.lineCap = .round
-    breathingRingLayer.addSublayer(animatedRingLayer)
     layer?.addSublayer(baseRingLayer)
-    layer?.addSublayer(breathingRingLayer)
+    layer?.addSublayer(animatedRingLayer)
   }
 
   required init?(coder: NSCoder) {
@@ -210,9 +220,8 @@ final class AgentIslandStateRingView: NSView {
     let path = CGPath(ellipseIn: ringBounds, transform: nil)
     baseRingLayer.frame = bounds
     baseRingLayer.path = path
-    breathingRingLayer.frame = bounds
-    animatedRingLayer.frame = breathingRingLayer.bounds
-    animatedRingMask.frame = animatedRingLayer.bounds
+    animatedRingLayer.frame = bounds
+    animatedRingMask.frame = bounds
     animatedRingMask.path = path
     CATransaction.commit()
   }
@@ -232,91 +241,68 @@ final class AgentIslandStateRingView: NSView {
     applyPresentation()
   }
 
-  func update(state: AgentDisplayState, reduceMotion: Bool) {
+  func update(
+    state: AgentDisplayState,
+    reduceMotion: Bool,
+    allowsAnimation: Bool = true
+  ) {
     currentState = state
     currentReduceMotion = reduceMotion
+    currentAllowsAnimation = allowsAnimation
     applyPresentation()
   }
 
-  var isBreathingActive: Bool {
-    breathingRingLayer.animation(forKey: Self.breathingAnimationKey) != nil
+  var isRotationActive: Bool {
+    animatedRingLayer.animation(forKey: Self.rotationAnimationKey) != nil
   }
 
-  var isDriftActive: Bool {
-    animatedRingLayer.animation(forKey: Self.driftAnimationKey) != nil
+  var isAnimatedRingVisible: Bool {
+    !animatedRingLayer.isHidden
   }
 
   private func applyPresentation() {
     let presentation = AgentIslandRingPresentation.presentation(for: currentState)
     let color = resolvedColor(for: currentState)
+    let presentsAnimatedRing = presentation.animates && currentAllowsAnimation
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    baseRingLayer.strokeColor = color.withAlphaComponent(presentation.animates ? 0.16 : 0.42).cgColor
-    baseRingLayer.lineWidth = presentation.animates ? 1.1 : 1
-    breathingRingLayer.isHidden = !presentation.animates
+    baseRingLayer.strokeColor = color.withAlphaComponent(presentsAnimatedRing ? 0.2 : 0.42).cgColor
+    baseRingLayer.lineWidth = presentsAnimatedRing ? 1.1 : 1
+    animatedRingLayer.isHidden = !presentsAnimatedRing
     animatedRingLayer.colors = Self.gradientAlphas.map {
       color.withAlphaComponent($0).cgColor
     }
     animatedRingLayer.locations = Self.gradientLocations
     animatedRingLayer.shadowColor = color.cgColor
-    animatedRingLayer.shadowOpacity = presentation.animates ? 0.42 : 0
-    animatedRingLayer.shadowRadius = 1.8
+    animatedRingLayer.shadowOpacity = presentsAnimatedRing ? 0.3 : 0
+    animatedRingLayer.shadowRadius = 1.4
     animatedRingLayer.shadowOffset = .zero
     CATransaction.commit()
 
-    if presentation.animates, !currentReduceMotion {
-      startBreathing(duration: presentation.breathingDuration)
-      startDrift(duration: presentation.driftDuration)
+    if presentsAnimatedRing, !currentReduceMotion {
+      startRotation(duration: presentation.rotationDuration)
     } else {
-      stopAnimations()
+      stopRotation()
     }
   }
 
-  private func startBreathing(duration: TimeInterval) {
-    guard breathingDuration != duration || !isBreathingActive else { return }
-
-    let opacity = CAKeyframeAnimation(keyPath: "opacity")
-    opacity.values = [1, 0.48, 1]
-    opacity.keyTimes = [0, 0.5, 1]
-    opacity.timingFunctions = Self.breathingTimingFunctions
-    opacity.duration = duration
-
-    let scale = CAKeyframeAnimation(keyPath: "transform.scale")
-    scale.values = [1, 0.94, 1]
-    scale.keyTimes = [0, 0.5, 1]
-    scale.timingFunctions = Self.breathingTimingFunctions
-    scale.duration = duration
-
-    let animation = CAAnimationGroup()
-    animation.animations = [opacity, scale]
-    animation.duration = duration
-    animation.repeatCount = .infinity
-    animation.isRemovedOnCompletion = false
-    breathingRingLayer.add(animation, forKey: Self.breathingAnimationKey)
-    breathingDuration = duration
-  }
-
-  private func startDrift(duration: TimeInterval) {
-    guard driftDuration != duration || !isDriftActive else { return }
+  private func startRotation(duration: TimeInterval) {
+    guard rotationDuration != duration || !isRotationActive else { return }
     let animation = CABasicAnimation(keyPath: "transform.rotation.z")
     animation.fromValue = 0
     animation.toValue = Double.pi * 2
     animation.duration = duration
     animation.repeatCount = .infinity
     animation.isRemovedOnCompletion = false
-    animatedRingLayer.add(animation, forKey: Self.driftAnimationKey)
-    driftDuration = duration
+    animatedRingLayer.add(animation, forKey: Self.rotationAnimationKey)
+    rotationDuration = duration
   }
 
-  private func stopAnimations() {
-    breathingRingLayer.removeAnimation(forKey: Self.breathingAnimationKey)
-    animatedRingLayer.removeAnimation(forKey: Self.driftAnimationKey)
-    breathingDuration = nil
-    driftDuration = nil
+  private func stopRotation() {
+    animatedRingLayer.removeAnimation(forKey: Self.rotationAnimationKey)
+    rotationDuration = nil
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    breathingRingLayer.opacity = 1
-    breathingRingLayer.transform = CATransform3DIdentity
     animatedRingLayer.transform = CATransform3DIdentity
     CATransaction.commit()
   }
@@ -324,7 +310,6 @@ final class AgentIslandStateRingView: NSView {
   private func updateContentsScale() {
     let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
     baseRingLayer.contentsScale = scale
-    breathingRingLayer.contentsScale = scale
     animatedRingLayer.contentsScale = scale
     animatedRingMask.contentsScale = scale
   }
@@ -347,10 +332,6 @@ final class AgentIslandStateRingView: NSView {
     return color ?? .secondaryLabelColor
   }
 
-  private static let gradientAlphas: [CGFloat] = [0.48, 0.68, 0.92, 0.7, 0.82, 0.48]
+  private static let gradientAlphas: [CGFloat] = [0.08, 0.34, 1, 0.28, 0.72, 0.08]
   private static let gradientLocations: [NSNumber] = [0, 0.18, 0.36, 0.62, 0.82, 1]
-  private static let breathingTimingFunctions = [
-    CAMediaTimingFunction(name: .easeInEaseOut),
-    CAMediaTimingFunction(name: .easeInEaseOut),
-  ]
 }

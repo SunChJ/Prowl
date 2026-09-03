@@ -40,20 +40,18 @@ struct AgentIslandIconClusterTests {
     #expect(projection.overflowCount == 3)
   }
 
-  @Test func animatedRingUsesStateSpecificBreathingWithSlowerDrift() {
+  @Test func animatedRingSpeedsRemainDistinctAndPositive() {
     let working = AgentIslandRingPresentation.presentation(for: .working)
     let blocked = AgentIslandRingPresentation.presentation(for: .blocked)
     let done = AgentIslandRingPresentation.presentation(for: .done)
     let idle = AgentIslandRingPresentation.presentation(for: .idle)
 
     #expect(
-      Set([working.breathingDuration, blocked.breathingDuration, done.breathingDuration]).count == 3)
-    for presentation in [working, blocked, done] {
-      #expect(presentation.breathingDuration > 0)
-      #expect(presentation.driftDuration >= presentation.breathingDuration * 4)
-    }
-    #expect(idle.breathingDuration == 0)
-    #expect(idle.driftDuration == 0)
+      Set([working.rotationDuration, blocked.rotationDuration, done.rotationDuration]).count == 3)
+    #expect(blocked.rotationDuration > 0)
+    #expect(working.rotationDuration > 0)
+    #expect(done.rotationDuration > 0)
+    #expect(idle.rotationDuration == 0)
   }
 
   @Test func onlyNonIdleStatesAnimateTheirIslandRing() {
