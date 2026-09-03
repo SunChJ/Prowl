@@ -614,6 +614,38 @@ struct SettingsFeatureTests {
     #expect(settingsFile.global.showActiveAgentStatusInShelf == false)
   }
 
+  @Test(.dependencies) func agentIslandSettingsPersistChanges() async {
+    let initialSettings = GlobalSettings.default
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.binding(.set(\.agentIslandEnabled, true))) {
+      $0.agentIslandEnabled = true
+    }
+    await store.receive(\.delegate.settingsChanged)
+    await store.send(
+      .binding(
+        .set(
+          \.agentIslandDisplayPreference,
+          .display(id: "display-uuid", name: "Studio Display")
+        )
+      )
+    ) {
+      $0.agentIslandDisplayPreference = .display(id: "display-uuid", name: "Studio Display")
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.agentIslandEnabled)
+    #expect(
+      settingsFile.global.agentIslandDisplayPreference
+        == .display(id: "display-uuid", name: "Studio Display")
+    )
+  }
+
   @Test(.dependencies) func disablingAnalyticsResetsClient() async {
     var initialSettings = GlobalSettings.default
     initialSettings.analyticsEnabled = true

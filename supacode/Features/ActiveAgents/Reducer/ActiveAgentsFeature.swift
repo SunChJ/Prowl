@@ -21,6 +21,8 @@ struct ActiveAgentsFeature {
     /// Surface that currently has terminal focus, mirrored from `focusChanged` events.
     /// Used as the anchor for keyboard list navigation; not persisted.
     var focusedSurfaceID: UUID?
+    var isIslandEnabled = false
+    var isIslandRosterExpanded = false
     @Shared(.appStorage("activeAgentsPanelHidden")) var isPanelHidden: Bool = false
     @Shared(.appStorage("activeAgentsPanelHeight")) var panelHeight: Double = 200
   }
@@ -38,6 +40,14 @@ struct ActiveAgentsFeature {
     /// Context-menu "Mark as Read": handled by RepositoriesFeature.
     case markAsReadTapped(ActiveAgentEntry.ID)
     case focusedSurfaceChanged(UUID?)
+    case islandEnabledChanged(Bool)
+    case islandToggleRoster
+    case islandCollapseRoster
+    /// A sidebar action raised from the island roster or attention cells. The reducer forwards
+    /// the wrapped action unchanged; when it presents Prowl UI (`surfacesProwl`) the roster
+    /// collapses first and `AppFeature` surfaces the main window before the action runs.
+    indirect case island(Action)
+    case islandOpenProwlTapped
     case selectNextEntry
     case selectPreviousEntry
     case togglePanelVisibility
@@ -56,6 +66,9 @@ struct ActiveAgentsFeature {
 
       case .agentEntryRemoved(let id):
         state.entries.remove(id: id)
+        if state.entries.isEmpty {
+          state.isIslandRosterExpanded = false
+        }
         return .none
 
       case .entryTapped(let id), .handOffTapped(let id), .runWorkflowTapped(let id, _):
@@ -67,11 +80,32 @@ struct ActiveAgentsFeature {
         state.focusedSurfaceID = state.entries[id: id]?.surfaceID
         return .none
 
+      case .island(let action):
+        if action.surfacesProwl {
+          state.isIslandRosterExpanded = false
+        }
+        return .send(action)
+
       case .markAsReadTapped:
         return .none
 
       case .focusedSurfaceChanged(let surfaceID):
         state.focusedSurfaceID = surfaceID
+        return .none
+
+      case .islandEnabledChanged(let isEnabled):
+        state.isIslandEnabled = isEnabled
+        if !isEnabled {
+          state.isIslandRosterExpanded = false
+        }
+        return .none
+
+      case .islandToggleRoster:
+        state.isIslandRosterExpanded.toggle()
+        return .none
+
+      case .islandCollapseRoster, .islandOpenProwlTapped:
+        state.isIslandRosterExpanded = false
         return .none
 
       case .selectNextEntry:
@@ -137,6 +171,33 @@ struct ActiveAgentsFeature {
 
   static func maximumPanelHeight(forContainerHeight height: Double) -> Double {
     max(minimumPanelHeight, min(maximumPanelHeight, height - reservedSidebarListHeight))
+  }
+}
+
+extension ActiveAgentsFeature.Action {
+  /// Actions that end in Prowl-owned UI: pane focus, the handoff HUD, or the workflow start
+  /// sheet. Raised from the island, these collapse the roster and surface the main window first.
+  var surfacesProwl: Bool {
+    switch self {
+    case .entryTapped, .handOffTapped, .runWorkflowTapped:
+      return true
+    default:
+      return false
+    }
+  }
+}
+
+extension ActiveAgentsFeature.State {
+  var islandAttentionEntries: [ActiveAgentEntry] {
+    entries.filter { $0.displayState == .blocked || $0.displayState == .done }
+      .sorted { lhs, rhs in
+        let lhsPriority = lhs.displayState == .blocked ? 0 : 1
+        let rhsPriority = rhs.displayState == .blocked ? 0 : 1
+        if lhsPriority != rhsPriority {
+          return lhsPriority < rhsPriority
+        }
+        return lhs.lastChangedAt > rhs.lastChangedAt
+      }
   }
 
 }

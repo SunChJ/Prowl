@@ -39,6 +39,8 @@ struct SettingsFeature {
     var autoShowActiveAgentsPanel: Bool
     var showActiveAgentTabTitles: Bool
     var showActiveAgentStatusInShelf: Bool
+    var agentIslandEnabled: Bool
+    var agentIslandDisplayPreference: AgentIslandDisplayPreference
     var windowTintMode: WindowTintMode
     var shelfSpineTintFallback: ShelfSpineTintFallback
     var shelfSpineTintFollowsRepositoryColor: Bool
@@ -102,6 +104,8 @@ struct SettingsFeature {
       autoShowActiveAgentsPanel = settings.autoShowActiveAgentsPanel
       showActiveAgentTabTitles = settings.showActiveAgentTabTitles
       showActiveAgentStatusInShelf = settings.showActiveAgentStatusInShelf
+      agentIslandEnabled = settings.agentIslandEnabled
+      agentIslandDisplayPreference = settings.agentIslandDisplayPreference
       windowTintMode = settings.windowTintMode
       shelfSpineTintFallback = settings.shelfSpineTintFallback
       shelfSpineTintFollowsRepositoryColor = settings.shelfSpineTintFollowsRepositoryColor
@@ -152,6 +156,8 @@ struct SettingsFeature {
         autoShowActiveAgentsPanel: autoShowActiveAgentsPanel,
         showActiveAgentTabTitles: showActiveAgentTabTitles,
         showActiveAgentStatusInShelf: showActiveAgentStatusInShelf,
+        agentIslandEnabled: agentIslandEnabled,
+        agentIslandDisplayPreference: agentIslandDisplayPreference,
         windowTintMode: windowTintMode,
         windowTintCustomColor: TintColor(windowTintCustomColor),
         showRunButtonInToolbar: showRunButtonInToolbar,
@@ -275,6 +281,8 @@ struct SettingsFeature {
         state.autoShowActiveAgentsPanel = normalizedSettings.autoShowActiveAgentsPanel
         state.showActiveAgentTabTitles = normalizedSettings.showActiveAgentTabTitles
         state.showActiveAgentStatusInShelf = normalizedSettings.showActiveAgentStatusInShelf
+        state.agentIslandEnabled = normalizedSettings.agentIslandEnabled
+        state.agentIslandDisplayPreference = normalizedSettings.agentIslandDisplayPreference
         state.windowTintMode = normalizedSettings.windowTintMode
         state.shelfSpineTintFallback = normalizedSettings.shelfSpineTintFallback
         state.shelfSpineTintFollowsRepositoryColor = normalizedSettings.shelfSpineTintFollowsRepositoryColor

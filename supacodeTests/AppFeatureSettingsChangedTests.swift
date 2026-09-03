@@ -124,6 +124,15 @@ struct AppFeatureSettingsChangedTests {
     #expect(state.repositories.showActiveAgentTabTitles == true)
   }
 
+  @Test func appStateInitializesAgentIslandFromSettings() {
+    var settings = SettingsFeature.State()
+    settings.agentIslandEnabled = true
+
+    let state = AppFeature.State(settings: settings)
+
+    #expect(state.repositories.activeAgents.isIslandEnabled)
+  }
+
   @Test(.dependencies) func settingsChangedRecomputesResolvedKeybindings() async {
     var settings = GlobalSettings.default
     settings.keybindingUserOverrides = KeybindingUserOverrideStore(

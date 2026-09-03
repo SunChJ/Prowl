@@ -43,6 +43,7 @@ struct AppFeature {
     ) {
       var repositories = repositories
       repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
+      repositories.activeAgents.isIslandEnabled = settings.agentIslandEnabled
       self.repositories = repositories
       self.settings = settings
       lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
@@ -443,9 +444,12 @@ struct AppFeature {
       case .settings(.delegate(.settingsChanged(let settings))):
         let shouldCheckSystemNotificationPermission =
           settings.systemNotificationsEnabled && !state.lastKnownSystemNotificationsEnabled
+        let didChangeAgentIslandEnabled =
+          state.repositories.activeAgents.isIslandEnabled != settings.agentIslandEnabled
         state.lastKnownSystemNotificationsEnabled = settings.systemNotificationsEnabled
         state.settings.keybindingUserOverrides = settings.keybindingUserOverrides
         state.repositories.showActiveAgentTabTitles = settings.showActiveAgentTabTitles
+        state.repositories.activeAgents.isIslandEnabled = settings.agentIslandEnabled
         if let selectedWorktree = state.repositories.selectedTerminalWorktree {
           let rootURL = selectedWorktree.repositoryRootURL
           @Shared(.repositorySettings(rootURL)) var repositorySettings
@@ -466,8 +470,13 @@ struct AppFeature {
           settings.detectRepositoryIconsAutomatically
           ? .none
           : .send(.repositories(.repositoryManagement(.cancelPendingIconDetections)))
+        let updateAgentIsland: Effect<Action> =
+          didChangeAgentIslandEnabled
+          ? .send(.repositories(.activeAgents(.islandEnabledChanged(settings.agentIslandEnabled))))
+          : .none
         return .merge(
           cancelIconDetections,
+          updateAgentIsland,
           .send(.repositories(.githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
           .send(
             .repositories(
@@ -1012,6 +1021,18 @@ struct AppFeature {
 
       case .repositories(.activeAgents(.handOffTapped(let entryID))):
         return openHandoffHud(state: &state, entryID: entryID)
+
+      case .repositories(.activeAgents(.island(let action))):
+        // The child reducer forwards `action` after this pass, so the window is up before the
+        // sidebar path focuses a pane or presents the handoff HUD / workflow sheet.
+        if action.surfacesProwl {
+          _ = appLifecycleClient.surfaceMainWindow()
+        }
+        return .none
+
+      case .repositories(.activeAgents(.islandOpenProwlTapped)):
+        _ = appLifecycleClient.surfaceMainWindow()
+        return .none
 
       case .repositories(.activeAgents(.runWorkflowTapped(let entryID, let workflowKey))):
         guard let entry = state.repositories.activeAgents.entries[id: entryID] else { return .none }

@@ -207,6 +207,18 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
+  @Test func runWorkflowTappedUpdatesFocusAnchorLikeEntryTapped() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.runWorkflowTapped(UUID(2), workflowKey: "review")) {
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
   @Test func markAsReadTappedIsLocalNoOp() async {
     var state = ActiveAgentsFeature.State()
     state.entries = sampleEntries()
@@ -232,40 +244,195 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
-  @Test func panelSubtitleAndHelpSwapPaneTitleAndBranchWhenEnabled() {
+  @Test func islandAttentionOrdersBlockedBeforeDoneThenByRecency() {
+    var state = ActiveAgentsFeature.State()
+    let done = entry(id: UUID(0), state: .done, changedAt: Date(timeIntervalSince1970: 30))
+    let olderBlocked = entry(
+      id: UUID(1), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    let newerBlocked = entry(
+      id: UUID(2), state: .blocked, changedAt: Date(timeIntervalSince1970: 20))
+    let working = entry(id: UUID(3), state: .working, changedAt: Date(timeIntervalSince1970: 40))
+    state.entries = [done, olderBlocked, newerBlocked, working]
+
+    #expect(state.islandAttentionEntries.map(\.id) == [newerBlocked.id, olderBlocked.id, done.id])
+  }
+
+  @Test func islandAttentionClearsWhenExistingStateTransitionsClearIt() async {
+    let id = UUID(0)
+    let blocked = entry(id: id, state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    let working = entry(id: id, state: .working, changedAt: Date(timeIntervalSince1970: 20))
+    let done = entry(id: id, state: .done, changedAt: Date(timeIntervalSince1970: 30))
+    let idle = entry(id: id, state: .idle, changedAt: Date(timeIntervalSince1970: 40))
+    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.agentEntryChanged(blocked, autoShowPanel: false)) {
+      $0.entries = [blocked]
+    }
+    #expect(store.state.islandAttentionEntries == [blocked])
+    await store.send(.agentEntryChanged(working, autoShowPanel: false)) {
+      $0.entries = [working]
+    }
+    #expect(store.state.islandAttentionEntries.isEmpty)
+    await store.send(.agentEntryChanged(done, autoShowPanel: false)) {
+      $0.entries = [done]
+    }
+    #expect(store.state.islandAttentionEntries == [done])
+    await store.send(.agentEntryChanged(idle, autoShowPanel: false)) {
+      $0.entries = [idle]
+    }
+    #expect(store.state.islandAttentionEntries.isEmpty)
+  }
+
+  @Test func islandRosterToggleDoesNotMutateAttentionState() async {
+    var state = ActiveAgentsFeature.State()
+    let blocked = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    state.entries = [blocked]
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandToggleRoster) {
+      $0.isIslandRosterExpanded = true
+    }
+    #expect(store.state.islandAttentionEntries == [blocked])
+    await store.send(.islandCollapseRoster) {
+      $0.isIslandRosterExpanded = false
+    }
+    #expect(store.state.entries[id: blocked.id]?.displayState == .blocked)
+  }
+
+  @Test func islandEntryTapCollapsesRosterAndMovesFocusAnchor() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.island(.entryTapped(UUID(2)))) {
+      $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.entryTapped(UUID(2))) {
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
+  @Test func islandForwardsNonPresentingActionsWithoutCollapsing() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    // "Mark as Read" is handled by parents and shows no Prowl UI, so the roster stays open.
+    await store.send(.island(.markAsReadTapped(UUID(0))))
+    await store.receive(.markAsReadTapped(UUID(0)))
+  }
+
+  @Test func onlyActionsThatPresentProwlUISurfaceTheWindow() {
+    #expect(ActiveAgentsFeature.Action.entryTapped(UUID(0)).surfacesProwl)
+    #expect(ActiveAgentsFeature.Action.handOffTapped(UUID(0)).surfacesProwl)
+    #expect(ActiveAgentsFeature.Action.runWorkflowTapped(UUID(0), workflowKey: "review").surfacesProwl)
+    #expect(!ActiveAgentsFeature.Action.markAsReadTapped(UUID(0)).surfacesProwl)
+    #expect(!ActiveAgentsFeature.Action.islandToggleRoster.surfacesProwl)
+  }
+
+  @Test func islandContextActionsCollapseRosterAndMoveFocusAnchor() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.island(.handOffTapped(UUID(1)))) {
+      $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.handOffTapped(UUID(1))) {
+      $0.focusedSurfaceID = UUID(1)
+    }
+    await store.send(.islandToggleRoster) {
+      $0.isIslandRosterExpanded = true
+    }
+    await store.send(.island(.runWorkflowTapped(UUID(2), workflowKey: "review"))) {
+      $0.isIslandRosterExpanded = false
+    }
+    await store.receive(.runWorkflowTapped(UUID(2), workflowKey: "review")) {
+      $0.focusedSurfaceID = UUID(2)
+    }
+  }
+
+  @Test func removingLastEntryCollapsesIslandRoster() async {
+    let agent = entry(id: UUID(0), state: .idle, changedAt: Date(timeIntervalSince1970: 10))
+    var state = ActiveAgentsFeature.State()
+    state.entries = [agent]
+    state.isIslandRosterExpanded = true
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.agentEntryRemoved(agent.id)) {
+      $0.entries = []
+      $0.isIslandRosterExpanded = false
+    }
+  }
+
+  @Test func sharedRowSubtitleAndHelpSwapPaneTitleAndBranchWhenEnabled() {
     let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .idle, changedAt: Date())
 
     #expect(
-      ActiveAgentsPanel.subtitle(for: entry, branchName: "main", showTabTitles: false)
+      ActiveAgentRowPresentation.subtitle(for: entry, branchName: "main", showTabTitles: false)
         == "main"
     )
     #expect(
-      ActiveAgentsPanel.helpText(for: entry, branchName: "main", showTabTitles: false)
+      ActiveAgentRowPresentation.helpText(for: entry, branchName: "main", showTabTitles: false)
         == "Review issue 385"
     )
     #expect(
-      ActiveAgentsPanel.subtitle(for: entry, branchName: "main", showTabTitles: true)
+      ActiveAgentRowPresentation.subtitle(for: entry, branchName: "main", showTabTitles: true)
         == "Review issue 385"
     )
     #expect(
-      ActiveAgentsPanel.helpText(for: entry, branchName: "main", showTabTitles: true)
+      ActiveAgentRowPresentation.helpText(for: entry, branchName: "main", showTabTitles: true)
         == "main"
     )
   }
 
-  @Test func panelSubtitleShowsTheWorkflowBadgeWhileTheRunLives() {
+  @Test func sharedRowSubtitleShowsTheWorkflowBadgeWhileTheRunLives() {
     let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
 
     #expect(
-      ActiveAgentsPanel.subtitle(
+      ActiveAgentRowPresentation.subtitle(
         for: entry, branchName: "main", showTabTitles: false,
         workflowBadge: "in Adversarial Review \u{00B7} reviewer")
         == "in Adversarial Review \u{00B7} reviewer"
     )
     // The branch/title subtitle returns when the run ends.
     #expect(
-      ActiveAgentsPanel.subtitle(
+      ActiveAgentRowPresentation.subtitle(
         for: entry, branchName: "main", showTabTitles: true, workflowBadge: nil)
+        == "Review issue 385"
+    )
+  }
+
+  @Test func islandRosterSubtitleShowsTitleAndBranchUnlessABadgeLives() {
+    let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
+
+    #expect(
+      ActiveAgentRowPresentation.combinedSubtitle(for: entry, branchName: "main")
+        == "Review issue 385 \u{00B7} main"
+    )
+    #expect(
+      ActiveAgentRowPresentation.combinedSubtitle(
+        for: entry, branchName: "main", workflowBadge: "in Review \u{00B7} reviewer")
+        == "in Review \u{00B7} reviewer"
+    )
+    // A pane titled after its branch is not repeated.
+    #expect(
+      ActiveAgentRowPresentation.combinedSubtitle(for: entry, branchName: "Review issue 385")
         == "Review issue 385"
     )
   }
@@ -273,7 +440,7 @@ struct ActiveAgentsFeatureTests {
   @Test func panelPaneTitleFallsBackForEmptyTitles() {
     let entry = entry(id: UUID(0), paneTitle: "   ", state: .idle, changedAt: Date())
 
-    #expect(ActiveAgentsPanel.paneTitle(for: entry) == "Untitled tab")
+    #expect(ActiveAgentRowPresentation.paneTitle(for: entry) == "Untitled tab")
   }
 
   private func sampleEntries() -> IdentifiedArrayOf<ActiveAgentEntry> {
