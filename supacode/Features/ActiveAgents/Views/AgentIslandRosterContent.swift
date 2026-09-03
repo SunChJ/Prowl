@@ -118,7 +118,9 @@ struct AgentIslandRosterContent: View {
 
       HStack(spacing: 14) {
         keyboardLegend(keys: ["↑ K", "↓ J"], action: "Select")
-        keyboardLegend(keys: ["← H", "→ L"], action: "Page")
+        if layout.pageCount > 1 {
+          keyboardLegend(keys: ["← H", "→ L"], action: "Page")
+        }
         keyboardLegend(keys: ["Space", "↩"], action: "Open")
       }
       .frame(height: 24)

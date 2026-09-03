@@ -67,7 +67,7 @@ and a removed entry disappears with the roster.
   corresponding agent on the current page.
   These are visible-slot shortcuts, not permanent agent numbers: every page labels its visible
   rows from `⌘1` again. The row labels and a compact legend for movement, paging, and confirmation
-  stay visible.
+  stay visible; the paging hint appears only when the roster has more than one page.
 - **Open Prowl** in the roster header brings the main window forward without changing the
   selected agent.
 - **Click outside or press `Esc`** to collapse the roster. The expanded island is a temporary

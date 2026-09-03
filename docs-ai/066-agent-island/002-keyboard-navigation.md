@@ -30,7 +30,7 @@ Agents panel command.
   arrow is grouped with its Vim counterpart (`↑ K`, `↓ J`, `← H`, `→ L`) so the direction is
   explicit; Space and Return remain grouped for opening. The row-level shortcut labels
   communicate the direct `⌘1`…`⌘9` mapping without a redundant transient or footer hint.
-  Clickable page controls expose the current page beside that legend when multiple pages exist.
+  The paging hint and clickable page controls appear only when multiple pages exist.
 - Keep the selection presentation-only until activation. It does not mutate Active Agents state,
   mark entries as handled, or focus a terminal while merely navigating.
 
@@ -48,9 +48,9 @@ are handled locally by the key panel, so they do not leak into the previously fr
 Implemented on 2026-09-03. The island owns a dedicated, remappable `⌘⇧P` global shortcut and
 keyboard focus only while expanded. It supports transient selection, nine-entry paging through
 Arrow Left/Right or `h`/`l`, visible-slot activation, confirmation, and dismissal. Visible rows
-keep their `⌘1`…`⌘9` labels; the footer permanently shows only movement, paging, and confirmation
-hints. Collapsed strong reminders expose `⌘⌥1`…`⌘⌥9` for their first nine priority-ordered cells,
-using the same focus path as a pointer click.
+keep their `⌘1`…`⌘9` labels; the footer permanently shows movement and confirmation, adding
+paging only when a second page exists. Collapsed strong reminders expose `⌘⌥1`…`⌘⌥9` for their
+first nine priority-ordered cells, using the same focus path as a pointer click.
 
 Verification completed with `make check`, `make test`, and `make build-app`; all passed with zero
 test or build failures. Final native screenshot capture was unavailable because the computer-use
