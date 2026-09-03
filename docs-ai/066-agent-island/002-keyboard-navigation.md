@@ -21,11 +21,13 @@ Agents panel command.
   while preserving the row position when possible. Space or Return opens the selected pane in
   Prowl; Escape collapses the roster. The earlier `u`/`d` page bindings are removed.
 - Use `⌘1`…`⌘9` for direct activation of the nine visible slots, not globally numbered agents.
-  Every visible row keeps its current shortcut label; the mapping restarts at `⌘1` after paging.
+  Every visible row keeps its current shortcut label at the tab bar's caption scale; the mapping
+  restarts at `⌘1` after paging.
 - Register `⌘⌥1`…`⌘⌥9` for the first nine strong-reminder slots while the roster is closed. The
   mapping follows the existing attention projection (Blocked before unviewed Done, newest first
-  within each state), and every assigned attention cell keeps its shortcut label visible. Only
-  currently backed slots are registered; roster expansion removes them until it collapses again.
+  within each state), and every assigned attention cell keeps its shortcut in an inset top-leading
+  tag that follows the card's corner geometry without competing with its metadata. Only currently
+  backed slots are registered; roster expansion removes them until it collapses again.
 - Keep a compact legend at the bottom of the roster for the persistent interaction model. Each
   arrow is grouped with its Vim counterpart (`↑ K`, `↓ J`, `← H`, `→ L`) so the direction is
   explicit; Space and Return remain grouped for opening. The row-level shortcut labels

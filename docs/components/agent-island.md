@@ -39,9 +39,10 @@ Blocked and Done cells form a small grid under the bar: one column for a single 
 columns otherwise, and up to three rows before it scrolls. Each cell shows the agent name and
 state on the left and the repository plus the same branch/tab subtitle as Active Agents on the
 right; a live Workflow role badge takes the subtitle position, as in the sidebar. The first nine
-cells show `⌘⌥1`…`⌘⌥9`; while the roster is closed, those global shortcuts open the matching
-strong reminder directly. The mapping follows the displayed priority order: Blocked first, then
-unviewed Done, newest first within each state. Cells cannot be dismissed from the island. A
+cells show `⌘⌥1`…`⌘⌥9` in an inset tag at the top-leading corner; while the roster is closed,
+those global shortcuts open the matching strong reminder directly. The mapping follows the
+displayed priority order: Blocked first, then unviewed Done, newest first within each state. Cells
+cannot be dismissed from the island. A
 Blocked cell clears when the agent leaves that state, a Done cell clears once the entry is viewed,
 and a removed entry disappears with the roster.
 
@@ -66,8 +67,9 @@ and a removed entry disappears with the roster.
   or `l` move one page; Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the
   corresponding agent on the current page.
   These are visible-slot shortcuts, not permanent agent numbers: every page labels its visible
-  rows from `⌘1` again. The row labels and a compact legend for movement, paging, and confirmation
-  stay visible; the paging hint appears only when the roster has more than one page.
+  rows from `⌘1` again. The row labels use the tab bar's caption scale, and a compact legend for
+  movement, paging, and confirmation stays visible; the paging hint appears only when the roster
+  has more than one page.
 - **Open Prowl** in the roster header brings the main window forward without changing the
   selected agent.
 - **Click outside or press `Esc`** to collapse the roster. The expanded island is a temporary

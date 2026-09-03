@@ -10,7 +10,7 @@ struct AgentIslandAttentionCollectionTests {
     #expect(layout.columnCount == 1)
     #expect(layout.rowCount == 1)
     #expect(layout.width == 286)
-    #expect(layout.viewportHeight == 44)
+    #expect(layout.viewportHeight == 52)
     #expect(!layout.isScrollable)
   }
 
@@ -20,7 +20,7 @@ struct AgentIslandAttentionCollectionTests {
     #expect(layout.columnCount == 2)
     #expect(layout.rowCount == 3)
     #expect(layout.width == 380)
-    #expect(layout.viewportHeight == 144)
+    #expect(layout.viewportHeight == 168)
     #expect(!layout.isScrollable)
   }
 
@@ -30,7 +30,7 @@ struct AgentIslandAttentionCollectionTests {
     #expect(layout.columnCount == 2)
     #expect(layout.rowCount == 4)
     #expect(layout.width == 380)
-    #expect(layout.viewportHeight == 144)
+    #expect(layout.viewportHeight == 168)
     #expect(layout.isScrollable)
   }
 

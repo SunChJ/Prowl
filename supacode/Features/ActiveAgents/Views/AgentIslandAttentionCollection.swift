@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AgentIslandAttentionLayout: Equatable {
-  static let cellHeight: CGFloat = 44
+  static let cellHeight: CGFloat = 52
   static let spacing: CGFloat = 6
   static let maximumVisibleRows = 3
 
@@ -129,16 +129,10 @@ struct AgentIslandAttentionCollection: View {
         }
         Spacer(minLength: 3)
         VStack(alignment: .trailing, spacing: 1) {
-          HStack(spacing: 3) {
-            Text(presentation.repositoryName)
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-            if let shortcut {
-              ShortcutHintView(text: shortcut.display, color: .secondary)
-                .monospaced()
-            }
-          }
+          Text(presentation.repositoryName)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
           Text(presentation.subtitle)
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -147,6 +141,7 @@ struct AgentIslandAttentionCollection: View {
         .multilineTextAlignment(.trailing)
       }
       .padding(.horizontal, 8)
+      .padding(.top, shortcut == nil ? 0 : 14)
       .frame(maxWidth: .infinity, minHeight: AgentIslandAttentionLayout.cellHeight)
       .contentShape(.rect)
     }
@@ -155,6 +150,13 @@ struct AgentIslandAttentionCollection: View {
     .overlay {
       RoundedRectangle(cornerRadius: 10)
         .stroke(entry.displayState.foregroundStyle.opacity(0.34), lineWidth: 0.8)
+    }
+    .overlay(alignment: .topLeading) {
+      if let shortcut {
+        shortcutTag(shortcut)
+          .padding(.top, 4)
+          .padding(.leading, 6)
+      }
     }
     .help(helpText(for: entry, shortcut: shortcut))
     .accessibilityLabel(
@@ -168,6 +170,18 @@ struct AgentIslandAttentionCollection: View {
       return "Open \(entry.displayName) in Prowl (\(shortcut.display))"
     }
     return "Open \(entry.displayName) in Prowl"
+  }
+
+  private func shortcutTag(_ shortcut: Keybinding) -> some View {
+    ShortcutHintView(text: shortcut.display, color: .primary)
+      .monospaced()
+      .padding(.horizontal, 5)
+      .padding(.vertical, 2)
+      .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      .overlay {
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+          .stroke(.white.opacity(0.14), lineWidth: 0.5)
+      }
   }
 
   private func accessibilityHint(for index: Int, hasShortcut: Bool) -> String {

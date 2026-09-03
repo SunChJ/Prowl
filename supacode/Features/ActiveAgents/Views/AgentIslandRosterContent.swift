@@ -53,7 +53,7 @@ struct AgentIslandRosterContent: View {
                 repositoryColor: repositoryColor(for: entry),
                 isDimmed: isDimmed(entry)
               )
-              ShortcutHintView(text: "⌘\(visibleIndex + 1)", color: .secondary)
+              ShortcutHintView(text: "⌘\(visibleIndex + 1)", color: .secondary, font: .caption)
                 .monospaced()
                 .padding(.trailing, 10)
             }
