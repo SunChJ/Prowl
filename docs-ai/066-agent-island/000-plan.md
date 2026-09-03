@@ -83,7 +83,7 @@ The views under `supacode/Features/ActiveAgents/Views/` are island-owned: `Agent
 container), `AgentIslandStateSummary` (per-state counts as state-colored symbols in attention
 order; compact in the notch wing, one size up in the floating pill), `AgentIslandIconCluster` (up to three runtime icons, recent non-Idle first and Idle
 last, `+N` overflow, Core Animation state rings), `AgentIslandAttentionCollection` (one or two
-columns, three rows before scrolling), and `AgentIslandRosterContent` (composes the sidebar's
+columns, up to three rows, with a bottom-right `+N` overflow badge), and `AgentIslandRosterContent` (composes the sidebar's
 `ActiveAgentRow` with a "pane title · branch" subtitle, content-sized up to a 360pt cap). Sharing with the sidebar is deliberately
 narrow: `ActiveAgentRowSupport.swift` extracts `ActiveAgentRowPresentation` (subtitle, help, pane
 title, Workflow badge) and `ActiveAgentRowContextMenu` for both `ActiveAgentsPanel` and the island

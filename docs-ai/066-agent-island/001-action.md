@@ -16,6 +16,7 @@
 | 2026-09-03 | Floating pill switched to the same per-state counts; the name carousel and its reducer state, clock effect, hover tracking, and tests removed. Island roster rows show "pane title · branch". | #756 |
 | 2026-09-03 | Contextual exposure formalized as a product rule: each control, hint, and callout must have a relevant, actionable state instead of exposing the island's full capability set at once. | #758 |
 | 2026-09-03 | Runtime ring motion was tested as breathing, then restored to the original state-paced rotation only in attention cards. Compact-bar icons now use static state-colored outlines; a reserved center band, compact four-state metrics, and a stable 340pt width prevent compression and layout jumps. | #758 |
+| 2026-09-03 | Strong reminders capped at a non-scrolling 2×3 grid; lower-priority overflow is summarized by a bottom-right `+N` badge. | #758 |
 
 ## Outcome & current state (as of 2026-09-02)
 
@@ -29,8 +30,9 @@ agent state, acknowledgement flag, or lifecycle signal.
   and Done icons use static state-colored outlines in the compact bar. Their attention-card
   counterparts retain state-paced gradient rotation, which stops under Reduce Motion.
 - **Attention collection** — every Blocked or unviewed Done entry is its own cell below the bar,
-  Blocked before Done, then by recency; one column for a single entry, two otherwise, three rows
-  before scrolling. Cells clear only when the underlying Active Agents state changes.
+  Blocked before Done, then by recency; one column for a single entry, two otherwise, and at most
+  three rows. More than six reminders collapse behind a bottom-right `+N` badge; the collection
+  does not scroll or page. Cells clear only when the underlying Active Agents state changes.
 - **Roster** — clicking the bar opens the full list without activating Prowl. Rows reuse
   `ActiveAgentRow` with a "pane title · branch" subtitle (a live Workflow badge still takes the
   line) and the shared context menu. Clicking a row, a cell, or

@@ -28,6 +28,8 @@ Agents panel command.
   within each state), and every assigned attention cell keeps its shortcut in an inset tag centered
   along the card's top edge without competing with its metadata. Only currently
   backed slots are registered; roster expansion removes them until it collapses again.
+- Limit the strong-reminder collection to a `2 × 3` grid. Additional reminders stay folded behind
+  a bottom-right `+N` badge instead of adding scrolling or paging to this compact surface.
 - Keep a compact legend at the bottom of the roster for the persistent interaction model. Each
   arrow is grouped with its Vim counterpart (`↑ K`, `↓ J`, `← H`, `→ L`) so the direction is
   explicit; Space and Return remain grouped for opening. The row-level shortcut labels

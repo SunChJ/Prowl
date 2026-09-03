@@ -52,10 +52,13 @@ summary switches to compact metrics. The bar keeps a stable 340pt width in every
 both content compression and width jumps as the state mix changes.
 
 Blocked and Done cells form a small grid under the bar: one column for a single entry, two
-columns otherwise, and up to three rows before it scrolls. Each cell shows the agent name and
-state on the left and the repository plus the same branch/tab subtitle as Active Agents on the
-right; a live Workflow role badge takes the subtitle position, as in the sidebar. The first nine
-cells show `⌘⌥1`…`⌘⌥9` in an inset tag centered along the top edge; while the roster is closed,
+columns otherwise, with at most three rows. When more than six reminders exist, a `+N` badge at
+the collection's bottom-right reports how many lower-priority reminders are folded away. The
+collection does not scroll or page. Each cell shows the agent name and state on the left and the
+repository plus the same branch/tab subtitle as Active Agents on the right; a live Workflow role
+badge takes the subtitle position, as in the sidebar. The first nine priority slots use
+`⌘⌥1`…`⌘⌥9`; each visible card shows its assigned shortcut in an inset tag centered along the top
+edge. While the roster is closed,
 those global shortcuts open the matching strong reminder directly. The mapping follows the
 displayed priority order: Blocked first, then unviewed Done, newest first within each state. Cells
 cannot be dismissed from the island. A
