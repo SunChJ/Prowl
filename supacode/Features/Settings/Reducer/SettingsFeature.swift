@@ -41,6 +41,8 @@ struct SettingsFeature {
     var showActiveAgentStatusInShelf: Bool
     var agentIslandEnabled: Bool
     var agentIslandDisplayPreference: AgentIslandDisplayPreference
+    var agentIslandFloatingPositions: AgentIslandFloatingPositions
+    var agentIslandSilentOpacity: Double
     var windowTintMode: WindowTintMode
     var shelfSpineTintFallback: ShelfSpineTintFallback
     var shelfSpineTintFollowsRepositoryColor: Bool
@@ -106,6 +108,8 @@ struct SettingsFeature {
       showActiveAgentStatusInShelf = settings.showActiveAgentStatusInShelf
       agentIslandEnabled = settings.agentIslandEnabled
       agentIslandDisplayPreference = settings.agentIslandDisplayPreference
+      agentIslandFloatingPositions = settings.agentIslandFloatingPositions
+      agentIslandSilentOpacity = settings.agentIslandSilentOpacity
       windowTintMode = settings.windowTintMode
       shelfSpineTintFallback = settings.shelfSpineTintFallback
       shelfSpineTintFollowsRepositoryColor = settings.shelfSpineTintFollowsRepositoryColor
@@ -158,6 +162,8 @@ struct SettingsFeature {
         showActiveAgentStatusInShelf: showActiveAgentStatusInShelf,
         agentIslandEnabled: agentIslandEnabled,
         agentIslandDisplayPreference: agentIslandDisplayPreference,
+        agentIslandFloatingPositions: agentIslandFloatingPositions,
+        agentIslandSilentOpacity: agentIslandSilentOpacity,
         windowTintMode: windowTintMode,
         windowTintCustomColor: TintColor(windowTintCustomColor),
         showRunButtonInToolbar: showRunButtonInToolbar,
@@ -181,6 +187,10 @@ struct SettingsFeature {
     case setSystemNotificationsEnabled(Bool)
     case setCommandFinishedNotificationThreshold(String)
     case setTerminalFontSize(Float32?)
+    case setAgentIslandFloatingPosition(displayID: String, normalizedPosition: Double)
+    case setAgentIslandSilentOpacity(Double)
+    case setAgentIslandDisplayPreference(AgentIslandDisplayPreference)
+    case resetIslandFloatingPositionsTapped
     case clearShortcutButtonTapped(commandID: String)
     case clearTerminalLayoutSnapshotButtonTapped
     case installCLIButtonTapped(showAlert: Bool = true)
@@ -283,6 +293,8 @@ struct SettingsFeature {
         state.showActiveAgentStatusInShelf = normalizedSettings.showActiveAgentStatusInShelf
         state.agentIslandEnabled = normalizedSettings.agentIslandEnabled
         state.agentIslandDisplayPreference = normalizedSettings.agentIslandDisplayPreference
+        state.agentIslandFloatingPositions = normalizedSettings.agentIslandFloatingPositions
+        state.agentIslandSilentOpacity = normalizedSettings.agentIslandSilentOpacity
         state.windowTintMode = normalizedSettings.windowTintMode
         state.shelfSpineTintFallback = normalizedSettings.shelfSpineTintFallback
         state.shelfSpineTintFollowsRepositoryColor = normalizedSettings.shelfSpineTintFollowsRepositoryColor
@@ -335,6 +347,26 @@ struct SettingsFeature {
           persist(state, captureAnalytics: false, emitSettingsChanged: false),
           .send(.delegate(.terminalFontSizeChanged(fontSize)))
         )
+
+      case .setAgentIslandFloatingPosition(let displayID, let normalizedPosition):
+        state.agentIslandFloatingPositions.setNormalizedPosition(
+          normalizedPosition,
+          for: displayID
+        )
+        return persist(state)
+
+      case .setAgentIslandSilentOpacity(let opacity):
+        state.agentIslandSilentOpacity = AgentIslandOpacityPolicy.normalizedSilentOpacity(opacity)
+        return persist(state, captureAnalytics: false)
+
+      case .setAgentIslandDisplayPreference(let preference):
+        state.agentIslandDisplayPreference = preference
+        return persist(state)
+
+      case .resetIslandFloatingPositionsTapped:
+        guard !state.agentIslandFloatingPositions.isEmpty else { return .none }
+        state.agentIslandFloatingPositions = .init()
+        return persist(state)
 
       case .clearShortcutButtonTapped(let commandID):
         guard

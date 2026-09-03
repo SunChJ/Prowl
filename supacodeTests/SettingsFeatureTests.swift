@@ -628,12 +628,17 @@ struct SettingsFeatureTests {
     }
     await store.receive(\.delegate.settingsChanged)
     await store.send(
-      .binding(
-        .set(
-          \.agentIslandDisplayPreference,
-          .display(id: "display-uuid", name: "Studio Display")
-        )
-      )
+      .setAgentIslandFloatingPosition(displayID: "display-uuid", normalizedPosition: 0.25)
+    ) {
+      $0.agentIslandFloatingPositions.setNormalizedPosition(0.25, for: "display-uuid")
+    }
+    await store.receive(\.delegate.settingsChanged)
+    await store.send(.setAgentIslandSilentOpacity(0.6)) {
+      $0.agentIslandSilentOpacity = 0.6
+    }
+    await store.receive(\.delegate.settingsChanged)
+    await store.send(
+      .setAgentIslandDisplayPreference(.display(id: "display-uuid", name: "Studio Display"))
     ) {
       $0.agentIslandDisplayPreference = .display(id: "display-uuid", name: "Studio Display")
     }
@@ -644,6 +649,29 @@ struct SettingsFeatureTests {
       settingsFile.global.agentIslandDisplayPreference
         == .display(id: "display-uuid", name: "Studio Display")
     )
+    #expect(
+      settingsFile.global.agentIslandFloatingPositions.normalizedPosition(for: "display-uuid")
+        == 0.25
+    )
+    #expect(settingsFile.global.agentIslandSilentOpacity == 0.6)
+  }
+
+  @Test(.dependencies) func resettingAgentIslandFloatingPositionsPersists() async {
+    var initialSettings = GlobalSettings.default
+    initialSettings.agentIslandFloatingPositions.setNormalizedPosition(0.25, for: "display-uuid")
+    @Shared(.settingsFile) var settingsFile
+    $settingsFile.withLock { $0.global = initialSettings }
+
+    let store = TestStore(initialState: SettingsFeature.State(settings: initialSettings)) {
+      SettingsFeature()
+    }
+
+    await store.send(.resetIslandFloatingPositionsTapped) {
+      $0.agentIslandFloatingPositions = .init()
+    }
+    await store.receive(\.delegate.settingsChanged)
+
+    #expect(settingsFile.global.agentIslandFloatingPositions.isEmpty)
   }
 
   @Test(.dependencies) func disablingAnalyticsResetsClient() async {

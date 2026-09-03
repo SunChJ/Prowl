@@ -35,6 +35,14 @@ Agents panel command.
   The paging hint and clickable page controls appear only when multiple pages exist.
 - Keep the selection presentation-only until activation. It does not mutate Active Agents state,
   mark entries as handled, or focus a terminal while merely navigating.
+- On displays without a notch, expose a small top-center drag grip instead of making the whole
+  floating pill draggable. Dragging is horizontal-only, stays inside the display's visible bounds,
+  and persists a normalized position per hardware display ID. Notched displays remain physically
+  anchored to the cutout. Settings can reset all floating positions to center.
+- Keep a compact silent-opacity control on the floating pill's center axis. After the pointer has
+  remained outside the island for three seconds, the full floating surface fades to the selected
+  opacity and restores immediately on hover. The roster header also exposes an icon-only display
+  menu for switching the island's target without opening Settings.
 
 The global entry uses Carbon hot-key registration, which consumes the configured chord without
 requiring Accessibility or Input Monitoring permission. Once expanded, ordinary navigation keys
@@ -53,6 +61,12 @@ Arrow Left/Right or `h`/`l`, visible-slot activation, confirmation, and dismissa
 keep their `⌘1`…`⌘9` labels; the footer permanently shows movement and confirmation, adding
 paging only when a second page exists. Collapsed strong reminders expose `⌘⌥1`…`⌘⌥9` for their
 first nine priority-ordered cells, using the same focus path as a pointer click.
+On displays without a notch, a dedicated top-center grip moves the floating island horizontally;
+the normalized position is saved per display and can be reset from Settings. The panel remains
+inside the visible horizontal bounds as its content width changes.
+The floating pill also owns a persisted silent-opacity control: after three seconds without hover,
+the entire floating surface fades to that level. An icon-only display menu in the roster header
+provides fast placement changes without secondary explanatory copy.
 
 Verification completed with `make check`, `make test`, and `make build-app`; all passed with zero
 test or build failures. Final native screenshot capture was unavailable because the computer-use

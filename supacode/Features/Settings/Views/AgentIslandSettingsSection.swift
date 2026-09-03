@@ -63,6 +63,17 @@ struct AgentIslandSettingsSection: View {
       }
       .help("Choose where Agent Island appears")
       .disabled(!store.agentIslandEnabled)
+
+      LabeledContent {
+        Button("Reset") {
+          store.send(.resetIslandFloatingPositionsTapped)
+        }
+        .disabled(store.agentIslandFloatingPositions.isEmpty)
+      } label: {
+        Text("Floating Positions")
+        Text("Centers Agent Island on displays without a notch.")
+      }
+      .help("Reset Agent Island's saved floating positions")
     }
   }
 

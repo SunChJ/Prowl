@@ -49,6 +49,12 @@ and a removed entry disappears with the roster.
 ## Interactions
 
 - **Click the bar** to open or close the full roster. This does not bring Prowl forward.
+- **Drag the small grip at the top center** of a floating island to reposition it horizontally.
+  Prowl remembers the position independently for each display and keeps the full island inside
+  the visible screen bounds. Notched displays remain anchored to the physical cutout.
+- **Use the half-filled circle at the center** of a floating island to set its silent opacity.
+  The island returns to full opacity on hover and fades to the chosen level three seconds after
+  the pointer leaves. This control is not shown on notched displays.
 - **Press the Agent Island shortcut** (`⌘⇧P` by default) to open or close the roster like a hot
   window. It is separate from the Active Agents panel shortcut and can be changed, cleared, or
   reset under Settings → Shortcuts.
@@ -61,7 +67,8 @@ and a removed entry disappears with the roster.
   Clicking a row, or choosing one of those actions, brings Prowl forward first and then behaves
   exactly as it does in the sidebar. On a notched display the roster is as wide as the bar above
   it; under the floating pill it is wider than the pill. The roster shows up to nine agents per
-  page.
+  page. Its centered display button switches Agent Island between Automatic and any connected
+  display without opening Settings.
 - **Keyboard navigation stays available while the roster is open.** Arrow Up or `k` and Arrow
   Down or `j` move the highlight without focusing a terminal; Arrow Left or `h` and Arrow Right
   or `l` move one page; Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the
@@ -87,6 +94,8 @@ Settings → Notifications → **Agent Island**:
   A specific display is remembered by its hardware identifier, so it survives renames and system
   language changes; while it is disconnected the island temporarily follows Automatic and the
   picker keeps the choice under its last-known name.
+- **Floating Positions** resets saved horizontal positions for displays without a notch. The
+  default position is centered.
 
 With Reduce Motion enabled, icon changes fade instead of sliding and the state rings keep their
 color without rotating.

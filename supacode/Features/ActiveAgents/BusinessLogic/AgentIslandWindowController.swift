@@ -41,6 +41,7 @@ final class AgentIslandWindowController {
   private var isRosterExpanded = false
   private var displayPreference: AgentIslandDisplayPreference = .automatic
   private var contentSize = CGSize(width: 420, height: 40)
+  private var floatingDragPointerOffsetX: CGFloat?
 
   init(
     store: StoreOf<AppFeature>,
@@ -120,6 +121,8 @@ final class AgentIslandWindowController {
           preference: preference,
           size: size
         )
+      } floatingDragChanged: { [weak self] event in
+        self?.handleFloatingDrag(event)
       }
     )
     self.panel = panel
@@ -129,6 +132,7 @@ final class AgentIslandWindowController {
     installObservers()
     refreshGlobalHotKeys()
     observeGlobalHotKeyState()
+    observeFloatingPositions()
     refreshPlacement()
   }
 
@@ -137,6 +141,7 @@ final class AgentIslandWindowController {
     removeEventMonitors()
     globalHotKeys?.stop()
     globalHotKeys = nil
+    floatingDragPointerOffsetX = nil
     panel?.orderOut(nil)
     panel = nil
   }
@@ -163,16 +168,7 @@ final class AgentIslandWindowController {
 
   private func refreshPlacement() {
     guard let panel else { return }
-    let mainWindowScreenID = displayCatalog.descriptor(for: mainProwlWindow?.screen)?.id
-    let mainScreenID = displayCatalog.descriptor(for: NSScreen.main)?.id
-    guard
-      let screen = AgentIslandScreenLayout.resolve(
-        preference: displayPreference,
-        screens: displayCatalog.screens,
-        mainWindowScreenID: mainWindowScreenID,
-        mainScreenID: mainScreenID
-      )
-    else {
+    guard let screen = resolvedScreen else {
       panel.orderOut(nil)
       return
     }
@@ -181,7 +177,12 @@ final class AgentIslandWindowController {
     if presentation.notchSize != notchSize {
       presentation.notchSize = notchSize
     }
-    let frame = AgentIslandScreenLayout.panelFrame(contentSize: contentSize, screen: screen)
+    let frame = AgentIslandScreenLayout.panelFrame(
+      contentSize: contentSize,
+      screen: screen,
+      floatingHorizontalPosition: appStore.settings.agentIslandFloatingPositions
+        .normalizedPosition(for: screen.id)
+    )
     panel.setFrame(frame, display: panel.isVisible)
     if isVisible {
       if isRosterExpanded {
@@ -196,6 +197,52 @@ final class AgentIslandWindowController {
 
   private var mainProwlWindow: NSWindow? {
     NSApplication.shared.windows.first { $0.identifier?.rawValue == WindowID.main }
+  }
+
+  private var resolvedScreen: AgentIslandScreenDescriptor? {
+    let mainWindowScreenID = displayCatalog.descriptor(for: mainProwlWindow?.screen)?.id
+    let mainScreenID = displayCatalog.descriptor(for: NSScreen.main)?.id
+    return AgentIslandScreenLayout.resolve(
+      preference: displayPreference,
+      screens: displayCatalog.screens,
+      mainWindowScreenID: mainWindowScreenID,
+      mainScreenID: mainScreenID
+    )
+  }
+
+  private func handleFloatingDrag(_ event: AgentIslandFloatingDragEvent) {
+    guard let panel, let screen = resolvedScreen, !screen.hasNotch else { return }
+
+    let pointerX: CGFloat
+    switch event {
+    case .began(let pointerX):
+      floatingDragPointerOffsetX = panel.frame.midX - pointerX
+      return
+    case .changed(let currentPointerX), .ended(let currentPointerX):
+      pointerX = currentPointerX
+    }
+    guard let pointerOffsetX = floatingDragPointerOffsetX else { return }
+
+    let requestedAnchorX = pointerX + pointerOffsetX
+    let normalizedPosition = Double((requestedAnchorX - screen.frame.minX) / screen.frame.width)
+    let frame = AgentIslandScreenLayout.panelFrame(
+      contentSize: contentSize,
+      screen: screen,
+      floatingHorizontalPosition: normalizedPosition
+    )
+    panel.setFrame(frame, display: true)
+
+    guard case .ended = event else { return }
+    floatingDragPointerOffsetX = nil
+    let persistedPosition = Double((frame.midX - screen.frame.minX) / screen.frame.width)
+    appStore.send(
+      .settings(
+        .setAgentIslandFloatingPosition(
+          displayID: screen.id,
+          normalizedPosition: persistedPosition
+        )
+      )
+    )
   }
 
   private func installObservers() {
@@ -371,6 +418,18 @@ final class AgentIslandWindowController {
         guard let self, self.panel != nil else { return }
         self.refreshGlobalHotKeys()
         self.observeGlobalHotKeyState()
+      }
+    }
+  }
+
+  private func observeFloatingPositions() {
+    withObservationTracking {
+      _ = appStore.settings.agentIslandFloatingPositions
+    } onChange: { [weak self] in
+      Task { @MainActor [weak self] in
+        guard let self, self.panel != nil else { return }
+        self.refreshPlacement()
+        self.observeFloatingPositions()
       }
     }
   }
