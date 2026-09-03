@@ -146,7 +146,7 @@ struct AgentIslandIsolationTests {
         notchCompactWidth: nil,
         isRosterExpanded: false,
         attentionEntryCount: 0
-      ) == 300)
+      ) == 340)
     #expect(
       AgentIslandRootLayout.width(
         notchCompactWidth: nil,
@@ -186,17 +186,15 @@ struct AgentIslandIsolationTests {
     #expect(AgentIslandRootLayout.showsDisplayControl(connectedDisplayCount: 2))
   }
 
-  @Test func floatingBarCompactsTheSummaryWhenAllStatesArePresent() {
+  @Test func floatingBarKeepsAStableWidthAndCompactsTheAllStateSummary() {
     #expect(!AgentIslandRootLayout.usesCompactFloatingSummary(stateCount: 3))
     #expect(AgentIslandRootLayout.usesCompactFloatingSummary(stateCount: 4))
-    #expect(AgentIslandRootLayout.floatingCompactWidth(stateCount: 3) == 300)
-    #expect(AgentIslandRootLayout.floatingCompactWidth(stateCount: 4) == 340)
+    #expect(AgentIslandRootLayout.floatingCompactWidth == 340)
     #expect(
       AgentIslandRootLayout.width(
         notchCompactWidth: nil,
         isRosterExpanded: false,
-        attentionEntryCount: 0,
-        floatingStateCount: 4
+        attentionEntryCount: 0
       ) == 340)
   }
 
