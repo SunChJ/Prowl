@@ -200,8 +200,7 @@ struct AgentIslandView: View {
         store: agentsStore,
         rowDisplays: rowDisplays,
         workflowBadges: appStore.repositories.workflowRoleBadgesBySurfaceID,
-        selectedSurfaceID: agentsStore.focusedSurfaceID,
-        showTabTitles: appStore.repositories.showActiveAgentTabTitles
+        selectedSurfaceID: agentsStore.focusedSurfaceID
       )
     }
     // Same width as the bar above it: the notched bar is wider than the floating roster.

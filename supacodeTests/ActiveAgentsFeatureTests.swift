@@ -418,6 +418,25 @@ struct ActiveAgentsFeatureTests {
     )
   }
 
+  @Test func islandRosterSubtitleShowsTitleAndBranchUnlessABadgeLives() {
+    let entry = entry(id: UUID(0), paneTitle: "Review issue 385", state: .working, changedAt: Date())
+
+    #expect(
+      ActiveAgentRowPresentation.combinedSubtitle(for: entry, branchName: "main")
+        == "Review issue 385 \u{00B7} main"
+    )
+    #expect(
+      ActiveAgentRowPresentation.combinedSubtitle(
+        for: entry, branchName: "main", workflowBadge: "in Review \u{00B7} reviewer")
+        == "in Review \u{00B7} reviewer"
+    )
+    // A pane titled after its branch is not repeated.
+    #expect(
+      ActiveAgentRowPresentation.combinedSubtitle(for: entry, branchName: "Review issue 385")
+        == "Review issue 385"
+    )
+  }
+
   @Test func panelPaneTitleFallsBackForEmptyTitles() {
     let entry = entry(id: UUID(0), paneTitle: "   ", state: .idle, changedAt: Date())
 

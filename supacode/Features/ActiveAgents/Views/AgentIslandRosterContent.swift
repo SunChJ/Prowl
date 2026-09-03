@@ -27,7 +27,6 @@ struct AgentIslandRosterContent: View {
   let rowDisplays: [ActiveAgentEntry.ID: ActiveAgentRowDisplay]
   let workflowBadges: [UUID: String]
   let selectedSurfaceID: UUID?
-  let showTabTitles: Bool
   @State private var measuredContentHeight: CGFloat?
 
   var body: some View {
@@ -83,10 +82,9 @@ struct AgentIslandRosterContent: View {
   }
 
   private func subtitle(for entry: ActiveAgentEntry) -> String {
-    ActiveAgentRowPresentation.subtitle(
+    ActiveAgentRowPresentation.combinedSubtitle(
       for: entry,
       branchName: branchName(for: entry),
-      showTabTitles: showTabTitles,
       workflowBadge: workflowBadges[entry.surfaceID]
     )
   }
@@ -100,10 +98,6 @@ struct AgentIslandRosterContent: View {
   }
 
   private func helpText(for entry: ActiveAgentEntry) -> String {
-    ActiveAgentRowPresentation.helpText(
-      for: entry,
-      branchName: branchName(for: entry),
-      showTabTitles: showTabTitles
-    )
+    "Open \(entry.displayName) in Prowl"
   }
 }

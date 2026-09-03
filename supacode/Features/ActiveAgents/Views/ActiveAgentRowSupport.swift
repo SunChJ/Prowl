@@ -20,6 +20,18 @@ enum ActiveAgentRowPresentation {
     showTabTitles ? branchName : paneTitle(for: entry)
   }
 
+  /// The island roster has room for both, so it shows "pane title · branch" regardless of the
+  /// sidebar's either/or setting. A live Workflow badge still takes the whole line.
+  static func combinedSubtitle(
+    for entry: ActiveAgentEntry,
+    branchName: String,
+    workflowBadge: String? = nil
+  ) -> String {
+    if let workflowBadge { return workflowBadge }
+    let title = paneTitle(for: entry)
+    return title == branchName ? title : "\(title) \u{00B7} \(branchName)"
+  }
+
   static func paneTitle(for entry: ActiveAgentEntry) -> String {
     let trimmed = entry.paneTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? "Untitled tab" : trimmed
