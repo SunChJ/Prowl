@@ -17,7 +17,8 @@ enum AgentIslandFloatingDragEvent {
 }
 
 struct AgentIslandRootLayout {
-  static let floatingCompactWidth: CGFloat = 300
+  static let defaultFloatingCompactWidth: CGFloat = 300
+  static let allStatesFloatingCompactWidth: CGFloat = 340
   static let floatingControlsReservedWidth: CGFloat = 68
   static let fallbackFloatingCompactHeight: CGFloat = 40
   static let rosterWidth: CGFloat = 420
@@ -25,9 +26,11 @@ struct AgentIslandRootLayout {
   static func width(
     notchCompactWidth: CGFloat?,
     isRosterExpanded: Bool,
-    attentionEntryCount: Int
+    attentionEntryCount: Int,
+    floatingStateCount: Int = 0
   ) -> CGFloat {
-    let compactWidth = notchCompactWidth ?? floatingCompactWidth
+    let compactWidth =
+      notchCompactWidth ?? floatingCompactWidth(stateCount: floatingStateCount)
     if isRosterExpanded {
       return max(compactWidth, rosterWidth)
     }
@@ -55,6 +58,11 @@ struct AgentIslandRootLayout {
 
   static func usesCompactFloatingSummary(stateCount: Int) -> Bool {
     stateCount >= AgentIslandStateSummary.order.count
+  }
+
+  static func floatingCompactWidth(stateCount: Int) -> CGFloat {
+    usesCompactFloatingSummary(stateCount: stateCount)
+      ? allStatesFloatingCompactWidth : defaultFloatingCompactWidth
   }
 }
 
@@ -180,7 +188,7 @@ struct AgentIslandView: View {
             compactChevron
           }
           .padding(.horizontal, 14)
-          .frame(width: 300, height: compactHeight)
+          .frame(width: floatingCompactWidth, height: compactHeight)
         }
       }
       .contentShape(.rect)
@@ -303,6 +311,10 @@ struct AgentIslandView: View {
   private var floatingSummarySize: AgentIslandStateSummaryView.Size {
     AgentIslandRootLayout.usesCompactFloatingSummary(stateCount: stateSummary.items.count)
       ? .compact : .regular
+  }
+
+  private var floatingCompactWidth: CGFloat {
+    AgentIslandRootLayout.floatingCompactWidth(stateCount: stateSummary.items.count)
   }
 
   private var stateSummary: AgentIslandStateSummary {
@@ -475,7 +487,8 @@ struct AgentIslandView: View {
     AgentIslandRootLayout.width(
       notchCompactWidth: notchLayout?.compactWidth,
       isRosterExpanded: agentsStore.isIslandRosterExpanded,
-      attentionEntryCount: agentsStore.islandAttentionEntries.count
+      attentionEntryCount: agentsStore.islandAttentionEntries.count,
+      floatingStateCount: stateSummary.items.count
     )
   }
 

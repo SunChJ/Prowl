@@ -15,7 +15,7 @@
 | 2026-09-03 | Structure and polish: island actions folded into `island(Action)`; panel created only while enabled; display catalog moved to `BusinessLogic/`; island navigation tests in their own file; clipped shadows removed and the roster matched to the bar width; the notched leading wing shows per-state counts instead of a name carousel. | #756 |
 | 2026-09-03 | Floating pill switched to the same per-state counts; the name carousel and its reducer state, clock effect, hover tracking, and tests removed. Island roster rows show "pane title · branch". | #756 |
 | 2026-09-03 | Contextual exposure formalized as a product rule: each control, hint, and callout must have a relevant, actionable state instead of exposing the island's full capability set at once. | #758 |
-| 2026-09-03 | Runtime ring motion was tested as breathing, then restored to the original state-paced rotation only in attention cards. Compact-bar icons now use static state-colored outlines, and a reserved center band plus compact four-state summary prevents control overlap. | #758 |
+| 2026-09-03 | Runtime ring motion was tested as breathing, then restored to the original state-paced rotation only in attention cards. Compact-bar icons now use static state-colored outlines; a reserved center band, compact metrics, and a 340pt four-state width prevent summary compression and control overlap. | #758 |
 
 ## Outcome & current state (as of 2026-09-02)
 
