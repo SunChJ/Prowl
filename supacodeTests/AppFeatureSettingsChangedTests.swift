@@ -95,7 +95,6 @@ struct AppFeatureSettingsChangedTests {
     }
     await store.receive(\.repositories.activeAgents.agentEntryChanged) {
       $0.repositories.activeAgents.entries = [entry]
-      $0.repositories.activeAgents.islandCarouselEntryID = entry.id
     }
   }
 
@@ -113,7 +112,6 @@ struct AppFeatureSettingsChangedTests {
     await store.send(.terminalEvent(.agentEntryChanged(entry)))
     await store.receive(\.repositories.activeAgents.agentEntryChanged) {
       $0.repositories.activeAgents.entries = [entry]
-      $0.repositories.activeAgents.islandCarouselEntryID = entry.id
     }
   }
 

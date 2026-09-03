@@ -48,16 +48,23 @@ extension AgentDisplayState {
 }
 
 struct AgentIslandStateSummaryView: View {
+  /// `compact` fits the 108pt notch wing; `regular` is the floating pill's roomier variant.
+  enum Size {
+    case compact
+    case regular
+  }
+
   let summary: AgentIslandStateSummary
+  let size: Size
 
   var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: size == .compact ? 6 : 10) {
       ForEach(summary.items) { item in
-        HStack(spacing: 2) {
+        HStack(spacing: size == .compact ? 2 : 3) {
           Image(systemName: item.state.islandSymbolName)
-            .font(.caption2.weight(.bold))
+            .font(size == .compact ? .caption2.weight(.bold) : .caption.weight(.bold))
           Text("\(item.count)")
-            .font(.caption.weight(.semibold))
+            .font(size == .compact ? .caption.weight(.semibold) : .callout.weight(.semibold))
             .monospacedDigit()
         }
         .foregroundStyle(item.state.foregroundStyle)

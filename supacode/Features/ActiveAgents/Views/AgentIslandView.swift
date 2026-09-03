@@ -33,7 +33,6 @@ struct AgentIslandView: View {
   @Bindable private var agentsStore: StoreOf<ActiveAgentsFeature>
   @Bindable private var presentation: AgentIslandPresentationModel
   @Shared(.repositoryAppearances) private var repositoryAppearances
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   let presentationChanged: (Bool, Bool, AgentIslandDisplayPreference, CGSize) -> Void
   @State private var contentSize = CGSize(width: 420, height: 40)
@@ -129,9 +128,6 @@ struct AgentIslandView: View {
       agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents"
     )
     .accessibilityIdentifier("agent-island-compact")
-    .onHover { isHovered in
-      agentsStore.send(.islandHoverChanged(isHovered))
-    }
   }
 
   private func notchedCompactContent(layout: AgentIslandNotchLayout) -> some View {
@@ -149,9 +145,8 @@ struct AgentIslandView: View {
     .frame(width: layout.compactWidth, height: layout.compactHeight)
   }
 
-  /// The wing is too narrow for names, so it carries per-state counts instead.
   private var notchedLeadingContent: some View {
-    AgentIslandStateSummaryView(summary: AgentIslandStateSummary(entries: islandEntries))
+    AgentIslandStateSummaryView(summary: stateSummary, size: .compact)
   }
 
   private var notchedTrailingContent: some View {
@@ -168,35 +163,17 @@ struct AgentIslandView: View {
       .accessibilityHidden(true)
   }
 
-  @ViewBuilder
+  /// The floating pill shows the same per-state counts as the notched wing, one size up.
   private var compactContent: some View {
-    // Only the carousel text carries the per-entry identity; the icon cluster must keep its own
-    // identity across rotations or every swap tears it down and re-inserts it with the transition.
     HStack(spacing: 8) {
-      if let entry = agentsStore.islandCarouselEntry {
-        VStack(alignment: .leading, spacing: 1) {
-          Text(entry.displayName)
-            .font(.callout.weight(.semibold))
-            .lineLimit(1)
-          Text(repositoryName(for: entry))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
-        .id(entry.id)
-        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-      } else {
-        HStack(spacing: 8) {
-          Image(systemName: "person.crop.rectangle.stack")
-            .foregroundStyle(.secondary)
-            .accessibilityHidden(true)
-          Text("\(agentsStore.entries.count) \(agentsStore.entries.count == 1 ? "Agent" : "Agents")")
-            .font(.callout.weight(.semibold))
-        }
-      }
+      AgentIslandStateSummaryView(summary: stateSummary, size: .regular)
       Spacer(minLength: 6)
       AgentIslandIconCluster(entries: islandEntries)
     }
+  }
+
+  private var stateSummary: AgentIslandStateSummary {
+    AgentIslandStateSummary(entries: islandEntries)
   }
 
   private var rosterIsland: some View {
@@ -249,10 +226,6 @@ struct AgentIslandView: View {
       repositories: repositories,
       metadata: metadata
     )
-  }
-
-  private func repositoryName(for entry: ActiveAgentEntry) -> String {
-    rowDisplays[entry.id]?.repositoryName ?? entry.worktreeName
   }
 
   private var islandEntries: [ActiveAgentEntry] {

@@ -27,7 +27,6 @@ struct ActiveAgentsFeatureTests {
     }
     await store.send(.agentEntryChanged(working, autoShowPanel: false)) {
       $0.entries = [idle, blocked, working]
-      $0.islandCarouselEntryID = working.id
     }
     await store.send(.agentEntryChanged(done, autoShowPanel: false)) {
       $0.entries = [idle, blocked, working, done]
@@ -47,7 +46,6 @@ struct ActiveAgentsFeatureTests {
 
     await store.send(.agentEntryChanged(agent, autoShowPanel: true)) {
       $0.entries = [agent]
-      $0.islandCarouselEntryID = agent.id
       $0.$isPanelHidden.withLock { $0 = false }
     }
   }
@@ -246,124 +244,6 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
-  @Test func islandSelectsMostRecentlyChangedWorkingEntry() async {
-    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
-      ActiveAgentsFeature()
-    }
-    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
-    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
-
-    await store.send(.agentEntryChanged(older, autoShowPanel: false)) {
-      $0.entries = [older]
-      $0.islandCarouselEntryID = older.id
-    }
-    await store.send(.agentEntryChanged(newer, autoShowPanel: false)) {
-      $0.entries = [older, newer]
-      $0.islandCarouselEntryID = newer.id
-    }
-  }
-
-  @Test func islandCarouselAdvancesEveryFourSeconds() async {
-    let clock = TestClock()
-    var state = ActiveAgentsFeature.State()
-    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
-    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
-    state.entries = [older, newer]
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    } withDependencies: {
-      $0.continuousClock = clock
-    }
-
-    await store.send(.islandEnabledChanged(true)) {
-      $0.isIslandEnabled = true
-      $0.islandCarouselEntryID = newer.id
-    }
-    await clock.advance(by: .seconds(4))
-    await store.receive(.islandCarouselTick) {
-      $0.islandCarouselEntryID = older.id
-    }
-    await store.send(.islandEnabledChanged(false)) {
-      $0.isIslandEnabled = false
-      $0.isIslandRosterExpanded = false
-    }
-  }
-
-  @Test func islandCarouselSurvivesContinuousTitleRefreshes() async {
-    let clock = TestClock()
-    var state = ActiveAgentsFeature.State()
-    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
-    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
-    state.entries = [older, newer]
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    } withDependencies: {
-      $0.continuousClock = clock
-    }
-
-    await store.send(.islandEnabledChanged(true)) {
-      $0.isIslandEnabled = true
-      $0.islandCarouselEntryID = newer.id
-    }
-
-    var refreshed = newer
-    for second in 1...8 {
-      await clock.advance(by: .seconds(1))
-      if second == 4 {
-        await store.receive(.islandCarouselTick) {
-          $0.islandCarouselEntryID = older.id
-        }
-      } else if second == 8 {
-        await store.receive(.islandCarouselTick) {
-          $0.islandCarouselEntryID = newer.id
-        }
-      }
-
-      refreshed.paneTitle = "Title refresh \(second)"
-      await store.send(.agentEntryChanged(refreshed, autoShowPanel: false)) {
-        $0.entries[id: refreshed.id] = refreshed
-      }
-    }
-
-    await store.send(.islandEnabledChanged(false)) {
-      $0.isIslandEnabled = false
-      $0.isIslandRosterExpanded = false
-    }
-  }
-
-  @Test func islandHoverPausesAndRestartsCarousel() async {
-    let clock = TestClock()
-    var state = ActiveAgentsFeature.State()
-    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
-    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
-    state.entries = [older, newer]
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    } withDependencies: {
-      $0.continuousClock = clock
-    }
-
-    await store.send(.islandEnabledChanged(true)) {
-      $0.isIslandEnabled = true
-      $0.islandCarouselEntryID = newer.id
-    }
-    await store.send(.islandHoverChanged(true)) {
-      $0.isIslandHovered = true
-    }
-    await clock.advance(by: .seconds(8))
-    await store.send(.islandHoverChanged(false)) {
-      $0.isIslandHovered = false
-    }
-    await clock.advance(by: .seconds(4))
-    await store.receive(.islandCarouselTick) {
-      $0.islandCarouselEntryID = older.id
-    }
-    await store.send(.islandEnabledChanged(false)) {
-      $0.isIslandEnabled = false
-      $0.isIslandRosterExpanded = false
-    }
-  }
-
   @Test func islandAttentionOrdersBlockedBeforeDoneThenByRecency() {
     var state = ActiveAgentsFeature.State()
     let done = entry(id: UUID(0), state: .done, changedAt: Date(timeIntervalSince1970: 30))
@@ -393,12 +273,10 @@ struct ActiveAgentsFeatureTests {
     #expect(store.state.islandAttentionEntries == [blocked])
     await store.send(.agentEntryChanged(working, autoShowPanel: false)) {
       $0.entries = [working]
-      $0.islandCarouselEntryID = id
     }
     #expect(store.state.islandAttentionEntries.isEmpty)
     await store.send(.agentEntryChanged(done, autoShowPanel: false)) {
       $0.entries = [done]
-      $0.islandCarouselEntryID = nil
     }
     #expect(store.state.islandAttentionEntries == [done])
     await store.send(.agentEntryChanged(idle, autoShowPanel: false)) {
@@ -487,37 +365,6 @@ struct ActiveAgentsFeatureTests {
     }
   }
 
-  @Test func islandSelectionRestartsCarouselAfterRosterCollapses() async {
-    let clock = TestClock()
-    let older = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
-    let newer = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
-    var state = ActiveAgentsFeature.State()
-    state.entries = [older, newer]
-    state.isIslandEnabled = true
-    state.isIslandRosterExpanded = true
-    state.islandCarouselEntryID = newer.id
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    } withDependencies: {
-      $0.continuousClock = clock
-    }
-
-    await store.send(.island(.entryTapped(newer.id))) {
-      $0.isIslandRosterExpanded = false
-    }
-    await store.receive(.entryTapped(newer.id)) {
-      $0.focusedSurfaceID = newer.surfaceID
-    }
-    await clock.advance(by: .seconds(4))
-    await store.receive(.islandCarouselTick) {
-      $0.islandCarouselEntryID = older.id
-    }
-    await store.send(.islandEnabledChanged(false)) {
-      $0.isIslandEnabled = false
-      $0.isIslandRosterExpanded = false
-    }
-  }
-
   @Test func removingLastEntryCollapsesIslandRoster() async {
     let agent = entry(id: UUID(0), state: .idle, changedAt: Date(timeIntervalSince1970: 10))
     var state = ActiveAgentsFeature.State()
@@ -530,48 +377,6 @@ struct ActiveAgentsFeatureTests {
     await store.send(.agentEntryRemoved(agent.id)) {
       $0.entries = []
       $0.isIslandRosterExpanded = false
-    }
-  }
-
-  @Test func removingLastEntryClearsHoverSoCarouselCanResume() async {
-    let clock = TestClock()
-    let lone = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10))
-    var state = ActiveAgentsFeature.State()
-    state.entries = [lone]
-    state.isIslandEnabled = true
-    state.islandCarouselEntryID = lone.id
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    } withDependencies: {
-      $0.continuousClock = clock
-    }
-
-    await store.send(.islandHoverChanged(true)) {
-      $0.isIslandHovered = true
-    }
-    // The compact island unmounts with its last entry, so no hover-exit is delivered.
-    await store.send(.agentEntryRemoved(lone.id)) {
-      $0.entries = []
-      $0.isIslandHovered = false
-      $0.islandCarouselEntryID = nil
-    }
-
-    let older = entry(id: UUID(1), state: .working, changedAt: Date(timeIntervalSince1970: 20))
-    let newer = entry(id: UUID(2), state: .working, changedAt: Date(timeIntervalSince1970: 30))
-    await store.send(.agentEntryChanged(older, autoShowPanel: false)) {
-      $0.entries = [older]
-      $0.islandCarouselEntryID = older.id
-    }
-    await store.send(.agentEntryChanged(newer, autoShowPanel: false)) {
-      $0.entries = [older, newer]
-      $0.islandCarouselEntryID = newer.id
-    }
-    await clock.advance(by: .seconds(4))
-    await store.receive(.islandCarouselTick) {
-      $0.islandCarouselEntryID = older.id
-    }
-    await store.send(.islandEnabledChanged(false)) {
-      $0.isIslandEnabled = false
     }
   }
 

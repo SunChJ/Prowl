@@ -3,13 +3,8 @@ import Foundation
 import IdentifiedCollections
 import Sharing
 
-nonisolated private enum AgentIslandCarouselCancelID: Hashable, Sendable {
-  case timer
-}
-
 @Reducer
 struct ActiveAgentsFeature {
-  static let islandCarouselInterval: Duration = .seconds(4)
   static let minimumPanelHeight = 120.0
   static let maximumPanelHeight = 560.0
   static let reservedSidebarListHeight = 200.0
@@ -28,8 +23,6 @@ struct ActiveAgentsFeature {
     var focusedSurfaceID: UUID?
     var isIslandEnabled = false
     var isIslandRosterExpanded = false
-    var isIslandHovered = false
-    var islandCarouselEntryID: ActiveAgentEntry.ID?
     @Shared(.appStorage("activeAgentsPanelHidden")) var isPanelHidden: Bool = false
     @Shared(.appStorage("activeAgentsPanelHeight")) var panelHeight: Double = 200
   }
@@ -50,8 +43,6 @@ struct ActiveAgentsFeature {
     case islandEnabledChanged(Bool)
     case islandToggleRoster
     case islandCollapseRoster
-    case islandHoverChanged(Bool)
-    case islandCarouselTick
     /// A sidebar action raised from the island roster or attention cells. The reducer forwards
     /// the wrapped action unchanged; when it presents Prowl UI (`surfacesProwl`) the roster
     /// collapses first and `AppFeature` surfaces the main window before the action runs.
@@ -63,35 +54,22 @@ struct ActiveAgentsFeature {
     case panelHeightChanged(Double)
   }
 
-  @Dependency(\.continuousClock) private var clock
-
   var body: some Reducer<State, Action> {
     Reduce { state, action in
       switch action {
       case .agentEntryChanged(let entry, let autoShowPanel):
-        let previousWorkingEntryIDs = state.islandWorkingEntries.map(\.id)
         state.entries[id: entry.id] = entry
         if autoShowPanel, state.isPanelHidden {
           state.$isPanelHidden.withLock { $0 = false }
         }
-        return updateIslandCarouselIfNeeded(
-          &state,
-          previousWorkingEntryIDs: previousWorkingEntryIDs
-        )
+        return .none
 
       case .agentEntryRemoved(let id):
-        let previousWorkingEntryIDs = state.islandWorkingEntries.map(\.id)
         state.entries.remove(id: id)
         if state.entries.isEmpty {
-          // The compact island unmounts with its last entry, so SwiftUI never delivers the
-          // trailing hover-exit. A stale hover flag would keep the carousel paused forever.
           state.isIslandRosterExpanded = false
-          state.isIslandHovered = false
         }
-        return updateIslandCarouselIfNeeded(
-          &state,
-          previousWorkingEntryIDs: previousWorkingEntryIDs
-        )
+        return .none
 
       case .entryTapped(let id), .handOffTapped(let id), .runWorkflowTapped(let id, _):
         // Mirror the tapped surface into the focus anchor so the panel highlight and
@@ -103,9 +81,10 @@ struct ActiveAgentsFeature {
         return .none
 
       case .island(let action):
-        guard action.surfacesProwl else { return .send(action) }
-        state.isIslandRosterExpanded = false
-        return .merge(.send(action), updateIslandCarousel(state))
+        if action.surfacesProwl {
+          state.isIslandRosterExpanded = false
+        }
+        return .send(action)
 
       case .markAsReadTapped:
         return .none
@@ -118,32 +97,16 @@ struct ActiveAgentsFeature {
         state.isIslandEnabled = isEnabled
         if !isEnabled {
           state.isIslandRosterExpanded = false
-          state.isIslandHovered = false
         }
-        if state.islandCarouselEntryID == nil {
-          state.islandCarouselEntryID = state.mostRecentWorkingEntry?.id
-        }
-        return updateIslandCarousel(state)
+        return .none
 
       case .islandToggleRoster:
         state.isIslandRosterExpanded.toggle()
-        return updateIslandCarousel(state)
-
-      case .islandCollapseRoster:
-        state.isIslandRosterExpanded = false
-        return updateIslandCarousel(state)
-
-      case .islandHoverChanged(let isHovered):
-        state.isIslandHovered = isHovered
-        return updateIslandCarousel(state)
-
-      case .islandCarouselTick:
-        state.islandCarouselEntryID = state.nextIslandWorkingEntryID
         return .none
 
-      case .islandOpenProwlTapped:
+      case .islandCollapseRoster, .islandOpenProwlTapped:
         state.isIslandRosterExpanded = false
-        return updateIslandCarousel(state)
+        return .none
 
       case .selectNextEntry:
         return navigate(&state, direction: .next)
@@ -160,36 +123,6 @@ struct ActiveAgentsFeature {
         return .none
       }
     }
-  }
-
-  private func updateIslandCarousel(_ state: State) -> Effect<Action> {
-    guard
-      state.isIslandEnabled,
-      !state.isIslandRosterExpanded,
-      !state.isIslandHovered,
-      state.islandWorkingEntries.count > 1
-    else {
-      return .cancel(id: AgentIslandCarouselCancelID.timer)
-    }
-    return .run { send in
-      while !Task.isCancelled {
-        try await clock.sleep(for: Self.islandCarouselInterval)
-        await send(.islandCarouselTick)
-      }
-    }
-    .cancellable(id: AgentIslandCarouselCancelID.timer, cancelInFlight: true)
-  }
-
-  private func updateIslandCarouselIfNeeded(
-    _ state: inout State,
-    previousWorkingEntryIDs: [ActiveAgentEntry.ID]
-  ) -> Effect<Action> {
-    let workingEntryIDs = state.islandWorkingEntries.map(\.id)
-    guard workingEntryIDs != previousWorkingEntryIDs else {
-      return .none
-    }
-    state.islandCarouselEntryID = state.mostRecentWorkingEntry?.id
-    return updateIslandCarousel(state)
   }
 
   /// Moves the keyboard anchor to the neighbouring entry and reuses `entryTapped`
@@ -255,18 +188,6 @@ extension ActiveAgentsFeature.Action {
 }
 
 extension ActiveAgentsFeature.State {
-  var islandWorkingEntries: [ActiveAgentEntry] {
-    entries.enumerated()
-      .filter { $0.element.displayState == .working }
-      .sorted { lhs, rhs in
-        if lhs.element.lastChangedAt != rhs.element.lastChangedAt {
-          return lhs.element.lastChangedAt > rhs.element.lastChangedAt
-        }
-        return lhs.offset < rhs.offset
-      }
-      .map(\.element)
-  }
-
   var islandAttentionEntries: [ActiveAgentEntry] {
     entries.filter { $0.displayState == .blocked || $0.displayState == .done }
       .sorted { lhs, rhs in
@@ -279,23 +200,4 @@ extension ActiveAgentsFeature.State {
       }
   }
 
-  var mostRecentWorkingEntry: ActiveAgentEntry? {
-    islandWorkingEntries.first
-  }
-
-  var islandCarouselEntry: ActiveAgentEntry? {
-    islandCarouselEntryID.flatMap { entries[id: $0] } ?? mostRecentWorkingEntry
-  }
-
-  var nextIslandWorkingEntryID: ActiveAgentEntry.ID? {
-    let working = islandWorkingEntries
-    guard !working.isEmpty else { return nil }
-    guard
-      let islandCarouselEntryID,
-      let index = working.firstIndex(where: { $0.id == islandCarouselEntryID })
-    else {
-      return working.first?.id
-    }
-    return working[(index + 1) % working.count].id
-  }
 }
