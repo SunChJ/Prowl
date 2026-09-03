@@ -151,11 +151,10 @@ struct AgentIslandAttentionCollection: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(entry.displayState.foregroundStyle.opacity(0.34), lineWidth: 0.8)
     }
-    .overlay(alignment: .topLeading) {
+    .overlay(alignment: .top) {
       if let shortcut {
         shortcutTag(shortcut)
           .padding(.top, 4)
-          .padding(.leading, 6)
       }
     }
     .help(helpText(for: entry, shortcut: shortcut))

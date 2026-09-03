@@ -180,6 +180,12 @@ struct AgentIslandIsolationTests {
       ) == 36)
   }
 
+  @Test func rosterDisplayControlRequiresMultipleConnectedDisplays() {
+    #expect(!AgentIslandRootLayout.showsDisplayControl(connectedDisplayCount: 0))
+    #expect(!AgentIslandRootLayout.showsDisplayControl(connectedDisplayCount: 1))
+    #expect(AgentIslandRootLayout.showsDisplayControl(connectedDisplayCount: 2))
+  }
+
   @Test func coreAnimationRingStopsForReduceMotionAndIdle() {
     let ring = AgentIslandStateRingView(frame: CGRect(x: 0, y: 0, width: 21, height: 21))
 

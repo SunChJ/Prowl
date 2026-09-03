@@ -39,7 +39,7 @@ Blocked and Done cells form a small grid under the bar: one column for a single 
 columns otherwise, and up to three rows before it scrolls. Each cell shows the agent name and
 state on the left and the repository plus the same branch/tab subtitle as Active Agents on the
 right; a live Workflow role badge takes the subtitle position, as in the sidebar. The first nine
-cells show `⌘⌥1`…`⌘⌥9` in an inset tag at the top-leading corner; while the roster is closed,
+cells show `⌘⌥1`…`⌘⌥9` in an inset tag centered along the top edge; while the roster is closed,
 those global shortcuts open the matching strong reminder directly. The mapping follows the
 displayed priority order: Blocked first, then unviewed Done, newest first within each state. Cells
 cannot be dismissed from the island. A
@@ -55,7 +55,10 @@ and a removed entry disappears with the roster.
   remain anchored to the physical cutout.
 - **Use the half-filled circle at the center** of a floating island to set its silent opacity.
   The island returns to full opacity on hover and fades to the chosen level three seconds after
-  the pointer leaves. This control is not shown on notched displays.
+  the pointer leaves. Any Blocked or unviewed Done reminder keeps the full island at 100% opacity
+  until all strong reminders clear. Opening the roster by click or `⌘⇧P` also keeps it fully
+  opaque; after the roster closes, a new three-second delay begins. This control is not shown on
+  notched displays.
 - **Press the Agent Island shortcut** (`⌘⇧P` by default) to open or close the roster like a hot
   window. It is separate from the Active Agents panel shortcut and can be changed, cleared, or
   reset under Settings → Shortcuts.
@@ -68,8 +71,9 @@ and a removed entry disappears with the roster.
   Clicking a row, or choosing one of those actions, brings Prowl forward first and then behaves
   exactly as it does in the sidebar. On a notched display the roster is as wide as the bar above
   it; under the floating pill it is wider than the pill. The roster shows up to nine agents per
-  page. Its centered display button switches Agent Island between Automatic and any connected
-  display without opening Settings.
+  page. With multiple displays connected, its centered display button switches Agent Island
+  between Automatic and any connected display without opening Settings; the button stays hidden
+  on a single-display setup.
 - **Keyboard navigation stays available while the roster is open.** Arrow Up or `k` and Arrow
   Down or `j` move the highlight without focusing a terminal; Arrow Left or `h` and Arrow Right
   or `l` move one page; Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the

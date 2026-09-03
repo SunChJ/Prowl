@@ -191,11 +191,13 @@ struct AgentIslandScreenTests {
     )
   }
 
-  @Test func onlyAFloatingSilentIslandUsesTheConfiguredOpacity() {
+  @Test func onlyAFloatingSilentIslandWithoutAttentionUsesTheConfiguredOpacity() {
     #expect(
       AgentIslandOpacityPolicy.opacity(
         isFloating: true,
         isSilent: true,
+        isRosterExpanded: false,
+        hasAttentionEntries: false,
         silentOpacity: 0.4
       ) == 0.4
     )
@@ -203,6 +205,8 @@ struct AgentIslandScreenTests {
       AgentIslandOpacityPolicy.opacity(
         isFloating: true,
         isSilent: false,
+        isRosterExpanded: false,
+        hasAttentionEntries: false,
         silentOpacity: 0.4
       ) == 1
     )
@@ -210,9 +214,64 @@ struct AgentIslandScreenTests {
       AgentIslandOpacityPolicy.opacity(
         isFloating: false,
         isSilent: true,
+        isRosterExpanded: false,
+        hasAttentionEntries: false,
         silentOpacity: 0.4
       ) == 1
     )
+    #expect(
+      AgentIslandOpacityPolicy.opacity(
+        isFloating: true,
+        isSilent: true,
+        isRosterExpanded: false,
+        hasAttentionEntries: true,
+        silentOpacity: 0.4
+      ) == 1
+    )
+    #expect(
+      AgentIslandOpacityPolicy.opacity(
+        isFloating: true,
+        isSilent: true,
+        isRosterExpanded: true,
+        hasAttentionEntries: false,
+        silentOpacity: 0.4
+      ) == 1
+    )
+  }
+
+  @Test func silentEligibilityRequiresACollapsedInactiveRoster() {
+    #expect(
+      AgentIslandOpacityPolicy.shouldEnterSilentState(
+        isFloating: true,
+        isRosterExpanded: false,
+        hasAttentionEntries: false,
+        isHovering: false,
+        isControlPresented: false
+      ))
+    #expect(
+      !AgentIslandOpacityPolicy.shouldEnterSilentState(
+        isFloating: true,
+        isRosterExpanded: true,
+        hasAttentionEntries: false,
+        isHovering: false,
+        isControlPresented: false
+      ))
+    #expect(
+      !AgentIslandOpacityPolicy.shouldEnterSilentState(
+        isFloating: true,
+        isRosterExpanded: false,
+        hasAttentionEntries: true,
+        isHovering: false,
+        isControlPresented: false
+      ))
+    #expect(
+      !AgentIslandOpacityPolicy.shouldEnterSilentState(
+        isFloating: true,
+        isRosterExpanded: false,
+        hasAttentionEntries: false,
+        isHovering: true,
+        isControlPresented: false
+      ))
   }
 
   // MARK: Settings picker selection

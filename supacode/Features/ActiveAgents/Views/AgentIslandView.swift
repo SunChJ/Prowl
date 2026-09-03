@@ -47,6 +47,10 @@ struct AgentIslandRootLayout {
     }
     return floatingMenuBarHeight
   }
+
+  static func showsDisplayControl(connectedDisplayCount: Int) -> Bool {
+    connectedDisplayCount > 1
+  }
 }
 
 struct AgentIslandView: View {
@@ -136,6 +140,8 @@ struct AgentIslandView: View {
       AgentIslandOpacityPolicy.opacity(
         isFloating: isFloating,
         isSilent: isSilent,
+        isRosterExpanded: agentsStore.isIslandRosterExpanded,
+        hasAttentionEntries: !agentsStore.islandAttentionEntries.isEmpty,
         silentOpacity: appStore.settings.agentIslandSilentOpacity
       )
     )
@@ -317,7 +323,11 @@ struct AgentIslandView: View {
       .padding(.horizontal, 14)
       .frame(height: 44)
       .overlay {
-        displayMenu
+        if AgentIslandRootLayout.showsDisplayControl(
+          connectedDisplayCount: displayCatalog.screens.count
+        ) {
+          displayMenu
+        }
       }
 
       Divider()
@@ -438,7 +448,13 @@ struct AgentIslandView: View {
   private var isFloating: Bool { notchLayout == nil }
 
   private var shouldEnterSilentState: Bool {
-    isFloating && !isHovering && !isOpacityControlPresented
+    AgentIslandOpacityPolicy.shouldEnterSilentState(
+      isFloating: isFloating,
+      isRosterExpanded: agentsStore.isIslandRosterExpanded,
+      hasAttentionEntries: !agentsStore.islandAttentionEntries.isEmpty,
+      isHovering: isHovering,
+      isControlPresented: isOpacityControlPresented
+    )
   }
 
   private var rootWidth: CGFloat {

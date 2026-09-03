@@ -25,8 +25,8 @@ Agents panel command.
   restarts at `⌘1` after paging.
 - Register `⌘⌥1`…`⌘⌥9` for the first nine strong-reminder slots while the roster is closed. The
   mapping follows the existing attention projection (Blocked before unviewed Done, newest first
-  within each state), and every assigned attention cell keeps its shortcut in an inset top-leading
-  tag that follows the card's corner geometry without competing with its metadata. Only currently
+  within each state), and every assigned attention cell keeps its shortcut in an inset tag centered
+  along the card's top edge without competing with its metadata. Only currently
   backed slots are registered; roster expansion removes them until it collapses again.
 - Keep a compact legend at the bottom of the roster for the persistent interaction model. Each
   arrow is grouped with its Vim counterpart (`↑ K`, `↓ J`, `← H`, `→ L`) so the direction is
@@ -42,8 +42,11 @@ Agents panel command.
   physically anchored to the cutout. Settings can reset all floating positions to center.
 - Keep a compact silent-opacity control on the floating pill's center axis. After the pointer has
   remained outside the island for three seconds, the full floating surface fades to the selected
-  opacity and restores immediately on hover. The roster header also exposes an icon-only display
-  menu for switching the island's target without opening Settings.
+  opacity and restores immediately on hover. Blocked or unviewed Done reminders force the entire
+  island to remain fully opaque. An expanded roster—whether opened by pointer or `⌘⇧P`—also stays
+  fully opaque; closing it starts a fresh three-second delay. When multiple displays are connected,
+  the roster header exposes an icon-only display menu for switching the island's target without
+  opening Settings; single-display setups omit the redundant control.
 
 The global entry uses Carbon hot-key registration, which consumes the configured chord without
 requiring Accessibility or Input Monitoring permission. Once expanded, ordinary navigation keys
@@ -68,8 +71,9 @@ inside the visible horizontal bounds as its content width changes, and its top e
 with the physical screen edge. Its compact height matches the target display's menu bar, so it
 overlays the system band instead of hanging below it.
 The floating pill also owns a persisted silent-opacity control: after three seconds without hover,
-the entire floating surface fades to that level. An icon-only display menu in the roster header
-provides fast placement changes without secondary explanatory copy.
+the entire floating surface fades to that level unless a strong reminder exists, in which case it
+stays fully opaque. With multiple displays connected, an icon-only display menu in the roster
+header provides fast placement changes without secondary explanatory copy.
 
 Verification completed with `make check`, `make test`, and `make build-app`; all passed with zero
 test or build failures. Final native screenshot capture was unavailable because the computer-use

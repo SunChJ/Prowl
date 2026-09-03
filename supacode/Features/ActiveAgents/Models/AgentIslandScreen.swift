@@ -44,10 +44,23 @@ nonisolated enum AgentIslandOpacityPolicy {
   static func opacity(
     isFloating: Bool,
     isSilent: Bool,
+    isRosterExpanded: Bool,
+    hasAttentionEntries: Bool,
     silentOpacity: Double
   ) -> Double {
-    guard isFloating, isSilent else { return 1 }
+    guard isFloating, isSilent, !isRosterExpanded, !hasAttentionEntries else { return 1 }
     return normalizedSilentOpacity(silentOpacity)
+  }
+
+  static func shouldEnterSilentState(
+    isFloating: Bool,
+    isRosterExpanded: Bool,
+    hasAttentionEntries: Bool,
+    isHovering: Bool,
+    isControlPresented: Bool
+  ) -> Bool {
+    isFloating && !isRosterExpanded && !hasAttentionEntries && !isHovering
+      && !isControlPresented
   }
 }
 
