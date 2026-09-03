@@ -177,6 +177,10 @@ final class AgentIslandWindowController {
     if presentation.notchSize != notchSize {
       presentation.notchSize = notchSize
     }
+    let floatingMenuBarHeight = screen.hasNotch ? nil : screen.menuBarHeight
+    if presentation.floatingMenuBarHeight != floatingMenuBarHeight {
+      presentation.floatingMenuBarHeight = floatingMenuBarHeight
+    }
     let frame = AgentIslandScreenLayout.panelFrame(
       contentSize: contentSize,
       screen: screen,

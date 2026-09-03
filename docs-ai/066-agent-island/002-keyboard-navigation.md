@@ -37,9 +37,9 @@ Agents panel command.
   mark entries as handled, or focus a terminal while merely navigating.
 - On displays without a notch, expose a small top-center drag grip instead of making the whole
   floating pill draggable. Dragging is horizontal-only, stays inside the display's visible bounds,
-  stays attached to the menu bar, and persists a normalized position per hardware display ID.
-  Notched displays remain physically anchored to the cutout. Settings can reset all floating
-  positions to center.
+  stays inside the menu bar band, and persists a normalized position per hardware display ID. The
+  floating compact bar overlays that band at exactly its height. Notched displays remain
+  physically anchored to the cutout. Settings can reset all floating positions to center.
 - Keep a compact silent-opacity control on the floating pill's center axis. After the pointer has
   remained outside the island for three seconds, the full floating surface fades to the selected
   opacity and restores immediately on hover. The roster header also exposes an icon-only display
@@ -65,7 +65,8 @@ first nine priority-ordered cells, using the same focus path as a pointer click.
 On displays without a notch, a dedicated top-center grip moves the floating island horizontally;
 the normalized position is saved per display and can be reset from Settings. The panel remains
 inside the visible horizontal bounds as its content width changes, and its top edge stays flush
-with the menu bar rather than leaving a visual gap.
+with the physical screen edge. Its compact height matches the target display's menu bar, so it
+overlays the system band instead of hanging below it.
 The floating pill also owns a persisted silent-opacity control: after three seconds without hover,
 the entire floating surface fades to that level. An icon-only display menu in the roster header
 provides fast placement changes without secondary explanatory copy.

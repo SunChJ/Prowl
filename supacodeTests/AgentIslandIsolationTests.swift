@@ -167,6 +167,19 @@ struct AgentIslandIsolationTests {
       ) == 425)
   }
 
+  @Test func floatingCompactBarUsesTheDisplayMenuBarHeight() {
+    #expect(
+      AgentIslandRootLayout.compactHeight(
+        notchCompactHeight: nil,
+        floatingMenuBarHeight: 32
+      ) == 32)
+    #expect(
+      AgentIslandRootLayout.compactHeight(
+        notchCompactHeight: 36,
+        floatingMenuBarHeight: 32
+      ) == 36)
+  }
+
   @Test func coreAnimationRingStopsForReduceMotionAndIdle() {
     let ring = AgentIslandStateRingView(frame: CGRect(x: 0, y: 0, width: 21, height: 21))
 

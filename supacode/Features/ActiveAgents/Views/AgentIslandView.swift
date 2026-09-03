@@ -7,6 +7,7 @@ import SwiftUI
 @Observable
 final class AgentIslandPresentationModel {
   var notchSize: CGSize?
+  var floatingMenuBarHeight: CGFloat?
 }
 
 enum AgentIslandFloatingDragEvent {
@@ -17,6 +18,7 @@ enum AgentIslandFloatingDragEvent {
 
 struct AgentIslandRootLayout {
   static let floatingCompactWidth: CGFloat = 300
+  static let fallbackFloatingCompactHeight: CGFloat = 40
   static let rosterWidth: CGFloat = 420
 
   static func width(
@@ -31,6 +33,19 @@ struct AgentIslandRootLayout {
     guard attentionEntryCount > 0 else { return compactWidth }
     let attentionWidth = AgentIslandAttentionLayout.layout(entryCount: attentionEntryCount).width
     return max(compactWidth, attentionWidth)
+  }
+
+  static func compactHeight(
+    notchCompactHeight: CGFloat?,
+    floatingMenuBarHeight: CGFloat?
+  ) -> CGFloat {
+    if let notchCompactHeight {
+      return notchCompactHeight
+    }
+    guard let floatingMenuBarHeight, floatingMenuBarHeight > 0 else {
+      return fallbackFloatingCompactHeight
+    }
+    return floatingMenuBarHeight
   }
 }
 
@@ -154,21 +169,19 @@ struct AgentIslandView: View {
             compactChevron
           }
           .padding(.horizontal, 14)
-          .frame(width: 300, height: 40)
+          .frame(width: 300, height: compactHeight)
         }
       }
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
     .background(.black, in: compactShape)
-    .overlay(alignment: .top) {
-      if isFloating {
-        floatingDragHandle
-      }
-    }
     .overlay {
       if isFloating {
-        floatingOpacityControl
+        HStack(spacing: 4) {
+          floatingDragHandle
+          floatingOpacityControl
+        }
       }
     }
     .help(
@@ -191,7 +204,7 @@ struct AgentIslandView: View {
         .frame(width: 28, height: 3)
       AgentIslandDragCaptureView(dragChanged: floatingDragChanged)
     }
-    .frame(width: 44, height: 10)
+    .frame(width: 44, height: 20)
     .help("Drag to reposition Agent Island")
     .accessibilityHidden(true)
   }
@@ -345,17 +358,14 @@ struct AgentIslandView: View {
   }
 
   private var compactShape: AnyShape {
-    if notchLayout != nil {
-      return AnyShape(
-        UnevenRoundedRectangle(
-          topLeadingRadius: 0,
-          bottomLeadingRadius: 12,
-          bottomTrailingRadius: 12,
-          topTrailingRadius: 0
-        )
+    AnyShape(
+      UnevenRoundedRectangle(
+        topLeadingRadius: 0,
+        bottomLeadingRadius: 12,
+        bottomTrailingRadius: 12,
+        topTrailingRadius: 0
       )
-    }
-    return AnyShape(Capsule())
+    )
   }
 
   private var displayMenu: some View {
@@ -416,6 +426,13 @@ struct AgentIslandView: View {
 
   private var notchLayout: AgentIslandNotchLayout? {
     presentation.notchSize.map { AgentIslandNotchLayout(cutoutSize: $0) }
+  }
+
+  private var compactHeight: CGFloat {
+    AgentIslandRootLayout.compactHeight(
+      notchCompactHeight: notchLayout?.compactHeight,
+      floatingMenuBarHeight: presentation.floatingMenuBarHeight
+    )
   }
 
   private var isFloating: Bool { notchLayout == nil }

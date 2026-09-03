@@ -60,6 +60,7 @@ struct AgentIslandScreenDescriptor: Equatable, Identifiable {
   let notchFrame: CGRect?
 
   var hasNotch: Bool { notchFrame != nil }
+  var menuBarHeight: CGFloat { max(0, frame.maxY - visibleFrame.maxY) }
 }
 
 struct AgentIslandNotchLayout: Equatable {
@@ -148,7 +149,7 @@ enum AgentIslandScreenLayout {
     screen: AgentIslandScreenDescriptor,
     floatingHorizontalPosition: Double = 0.5
   ) -> CGRect {
-    let top = screen.hasNotch ? screen.frame.maxY : screen.visibleFrame.maxY
+    let top = screen.frame.maxY
     let anchorX =
       screen.notchFrame?.midX
       ?? floatingAnchorX(
