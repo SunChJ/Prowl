@@ -26,14 +26,18 @@ struct AgentIslandIsolationTests {
     store.send(.settings(.binding(.set(\.agentIslandEnabled, true))))
     await settle { controller.isRunning }
     #expect(controller.isRunning)
+    let firstRunningGeneration = controller.observationGeneration
 
     store.send(.settings(.binding(.set(\.agentIslandEnabled, false))))
     await settle { !controller.isRunning }
     #expect(!controller.isRunning)
+    let stoppedGeneration = controller.observationGeneration
+    #expect(stoppedGeneration != firstRunningGeneration)
 
     store.send(.settings(.binding(.set(\.agentIslandEnabled, true))))
     await settle { controller.isRunning }
     #expect(controller.isRunning)
+    #expect(controller.observationGeneration != stoppedGeneration)
 
     controller.stop()
   }
@@ -120,8 +124,47 @@ struct AgentIslandIsolationTests {
       isRosterExpanded: false,
       attentionEntryCount: 2
     )
-    #expect(differentBinding.changes(from: initial) == [.toggle])
+    #expect(differentBinding.changes(from: initial) == [.toggle, .attentionSlots])
     #expect(initial.changes(from: initial, force: true) == [.toggle, .attentionSlots])
+  }
+
+  @Test func toggleShortcutRejectsContextualNumberBindings() {
+    for digit in 1...AgentIslandAttentionShortcut.slotLimit {
+      #expect(
+        AgentIslandToggleShortcutPolicy.isReserved(
+          Keybinding(key: String(digit), modifiers: KeybindingModifiers(command: true))
+        )
+      )
+      #expect(
+        AgentIslandToggleShortcutPolicy.isReserved(
+          Keybinding(
+            key: "digit_\(digit)",
+            modifiers: KeybindingModifiers(command: true, option: true)
+          )
+        )
+      )
+    }
+
+    #expect(
+      !AgentIslandToggleShortcutPolicy.isReserved(
+        Keybinding(key: "p", modifiers: KeybindingModifiers(command: true, shift: true))
+      )
+    )
+    #expect(
+      !AgentIslandToggleShortcutPolicy.isReserved(
+        Keybinding(key: "1", modifiers: KeybindingModifiers(command: true, shift: true))
+      )
+    )
+
+    let reservedConfiguration = AgentIslandGlobalHotKeyConfiguration(
+      toggleBinding: Keybinding(
+        key: "1",
+        modifiers: KeybindingModifiers(command: true, option: true)
+      ),
+      isRosterExpanded: false,
+      attentionEntryCount: 2
+    )
+    #expect(reservedConfiguration.toggleBinding == nil)
   }
 
   @Test func expandedRosterKeyMapSupportsArrowsVimiumActivationAndCommandNumbers() {

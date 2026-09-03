@@ -38,6 +38,7 @@ final class AgentIslandWindowController {
   private var keyboardLayoutObserver: NSObjectProtocol?
   private var globalHotKeys: AgentIslandGlobalHotKeys?
   private var registeredGlobalHotKeyConfiguration: AgentIslandGlobalHotKeyConfiguration?
+  private(set) var observationGeneration = 0
   private var isVisible = false
   private var isRosterExpanded = false
   private var displayPreference: AgentIslandDisplayPreference = .automatic
@@ -86,6 +87,8 @@ final class AgentIslandWindowController {
 
   func start() {
     guard panel == nil else { return }
+    observationGeneration &+= 1
+    let generation = observationGeneration
     let panel = AgentIslandPanel(
       contentRect: CGRect(origin: .zero, size: contentSize),
       styleMask: [.borderless, .nonactivatingPanel],
@@ -132,12 +135,13 @@ final class AgentIslandWindowController {
     }
     installObservers()
     refreshGlobalHotKeys()
-    observeGlobalHotKeyState()
-    observeFloatingPositions()
+    observeGlobalHotKeyState(generation: generation)
+    observeFloatingPositions(generation: generation)
     refreshPlacement()
   }
 
   func stop() {
+    observationGeneration &+= 1
     removeObservers()
     removeEventMonitors()
     globalHotKeys?.stop()
@@ -409,16 +413,20 @@ final class AgentIslandWindowController {
       from: registeredGlobalHotKeyConfiguration,
       force: force
     )
-    if changes.contains(.toggle) {
+    if changes == [.toggle, .attentionSlots] {
+      globalHotKeys?.registerAll(
+        toggleBinding: configuration.toggleBinding,
+        attentionSlotCount: configuration.attentionSlotCount
+      )
+    } else if changes.contains(.toggle) {
       globalHotKeys?.registerToggle(binding: configuration.toggleBinding)
-    }
-    if changes.contains(.attentionSlots) {
+    } else if changes.contains(.attentionSlots) {
       globalHotKeys?.registerAttentionSlots(count: configuration.attentionSlotCount)
     }
     registeredGlobalHotKeyConfiguration = configuration
   }
 
-  private func observeGlobalHotKeyState() {
+  private func observeGlobalHotKeyState(generation: Int) {
     withObservationTracking {
       _ = appStore.resolvedKeybindings.keybinding(
         for: AppShortcuts.CommandID.toggleAgentIsland
@@ -427,21 +435,21 @@ final class AgentIslandWindowController {
       _ = appStore.repositories.activeAgents.islandAttentionShortcutEntries.count
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
-        guard let self, self.panel != nil else { return }
+        guard let self, self.panel != nil, self.observationGeneration == generation else { return }
         self.refreshGlobalHotKeys()
-        self.observeGlobalHotKeyState()
+        self.observeGlobalHotKeyState(generation: generation)
       }
     }
   }
 
-  private func observeFloatingPositions() {
+  private func observeFloatingPositions(generation: Int) {
     withObservationTracking {
       _ = appStore.settings.agentIslandFloatingPositions
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
-        guard let self, self.panel != nil else { return }
+        guard let self, self.panel != nil, self.observationGeneration == generation else { return }
         self.refreshPlacement()
-        self.observeFloatingPositions()
+        self.observeFloatingPositions(generation: generation)
       }
     }
   }

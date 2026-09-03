@@ -61,6 +61,8 @@ reminders. Their slot order matches the attention collection: Blocked before unv
 first within each state. Only slots backed by a current reminder are registered; opening the
 roster unregisters the strong-reminder shortcuts until it closes again. Command–Option is used
 instead of Command–Shift to avoid common macOS and application shortcut collisions.
+The configurable **Toggle Agent Island** command cannot use `⌘1`…`⌘9` or `⌘⌥1`…`⌘⌥9`, which are
+reserved for the roster's visible rows and collapsed strong reminders.
 
 ## Shelf view
 

@@ -13,7 +13,8 @@ Agents panel command.
 - Add a dedicated **Toggle Agent Island** shortcut (`⌘⇧P` by default) as the global hot-window
   entry while Agent Island is enabled. It is separate from **Toggle Active Agents Panel**
   (`⌘⌥P`) and participates in the existing Settings → Shortcuts resolver, including clear,
-  remap, conflict handling, and reset-to-default behavior.
+  remap, conflict handling, and reset-to-default behavior. The toggle rejects `⌘1`…`⌘9` and
+  `⌘⌥1`…`⌘⌥9`, which remain reserved for contextual roster and attention-slot activation.
 - Let the expanded nonactivating panel become key without activating Prowl. The compact island
   remains non-key, and collapsing the roster releases keyboard focus.
 - Give the island its own transient selection and nine-entry pages. Arrow Up pairs with `k` and
@@ -56,7 +57,9 @@ Agents panel command.
 
 The global entry uses Carbon hot-key registration, which consumes the configured chord without
 requiring Accessibility or Input Monitoring permission. Registration is diffed by toggle binding
-and attention-slot count, with a forced refresh only when the keyboard layout changes. Once
+and attention-slot count, with an atomic refresh of both groups when the toggle changes and a
+forced refresh when the keyboard layout changes. Observation callbacks carry a lifecycle
+generation so disabling and re-enabling the island cannot accumulate stale tracking chains. Once
 expanded, ordinary navigation keys are handled locally by the key panel, so they do not leak into
 the previously frontmost app.
 

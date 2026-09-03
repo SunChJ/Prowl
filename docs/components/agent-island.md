@@ -80,7 +80,8 @@ and a removed entry disappears with the roster.
   while dragging and persist once the adjustment ends. This control is not shown on notched displays.
 - **Press the Agent Island shortcut** (`⌘⇧P` by default) to open or close the roster like a hot
   window. It is separate from the Active Agents panel shortcut and can be changed, cleared, or
-  reset under Settings → Shortcuts.
+  reset under Settings → Shortcuts. The contextual `⌘1`…`⌘9` and `⌘⌥1`…`⌘⌥9` number chords are
+  reserved and cannot be assigned to this toggle.
 - **Click a Blocked or Done cell** to bring Prowl forward and focus that agent's exact worktree,
   tab, and pane.
 - **The roster** lists every entry with the same rows, ordering, Workflow badges, and context menu

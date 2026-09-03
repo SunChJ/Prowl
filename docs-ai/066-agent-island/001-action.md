@@ -18,6 +18,7 @@
 | 2026-09-03 | Runtime ring motion was tested as breathing, then restored to the original state-paced rotation only in attention cards. Compact-bar icons now use static state-colored outlines; a reserved center band, compact four-state metrics, and a stable 340pt width prevent compression and layout jumps. | #758 |
 | 2026-09-03 | Strong reminders capped at a non-scrolling 2×3 grid; lower-priority overflow is summarized by a bottom-right `+N` badge. | #758 |
 | 2026-09-03 | Review hardening: Command–Option digits documented as the intentional strong-reminder chord; the shortcut projection capped at nine; unchanged Carbon registrations deduplicated; silent-opacity persistence deferred until editing ends. | #758 |
+| 2026-09-03 | Follow-up review: lifecycle generations invalidate stale Observation chains across enable/disable cycles; contextual number chords are reserved from Toggle remapping; toggle changes atomically rebuild both Carbon registration groups. | #758 |
 
 ## Outcome & current state (as of 2026-09-03)
 

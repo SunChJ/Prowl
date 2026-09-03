@@ -125,6 +125,28 @@ enum AgentIslandAttentionShortcut {
   }
 }
 
+enum AgentIslandToggleShortcutPolicy {
+  static func isReserved(_ binding: Keybinding) -> Bool {
+    guard
+      let digit = digit(from: binding.key),
+      (1...AgentIslandAttentionShortcut.slotLimit).contains(digit)
+    else {
+      return false
+    }
+    let command = KeybindingModifiers(command: true)
+    let commandOption = KeybindingModifiers(command: true, option: true)
+    return binding.modifiers == command || binding.modifiers == commandOption
+  }
+
+  private static func digit(from key: String) -> Int? {
+    if key.count == 1 {
+      return Int(key)
+    }
+    guard key.hasPrefix("digit_") else { return nil }
+    return Int(key.dropFirst("digit_".count))
+  }
+}
+
 struct AgentIslandGlobalHotKeyConfiguration: Equatable {
   struct Changes: OptionSet, Equatable {
     let rawValue: Int
@@ -141,7 +163,9 @@ struct AgentIslandGlobalHotKeyConfiguration: Equatable {
     isRosterExpanded: Bool,
     attentionEntryCount: Int
   ) {
-    self.toggleBinding = toggleBinding
+    self.toggleBinding = toggleBinding.flatMap {
+      AgentIslandToggleShortcutPolicy.isReserved($0) ? nil : $0
+    }
     attentionSlotCount = AgentIslandAttentionShortcut.slotCount(
       isRosterExpanded: isRosterExpanded,
       attentionEntryCount: attentionEntryCount
@@ -152,7 +176,7 @@ struct AgentIslandGlobalHotKeyConfiguration: Equatable {
     guard !force, let previous else { return [.toggle, .attentionSlots] }
     var changes: Changes = []
     if toggleBinding != previous.toggleBinding {
-      changes.insert(.toggle)
+      changes.formUnion([.toggle, .attentionSlots])
     }
     if attentionSlotCount != previous.attentionSlotCount {
       changes.insert(.attentionSlots)
@@ -254,14 +278,29 @@ final class AgentIslandGlobalHotKeys {
   }
 
   func registerAttentionSlots(count: Int) {
-    for index in 0..<AgentIslandAttentionShortcut.slotLimit {
-      unregister(command: .activateAttentionSlot(index))
-    }
+    unregisterAttentionSlots()
+    registerAttentionSlotsWithoutReset(count: count)
+  }
+
+  func registerAll(toggleBinding: Keybinding?, attentionSlotCount: Int) {
+    unregister(command: .toggleRoster)
+    unregisterAttentionSlots()
+    register(command: .toggleRoster, binding: toggleBinding)
+    registerAttentionSlotsWithoutReset(count: attentionSlotCount)
+  }
+
+  private func registerAttentionSlotsWithoutReset(count: Int) {
     for index in 0..<min(max(0, count), AgentIslandAttentionShortcut.slotLimit) {
       register(
         command: .activateAttentionSlot(index),
         binding: AgentIslandAttentionShortcut.binding(at: index)
       )
+    }
+  }
+
+  private func unregisterAttentionSlots() {
+    for index in 0..<AgentIslandAttentionShortcut.slotLimit {
+      unregister(command: .activateAttentionSlot(index))
     }
   }
 
