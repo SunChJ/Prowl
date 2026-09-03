@@ -16,16 +16,16 @@ Agents panel command.
   remap, conflict handling, and reset-to-default behavior.
 - Let the expanded nonactivating panel become key without activating Prowl. The compact island
   remains non-key, and collapsing the roster releases keyboard focus.
-- Give the island its own transient selection and nine-entry pages. Arrow Up/Down and `k`/`j`
-  move the selection; Arrow Left/Right and `h`/`l` move one page while preserving the row
-  position when possible; Space or Return opens the selected pane in Prowl; Escape collapses
-  the roster. The earlier `u`/`d` page bindings are removed.
+- Give the island its own transient selection and nine-entry pages. Arrow Up pairs with `k` and
+  Arrow Down with `j` for selection; Arrow Left pairs with `h` and Arrow Right with `l` for paging
+  while preserving the row position when possible. Space or Return opens the selected pane in
+  Prowl; Escape collapses the roster. The earlier `u`/`d` page bindings are removed.
 - Use `⌘1`…`⌘9` for direct activation of the nine visible slots, not globally numbered agents.
   Every visible row keeps its current shortcut label; the mapping restarts at `⌘1` after paging.
-- Keep a compact legend at the bottom of the roster for the persistent interaction model:
-  Arrow Up/Down or `j`/`k` select, Arrow Left/Right or `h`/`l` page, and Space or Return open. The
-  row-level shortcut labels communicate the direct `⌘1`…`⌘9` mapping without a redundant
-  transient or footer hint.
+- Keep a compact legend at the bottom of the roster for the persistent interaction model. Each
+  arrow is grouped with its Vim counterpart (`↑ K`, `↓ J`, `← H`, `→ L`) so the direction is
+  explicit; Space and Return remain grouped for opening. The row-level shortcut labels
+  communicate the direct `⌘1`…`⌘9` mapping without a redundant transient or footer hint.
   Clickable page controls expose the current page beside that legend when multiple pages exist.
 - Keep the selection presentation-only until activation. It does not mutate Active Agents state,
   mark entries as handled, or focus a terminal while merely navigating.

@@ -58,10 +58,10 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
   exactly as it does in the sidebar. On a notched display the roster is as wide as the bar above
   it; under the floating pill it is wider than the pill. The roster shows up to nine agents per
   page.
-- **Keyboard navigation stays available while the roster is open.** Arrow Up/Down or `j`/`k`
-  moves the highlight without focusing a terminal; Arrow Left/Right or `h`/`l` moves one page;
-  Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the corresponding agent on
-  the current page.
+- **Keyboard navigation stays available while the roster is open.** Arrow Up or `k` and Arrow
+  Down or `j` move the highlight without focusing a terminal; Arrow Left or `h` and Arrow Right
+  or `l` move one page; Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the
+  corresponding agent on the current page.
   These are visible-slot shortcuts, not permanent agent numbers: every page labels its visible
   rows from `⌘1` again. The row labels and a compact legend for movement, paging, and confirmation
   stay visible.

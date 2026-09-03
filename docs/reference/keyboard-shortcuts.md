@@ -52,9 +52,9 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 
 When Agent Island is enabled, its resolved shortcut is registered globally. It is independent
 from the Active Agents panel shortcut and can be changed, cleared, or restored to `⌘⇧P` under
-Settings → Shortcuts. In the open island roster, Arrow Up/Down or `j`/`k` selects, Arrow
-Left/Right or `h`/`l` pages, Space or Return opens, `⌘1`…`⌘9` directly opens a current-page row,
-and `Esc` closes.
+Settings → Shortcuts. In the open island roster, Arrow Up or `k` and Arrow Down or `j` select;
+Arrow Left or `h` and Arrow Right or `l` page; Space or Return opens; `⌘1`…`⌘9` directly opens a
+current-page row; and `Esc` closes.
 
 ## Shelf view
 

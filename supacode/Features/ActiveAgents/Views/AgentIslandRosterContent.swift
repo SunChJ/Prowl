@@ -92,7 +92,7 @@ struct AgentIslandRosterContent: View {
           Button {
             store.send(.islandMovePage(.previous))
           } label: {
-            Label("Previous page", systemImage: "chevron.up")
+            Label("Previous page", systemImage: "chevron.left")
               .labelStyle(.iconOnly)
           }
           .buttonStyle(.borderless)
@@ -106,7 +106,7 @@ struct AgentIslandRosterContent: View {
           Button {
             store.send(.islandMovePage(.next))
           } label: {
-            Label("Next page", systemImage: "chevron.down")
+            Label("Next page", systemImage: "chevron.right")
               .labelStyle(.iconOnly)
           }
           .buttonStyle(.borderless)
@@ -117,19 +117,23 @@ struct AgentIslandRosterContent: View {
       }
 
       HStack(spacing: 14) {
-        keyboardLegend(keys: "↑↓  J K", action: "Select")
-        keyboardLegend(keys: "←→  H L", action: "Page")
-        keyboardLegend(keys: "Space  ↩", action: "Open")
+        keyboardLegend(keys: ["↑ K", "↓ J"], action: "Select")
+        keyboardLegend(keys: ["← H", "→ L"], action: "Page")
+        keyboardLegend(keys: ["Space", "↩"], action: "Open")
       }
       .frame(height: 24)
     }
     .padding(.vertical, 4)
   }
 
-  private func keyboardLegend(keys: String, action: String) -> some View {
+  private func keyboardLegend(keys: [String], action: String) -> some View {
     HStack(spacing: 4) {
-      ShortcutHintView(text: keys, color: .primary)
-        .monospaced()
+      HStack(spacing: 2) {
+        ForEach(keys, id: \.self) { key in
+          ShortcutHintView(text: key, color: .primary)
+            .monospaced()
+        }
+      }
       Text(action)
         .font(.caption2)
         .foregroundStyle(.secondary)
