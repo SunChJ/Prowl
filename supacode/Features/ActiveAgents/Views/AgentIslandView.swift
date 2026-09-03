@@ -199,9 +199,9 @@ struct AgentIslandView: View {
 
   private var floatingDragHandle: some View {
     ZStack {
-      Capsule()
-        .fill(.secondary.opacity(0.55))
-        .frame(width: 28, height: 3)
+      Image(systemName: "line.3.horizontal")
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
       AgentIslandDragCaptureView(dragChanged: floatingDragChanged)
     }
     .frame(width: 44, height: 20)
