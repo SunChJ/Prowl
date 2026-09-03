@@ -110,7 +110,7 @@ struct AgentIslandScreenTests {
     #expect(AgentIslandNotchLayout(cutoutSize: CGSize(width: 208, height: 36)).compactHeight == 36)
   }
 
-  @Test func floatingPillUsesVisibleTopAndSupportsNegativeCoordinates() {
+  @Test func floatingPillTouchesTheMenuBarAndSupportsNegativeCoordinates() {
     let display = screen(
       id: "external",
       origin: CGPoint(x: -2_560, y: -180),
@@ -123,10 +123,7 @@ struct AgentIslandScreenTests {
     )
 
     #expect(frame.midX == display.frame.midX)
-    #expect(
-      abs(frame.maxY - (display.visibleFrame.maxY - AgentIslandScreenLayout.floatingTopOffset))
-        < 0.001
-    )
+    #expect(frame.maxY == display.visibleFrame.maxY)
   }
 
   @Test func floatingPillUsesTheStoredHorizontalPosition() {

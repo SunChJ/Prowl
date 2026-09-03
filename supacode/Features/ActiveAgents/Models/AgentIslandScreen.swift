@@ -91,7 +91,6 @@ struct AgentIslandNotchLayout: Equatable {
 }
 
 enum AgentIslandScreenLayout {
-  static let floatingTopOffset: CGFloat = 8
   static let floatingSideInset: CGFloat = 8
 
   static func notchFrame(
@@ -149,7 +148,7 @@ enum AgentIslandScreenLayout {
     screen: AgentIslandScreenDescriptor,
     floatingHorizontalPosition: Double = 0.5
   ) -> CGRect {
-    let top = screen.hasNotch ? screen.frame.maxY : screen.visibleFrame.maxY - floatingTopOffset
+    let top = screen.hasNotch ? screen.frame.maxY : screen.visibleFrame.maxY
     let anchorX =
       screen.notchFrame?.midX
       ?? floatingAnchorX(

@@ -16,7 +16,7 @@ track acknowledgement on its own: every label and transition comes from the same
 The island is off by default. When enabled it appears whenever the roster has at least one
 entry. On a notched display it merges with the top edge, exactly as tall as the menu bar, with
 content in two wings on either side of the camera cutout; on other displays it is a centered
-floating pill below the menu bar. It
+floating pill attached to the bottom edge of the menu bar. It
 stays visible across Spaces and over fullscreen applications and never becomes the active window.
 
 ## Presentation
@@ -51,7 +51,8 @@ and a removed entry disappears with the roster.
 - **Click the bar** to open or close the full roster. This does not bring Prowl forward.
 - **Drag the small grip at the top center** of a floating island to reposition it horizontally.
   Prowl remembers the position independently for each display and keeps the full island inside
-  the visible screen bounds. Notched displays remain anchored to the physical cutout.
+  the visible screen bounds. The pill stays attached to the menu bar while moving; notched
+  displays remain anchored to the physical cutout.
 - **Use the half-filled circle at the center** of a floating island to set its silent opacity.
   The island returns to full opacity on hover and fades to the chosen level three seconds after
   the pointer leaves. This control is not shown on notched displays.
