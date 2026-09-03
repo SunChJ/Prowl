@@ -34,7 +34,8 @@ are handled locally by the key panel, so they do not leak into the previously fr
 
 ## Refs
 
-PR pending.
+- Implementation: `1f32784a`
+- PR: #758
 
 ## Current state
 
