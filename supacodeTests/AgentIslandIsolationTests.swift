@@ -46,7 +46,7 @@ struct AgentIslandIsolationTests {
     }
   }
 
-  @Test func panelCannotTakeKeyWindowStatusFromGhostty() {
+  @Test func panelOnlyAcceptsKeyboardInputForTheExpandedRoster() {
     let panel = AgentIslandPanel(
       contentRect: CGRect(x: 0, y: 0, width: 300, height: 40),
       styleMask: [.borderless, .nonactivatingPanel],
@@ -55,7 +55,55 @@ struct AgentIslandIsolationTests {
     )
 
     #expect(!panel.canBecomeKey)
+    panel.acceptsKeyboardInput = true
+    #expect(panel.canBecomeKey)
     #expect(!panel.canBecomeMain)
+  }
+
+  @Test func globalHotKeyPreservesTheInAppActionAndTogglesTheIslandElsewhere() {
+    #expect(
+      AgentIslandHotKeyAction.resolve(
+        appIsActive: true,
+        isRosterExpanded: false,
+        hasEntries: true
+      ) == .toggleSidebarPanel)
+    #expect(
+      AgentIslandHotKeyAction.resolve(
+        appIsActive: false,
+        isRosterExpanded: false,
+        hasEntries: true
+      ) == .toggleIslandRoster)
+    #expect(
+      AgentIslandHotKeyAction.resolve(
+        appIsActive: true,
+        isRosterExpanded: true,
+        hasEntries: true
+      ) == .collapseIsland)
+    #expect(
+      AgentIslandHotKeyAction.resolve(
+        appIsActive: false,
+        isRosterExpanded: false,
+        hasEntries: false
+      ) == nil)
+  }
+
+  @Test func expandedRosterKeyMapSupportsArrowsVimiumActivationAndCommandNumbers() {
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 126, characters: nil, modifiers: []) == .move(.previous))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 125, characters: nil, modifiers: []) == .move(.next))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "k", modifiers: []) == .move(.previous))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "j", modifiers: []) == .move(.next))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "u", modifiers: []) == .page(.previous))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 0, characters: "d", modifiers: []) == .page(.next))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 36, characters: nil, modifiers: []) == .activateSelection)
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 49, characters: nil, modifiers: []) == .activateSelection)
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 53, characters: nil, modifiers: []) == .collapse)
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 18, characters: "1", modifiers: .command)
+        == .activateVisibleEntry(0))
+    #expect(
+      AgentIslandKeyboardCommand.resolve(keyCode: 25, characters: "9", modifiers: .command)
+        == .activateVisibleEntry(8))
+    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 18, characters: "1", modifiers: []) == nil)
   }
 
   @Test func eventMonitorsExistOnlyForAVisibleExpandedRoster() {
@@ -79,32 +127,6 @@ struct AgentIslandIsolationTests {
         isVisible: true,
         isRosterExpanded: true
       ))
-  }
-
-  @Test func escapeTrackerReportsOnlyNewKeyDownEdges() {
-    var tracker = AgentIslandEscapeKeyTracker(isPressed: false)
-    let initialRelease = tracker.observe(isPressed: false)
-    let firstPress = tracker.observe(isPressed: true)
-    let heldPress = tracker.observe(isPressed: true)
-    let release = tracker.observe(isPressed: false)
-    let secondPress = tracker.observe(isPressed: true)
-
-    #expect(!initialRelease)
-    #expect(firstPress)
-    #expect(!heldPress)
-    #expect(!release)
-    #expect(secondPress)
-  }
-
-  @Test func escapeTrackerDoesNotTreatAnAlreadyHeldKeyAsANewPress() {
-    var tracker = AgentIslandEscapeKeyTracker(isPressed: true)
-    let heldPress = tracker.observe(isPressed: true)
-    let release = tracker.observe(isPressed: false)
-    let nextPress = tracker.observe(isPressed: true)
-
-    #expect(!heldPress)
-    #expect(!release)
-    #expect(nextPress)
   }
 
   @Test func compactPanelDoesNotRetainExpandedRosterWidth() {

@@ -10,7 +10,7 @@ struct ActiveAgentsFeature {
   static let reservedSidebarListHeight = 200.0
 
   /// Direction for keyboard navigation across the agent list.
-  enum NavigationDirection {
+  enum NavigationDirection: Equatable {
     case next
     case previous
   }
@@ -23,6 +23,7 @@ struct ActiveAgentsFeature {
     var focusedSurfaceID: UUID?
     var isIslandEnabled = false
     var isIslandRosterExpanded = false
+    var islandNavigation = AgentIslandNavigation()
     @Shared(.appStorage("activeAgentsPanelHidden")) var isPanelHidden: Bool = false
     @Shared(.appStorage("activeAgentsPanelHeight")) var panelHeight: Double = 200
   }
@@ -43,6 +44,10 @@ struct ActiveAgentsFeature {
     case islandEnabledChanged(Bool)
     case islandToggleRoster
     case islandCollapseRoster
+    case islandMoveSelection(NavigationDirection)
+    case islandMovePage(NavigationDirection)
+    case islandActivateSelection
+    case islandActivateVisibleEntry(Int)
     /// A sidebar action raised from the island roster or attention cells. The reducer forwards
     /// the wrapped action unchanged; when it presents Prowl UI (`surfacesProwl`) the roster
     /// collapses first and `AppFeature` surfaces the main window before the action runs.
@@ -59,6 +64,9 @@ struct ActiveAgentsFeature {
       switch action {
       case .agentEntryChanged(let entry, let autoShowPanel):
         state.entries[id: entry.id] = entry
+        if state.isIslandRosterExpanded {
+          state.islandNavigation.reconcile(entries: state.entries)
+        }
         if autoShowPanel, state.isPanelHidden {
           state.$isPanelHidden.withLock { $0 = false }
         }
@@ -68,6 +76,9 @@ struct ActiveAgentsFeature {
         state.entries.remove(id: id)
         if state.entries.isEmpty {
           state.isIslandRosterExpanded = false
+          state.islandNavigation = .init()
+        } else if state.isIslandRosterExpanded {
+          state.islandNavigation.reconcile(entries: state.entries)
         }
         return .none
 
@@ -83,6 +94,7 @@ struct ActiveAgentsFeature {
       case .island(let action):
         if action.surfacesProwl {
           state.isIslandRosterExpanded = false
+          state.islandNavigation = .init()
         }
         return .send(action)
 
@@ -97,16 +109,51 @@ struct ActiveAgentsFeature {
         state.isIslandEnabled = isEnabled
         if !isEnabled {
           state.isIslandRosterExpanded = false
+          state.islandNavigation = .init()
         }
         return .none
 
       case .islandToggleRoster:
-        state.isIslandRosterExpanded.toggle()
+        if state.isIslandRosterExpanded {
+          state.isIslandRosterExpanded = false
+          state.islandNavigation = .init()
+        } else {
+          state.isIslandRosterExpanded = true
+          state.islandNavigation.start(
+            entries: state.entries,
+            preferredSurfaceID: state.focusedSurfaceID
+          )
+        }
         return .none
 
       case .islandCollapseRoster, .islandOpenProwlTapped:
         state.isIslandRosterExpanded = false
+        state.islandNavigation = .init()
         return .none
+
+      case .islandMoveSelection(let direction):
+        guard state.isIslandRosterExpanded else { return .none }
+        state.islandNavigation.moveSelection(direction, entries: state.entries)
+        return .none
+
+      case .islandMovePage(let direction):
+        guard state.isIslandRosterExpanded else { return .none }
+        state.islandNavigation.movePage(direction, entries: state.entries)
+        return .none
+
+      case .islandActivateSelection:
+        guard state.isIslandRosterExpanded, let id = state.islandNavigation.selectedEntryID else {
+          return .none
+        }
+        return .send(.island(.entryTapped(id)))
+
+      case .islandActivateVisibleEntry(let index):
+        guard state.isIslandRosterExpanded,
+          let id = state.islandNavigation.visibleEntryID(at: index, entries: state.entries)
+        else {
+          return .none
+        }
+        return .send(.island(.entryTapped(id)))
 
       case .selectNextEntry:
         return navigate(&state, direction: .next)

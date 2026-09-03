@@ -1,9 +1,12 @@
 import AppKit
+import Carbon
 import ComposableArchitecture
 import SwiftUI
 
 final class AgentIslandPanel: NSPanel {
-  override var canBecomeKey: Bool { false }
+  var acceptsKeyboardInput = false
+
+  override var canBecomeKey: Bool { acceptsKeyboardInput }
   override var canBecomeMain: Bool { false }
 }
 
@@ -13,19 +16,6 @@ enum AgentIslandInteractionPolicy {
     isRosterExpanded: Bool
   ) -> Bool {
     isVisible && isRosterExpanded
-  }
-}
-
-struct AgentIslandEscapeKeyTracker {
-  private var wasPressed: Bool
-
-  init(isPressed: Bool = false) {
-    wasPressed = isPressed
-  }
-
-  mutating func observe(isPressed: Bool) -> Bool {
-    defer { wasPressed = isPressed }
-    return isPressed && !wasPressed
   }
 }
 
@@ -45,8 +35,8 @@ final class AgentIslandWindowController {
   private var observers: [NSObjectProtocol] = []
   private var localEventMonitor: Any?
   private var globalEventMonitor: Any?
-  private var escapePollTimer: Timer?
-  private var escapeKeyTracker = AgentIslandEscapeKeyTracker()
+  private var keyboardLayoutObserver: NSObjectProtocol?
+  private var globalHotKey: AgentIslandGlobalHotKey?
   private var isVisible = false
   private var isRosterExpanded = false
   private var displayPreference: AgentIslandDisplayPreference = .automatic
@@ -133,13 +123,20 @@ final class AgentIslandWindowController {
       }
     )
     self.panel = panel
+    globalHotKey = AgentIslandGlobalHotKey { [weak self] in
+      self?.handleGlobalHotKey()
+    }
     installObservers()
+    refreshGlobalHotKey()
+    observeGlobalHotKeyBinding()
     refreshPlacement()
   }
 
   func stop() {
     removeObservers()
     removeEventMonitors()
+    globalHotKey?.stop()
+    globalHotKey = nil
     panel?.orderOut(nil)
     panel = nil
   }
@@ -152,6 +149,10 @@ final class AgentIslandWindowController {
   ) {
     self.isVisible = isVisible
     self.isRosterExpanded = isRosterExpanded
+    panel?.acceptsKeyboardInput = isRosterExpanded
+    if !isRosterExpanded, panel?.isKeyWindow == true {
+      panel?.resignKey()
+    }
     displayPreference = preference
     if size.width > 0, size.height > 0 {
       contentSize = size
@@ -183,7 +184,11 @@ final class AgentIslandWindowController {
     let frame = AgentIslandScreenLayout.panelFrame(contentSize: contentSize, screen: screen)
     panel.setFrame(frame, display: panel.isVisible)
     if isVisible {
-      panel.orderFrontRegardless()
+      if isRosterExpanded {
+        panel.makeKeyAndOrderFront(nil)
+      } else {
+        panel.orderFrontRegardless()
+      }
     } else {
       panel.orderOut(nil)
     }
@@ -211,6 +216,15 @@ final class AgentIslandWindowController {
       }
       self.refreshPlacement()
     }
+    keyboardLayoutObserver = DistributedNotificationCenter.default().addObserver(
+      forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        self?.refreshGlobalHotKey()
+      }
+    }
   }
 
   private func observe(
@@ -236,6 +250,10 @@ final class AgentIslandWindowController {
       NotificationCenter.default.removeObserver(observer)
     }
     observers.removeAll()
+    if let keyboardLayoutObserver {
+      DistributedNotificationCenter.default().removeObserver(keyboardLayoutObserver)
+      self.keyboardLayoutObserver = nil
+    }
   }
 
   private func installEventMonitors() {
@@ -245,8 +263,14 @@ final class AgentIslandWindowController {
     ]) {
       [weak self] event in
       guard let self else { return event }
-      if event.type == .keyDown, event.keyCode == 53, isRosterExpanded {
-        appStore.send(.repositories(.activeAgents(.islandCollapseRoster)))
+      if event.type == .keyDown, event.window === panel, isRosterExpanded {
+        if let command = AgentIslandKeyboardCommand.resolve(
+          keyCode: event.keyCode,
+          characters: event.charactersIgnoringModifiers,
+          modifiers: event.modifierFlags
+        ) {
+          handleKeyboardCommand(command)
+        }
         return nil
       }
       if event.window !== panel, isRosterExpanded {
@@ -263,7 +287,6 @@ final class AgentIslandWindowController {
         self.appStore.send(.repositories(.activeAgents(.islandCollapseRoster)))
       }
     }
-    startEscapePolling()
   }
 
   private func removeEventMonitors() {
@@ -275,31 +298,66 @@ final class AgentIslandWindowController {
       NSEvent.removeMonitor(globalEventMonitor)
       self.globalEventMonitor = nil
     }
-    escapePollTimer?.invalidate()
-    escapePollTimer = nil
   }
 
-  private func startEscapePolling() {
-    guard escapePollTimer == nil else { return }
-    escapeKeyTracker = AgentIslandEscapeKeyTracker(isPressed: Self.isEscapePressed)
-    let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated {
-        self?.pollEscapeKey()
-      }
+  private func handleKeyboardCommand(_ command: AgentIslandKeyboardCommand) {
+    let action: ActiveAgentsFeature.Action
+    switch command {
+    case .collapse:
+      action = .islandCollapseRoster
+    case .move(let direction):
+      action = .islandMoveSelection(direction)
+    case .page(let direction):
+      action = .islandMovePage(direction)
+    case .activateSelection:
+      action = .islandActivateSelection
+    case .activateVisibleEntry(let index):
+      action = .islandActivateVisibleEntry(index)
     }
-    RunLoop.main.add(timer, forMode: .common)
-    escapePollTimer = timer
+    appStore.send(.repositories(.activeAgents(action)))
   }
 
-  private func pollEscapeKey() {
-    guard isRosterExpanded else { return }
-    if escapeKeyTracker.observe(isPressed: Self.isEscapePressed) {
+  private func handleGlobalHotKey() {
+    let activeAgents = appStore.repositories.activeAgents
+    guard
+      let action = AgentIslandHotKeyAction.resolve(
+        appIsActive: NSApplication.shared.isActive,
+        isRosterExpanded: activeAgents.isIslandRosterExpanded,
+        hasEntries: !activeAgents.entries.isEmpty
+      )
+    else {
+      return
+    }
+    switch action {
+    case .toggleSidebarPanel:
+      appStore.send(.repositories(.activeAgents(.togglePanelVisibility)))
+    case .toggleIslandRoster:
+      appStore.send(.repositories(.activeAgents(.islandToggleRoster)))
+    case .collapseIsland:
       appStore.send(.repositories(.activeAgents(.islandCollapseRoster)))
     }
   }
 
-  private static var isEscapePressed: Bool {
-    CGEventSource.keyState(.combinedSessionState, key: 53)
+  private func refreshGlobalHotKey() {
+    globalHotKey?.register(
+      binding: appStore.resolvedKeybindings.keybinding(
+        for: AppShortcuts.CommandID.toggleActiveAgentsPanel
+      )
+    )
+  }
+
+  private func observeGlobalHotKeyBinding() {
+    withObservationTracking {
+      _ = appStore.resolvedKeybindings.keybinding(
+        for: AppShortcuts.CommandID.toggleActiveAgentsPanel
+      )
+    } onChange: { [weak self] in
+      Task { @MainActor [weak self] in
+        guard let self, self.panel != nil else { return }
+        self.refreshGlobalHotKey()
+        self.observeGlobalHotKeyBinding()
+      }
+    }
   }
 
   private func updateEventMonitors() {

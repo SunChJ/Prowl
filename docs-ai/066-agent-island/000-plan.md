@@ -51,12 +51,14 @@ is mirrored into the reducer from settings the same way `showActiveAgentTabTitle
 
 `AgentIslandWindowController`
 (`supacode/Features/ActiveAgents/BusinessLogic/AgentIslandWindowController.swift`) owns one
-borderless, nonactivating `NSPanel` that cannot become key or main, sits one level above the menu
-bar, joins all Spaces and fullscreen applications, and hosts `AgentIslandView` scoped to the app
-store. It observes the enabled setting and creates or tears down the panel accordingly; while
+borderless, nonactivating `NSPanel` that cannot become main, sits one level above the menu bar,
+joins all Spaces and fullscreen applications, and hosts `AgentIslandView` scoped to the app store.
+The compact panel cannot become key; the expanded roster temporarily becomes key without
+activating Prowl so it can own local keyboard navigation. The controller observes the enabled
+setting and creates or tears down the panel and global Active Agents hot key accordingly; while
 disabled, nothing beyond the controller object and that observation exists (the display catalog
-is resolved on first use). Outside-click monitors and a low-frequency Escape
-key-state poll exist only while the roster is expanded.
+is resolved on first use). Outside-click and local key monitors exist only while the roster is
+expanded.
 `supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` holds the pure geometry
 (`AgentIslandScreenLayout`: cutout rectangle from the screen's auxiliary menu-bar areas, display
 resolution order, panel frame); `AgentIslandDisplayCatalog` (`BusinessLogic/`) keys screens by
@@ -100,9 +102,10 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
   Done agent stays individually actionable.
 - **SwiftUI `TimelineView` at 30 FPS for the rings** — replaced by island-owned Core Animation
   layers so continuous invalidation stays off the main thread shared with Ghostty.
-- **Key-eligible panel** — forbidden so expanding the island cannot demote Ghostty surface focus.
-- **Global keyDown monitor for Escape** — needs Accessibility/Input Monitoring; a combined-session
-  `CGEventSource.keyState` poll, active only while expanded, was chosen instead.
+- **Always-key panel** — rejected: the compact island stays non-key. The expanded roster becomes
+  key only for its temporary keyboard context and never becomes main or activates Prowl.
+- **Global keyDown monitor for roster navigation** — rejected because it needs Accessibility or
+  Input Monitoring. The expanded key panel handles navigation locally instead.
 - **Toolbar button or dedicated settings destination** — rejected; opt-in section in
   Notifications.
 - **Custom expansion transition** — removed; the roster appears directly while the panel resizes.
@@ -118,3 +121,5 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
 - Updated 2026-09-02: continuation on #756 — hover flag reset when the roster empties, display
   picker matched by UUID, unrelated formatting churn reverted, and the former working-note
   amendments (002–010) folded into this plan and [001-action.md](001-action.md).
+- Updated 2026-09-03: keyboard-first hot-window entry, selection, and paging — see
+  [002-keyboard-navigation.md](002-keyboard-navigation.md).

@@ -45,6 +45,9 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
 ## Interactions
 
 - **Click the bar** to open or close the full roster. This does not bring Prowl forward.
+- **Press the Active Agents shortcut** (`⌘⌥P` by default) from another application to open
+  or close the roster like a hot window. The shortcut follows Settings → Shortcuts; while Prowl
+  is frontmost it retains its existing behavior and toggles the sidebar's Active Agents panel.
 - **Click a Blocked or Done cell** to bring Prowl forward and focus that agent's exact worktree,
   tab, and pane.
 - **The roster** lists every entry with the same rows, ordering, Workflow badges, and context menu
@@ -53,14 +56,20 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
   regardless of the sidebar's title-or-branch setting; a live Workflow role badge replaces it.
   Clicking a row, or choosing one of those actions, brings Prowl forward first and then behaves
   exactly as it does in the sidebar. On a notched display the roster is as wide as the bar above
-  it; under the floating pill it is wider than the pill. It grows with its content up to `360pt`,
-  then scrolls.
+  it; under the floating pill it is wider than the pill. The roster shows up to nine agents per
+  page.
+- **Keyboard navigation stays available while the roster is open.** Arrow Up/Down or `j`/`k`
+  moves the highlight without focusing a terminal; `u`/`d` moves one page; Space or Return opens
+  the highlighted agent; and `⌘1`…`⌘9` opens the corresponding agent on the current page.
+  These are visible-slot shortcuts, not permanent agent numbers: every page labels its visible
+  rows from `⌘1` again. The row labels and a compact legend for movement, paging, and confirmation
+  stay visible.
 - **Open Prowl** in the roster header brings the main window forward without changing the
   selected agent.
-- **Click outside, type, or press `Esc`** to collapse the roster. While Prowl is frontmost the
-  first keystroke after expanding collapses it: `Esc` is taken by the island, any other key is
-  passed on to Prowl as usual. In another application `Esc` also collapses the roster but still
-  reaches that application. Collapsing never marks an entry as handled.
+- **Click outside or press `Esc`** to collapse the roster. The expanded island is a temporary
+  keyboard context: recognized navigation keys act on the roster and other keys are ignored, so
+  they do not leak into the previously frontmost application. Collapsing never marks an entry as
+  handled.
 
 ## Settings
 

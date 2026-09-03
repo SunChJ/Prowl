@@ -295,12 +295,115 @@ struct ActiveAgentsFeatureTests {
 
     await store.send(.islandToggleRoster) {
       $0.isIslandRosterExpanded = true
+      $0.islandNavigation.selectedEntryID = blocked.id
     }
     #expect(store.state.islandAttentionEntries == [blocked])
     await store.send(.islandCollapseRoster) {
       $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
     }
     #expect(store.state.entries[id: blocked.id]?.displayState == .blocked)
+  }
+
+  @Test func islandExpansionAnchorsKeyboardSelectionOnTheFocusedAgent() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.focusedSurfaceID = UUID(1)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandToggleRoster) {
+      $0.isIslandRosterExpanded = true
+      $0.islandNavigation.selectedEntryID = UUID(1)
+    }
+  }
+
+  @Test func islandKeyboardSelectionCrossesPageBoundariesWithoutFocusingAPane() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = IdentifiedArray(
+      uniqueElements: (0..<10).map { index in
+        entry(id: UUID(index), state: .idle, changedAt: Date(timeIntervalSince1970: Double(index)))
+      })
+    state.isIslandRosterExpanded = true
+    state.islandNavigation.selectedEntryID = UUID(8)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandMoveSelection(.next)) {
+      $0.islandNavigation.selectedEntryID = UUID(9)
+      $0.islandNavigation.pageIndex = 1
+    }
+    #expect(store.state.focusedSurfaceID == nil)
+  }
+
+  @Test func islandPagingPreservesTheVisibleRowWhenPossible() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = IdentifiedArray(
+      uniqueElements: (0..<20).map { index in
+        entry(id: UUID(index), state: .idle, changedAt: Date(timeIntervalSince1970: Double(index)))
+      })
+    state.isIslandRosterExpanded = true
+    state.islandNavigation.selectedEntryID = UUID(4)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandMovePage(.next)) {
+      $0.islandNavigation.selectedEntryID = UUID(13)
+      $0.islandNavigation.pageIndex = 1
+    }
+    await store.send(.islandMovePage(.next)) {
+      $0.islandNavigation.selectedEntryID = UUID(19)
+      $0.islandNavigation.pageIndex = 2
+    }
+    await store.send(.islandMovePage(.previous)) {
+      $0.islandNavigation.selectedEntryID = UUID(10)
+      $0.islandNavigation.pageIndex = 1
+    }
+  }
+
+  @Test func islandCommandNumberActivatesTheMatchingVisibleEntry() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = IdentifiedArray(
+      uniqueElements: (0..<12).map { index in
+        entry(id: UUID(index), state: .idle, changedAt: Date(timeIntervalSince1970: Double(index)))
+      })
+    state.isIslandRosterExpanded = true
+    state.islandNavigation.pageIndex = 1
+    state.islandNavigation.selectedEntryID = UUID(9)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandActivateVisibleEntry(2))
+    await store.receive(.island(.entryTapped(UUID(11)))) {
+      $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
+    }
+    await store.receive(.entryTapped(UUID(11))) {
+      $0.focusedSurfaceID = UUID(11)
+    }
+  }
+
+  @Test func islandReturnActivatesTheCurrentSelection() async {
+    var state = ActiveAgentsFeature.State()
+    state.entries = sampleEntries()
+    state.isIslandRosterExpanded = true
+    state.islandNavigation.selectedEntryID = UUID(2)
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandActivateSelection)
+    await store.receive(.island(.entryTapped(UUID(2)))) {
+      $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
+    }
+    await store.receive(.entryTapped(UUID(2))) {
+      $0.focusedSurfaceID = UUID(2)
+    }
   }
 
   @Test func islandEntryTapCollapsesRosterAndMovesFocusAnchor() async {
@@ -313,6 +416,7 @@ struct ActiveAgentsFeatureTests {
 
     await store.send(.island(.entryTapped(UUID(2)))) {
       $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
     }
     await store.receive(.entryTapped(UUID(2))) {
       $0.focusedSurfaceID = UUID(2)
@@ -350,15 +454,18 @@ struct ActiveAgentsFeatureTests {
 
     await store.send(.island(.handOffTapped(UUID(1)))) {
       $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
     }
     await store.receive(.handOffTapped(UUID(1))) {
       $0.focusedSurfaceID = UUID(1)
     }
     await store.send(.islandToggleRoster) {
       $0.isIslandRosterExpanded = true
+      $0.islandNavigation.selectedEntryID = UUID(1)
     }
     await store.send(.island(.runWorkflowTapped(UUID(2), workflowKey: "review"))) {
       $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
     }
     await store.receive(.runWorkflowTapped(UUID(2), workflowKey: "review")) {
       $0.focusedSurfaceID = UUID(2)
@@ -377,6 +484,7 @@ struct ActiveAgentsFeatureTests {
     await store.send(.agentEntryRemoved(agent.id)) {
       $0.entries = []
       $0.isIslandRosterExpanded = false
+      $0.islandNavigation = .init()
     }
   }
 

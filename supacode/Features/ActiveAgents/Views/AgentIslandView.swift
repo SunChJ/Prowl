@@ -126,7 +126,13 @@ struct AgentIslandView: View {
     }
     .buttonStyle(.plain)
     .background(.black, in: compactShape)
-    .help(agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents")
+    .help(
+      AppShortcuts.helpText(
+        title: agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents",
+        commandID: AppShortcuts.CommandID.toggleActiveAgentsPanel,
+        in: appStore.resolvedKeybindings
+      )
+    )
     .accessibilityLabel(
       agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents"
     )
