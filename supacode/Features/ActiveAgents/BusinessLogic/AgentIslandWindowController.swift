@@ -33,7 +33,12 @@ struct AgentIslandEscapeKeyTracker {
 @Observable
 final class AgentIslandWindowController {
   private let appStore: StoreOf<AppFeature>
-  private let displayCatalog: AgentIslandDisplayCatalog
+  private let injectedDisplayCatalog: AgentIslandDisplayCatalog?
+  /// Resolved on first use so a disabled island never enumerates displays or installs the
+  /// catalog's screen observer at launch.
+  private var displayCatalog: AgentIslandDisplayCatalog {
+    injectedDisplayCatalog ?? .shared
+  }
   private let presentation = AgentIslandPresentationModel()
   private var panel: AgentIslandPanel?
   private var observers: [NSObjectProtocol] = []
@@ -48,10 +53,10 @@ final class AgentIslandWindowController {
 
   init(
     store: StoreOf<AppFeature>,
-    displayCatalog: AgentIslandDisplayCatalog = .shared
+    displayCatalog: AgentIslandDisplayCatalog? = nil
   ) {
     appStore = store
-    self.displayCatalog = displayCatalog
+    injectedDisplayCatalog = displayCatalog
   }
 
   /// Runs the panel only while the setting is on, re-evaluating whenever it changes.
