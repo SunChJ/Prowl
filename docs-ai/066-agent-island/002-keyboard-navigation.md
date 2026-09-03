@@ -22,6 +22,10 @@ Agents panel command.
   Prowl; Escape collapses the roster. The earlier `u`/`d` page bindings are removed.
 - Use `⌘1`…`⌘9` for direct activation of the nine visible slots, not globally numbered agents.
   Every visible row keeps its current shortcut label; the mapping restarts at `⌘1` after paging.
+- Register `⌘⌥1`…`⌘⌥9` for the first nine strong-reminder slots while the roster is closed. The
+  mapping follows the existing attention projection (Blocked before unviewed Done, newest first
+  within each state), and every assigned attention cell keeps its shortcut label visible. Only
+  currently backed slots are registered; roster expansion removes them until it collapses again.
 - Keep a compact legend at the bottom of the roster for the persistent interaction model. Each
   arrow is grouped with its Vim counterpart (`↑ K`, `↓ J`, `← H`, `→ L`) so the direction is
   explicit; Space and Return remain grouped for opening. The row-level shortcut labels
@@ -45,7 +49,8 @@ Implemented on 2026-09-03. The island owns a dedicated, remappable `⌘⇧P` glo
 keyboard focus only while expanded. It supports transient selection, nine-entry paging through
 Arrow Left/Right or `h`/`l`, visible-slot activation, confirmation, and dismissal. Visible rows
 keep their `⌘1`…`⌘9` labels; the footer permanently shows only movement, paging, and confirmation
-hints.
+hints. Collapsed strong reminders expose `⌘⌥1`…`⌘⌥9` for their first nine priority-ordered cells,
+using the same focus path as a pointer click.
 
 Verification completed with `make check`, `make test`, and `make build-app`; all passed with zero
 test or build failures. Final native screenshot capture was unavailable because the computer-use

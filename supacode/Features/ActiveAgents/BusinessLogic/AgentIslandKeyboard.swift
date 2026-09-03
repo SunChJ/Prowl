@@ -81,6 +81,50 @@ enum AgentIslandKeyboardCommand: Equatable {
   }
 }
 
+enum AgentIslandGlobalHotKeyCommand: Equatable {
+  case toggleRoster
+  case activateAttentionSlot(Int)
+
+  fileprivate var identifier: UInt32 {
+    switch self {
+    case .toggleRoster:
+      return 1
+    case .activateAttentionSlot(let index):
+      return UInt32(index + 2)
+    }
+  }
+
+  fileprivate init?(identifier: UInt32) {
+    if identifier == Self.toggleRoster.identifier {
+      self = .toggleRoster
+      return
+    }
+    let index = Int(identifier) - 2
+    guard (0..<AgentIslandAttentionShortcut.slotLimit).contains(index) else { return nil }
+    self = .activateAttentionSlot(index)
+  }
+}
+
+enum AgentIslandAttentionShortcut {
+  static let slotLimit = 9
+
+  static func binding(at index: Int) -> Keybinding? {
+    guard (0..<slotLimit).contains(index) else { return nil }
+    return Keybinding(
+      key: String(index + 1),
+      modifiers: KeybindingModifiers(command: true, option: true)
+    )
+  }
+
+  static func slotCount(
+    isRosterExpanded: Bool,
+    attentionEntryCount: Int
+  ) -> Int {
+    guard !isRosterExpanded else { return 0 }
+    return min(max(0, attentionEntryCount), slotLimit)
+  }
+}
+
 private struct AgentIslandCarbonHotKeyDescriptor {
   let keyCode: UInt32
   let modifiers: UInt32
@@ -118,16 +162,15 @@ private struct AgentIslandCarbonHotKeyDescriptor {
 }
 
 @MainActor
-final class AgentIslandGlobalHotKey {
+final class AgentIslandGlobalHotKeys {
   private static let signature: OSType = 0x5052_574C  // PRWL
-  private static let identifier: UInt32 = 1
   private static let logger = SupaLogger("AgentIsland")
 
   private var eventHandler: EventHandlerRef?
-  private var hotKey: EventHotKeyRef?
-  private let action: @MainActor () -> Void
+  private var hotKeys: [UInt32: EventHotKeyRef] = [:]
+  private let action: @MainActor (AgentIslandGlobalHotKeyCommand) -> Void
 
-  init(action: @escaping @MainActor () -> Void) {
+  init(action: @escaping @MainActor (AgentIslandGlobalHotKeyCommand) -> Void) {
     self.action = action
     var eventType = EventTypeSpec(
       eventClass: OSType(kEventClassKeyboard),
@@ -148,14 +191,14 @@ final class AgentIslandGlobalHotKey {
           &hotKeyID
         )
         guard status == noErr,
-          hotKeyID.signature == AgentIslandGlobalHotKey.signature,
-          hotKeyID.id == AgentIslandGlobalHotKey.identifier
+          hotKeyID.signature == AgentIslandGlobalHotKeys.signature,
+          let command = AgentIslandGlobalHotKeyCommand(identifier: hotKeyID.id)
         else {
           return OSStatus(eventNotHandledErr)
         }
-        let registrar = Unmanaged<AgentIslandGlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
+        let registrar = Unmanaged<AgentIslandGlobalHotKeys>.fromOpaque(userData).takeUnretainedValue()
         MainActor.assumeIsolated {
-          registrar.action()
+          registrar.action(command)
         }
         return noErr
       },
@@ -169,12 +212,32 @@ final class AgentIslandGlobalHotKey {
     }
   }
 
-  func register(binding: Keybinding?) {
-    unregister()
+  func registerToggle(binding: Keybinding?) {
+    register(command: .toggleRoster, binding: binding)
+  }
+
+  func registerAttentionSlots(count: Int) {
+    for index in 0..<AgentIslandAttentionShortcut.slotLimit {
+      unregister(command: .activateAttentionSlot(index))
+    }
+    for index in 0..<min(max(0, count), AgentIslandAttentionShortcut.slotLimit) {
+      register(
+        command: .activateAttentionSlot(index),
+        binding: AgentIslandAttentionShortcut.binding(at: index)
+      )
+    }
+  }
+
+  private func register(
+    command: AgentIslandGlobalHotKeyCommand,
+    binding: Keybinding?
+  ) {
+    unregister(command: command)
     guard let binding, let descriptor = AgentIslandCarbonHotKeyDescriptor(binding: binding) else {
       return
     }
-    let hotKeyID = EventHotKeyID(signature: Self.signature, id: Self.identifier)
+    let hotKeyID = EventHotKeyID(signature: Self.signature, id: command.identifier)
+    var hotKey: EventHotKeyRef?
     let status = RegisterEventHotKey(
       descriptor.keyCode,
       descriptor.modifiers,
@@ -183,21 +246,24 @@ final class AgentIslandGlobalHotKey {
       0,
       &hotKey
     )
-    if status != noErr {
-      hotKey = nil
+    if status == noErr, let hotKey {
+      hotKeys[command.identifier] = hotKey
+    } else {
       Self.logger.warning("hot_key_registration_failed binding=\(binding.display) status=\(status)")
     }
   }
 
-  func unregister() {
-    if let hotKey {
+  private func unregister(command: AgentIslandGlobalHotKeyCommand) {
+    if let hotKey = hotKeys.removeValue(forKey: command.identifier) {
       UnregisterEventHotKey(hotKey)
-      self.hotKey = nil
     }
   }
 
   func stop() {
-    unregister()
+    for hotKey in hotKeys.values {
+      UnregisterEventHotKey(hotKey)
+    }
+    hotKeys.removeAll()
     if let eventHandler {
       RemoveEventHandler(eventHandler)
       self.eventHandler = nil

@@ -48,6 +48,7 @@ struct ActiveAgentsFeature {
     case islandMovePage(NavigationDirection)
     case islandActivateSelection
     case islandActivateVisibleEntry(Int)
+    case islandActivateAttentionSlot(Int)
     /// A sidebar action raised from the island roster or attention cells. The reducer forwards
     /// the wrapped action unchanged; when it presents Prowl UI (`surfacesProwl`) the roster
     /// collapses first and `AppFeature` surfaces the main window before the action runs.
@@ -154,6 +155,13 @@ struct ActiveAgentsFeature {
           return .none
         }
         return .send(.island(.entryTapped(id)))
+
+      case .islandActivateAttentionSlot(let index):
+        let attentionEntries = state.islandAttentionEntries
+        guard !state.isIslandRosterExpanded, attentionEntries.indices.contains(index) else {
+          return .none
+        }
+        return .send(.island(.entryTapped(attentionEntries[index].id)))
 
       case .selectNextEntry:
         return navigate(&state, direction: .next)

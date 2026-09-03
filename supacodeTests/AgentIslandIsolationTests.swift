@@ -78,6 +78,22 @@ struct AgentIslandIsolationTests {
       ) == nil)
   }
 
+  @Test func strongAttentionHotKeysUseCommandOptionForAtMostNineCollapsedSlots() {
+    #expect(AgentIslandAttentionShortcut.binding(at: 0)?.display == "⌘⌥1")
+    #expect(AgentIslandAttentionShortcut.binding(at: 8)?.display == "⌘⌥9")
+    #expect(AgentIslandAttentionShortcut.binding(at: 9) == nil)
+    #expect(
+      AgentIslandAttentionShortcut.slotCount(
+        isRosterExpanded: false,
+        attentionEntryCount: 12
+      ) == 9)
+    #expect(
+      AgentIslandAttentionShortcut.slotCount(
+        isRosterExpanded: true,
+        attentionEntryCount: 4
+      ) == 0)
+  }
+
   @Test func expandedRosterKeyMapSupportsArrowsVimiumActivationAndCommandNumbers() {
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 126, characters: nil, modifiers: []) == .move(.previous))
     #expect(AgentIslandKeyboardCommand.resolve(keyCode: 125, characters: nil, modifiers: []) == .move(.next))

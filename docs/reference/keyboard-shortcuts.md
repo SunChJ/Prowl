@@ -56,6 +56,11 @@ Settings → Shortcuts. In the open island roster, Arrow Up or `k` and Arrow Dow
 Arrow Left or `h` and Arrow Right or `l` page; Space or Return opens; `⌘1`…`⌘9` directly opens a
 current-page row; and `Esc` closes.
 
+While the roster is closed, `⌘⌥1`…`⌘⌥9` globally open the first nine strong Agent Island
+reminders. Their slot order matches the attention collection: Blocked before unviewed Done, newest
+first within each state. Only slots backed by a current reminder are registered; opening the
+roster unregisters the strong-reminder shortcuts until it closes again.
+
 ## Shelf view
 
 | Action | Default | Command ID | Remappable |

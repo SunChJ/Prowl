@@ -38,9 +38,12 @@ Blocked, and Done icons have a rotating orange, red, or blue ring.
 Blocked and Done cells form a small grid under the bar: one column for a single entry, two
 columns otherwise, and up to three rows before it scrolls. Each cell shows the agent name and
 state on the left and the repository plus the same branch/tab subtitle as Active Agents on the
-right; a live Workflow role badge takes the subtitle position, as in the sidebar. Cells cannot be
-dismissed from the island. A Blocked cell clears when the agent leaves that state, a Done cell
-clears once the entry is viewed, and a removed entry disappears with the roster.
+right; a live Workflow role badge takes the subtitle position, as in the sidebar. The first nine
+cells show `⌘⌥1`…`⌘⌥9`; while the roster is closed, those global shortcuts open the matching
+strong reminder directly. The mapping follows the displayed priority order: Blocked first, then
+unviewed Done, newest first within each state. Cells cannot be dismissed from the island. A
+Blocked cell clears when the agent leaves that state, a Done cell clears once the entry is viewed,
+and a removed entry disappears with the roster.
 
 ## Interactions
 

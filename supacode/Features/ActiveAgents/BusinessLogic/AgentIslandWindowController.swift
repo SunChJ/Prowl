@@ -36,7 +36,7 @@ final class AgentIslandWindowController {
   private var localEventMonitor: Any?
   private var globalEventMonitor: Any?
   private var keyboardLayoutObserver: NSObjectProtocol?
-  private var globalHotKey: AgentIslandGlobalHotKey?
+  private var globalHotKeys: AgentIslandGlobalHotKeys?
   private var isVisible = false
   private var isRosterExpanded = false
   private var displayPreference: AgentIslandDisplayPreference = .automatic
@@ -123,20 +123,20 @@ final class AgentIslandWindowController {
       }
     )
     self.panel = panel
-    globalHotKey = AgentIslandGlobalHotKey { [weak self] in
-      self?.handleGlobalHotKey()
+    globalHotKeys = AgentIslandGlobalHotKeys { [weak self] command in
+      self?.handleGlobalHotKey(command)
     }
     installObservers()
-    refreshGlobalHotKey()
-    observeGlobalHotKeyBinding()
+    refreshGlobalHotKeys()
+    observeGlobalHotKeyState()
     refreshPlacement()
   }
 
   func stop() {
     removeObservers()
     removeEventMonitors()
-    globalHotKey?.stop()
-    globalHotKey = nil
+    globalHotKeys?.stop()
+    globalHotKeys = nil
     panel?.orderOut(nil)
     panel = nil
   }
@@ -222,7 +222,7 @@ final class AgentIslandWindowController {
       queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        self?.refreshGlobalHotKey()
+        self?.refreshGlobalHotKeys()
       }
     }
   }
@@ -317,7 +317,16 @@ final class AgentIslandWindowController {
     appStore.send(.repositories(.activeAgents(action)))
   }
 
-  private func handleGlobalHotKey() {
+  private func handleGlobalHotKey(_ command: AgentIslandGlobalHotKeyCommand) {
+    switch command {
+    case .toggleRoster:
+      handleToggleHotKey()
+    case .activateAttentionSlot(let index):
+      appStore.send(.repositories(.activeAgents(.islandActivateAttentionSlot(index))))
+    }
+  }
+
+  private func handleToggleHotKey() {
     let activeAgents = appStore.repositories.activeAgents
     guard
       let action = AgentIslandHotKeyAction.resolve(
@@ -335,24 +344,33 @@ final class AgentIslandWindowController {
     }
   }
 
-  private func refreshGlobalHotKey() {
-    globalHotKey?.register(
+  private func refreshGlobalHotKeys() {
+    globalHotKeys?.registerToggle(
       binding: appStore.resolvedKeybindings.keybinding(
         for: AppShortcuts.CommandID.toggleAgentIsland
       )
     )
+    let activeAgents = appStore.repositories.activeAgents
+    globalHotKeys?.registerAttentionSlots(
+      count: AgentIslandAttentionShortcut.slotCount(
+        isRosterExpanded: activeAgents.isIslandRosterExpanded,
+        attentionEntryCount: activeAgents.islandAttentionEntries.count
+      )
+    )
   }
 
-  private func observeGlobalHotKeyBinding() {
+  private func observeGlobalHotKeyState() {
     withObservationTracking {
       _ = appStore.resolvedKeybindings.keybinding(
         for: AppShortcuts.CommandID.toggleAgentIsland
       )
+      _ = appStore.repositories.activeAgents.isIslandRosterExpanded
+      _ = appStore.repositories.activeAgents.islandAttentionEntries.count
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.panel != nil else { return }
-        self.refreshGlobalHotKey()
-        self.observeGlobalHotKeyBinding()
+        self.refreshGlobalHotKeys()
+        self.observeGlobalHotKeyState()
       }
     }
   }

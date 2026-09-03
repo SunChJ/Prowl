@@ -305,6 +305,38 @@ struct ActiveAgentsFeatureTests {
     #expect(store.state.entries[id: blocked.id]?.displayState == .blocked)
   }
 
+  @Test func islandAttentionShortcutActivatesTheMatchingPrioritySlot() async {
+    var state = ActiveAgentsFeature.State()
+    let done = entry(id: UUID(0), state: .done, changedAt: Date(timeIntervalSince1970: 30))
+    let olderBlocked = entry(
+      id: UUID(1), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    let newerBlocked = entry(
+      id: UUID(2), state: .blocked, changedAt: Date(timeIntervalSince1970: 20))
+    state.entries = [done, olderBlocked, newerBlocked]
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandActivateAttentionSlot(1))
+    await store.receive(.island(.entryTapped(olderBlocked.id)))
+    await store.receive(.entryTapped(olderBlocked.id)) {
+      $0.focusedSurfaceID = olderBlocked.surfaceID
+    }
+  }
+
+  @Test func islandAttentionShortcutIsInactiveWhileRosterIsExpanded() async {
+    var state = ActiveAgentsFeature.State()
+    let blocked = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    state.entries = [blocked]
+    state.isIslandRosterExpanded = true
+    state.islandNavigation.selectedEntryID = blocked.id
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandActivateAttentionSlot(0))
+  }
+
   @Test func islandExpansionAnchorsKeyboardSelectionOnTheFocusedAgent() async {
     var state = ActiveAgentsFeature.State()
     state.entries = sampleEntries()
