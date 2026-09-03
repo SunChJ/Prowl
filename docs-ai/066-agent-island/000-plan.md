@@ -111,7 +111,8 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
   a "Heixiu" black-cat silhouette whose tail detached into a drifting ball as the Working loop, a
   tail that projected agent icons with state lamps and a pose following the top state, and an
   AppIcon-derived mint silhouette. Each competed with the status information the compact bar
-  exists to convey. Final: runtime icons with state-colored rotating rings, nothing decorative.
+  exists to convey. Final: runtime icons with state-colored breathing rings and only subtle angular
+  drift, nothing decorative.
 - **Single attention card plus `+N`** — rejected for a per-entry collection so every Blocked or
   Done agent stays individually actionable.
 - **SwiftUI `TimelineView` at 30 FPS for the rings** — replaced by island-owned Core Animation

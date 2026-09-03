@@ -45,7 +45,8 @@ The leading part of the bar lists how many agents are in each state, in attentio
 are left out. The floating pill uses the same summary at a slightly larger size. The trailing edge
 of the bar shows up to three runtime icons: non-Idle agents first by recency,
 Idle agents last, and a small `+N` for the rest. Idle icons have a static outline; Working,
-Blocked, and Done icons have a rotating orange, red, or blue ring.
+Blocked, and Done icons have an orange, red, or blue ring whose primary motion is a state-paced
+breathing pulse. A slow, low-contrast drift keeps the ring alive without reading as a spinner.
 
 Blocked and Done cells form a small grid under the bar: one column for a single entry, two
 columns otherwise, and up to three rows before it scrolls. Each cell shows the agent name and
@@ -115,7 +116,7 @@ Settings → Notifications → **Agent Island**:
   default position is centered.
 
 With Reduce Motion enabled, icon changes fade instead of sliding and the state rings keep their
-color without rotating.
+color without breathing or drifting.
 
 ## Boundaries
 

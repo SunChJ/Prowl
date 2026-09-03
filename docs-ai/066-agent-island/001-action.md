@@ -15,6 +15,7 @@
 | 2026-09-03 | Structure and polish: island actions folded into `island(Action)`; panel created only while enabled; display catalog moved to `BusinessLogic/`; island navigation tests in their own file; clipped shadows removed and the roster matched to the bar width; the notched leading wing shows per-state counts instead of a name carousel. | #756 |
 | 2026-09-03 | Floating pill switched to the same per-state counts; the name carousel and its reducer state, clock effect, hover tracking, and tests removed. Island roster rows show "pane title · branch". | #756 |
 | 2026-09-03 | Contextual exposure formalized as a product rule: each control, hint, and callout must have a relevant, actionable state instead of exposing the island's full capability set at once. | #758 |
+| 2026-09-03 | Runtime state rings changed from spinner-like rotation to state-paced breathing, with only a slow low-contrast angular drift retained. | #758 |
 
 ## Outcome & current state (as of 2026-09-02)
 
@@ -25,7 +26,8 @@ agent state, acknowledgement flag, or lifecycle signal.
   states omitted) as state-colored symbols, compact in the notch wing and one size up in the
   floating pill. The trailing cluster projects up to three runtime icons
   (recent non-Idle first, Idle last) plus a plain `+N`. Idle rings are static; Working, Blocked,
-  and Done rings rotate in state colors and stop under Reduce Motion.
+  and Done rings breathe at state-specific tempos with a slow, low-contrast angular drift. Both
+  motions stop under Reduce Motion.
 - **Attention collection** — every Blocked or unviewed Done entry is its own cell below the bar,
   Blocked before Done, then by recency; one column for a single entry, two otherwise, three rows
   before scrolling. Cells clear only when the underlying Active Agents state changes.

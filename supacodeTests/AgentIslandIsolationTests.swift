@@ -190,12 +190,15 @@ struct AgentIslandIsolationTests {
     let ring = AgentIslandStateRingView(frame: CGRect(x: 0, y: 0, width: 21, height: 21))
 
     ring.update(state: .working, reduceMotion: false)
-    #expect(ring.isRotationActive)
+    #expect(ring.isBreathingActive)
+    #expect(ring.isDriftActive)
 
     ring.update(state: .working, reduceMotion: true)
-    #expect(!ring.isRotationActive)
+    #expect(!ring.isBreathingActive)
+    #expect(!ring.isDriftActive)
 
     ring.update(state: .idle, reduceMotion: false)
-    #expect(!ring.isRotationActive)
+    #expect(!ring.isBreathingActive)
+    #expect(!ring.isDriftActive)
   }
 }
