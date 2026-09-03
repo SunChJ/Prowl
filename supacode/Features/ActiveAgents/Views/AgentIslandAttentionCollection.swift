@@ -86,9 +86,9 @@ struct AgentIslandAttentionCollection: View {
     .frame(height: layout.viewportHeight)
     .padding(6)
     .frame(width: layout.width)
-    .background(.black, in: RoundedRectangle(cornerRadius: 14))
+    .background(.black, in: RoundedRectangle(cornerRadius: 12))
     .overlay {
-      RoundedRectangle(cornerRadius: 14)
+      RoundedRectangle(cornerRadius: 12)
         .stroke(.white.opacity(0.12), lineWidth: 0.75)
     }
     .accessibilityIdentifier("agent-island-attention")

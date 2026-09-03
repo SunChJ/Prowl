@@ -218,9 +218,9 @@ struct AgentIslandView: View {
     }
     // Same width as the bar above it: the notched bar is wider than the floating roster.
     .frame(width: rootWidth)
-    .background(.black, in: RoundedRectangle(cornerRadius: 19))
+    .background(.black, in: RoundedRectangle(cornerRadius: 12))
     .overlay {
-      RoundedRectangle(cornerRadius: 19)
+      RoundedRectangle(cornerRadius: 12)
         .stroke(.separator.opacity(0.55), lineWidth: 1)
     }
     .accessibilityIdentifier("agent-island-roster")

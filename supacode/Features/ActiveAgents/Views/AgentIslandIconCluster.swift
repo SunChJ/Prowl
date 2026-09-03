@@ -35,8 +35,9 @@ struct AgentIslandIconCluster: View {
 
   var body: some View {
     iconRow
-      // Each icon carries 2pt of padding, so the cluster is exactly one padded icon tall.
-      .frame(width: 78, height: pointSize + 4, alignment: .trailing)
+      // Each icon is a `pointSize + 2` circle with 2pt of padding, so the cluster is exactly one
+      // padded icon tall.
+      .frame(width: 78, height: pointSize + 6, alignment: .trailing)
       .animation(
         reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0.32),
         value: projection.identity
@@ -135,7 +136,9 @@ struct AgentIslandRuntimeIcon: View {
       }
       .foregroundStyle(.white.opacity(0.92))
     }
-    .frame(width: pointSize, height: pointSize)
+    // The ring circle is one point wider in radius than the glyph budget so the glyph and the
+    // rotating ring do not touch.
+    .frame(width: pointSize + 2, height: pointSize + 2)
     .overlay {
       AgentIslandStateRing(
         state: entry.displayState,
