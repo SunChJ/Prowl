@@ -13,23 +13,24 @@
 | 2026-09-02 | Review round 2: Escape collapses the roster while another app is active via a key-state poll; island Hand Off / Run Workflow surface Prowl first; Workflow badge in attention cells; synchronous catalog refresh on screen changes; carousel restarts after roster actions. | #753 |
 | 2026-09-02 | Fork-owned continuation: `isIslandHovered` reset when the roster empties (review round 3 blocker); unrelated 100-column reflow reverted; display picker matched by UUID; compact bar height aligned to the cutout instead of overhanging it by 8pt (12pt corners, 20pt icons); island content pinned to the top of the hosting view so panel resizes no longer make the icon cluster spring back into place, and the floating pill's carousel identity no longer tears the cluster down; working-note amendments folded into the plan. | #756 |
 | 2026-09-03 | Structure and polish: island actions folded into `island(Action)`; panel created only while enabled; display catalog moved to `BusinessLogic/`; island navigation tests in their own file; clipped shadows removed and the roster matched to the bar width; the notched leading wing shows per-state counts instead of a name carousel. | #756 |
+| 2026-09-03 | Floating pill switched to the same per-state counts; the name carousel and its reducer state, clock effect, hover tracking, and tests removed. Island roster rows show "pane title · branch". | #756 |
 
 ## Outcome & current state (as of 2026-09-02)
 
 Agent Island projects the existing Active Agents roster into one top-of-screen panel. It adds no
 agent state, acknowledgement flag, or lifecycle signal.
 
-- **Compact bar** — on a notched display the leading wing shows per-state counts (blocked, done,
-  working, idle; empty states omitted) as state-colored symbols. The floating pill instead shows
-  the most recently changed Working entry, rotating through multiple Working entries every four
-  seconds and pausing while hovered or expanded. The trailing cluster projects up to three runtime icons
+- **Compact bar** — the leading area shows per-state counts (blocked, done, working, idle; empty
+  states omitted) as state-colored symbols, compact in the notch wing and one size up in the
+  floating pill. The trailing cluster projects up to three runtime icons
   (recent non-Idle first, Idle last) plus a plain `+N`. Idle rings are static; Working, Blocked,
   and Done rings rotate in state colors and stop under Reduce Motion.
 - **Attention collection** — every Blocked or unviewed Done entry is its own cell below the bar,
   Blocked before Done, then by recency; one column for a single entry, two otherwise, three rows
   before scrolling. Cells clear only when the underlying Active Agents state changes.
 - **Roster** — clicking the bar opens the full list without activating Prowl. Rows reuse
-  `ActiveAgentRow` with the shared subtitle resolver and context menu. Clicking a row, a cell, or
+  `ActiveAgentRow` with a "pane title · branch" subtitle (a live Workflow badge still takes the
+  line) and the shared context menu. Clicking a row, a cell, or
   Hand Off / Run Workflow surfaces the main window first and then dispatches the unchanged sidebar
   action. Open Prowl only surfaces the window. Outside click or Escape collapses the roster.
 - **Placement** — notched screens merge the bar with the cutout at the physical top edge; other
@@ -39,8 +40,8 @@ agent state, acknowledgement flag, or lifecycle signal.
 
 Key files:
 
-- `supacode/Features/ActiveAgents/Reducer/ActiveAgentsFeature.swift` — island state, carousel
-  effect, `islandWorkingEntries` / `islandAttentionEntries`.
+- `supacode/Features/ActiveAgents/Reducer/ActiveAgentsFeature.swift` — island state,
+  `island(Action)` forwarding, `islandAttentionEntries`.
 - `supacode/Features/App/Reducer/AppFeature.swift` — surface-then-forward for island actions;
   settings mirror.
 - `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandWindowController.swift` — panel
@@ -66,9 +67,10 @@ Key files:
 - #756 (this continuation): `make check` passes; the affected suites
   (`ActiveAgentsFeatureTests`, `AgentIslandScreenTests`, `SettingsFeatureTests`,
   `SettingsFilePersistenceTests`, `BaguaWorkingIndicatorTests`, `AppFeatureQuitTests`,
-  `AppFeatureSettingsChangedTests`) pass — 214 tests. New regressions: hover → remove last entry
-  → two Working entries → tick at four seconds; picker selection by UUID with renamed,
-  disconnected, and unknown displays.
+  `AppFeatureSettingsChangedTests`, `AppFeatureAgentIslandTests`, `AgentIslandIsolationTests`,
+  `AgentIslandStateSummaryTests`, `AgentIslandIconClusterTests`) pass — 152 tests on the latest
+  head. New regressions cover picker selection by UUID, the `island(Action)` forwarding rule,
+  panel lifecycle following the setting, state-count ordering, and the combined roster subtitle.
 - Manual: the author verified the floating pill, roster, Open Prowl, and entry focus on an
   external display; the built-in notch geometry was captured from a 14-inch display
   (1512×982, 32pt inset, 185×32pt cutout) and is covered by fixtures only.
@@ -91,5 +93,3 @@ Key files:
   is consumed by the island, any other key passes through. In another application only the
   key-state poll runs, so Escape collapses the roster and still reaches that application. The
   asymmetry is a known limitation, not a planned change (2026-09-02).
-- The floating pill still runs the Working-name carousel while the notched bar shows counts; if
-  the pill adopts counts too, the carousel state and timer in `ActiveAgentsFeature` become dead.

@@ -18,7 +18,7 @@ intrusive surface than the sidebar, so it ships opt-in and off by default.
 
 ## Goals
 
-- Present Working agents as a low-priority compact carousel.
+- Present the roster's state mix at a glance: per-state counts in the compact bar.
 - Present Blocked and unviewed Done entries as stronger callouts whose lifetime is governed by the
   existing Active Agents state transitions.
 - Open a secondary roster with the same rows and actions as the sidebar panel, including Idle
@@ -37,13 +37,9 @@ intrusive surface than the sidebar, so it ships opt-in and off by default.
 ## Design / Approach
 
 `ActiveAgentsFeature` (`supacode/Features/ActiveAgents/Reducer/ActiveAgentsFeature.swift`) stays
-the single source of truth. Its state gains only presentation fields — `isIslandEnabled`,
-`isIslandRosterExpanded`, `isIslandHovered`, `islandCarouselEntryID` — plus a
-`continuousClock`-driven effect that advances among Working entries every four seconds, pauses
-while hovered or expanded, and jumps to the most recently changed Working entry. The effect is
-rebuilt only when the ordered Working membership or one of those gates changes, so per-second
-title refreshes never restart it. `islandWorkingEntries` and `islandAttentionEntries` are derived
-projections of `displayState`; nothing island-specific mutates or masks an entry.
+the single source of truth. Its state gains only two presentation fields, `isIslandEnabled` and
+`isIslandRosterExpanded`. `islandAttentionEntries` is a derived projection of `displayState`;
+nothing island-specific mutates or masks an entry.
 
 Actions raised from the island wrap the sidebar action they stand for: `island(Action)`. The
 reducer forwards the wrapped action unchanged and collapses the roster only when it presents
@@ -67,11 +63,11 @@ CoreGraphics display UUID and refreshes on screen-parameter changes.
 
 The views under `supacode/Features/ActiveAgents/Views/` are island-owned: `AgentIslandView`
 (compact bar with equal wings around the physical cutout, attention collection, roster
-container), `AgentIslandStateSummary` (the notched leading wing: per-state counts as
-state-colored symbols in attention order), `AgentIslandIconCluster` (up to three runtime icons, recent non-Idle first and Idle
+container), `AgentIslandStateSummary` (per-state counts as state-colored symbols in attention
+order; compact in the notch wing, one size up in the floating pill), `AgentIslandIconCluster` (up to three runtime icons, recent non-Idle first and Idle
 last, `+N` overflow, Core Animation state rings), `AgentIslandAttentionCollection` (one or two
 columns, three rows before scrolling), and `AgentIslandRosterContent` (composes the sidebar's
-`ActiveAgentRow`, content-sized up to a 360pt cap). Sharing with the sidebar is deliberately
+`ActiveAgentRow` with a "pane title · branch" subtitle, content-sized up to a 360pt cap). Sharing with the sidebar is deliberately
 narrow: `ActiveAgentRowSupport.swift` extracts `ActiveAgentRowPresentation` (subtitle, help, pane
 title, Workflow badge) and `ActiveAgentRowContextMenu` for both `ActiveAgentsPanel` and the island
 roster; the sidebar's row and panel layout are otherwise untouched.
@@ -111,6 +107,10 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
 - **Custom expansion transition** — removed; the roster appears directly while the panel resizes.
 - **Directly clickable carousel icons** — considered on 2026-09-02 and declined: the compact bar
   stays a single toggle, and per-agent focus lives in the attention cells and the roster.
+- **Working-name carousel** — the original compact bar rotated through Working agent names every
+  four seconds with a hover pause. Replaced on 2026-09-03 by per-state counts on both placements:
+  a name says little about what needs attention, and the counts made the carousel state, clock
+  effect, and hover tracking dead weight, so they were removed rather than kept idle.
 
 ## Amendments
 
