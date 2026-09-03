@@ -7,24 +7,43 @@ import Testing
 
 @MainActor
 struct AgentIslandIsolationTests {
-  @Test(.dependencies) func panelRunsOnlyWhileTheSettingIsEnabled() {
+  @Test(.dependencies) func panelFollowsTheSettingThroughObservation() async {
     let store: StoreOf<AppFeature> = Store(initialState: AppFeature.State()) {
       Scope(state: \.settings, action: \.settings) {
         BindingReducer()
       }
     }
-    let controller = AgentIslandWindowController(store: store)
+    let controller = AgentIslandWindowController(
+      store: store,
+      terminalManager: WorktreeTerminalManager(runtime: GhosttyRuntime())
+    )
 
     controller.activate()
     #expect(!controller.isRunning)
 
+    // Each change must be observed without any manual refresh, including after the
+    // observation has fired once and re-registered.
     store.send(.settings(.binding(.set(\.agentIslandEnabled, true))))
-    controller.refreshLifecycle()
+    await settle { controller.isRunning }
     #expect(controller.isRunning)
 
     store.send(.settings(.binding(.set(\.agentIslandEnabled, false))))
-    controller.refreshLifecycle()
+    await settle { !controller.isRunning }
     #expect(!controller.isRunning)
+
+    store.send(.settings(.binding(.set(\.agentIslandEnabled, true))))
+    await settle { controller.isRunning }
+    #expect(controller.isRunning)
+
+    controller.stop()
+  }
+
+  /// The observer hops to the main actor once before re-reading the setting; yielding lets
+  /// that hop run without sleeping.
+  private func settle(_ condition: () -> Bool) async {
+    for _ in 0..<50 where !condition() {
+      await Task.yield()
+    }
   }
 
   @Test func panelCannotTakeKeyWindowStatusFromGhostty() {

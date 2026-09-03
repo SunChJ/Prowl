@@ -32,6 +32,7 @@ struct AgentIslandView: View {
   @Bindable private var appStore: StoreOf<AppFeature>
   @Bindable private var agentsStore: StoreOf<ActiveAgentsFeature>
   @Bindable private var presentation: AgentIslandPresentationModel
+  private let terminalManager: WorktreeTerminalManager
   @Shared(.repositoryAppearances) private var repositoryAppearances
 
   let presentationChanged: (Bool, Bool, AgentIslandDisplayPreference, CGSize) -> Void
@@ -39,6 +40,7 @@ struct AgentIslandView: View {
 
   init(
     store: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager,
     presentation: AgentIslandPresentationModel,
     presentationChanged: @escaping (Bool, Bool, AgentIslandDisplayPreference, CGSize) -> Void
   ) {
@@ -47,6 +49,7 @@ struct AgentIslandView: View {
       state: \.repositories.activeAgents,
       action: \.repositories.activeAgents
     )
+    self.terminalManager = terminalManager
     self.presentation = presentation
     self.presentationChanged = presentationChanged
   }
@@ -176,6 +179,16 @@ struct AgentIslandView: View {
     AgentIslandStateSummary(entries: islandEntries)
   }
 
+  /// Same source as the sidebar overlay: the terminal manager's active surface for the selected
+  /// worktree. The reducer's `focusedSurfaceID` is a keyboard-navigation anchor fed by
+  /// per-worktree deduplicated `focusChanged` events, so re-selecting a worktree leaves it
+  /// pointing at the previously selected worktree's pane.
+  private var selectedSurfaceID: UUID? {
+    terminalManager.selectedWorktreeID.flatMap { worktreeID in
+      terminalManager.stateIfExists(for: worktreeID)?.activeSurfaceID
+    }
+  }
+
   private var rosterIsland: some View {
     VStack(spacing: 0) {
       HStack {
@@ -200,7 +213,7 @@ struct AgentIslandView: View {
         store: agentsStore,
         rowDisplays: rowDisplays,
         workflowBadges: appStore.repositories.workflowRoleBadgesBySurfaceID,
-        selectedSurfaceID: agentsStore.focusedSurfaceID
+        selectedSurfaceID: selectedSurfaceID
       )
     }
     // Same width as the bar above it: the notched bar is wider than the floating roster.

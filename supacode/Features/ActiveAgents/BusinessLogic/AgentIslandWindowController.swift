@@ -33,6 +33,7 @@ struct AgentIslandEscapeKeyTracker {
 @Observable
 final class AgentIslandWindowController {
   private let appStore: StoreOf<AppFeature>
+  private let terminalManager: WorktreeTerminalManager
   private let injectedDisplayCatalog: AgentIslandDisplayCatalog?
   /// Resolved on first use so a disabled island never enumerates displays or installs the
   /// catalog's screen observer at launch.
@@ -53,9 +54,11 @@ final class AgentIslandWindowController {
 
   init(
     store: StoreOf<AppFeature>,
+    terminalManager: WorktreeTerminalManager,
     displayCatalog: AgentIslandDisplayCatalog? = nil
   ) {
     appStore = store
+    self.terminalManager = terminalManager
     injectedDisplayCatalog = displayCatalog
   }
 
@@ -118,6 +121,7 @@ final class AgentIslandWindowController {
     panel.contentView = NSHostingView(
       rootView: AgentIslandView(
         store: appStore,
+        terminalManager: terminalManager,
         presentation: presentation
       ) { [weak self] isVisible, isRosterExpanded, preference, size in
         self?.updatePresentation(

@@ -278,7 +278,7 @@ struct SupacodeApp: App {
     appDelegate.appStore = appStore
     appDelegate.terminalManager = terminalManager
     appDelegate.cliSocketServer = cliServer
-    appDelegate.agentIslandWindowController = AgentIslandWindowController(store: appStore)
+    appDelegate.agentIslandWindowController = .init(store: appStore, terminalManager: terminalManager)
     #if DEBUG
       DebugWindowManager.shared.configure(store: appStore)
     #endif
