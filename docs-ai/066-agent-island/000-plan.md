@@ -36,6 +36,20 @@ intrusive surface than the sidebar, so it ships opt-in and off by default.
 
 ## Design / Approach
 
+### Contextual exposure principle
+
+Agent Island uses contextual progressive disclosure. It must not present every available feature
+at once. Each control, hint, or callout appears only when the current state makes it relevant and
+immediately actionable—for example, paging only with multiple pages, display switching only with
+multiple connected displays, opacity only in floating mode, and attention shortcuts only when
+attention entries exist. If a capability has no distinct situational value, it belongs in the
+expanded roster or Settings rather than the compact surface.
+
+The product goal is not maximum feature discoverability in every state. It is a restrained surface
+whose next action feels obvious and timely, giving users the sense that Prowl anticipated their
+need without asking them to parse unrelated controls. New Agent Island affordances must identify
+their exposure condition as part of their design; “always visible” requires explicit justification.
+
 `ActiveAgentsFeature` (`supacode/Features/ActiveAgents/Reducer/ActiveAgentsFeature.swift`) stays
 the single source of truth. Its state gains only two presentation fields, `isIslandEnabled` and
 `isIslandRosterExpanded`. `islandAttentionEntries` is a derived projection of `displayState`;
@@ -123,3 +137,5 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
   amendments (002–010) folded into this plan and [001-action.md](001-action.md).
 - Updated 2026-09-03: keyboard-first hot-window entry, selection, and paging — see
   [002-keyboard-navigation.md](002-keyboard-navigation.md).
+- Updated 2026-09-03: established contextual exposure as a product rule: controls and hints appear
+  only when their supporting state makes them relevant and actionable.

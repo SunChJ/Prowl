@@ -19,6 +19,18 @@ content in two wings on either side of the camera cutout; on other displays it i
 floating bar overlaid directly on the menu bar at the same height. It
 stays visible across Spaces and over fullscreen applications and never becomes the active window.
 
+## Exposure principle
+
+Agent Island reveals capabilities contextually instead of presenting every control at once. A
+control, hint, or callout appears only when the current state makes it useful and immediately
+actionable: paging requires multiple pages, display switching requires multiple connected
+displays, opacity requires floating mode, and attention shortcuts require attention entries.
+Secondary capabilities stay in the expanded roster or Settings. New island affordances should
+define their exposure condition explicitly; permanent visibility requires a clear reason.
+
+The intended experience is a restrained surface whose next action feels timely and obvious—not a
+feature inventory the user has to decode.
+
 ## Presentation
 
 | Active Agents state | Island behavior |

@@ -14,6 +14,7 @@
 | 2026-09-02 | Fork-owned continuation: `isIslandHovered` reset when the roster empties (review round 3 blocker); unrelated 100-column reflow reverted; display picker matched by UUID; compact bar height aligned to the cutout instead of overhanging it by 8pt (12pt corners, 20pt icons); island content pinned to the top of the hosting view so panel resizes no longer make the icon cluster spring back into place, and the floating pill's carousel identity no longer tears the cluster down; working-note amendments folded into the plan. | #756 |
 | 2026-09-03 | Structure and polish: island actions folded into `island(Action)`; panel created only while enabled; display catalog moved to `BusinessLogic/`; island navigation tests in their own file; clipped shadows removed and the roster matched to the bar width; the notched leading wing shows per-state counts instead of a name carousel. | #756 |
 | 2026-09-03 | Floating pill switched to the same per-state counts; the name carousel and its reducer state, clock effect, hover tracking, and tests removed. Island roster rows show "pane title · branch". | #756 |
+| 2026-09-03 | Contextual exposure formalized as a product rule: each control, hint, and callout must have a relevant, actionable state instead of exposing the island's full capability set at once. | #758 |
 
 ## Outcome & current state (as of 2026-09-02)
 
