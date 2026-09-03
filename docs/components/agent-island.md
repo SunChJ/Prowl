@@ -52,8 +52,9 @@ clears once the entry is viewed, and a removed entry disappears with the roster.
   Each row's subtitle shows both the pane title and the branch, separated by a middle dot,
   regardless of the sidebar's title-or-branch setting; a live Workflow role badge replaces it.
   Clicking a row, or choosing one of those actions, brings Prowl forward first and then behaves
-  exactly as it does in the sidebar. The roster is as wide as the bar above it and grows with its
-  content up to `360pt`, then scrolls.
+  exactly as it does in the sidebar. On a notched display the roster is as wide as the bar above
+  it; under the floating pill it is wider than the pill. It grows with its content up to `360pt`,
+  then scrolls.
 - **Open Prowl** in the roster header brings the main window forward without changing the
   selected agent.
 - **Click outside, type, or press `Esc`** to collapse the roster. While Prowl is frontmost the
@@ -80,3 +81,8 @@ color without rotating.
 Agent Island offers no inline permission approval or terminal input; it navigates to the pane
 instead. It adds no failure state of its own: an interrupted agent shows up only as whatever
 Active Agents already reports.
+
+On a notched display the bar sits on top of the menu bar, so while the roster is non-empty the
+wing on each side of the cutout (about 120pt) covers that part of the menu bar band. A menu title
+or status item that lands under a wing is not clickable until the island disappears; apps with
+very long menu bars are the ones affected.

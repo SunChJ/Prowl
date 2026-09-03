@@ -53,8 +53,9 @@ is mirrored into the reducer from settings the same way `showActiveAgentTabTitle
 (`supacode/Features/ActiveAgents/BusinessLogic/AgentIslandWindowController.swift`) owns one
 borderless, nonactivating `NSPanel` that cannot become key or main, sits one level above the menu
 bar, joins all Spaces and fullscreen applications, and hosts `AgentIslandView` scoped to the app
-store. It observes the enabled setting and creates or tears down the panel accordingly, so a
-disabled island costs nothing at launch. Outside-click monitors and a low-frequency Escape
+store. It observes the enabled setting and creates or tears down the panel accordingly; while
+disabled, nothing beyond the controller object and that observation exists (the display catalog
+is resolved on first use). Outside-click monitors and a low-frequency Escape
 key-state poll exist only while the roster is expanded.
 `supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` holds the pure geometry
 (`AgentIslandScreenLayout`: cutout rectangle from the screen's auxiliary menu-bar areas, display

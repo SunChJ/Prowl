@@ -89,6 +89,10 @@ Key files:
 
 - A physical-notch, Stage Manager, fullscreen/Spaces, and display hot-plug pass has not been run
   on this branch; the panel's collection behavior is configured for them but unverified.
+- The notched bar's wings cover about 120pt of the menu bar band on each side of the cutout and
+  intercept clicks there while agents are running (raised by the 2026-09-03 adversarial review).
+  Documented as a limitation; narrowing the wings or offering a floating placement on notched
+  displays is a product decision still open.
 - While Prowl is frontmost, the first keystroke after expanding the roster collapses it; Escape
   is consumed by the island, any other key passes through. In another application only the
   key-state poll runs, so Escape collapses the roster and still reaches that application. The
