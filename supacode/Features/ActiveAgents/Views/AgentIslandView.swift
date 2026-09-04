@@ -574,23 +574,26 @@ private final class AgentIslandDragCaptureNSView: NSView {
 
   override func mouseDown(with event: NSEvent) {
     isDragging = true
+    window?.invalidateCursorRects(for: self)
     currentDragCursor.set()
     dragChanged(.began(pointerX: NSEvent.mouseLocation.x))
   }
 
   override func mouseDragged(with event: NSEvent) {
+    currentDragCursor.set()
     dragChanged(.changed(pointerX: NSEvent.mouseLocation.x))
   }
 
   override func mouseUp(with event: NSEvent) {
     isDragging = false
+    window?.invalidateCursorRects(for: self)
     let pointer = convert(event.locationInWindow, from: nil)
     (bounds.contains(pointer) ? NSCursor.openHand : .arrow).set()
     dragChanged(.ended(pointerX: NSEvent.mouseLocation.x))
   }
 
   override func resetCursorRects() {
-    addCursorRect(bounds, cursor: .openHand)
+    addCursorRect(bounds, cursor: currentDragCursor)
   }
 
   private var currentDragCursor: NSCursor {
