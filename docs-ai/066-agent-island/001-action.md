@@ -24,6 +24,7 @@
 | 2026-09-04 | Shortcut failure states were made explicit: active Custom Command collisions reject new app bindings and mark existing bindings Unavailable; failed Carbon registration is surfaced in Shortcuts and Agent Island settings until recovery. | #758 |
 | 2026-09-04 | Floating opacity animation was isolated from the content transaction, preventing an immediate roster expansion from animating its keyboard footer through the compact bar. | #758 |
 | 2026-09-04 | Final shortcut hardening: physical `digit_N` recorder tokens now conflict with logical `N` bindings throughout app and Custom Command precedence; the Carbon registrar also tears itself down on deinitialization. | #758 |
+| 2026-09-04 | The floating drag grip now uses an active tracking area so its open-hand hover and closed-hand drag cursors remain reliable while the nonactivating island panel is in the background. | #758 |
 
 ## Outcome & current state (as of 2026-09-04)
 

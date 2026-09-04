@@ -68,6 +68,7 @@ and a removed entry disappears with the roster.
   labels, icons, accessibility labels, and the expanded roster's keyboard legend.
 - **Click the bar** to open or close the full roster. This does not bring Prowl forward.
 - **Drag the small grip at the top center** of a floating island to reposition it horizontally.
+  The pointer becomes an open hand over the grip and a closed hand while dragging.
   Prowl remembers the position independently for each display and keeps the full island inside
   the visible screen bounds. The bar stays inside the menu bar band while moving; notched displays
   remain anchored to the physical cutout.

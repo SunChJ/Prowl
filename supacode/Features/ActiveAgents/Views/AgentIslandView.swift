@@ -529,6 +529,8 @@ private struct AgentIslandDragCaptureView: NSViewRepresentable {
 
 private final class AgentIslandDragCaptureNSView: NSView {
   var dragChanged: (AgentIslandFloatingDragEvent) -> Void
+  private var hoverTrackingArea: NSTrackingArea?
+  private var isDragging = false
 
   init(dragChanged: @escaping (AgentIslandFloatingDragEvent) -> Void) {
     self.dragChanged = dragChanged
@@ -540,8 +542,39 @@ private final class AgentIslandDragCaptureNSView: NSView {
     fatalError("init(coder:) has not been implemented")
   }
 
+  override func updateTrackingAreas() {
+    if let hoverTrackingArea {
+      removeTrackingArea(hoverTrackingArea)
+    }
+    super.updateTrackingAreas()
+
+    let hoverTrackingArea = NSTrackingArea(
+      rect: .zero,
+      options: [.mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(hoverTrackingArea)
+    self.hoverTrackingArea = hoverTrackingArea
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    currentDragCursor.set()
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    if !isDragging {
+      NSCursor.arrow.set()
+    }
+  }
+
+  override func cursorUpdate(with event: NSEvent) {
+    currentDragCursor.set()
+  }
+
   override func mouseDown(with event: NSEvent) {
-    NSCursor.closedHand.set()
+    isDragging = true
+    currentDragCursor.set()
     dragChanged(.began(pointerX: NSEvent.mouseLocation.x))
   }
 
@@ -550,11 +583,17 @@ private final class AgentIslandDragCaptureNSView: NSView {
   }
 
   override func mouseUp(with event: NSEvent) {
-    NSCursor.openHand.set()
+    isDragging = false
+    let pointer = convert(event.locationInWindow, from: nil)
+    (bounds.contains(pointer) ? NSCursor.openHand : .arrow).set()
     dragChanged(.ended(pointerX: NSEvent.mouseLocation.x))
   }
 
   override func resetCursorRects() {
     addCursorRect(bounds, cursor: .openHand)
+  }
+
+  private var currentDragCursor: NSCursor {
+    isDragging ? .closedHand : .openHand
   }
 }
