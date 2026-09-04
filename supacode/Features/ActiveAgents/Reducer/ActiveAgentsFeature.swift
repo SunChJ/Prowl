@@ -24,6 +24,7 @@ struct ActiveAgentsFeature {
     var isIslandEnabled = false
     var isIslandRosterExpanded = false
     var islandNavigation = AgentIslandNavigation()
+    var islandHotKeyRegistrationFailure: Keybinding?
     @Shared(.appStorage("activeAgentsPanelHidden")) var isPanelHidden: Bool = false
     @Shared(.appStorage("activeAgentsPanelHeight")) var panelHeight: Double = 200
   }
@@ -48,6 +49,7 @@ struct ActiveAgentsFeature {
     case islandMovePage(NavigationDirection)
     case islandActivateSelection
     case islandActivateVisibleEntry(Int)
+    case setIslandHotKeyRegistrationFailure(Keybinding?)
     /// A sidebar action raised from the island roster or attention cells. The reducer forwards
     /// the wrapped action unchanged; when it presents Prowl UI (`surfacesProwl`) the roster
     /// collapses first and `AppFeature` surfaces the main window before the action runs.
@@ -110,6 +112,7 @@ struct ActiveAgentsFeature {
         if !isEnabled {
           state.isIslandRosterExpanded = false
           state.islandNavigation = .init()
+          state.islandHotKeyRegistrationFailure = nil
         }
         return .none
 
@@ -155,6 +158,10 @@ struct ActiveAgentsFeature {
           return .none
         }
         return .send(.island(.entryTapped(id)))
+
+      case .setIslandHotKeyRegistrationFailure(let binding):
+        state.islandHotKeyRegistrationFailure = binding
+        return .none
 
       case .selectNextEntry:
         return navigate(&state, direction: .next)

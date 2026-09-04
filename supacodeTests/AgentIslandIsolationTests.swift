@@ -107,14 +107,27 @@ struct AgentIslandIsolationTests {
       hasEntries: true,
       isAppActive: false
     )
+    let appActiveWithChangedBinding = AgentIslandGlobalHotKeyConfiguration(
+      toggleBinding: Keybinding(
+        key: "j",
+        modifiers: .init(command: true, option: true)
+      ),
+      hasEntries: true,
+      isAppActive: true
+    )
 
     #expect(registered.binding == binding)
+    #expect(registered.configuredBinding == binding)
     #expect(noEntries.binding == nil)
+    #expect(noEntries.configuredBinding == binding)
     #expect(appActive.binding == nil)
+    #expect(appActive.configuredBinding == binding)
     #expect(unassigned.binding == nil)
+    #expect(unassigned.configuredBinding == nil)
     #expect(registered.requiresRefresh(from: nil))
     #expect(!registered.requiresRefresh(from: registered))
     #expect(registered.requiresRefresh(from: noEntries))
+    #expect(appActiveWithChangedBinding.requiresRefresh(from: appActive))
     #expect(registered.requiresRefresh(from: registered, force: true))
   }
 

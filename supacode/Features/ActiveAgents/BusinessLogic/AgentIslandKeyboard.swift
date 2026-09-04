@@ -95,6 +95,7 @@ enum AgentIslandGlobalHotKeyCommand: Equatable {
 }
 
 struct AgentIslandGlobalHotKeyConfiguration: Equatable {
+  let configuredBinding: Keybinding?
   let binding: Keybinding?
 
   init(
@@ -102,12 +103,19 @@ struct AgentIslandGlobalHotKeyConfiguration: Equatable {
     hasEntries: Bool,
     isAppActive: Bool
   ) {
+    configuredBinding = toggleBinding
     binding = hasEntries && !isAppActive ? toggleBinding : nil
   }
 
   func requiresRefresh(from previous: Self?, force: Bool = false) -> Bool {
     force || previous != self
   }
+}
+
+enum IslandHotKeyRegistrationResult: Equatable {
+  case inactive
+  case registered
+  case failed
 }
 
 @MainActor
@@ -226,17 +234,23 @@ final class AgentIslandGlobalHotKeys {
     }
   }
 
-  func register(binding: Keybinding?) {
+  func register(binding: Keybinding?) -> IslandHotKeyRegistrationResult {
     register(command: .toggleRoster, binding: binding)
   }
 
   private func register(
     command: AgentIslandGlobalHotKeyCommand,
     binding: Keybinding?
-  ) {
+  ) -> IslandHotKeyRegistrationResult {
     unregister(command: command)
-    guard let binding, let descriptor = AgentIslandCarbonHotKeyDescriptor(binding: binding) else {
-      return
+    guard let binding else { return .inactive }
+    guard eventHandler != nil else {
+      Self.logger.warning("hot_key_registration_failed reason=handler_unavailable binding=\(binding.display)")
+      return .failed
+    }
+    guard let descriptor = AgentIslandCarbonHotKeyDescriptor(binding: binding) else {
+      Self.logger.warning("hot_key_registration_failed reason=unsupported_binding binding=\(binding.display)")
+      return .failed
     }
     let hotKeyID = EventHotKeyID(signature: Self.signature, id: command.identifier)
     var hotKey: EventHotKeyRef?
@@ -250,8 +264,10 @@ final class AgentIslandGlobalHotKeys {
     )
     if status == noErr, let hotKey {
       hotKeys[command.identifier] = hotKey
+      return .registered
     } else {
       Self.logger.warning("hot_key_registration_failed binding=\(binding.display) status=\(status)")
+      return .failed
     }
   }
 

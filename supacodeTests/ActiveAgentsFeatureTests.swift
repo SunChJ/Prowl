@@ -325,6 +325,29 @@ struct ActiveAgentsFeatureTests {
     #expect(store.state.entries[id: blocked.id]?.displayState == .blocked)
   }
 
+  @Test func islandGlobalHotKeyRegistrationFailureCanBeReportedAndCleared() async {
+    let binding = Keybinding(
+      key: "i",
+      modifiers: .init(command: true, option: true)
+    )
+    let store = TestStore(initialState: ActiveAgentsFeature.State()) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.setIslandHotKeyRegistrationFailure(binding)) {
+      $0.islandHotKeyRegistrationFailure = binding
+    }
+    await store.send(.islandEnabledChanged(false)) {
+      $0.islandHotKeyRegistrationFailure = nil
+    }
+    await store.send(.setIslandHotKeyRegistrationFailure(binding)) {
+      $0.islandHotKeyRegistrationFailure = binding
+    }
+    await store.send(.setIslandHotKeyRegistrationFailure(nil)) {
+      $0.islandHotKeyRegistrationFailure = nil
+    }
+  }
+
   @Test func islandExpansionAnchorsOnTheFocusedAgentWithoutAttention() async {
     var state = ActiveAgentsFeature.State()
     state.entries = [

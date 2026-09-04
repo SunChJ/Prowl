@@ -82,6 +82,8 @@ and a removed entry disappears with the roster.
   unassigned to avoid taking an established shortcut from the frontmost application; assign it
   under Settings → Shortcuts if desired. Prowl registers that shortcut globally only while the
   island has entries and Prowl is in the background. In Prowl it uses the normal menu shortcut.
+  Active Custom Command collisions are rejected or marked Unavailable because Custom Commands
+  take precedence. A failed macOS global registration is also marked Unavailable until corrected.
 - **Click a Blocked or Done cell** to bring Prowl forward and focus that agent's exact worktree,
   tab, and pane.
 - **The roster** lists every entry with the same rows, ordering, Workflow badges, and context menu
@@ -124,7 +126,8 @@ Settings → Notifications → **Agent Island**:
   default position is centered.
 
 The section footer points to Settings → Shortcuts, where searching for **Toggle Agent Island**
-finds the optional shortcut assignment.
+finds the optional shortcut assignment. If macOS rejects the current global registration, the
+footer instead identifies the unavailable binding and directs the user to choose another shortcut.
 
 With Reduce Motion enabled, icon changes fade instead of sliding and the state rings keep their
 color without rotating.

@@ -88,6 +88,63 @@ struct ShortcutConflictDetectorTests {
     #expect(conflictID == nil)
   }
 
+  @Test func findsActiveCustomCommandConflictFromEffectiveBindings() throws {
+    let shortcut = binding("k", modifiers: .init(command: true, option: true))
+    let command = EffectiveCustomCommand(
+      source: .repository,
+      command: UserCustomCommand(
+        id: "build",
+        title: "Build",
+        systemImage: "hammer",
+        command: "make build",
+        execution: .shellScript,
+        shortcut: shortcut.userCustomShortcut
+      )
+    )
+    let resolved = KeybindingResolver.resolve(
+      schema: .appResolverSchema(effectiveCustomCommands: [command]),
+      migratedOverrides: LegacyCustomCommandShortcutMigration.migrate(commands: [command]).overrides
+    )
+
+    let conflict = ShortcutConflictDetector.firstActiveCustomCommandConflict(
+      binding: shortcut,
+      customCommands: [command],
+      resolvedKeybindings: resolved
+    )
+
+    #expect(try #require(conflict).id == command.id)
+  }
+
+  @Test func ignoresCustomCommandWithoutAnEffectiveBinding() {
+    let shortcut = binding("k", modifiers: .init(command: true, option: true))
+    let command = EffectiveCustomCommand(
+      source: .repository,
+      command: UserCustomCommand(
+        id: "build",
+        title: "Build",
+        systemImage: "hammer",
+        command: "make build",
+        execution: .shellScript,
+        shortcut: shortcut.userCustomShortcut
+      )
+    )
+    let resolved = KeybindingResolver.resolve(
+      schema: .appResolverSchema(effectiveCustomCommands: [command]),
+      userOverrides: KeybindingUserOverrideStore(
+        overrides: [command.keybindingID: .init(binding: nil, isEnabled: false)]
+      ),
+      migratedOverrides: LegacyCustomCommandShortcutMigration.migrate(commands: [command]).overrides
+    )
+
+    #expect(
+      ShortcutConflictDetector.firstActiveCustomCommandConflict(
+        binding: shortcut,
+        customCommands: [command],
+        resolvedKeybindings: resolved
+      ) == nil
+    )
+  }
+
   private func testSchema(_ commands: [KeybindingCommandSchema]) -> KeybindingSchemaDocument {
     KeybindingSchemaDocument(
       version: KeybindingSchemaDocument.currentVersion,

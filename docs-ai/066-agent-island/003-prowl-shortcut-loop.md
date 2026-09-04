@@ -35,6 +35,12 @@ Island instead needs one deliberate entry gesture followed by stable local contr
   compact surface.
 - Add a footer to the Agent Island settings section that directs users to search for
   `Toggle Agent Island` under Shortcuts instead of suggesting a default binding.
+- Reject newly recorded app shortcuts that collide with an active Custom Command. Mark legacy or
+  externally introduced collisions as Unavailable in Shortcuts while retaining Custom Command
+  precedence.
+- Treat Carbon registration as a fallible runtime operation. Preserve the failed binding in
+  transient app state and expose it in both the shortcut row and Agent Island settings footer;
+  clear it after a binding change, successful retry, unassignment, or disabling Agent Island.
 - Isolate the floating island's opacity animation from its content transaction so opening the
   roster immediately after a silent-opacity transition cannot animate the footer through the
   compact bar.
@@ -57,6 +63,10 @@ modifier-tolerant. Collapse restores the prior visible Prowl key window when app
 Island-owned controls and rows no longer attach hover tooltips; accessibility labels remain.
 The Agent Island settings footer directs users to the unassigned shortcut's recorder.
 Opacity still fades, while roster geometry now updates without inheriting that animation.
+Active Custom Command collisions can no longer fail silently: new assignments are rejected and
+pre-existing collisions are marked Unavailable. Carbon registration failures are likewise visible
+in Shortcuts and the Agent Island settings footer until the binding is changed or registers
+successfully.
 
 Verification: `make check`, the focused Agent Island / Active Agents / shortcut suites, the full
 `make test` run (3,025 tests, zero failures), and `make build-app` all pass.

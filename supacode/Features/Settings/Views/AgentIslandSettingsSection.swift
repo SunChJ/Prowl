@@ -40,6 +40,7 @@ enum AgentIslandDisplaySelection: Hashable {
 
 struct AgentIslandSettingsSection: View {
   @Bindable var store: StoreOf<SettingsFeature>
+  let globalHotKeyRegistrationFailure: Keybinding?
   @State private var displayCatalog = AgentIslandDisplayCatalog.shared
 
   var body: some View {
@@ -77,7 +78,15 @@ struct AgentIslandSettingsSection: View {
     } header: {
       Text("Agent Island")
     } footer: {
-      Text("To configure a keyboard shortcut, open Shortcuts and search for “Toggle Agent Island”.")
+      if let globalHotKeyRegistrationFailure {
+        Text(
+          "macOS could not register \(globalHotKeyRegistrationFailure.display) globally. "
+            + "Choose another shortcut under Shortcuts."
+        )
+        .foregroundStyle(.red)
+      } else {
+        Text("To configure a keyboard shortcut, open Shortcuts and search for “Toggle Agent Island”.")
+      }
     }
   }
 

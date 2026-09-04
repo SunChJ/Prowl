@@ -148,6 +148,7 @@ final class AgentIslandWindowController {
     globalHotKeys?.stop()
     globalHotKeys = nil
     registeredGlobalHotKeyConfiguration = nil
+    setGlobalHotKeyRegistrationFailure(nil)
     floatingDragPointerOffsetX = nil
     restoreKeyWindowAfterCollapse()
     panel?.orderOut(nil)
@@ -437,10 +438,11 @@ final class AgentIslandWindowController {
   }
 
   private func refreshGlobalHotKeys(force: Bool = false) {
+    let toggleBinding = appStore.resolvedKeybindings.keybinding(
+      for: AppShortcuts.CommandID.toggleAgentIsland
+    )
     let configuration = AgentIslandGlobalHotKeyConfiguration(
-      toggleBinding: appStore.resolvedKeybindings.keybinding(
-        for: AppShortcuts.CommandID.toggleAgentIsland
-      ),
+      toggleBinding: toggleBinding,
       hasEntries: !appStore.repositories.activeAgents.entries.isEmpty,
       isAppActive: NSApp.isActive
     )
@@ -450,8 +452,32 @@ final class AgentIslandWindowController {
         force: force
       )
     else { return }
-    globalHotKeys?.register(binding: configuration.binding)
+    if registeredGlobalHotKeyConfiguration?.configuredBinding != configuration.configuredBinding {
+      setGlobalHotKeyRegistrationFailure(nil)
+    }
+    let result = globalHotKeys?.register(binding: configuration.binding)
+    if let binding = configuration.binding {
+      switch result {
+      case .registered:
+        setGlobalHotKeyRegistrationFailure(nil)
+      case .failed, nil:
+        setGlobalHotKeyRegistrationFailure(binding)
+      case .inactive:
+        break
+      }
+    }
     registeredGlobalHotKeyConfiguration = configuration
+  }
+
+  private func setGlobalHotKeyRegistrationFailure(_ binding: Keybinding?) {
+    guard
+      appStore.repositories.activeAgents.islandHotKeyRegistrationFailure != binding
+    else { return }
+    appStore.send(
+      .repositories(
+        .activeAgents(.setIslandHotKeyRegistrationFailure(binding))
+      )
+    )
   }
 
   private func observeGlobalHotKeyState(generation: Int) {

@@ -36,4 +36,14 @@ enum ShortcutConflictDetector {
       return false
     }
   }
+
+  static func firstActiveCustomCommandConflict(
+    binding: Keybinding,
+    customCommands: [EffectiveCustomCommand],
+    resolvedKeybindings: ResolvedKeybindingMap
+  ) -> EffectiveCustomCommand? {
+    customCommands.first { command in
+      resolvedKeybindings.keybinding(for: command.keybindingID) == binding
+    }
+  }
 }
