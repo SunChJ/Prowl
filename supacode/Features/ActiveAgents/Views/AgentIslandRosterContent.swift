@@ -66,7 +66,6 @@ struct AgentIslandRosterContent: View {
             }
           }
           .buttonStyle(.plain)
-          .help(helpText(for: entry, visibleIndex: visibleIndex))
           .accessibilityValue(
             store.islandNavigation.selectedEntryID == entry.id ? "Selected" : ""
           )
@@ -97,7 +96,6 @@ struct AgentIslandRosterContent: View {
           }
           .buttonStyle(.borderless)
           .disabled(layout.pageIndex == 0)
-          .help("Previous page (← or H)")
 
           Text("\(layout.pageIndex + 1) / \(layout.pageCount)")
             .font(.caption.monospacedDigit())
@@ -111,7 +109,6 @@ struct AgentIslandRosterContent: View {
           }
           .buttonStyle(.borderless)
           .disabled(layout.pageIndex == layout.pageCount - 1)
-          .help("Next page (→ or L)")
         }
         .frame(height: 24)
       }
@@ -167,9 +164,5 @@ struct AgentIslandRosterContent: View {
       return entry.id != selectedEntryID
     }
     return selectedSurfaceID.map { entry.surfaceID != $0 } ?? false
-  }
-
-  private func helpText(for entry: ActiveAgentEntry, visibleIndex: Int) -> String {
-    "Open \(entry.displayName) in Prowl (\(visibleIndex + 1))"
   }
 }

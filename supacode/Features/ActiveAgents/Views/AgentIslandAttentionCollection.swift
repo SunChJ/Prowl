@@ -169,7 +169,6 @@ struct AgentIslandAttentionCollection: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(entry.displayState.foregroundStyle.opacity(0.34), lineWidth: 0.8)
     }
-    .help("Open \(entry.displayName) in Prowl")
     .accessibilityLabel(
       "\(presentation.statusLabel), \(presentation.agentName), \(presentation.repositoryName), \(presentation.subtitle)"
     )

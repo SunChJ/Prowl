@@ -64,6 +64,8 @@ and a removed entry disappears with the roster.
 
 ## Interactions
 
+- Agent Island does not show hover tooltips. Actions stay discoverable through their visible
+  labels, icons, accessibility labels, and the expanded roster's keyboard legend.
 - **Click the bar** to open or close the full roster. This does not bring Prowl forward.
 - **Drag the small grip at the top center** of a floating island to reposition it horizontally.
   Prowl remembers the position independently for each display and keeps the full island inside

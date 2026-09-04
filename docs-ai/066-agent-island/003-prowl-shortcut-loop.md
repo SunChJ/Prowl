@@ -30,6 +30,9 @@ Island instead needs one deliberate entry gesture followed by stable local contr
 - Restore the previously key Prowl window when an in-app roster collapses. Do not call
   `resignKey()` directly; when the roster was opened over another application, leave that
   application's focus undisturbed.
+- Keep the island surface free of delayed hover tooltips. Visible labels, accessibility labels,
+  and the expanded roster's persistent keyboard legend carry discovery without obscuring the
+  compact surface.
 
 The command ID remains stable, and existing explicit user overrides continue to resolve. This
 follow-up does not add the planned Active Agents settings destination or another shortcut
@@ -46,6 +49,7 @@ stable command ID and resolver override path. The Carbon registrar owns only tha
 refreshed across binding, entry-presence, keyboard-layout, and application-activation changes.
 Attention cells no longer expose transient number labels; expanded-roster digits are local and
 modifier-tolerant. Collapse restores the prior visible Prowl key window when applicable.
+Island-owned controls and rows no longer attach hover tooltips; accessibility labels remain.
 
 Verification: `make check`, the focused Agent Island / Active Agents / shortcut suites, the full
 `make test` run (3,025 tests, zero failures), and `make build-app` all pass.

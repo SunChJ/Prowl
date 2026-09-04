@@ -196,13 +196,6 @@ struct AgentIslandView: View {
         }
       }
     }
-    .help(
-      AppShortcuts.helpText(
-        title: agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents",
-        commandID: AppShortcuts.CommandID.toggleAgentIsland,
-        in: appStore.resolvedKeybindings
-      )
-    )
     .accessibilityLabel(
       agentsStore.isIslandRosterExpanded ? "Hide Active Agents" : "Show Active Agents"
     )
@@ -217,7 +210,6 @@ struct AgentIslandView: View {
       AgentIslandDragCaptureView(dragChanged: floatingDragChanged)
     }
     .frame(width: 44, height: 20)
-    .help("Drag to reposition Agent Island")
     .accessibilityHidden(true)
   }
 
@@ -235,7 +227,6 @@ struct AgentIslandView: View {
         .background(.white.opacity(0.08), in: Circle())
     }
     .buttonStyle(.plain)
-    .help("Adjust silent opacity")
     .accessibilityLabel("Silent opacity")
     .popover(isPresented: $isOpacityControlPresented, arrowEdge: .top) {
       VStack(alignment: .leading, spacing: 8) {
@@ -346,7 +337,6 @@ struct AgentIslandView: View {
           Label("Open Prowl", systemImage: "arrow.up.forward.app")
         }
         .buttonStyle(.borderless)
-        .help("Bring Prowl to the front")
         .accessibilityIdentifier("agent-island-open-prowl")
       }
       .padding(.horizontal, 14)
@@ -429,7 +419,6 @@ struct AgentIslandView: View {
     }
     .menuStyle(.borderlessButton)
     .fixedSize()
-    .help("Choose Agent Island display")
     .accessibilityLabel("Agent Island display")
   }
 
