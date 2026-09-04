@@ -450,6 +450,16 @@ extension EffectiveCustomCommand {
 }
 
 extension Keybinding {
+  /// Compares the physical shortcut a user invokes rather than its persisted token spelling.
+  /// Recorders keep digits as `digit_N`, while Custom Commands store the same key as `N`.
+  func hasSameTrigger(as other: Self) -> Bool {
+    modifiers == other.modifiers && normalizedTriggerKey == other.normalizedTriggerKey
+  }
+
+  private var normalizedTriggerKey: String {
+    physicalDigitCharacter.map(String.init) ?? key
+  }
+
   var keyEquivalent: KeyEquivalent? {
     if let specialKeyEquivalent {
       return specialKeyEquivalent

@@ -1,5 +1,8 @@
 # 066.002 — Keyboard Navigation
 
+> Historical implementation record. The global shortcut model described here was superseded by
+> [066.003 — Prowl Shortcut Loop](003-prowl-shortcut-loop.md) before #758 merged.
+
 ## Context
 
 Agent Island shipped as a pointer-driven projection of Active Agents. That made the compact
@@ -68,7 +71,7 @@ the previously frontmost app.
 - Implementation: `1f32784a`
 - PR: #758
 
-## Current state
+## State at 2026-09-03
 
 Implemented on 2026-09-03. The island owns a dedicated, remappable `⌘⇧P` global shortcut and
 keyboard focus only while expanded. It supports transient selection, nine-entry paging through

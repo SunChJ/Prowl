@@ -23,6 +23,7 @@
 | 2026-09-04 | Island-owned hover tooltips were removed so the compact surface, attention cells, roster rows, paging controls, and header controls rely on visible UI and accessibility labels instead of delayed overlays. The settings footer now links directly to Shortcuts with “Toggle Agent Island” already filtered and highlighted. | #758 |
 | 2026-09-04 | Shortcut failure states were made explicit: active Custom Command collisions reject new app bindings and mark existing bindings Unavailable; failed Carbon registration is surfaced in Shortcuts and Agent Island settings until recovery. | #758 |
 | 2026-09-04 | Floating opacity animation was isolated from the content transaction, preventing an immediate roster expansion from animating its keyboard footer through the compact bar. | #758 |
+| 2026-09-04 | Final shortcut hardening: physical `digit_N` recorder tokens now conflict with logical `N` bindings throughout app and Custom Command precedence; the Carbon registrar also tears itself down on deinitialization. | #758 |
 
 ## Outcome & current state (as of 2026-09-04)
 
@@ -93,8 +94,8 @@ Key files:
   head. New regressions cover picker selection by UUID, the `island(Action)` forwarding rule,
   panel lifecycle following the setting, state-count ordering, and the combined roster subtitle.
 - #758 latest head: `make check`, the focused Agent Island / Active Agents / shortcut / Custom
-  Command suites, and `make build-app` pass locally. The CI `test` workflow is green with 3,026 app
-  tests plus the CLI and script suites.
+  Command suites, and `make build-app` pass locally. The CI `test` workflow is green across the app,
+  CLI, and script suites.
 - Manual: the author verified the floating pill, roster, Open Prowl, and entry focus on an
   external display; the built-in notch geometry was captured from a 14-inch display
   (1512×982, 32pt inset, 185×32pt cutout) and is covered by fixtures only.

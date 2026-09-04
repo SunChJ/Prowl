@@ -234,6 +234,10 @@ final class AgentIslandGlobalHotKeys {
     }
   }
 
+  isolated deinit {
+    stop()
+  }
+
   func register(binding: Keybinding?) -> IslandHotKeyRegistrationResult {
     register(command: .toggleRoster, binding: binding)
   }

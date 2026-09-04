@@ -54,7 +54,9 @@ Agent Island deliberately ships without a shortcut. Assign **Toggle Agent Island
 Settings → Shortcuts if a keyboard entry gesture is useful. The Agent Island settings footer links
 directly to the filtered **Toggle Agent Island** row. Prowl registers the resolved shortcut globally
 only while Agent Island has entries and Prowl is in the background; while Prowl is active, the
-normal menu key equivalent handles it. If macOS cannot register the shortcut globally, the
+normal menu key equivalent handles it. A globally registered chord takes precedence over the
+frontmost application's matching shortcut until the island becomes inactive or Prowl returns to
+the foreground. If macOS cannot register the shortcut globally, the
 Shortcuts row and Agent Island settings footer report the failure until the binding changes or a
 later registration succeeds. Reset returns the command to Unassigned.
 

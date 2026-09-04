@@ -82,6 +82,9 @@ and a removed entry disappears with the roster.
   unassigned to avoid taking an established shortcut from the frontmost application; assign it
   under Settings → Shortcuts if desired. Prowl registers that shortcut globally only while the
   island has entries and Prowl is in the background. In Prowl it uses the normal menu shortcut.
+  While globally registered, Prowl receives the chord ahead of the frontmost application, so that
+  application cannot use the same shortcut until the island becomes inactive or Prowl returns to
+  the foreground.
   Active Custom Command collisions are rejected or marked Unavailable because Custom Commands
   take precedence. A failed macOS global registration is also marked Unavailable until corrected.
 - **Click a Blocked or Done cell** to bring Prowl forward and focus that agent's exact worktree,

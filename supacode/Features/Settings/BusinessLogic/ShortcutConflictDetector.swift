@@ -21,7 +21,9 @@ enum ShortcutConflictDetector {
     )
 
     for command in schema.commands where command.allowUserOverride && command.id != commandID {
-      guard resolved.binding(for: command.id)?.binding == binding else { continue }
+      guard
+        resolved.binding(for: command.id)?.binding?.hasSameTrigger(as: binding) == true
+      else { continue }
       return command.id
     }
 
@@ -43,7 +45,7 @@ enum ShortcutConflictDetector {
     resolvedKeybindings: ResolvedKeybindingMap
   ) -> EffectiveCustomCommand? {
     customCommands.first { command in
-      resolvedKeybindings.keybinding(for: command.keybindingID) == binding
+      resolvedKeybindings.keybinding(for: command.keybindingID)?.hasSameTrigger(as: binding) == true
     }
   }
 }
