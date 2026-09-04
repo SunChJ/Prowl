@@ -25,7 +25,7 @@ struct ShortcutsSettingsView: View {
   @State private var pendingConflict: ShortcutConflict?
   @State private var pendingResetConflict: ResetConflict?
   @State private var pendingOverride: PendingOverride?
-  @State private var focusedConflictCommandID: String?
+  @State private var focusedCommandID: String?
   @State private var hoveredRecorderCommandID: String?
   private let keyTokenResolver = ShortcutKeyTokenResolver()
 
@@ -123,6 +123,11 @@ struct ShortcutsSettingsView: View {
     }
     .onDisappear {
       stopRecorderMonitor()
+    }
+    .task(id: store.shortcutNavigationTargetCommandID) {
+      guard let commandID = store.shortcutNavigationTargetCommandID else { return }
+      focusCommand(commandID)
+      store.send(.shortcutNavigationTargetConsumed)
     }
     .alert(
       "Shortcut Conflict",
@@ -254,7 +259,7 @@ struct ShortcutsSettingsView: View {
   }
 
   private func rowBackground(for commandID: String) -> some View {
-    let isFocused = focusedConflictCommandID == commandID
+    let isFocused = focusedCommandID == commandID
     return RoundedRectangle(cornerRadius: 6)
       .fill(isFocused ? Color.orange.opacity(0.15) : .clear)
   }
@@ -487,7 +492,7 @@ struct ShortcutsSettingsView: View {
 
   private func toggleRecording(for commandID: String) {
     invalidMessageByCommandID[commandID] = nil
-    focusedConflictCommandID = nil
+    focusedCommandID = nil
     if recordingCommandID == commandID {
       recordingCommandID = nil
       return
@@ -498,7 +503,7 @@ struct ShortcutsSettingsView: View {
   private func clearShortcut(for commandID: String) {
     store.send(.clearShortcutButtonTapped(commandID: commandID))
     invalidMessageByCommandID[commandID] = nil
-    focusedConflictCommandID = nil
+    focusedCommandID = nil
     stopRecording()
   }
 
@@ -560,7 +565,7 @@ struct ShortcutsSettingsView: View {
 
   private func applyRecordedBinding(_ binding: Keybinding, to commandID: String) {
     invalidMessageByCommandID[commandID] = nil
-    focusedConflictCommandID = nil
+    focusedCommandID = nil
 
     guard let command = editableCommands.first(where: { $0.id == commandID }) else {
       stopRecording()
@@ -676,9 +681,14 @@ struct ShortcutsSettingsView: View {
   }
 
   private func focusConflictCommand(_ conflict: ShortcutConflict) {
-    focusedConflictCommandID = conflict.existingCommandID
-    searchText = conflict.existingCommandTitle
     clearPendingConflict()
+    store.send(.showShortcutButtonTapped(commandID: conflict.existingCommandID))
+  }
+
+  private func focusCommand(_ commandID: String) {
+    guard let command = editableCommands.first(where: { $0.id == commandID }) else { return }
+    focusedCommandID = commandID
+    searchText = command.title
   }
 
   private func saveOverride(
@@ -731,8 +741,8 @@ struct ShortcutsSettingsView: View {
     if let recordingCommandID, commandIDs.contains(recordingCommandID) {
       stopRecording()
     }
-    if let focusedConflictCommandID, commandIDs.contains(focusedConflictCommandID) {
-      self.focusedConflictCommandID = nil
+    if let focusedCommandID, commandIDs.contains(focusedCommandID) {
+      self.focusedCommandID = nil
     }
     clearPendingResetConflict()
   }

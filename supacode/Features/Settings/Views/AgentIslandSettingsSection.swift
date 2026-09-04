@@ -78,16 +78,26 @@ struct AgentIslandSettingsSection: View {
     } header: {
       Text("Agent Island")
     } footer: {
-      if let globalHotKeyRegistrationFailure {
-        Text(
-          "macOS could not register \(globalHotKeyRegistrationFailure.display) globally. "
-            + "Choose another shortcut under Shortcuts."
-        )
-        .foregroundStyle(.red)
-      } else {
-        Text("To configure a keyboard shortcut, open Shortcuts and search for “Toggle Agent Island”.")
+      VStack(alignment: .leading, spacing: 4) {
+        if let globalHotKeyRegistrationFailure {
+          Text("macOS could not register \(globalHotKeyRegistrationFailure.display) globally.")
+            .foregroundStyle(.red)
+        }
+
+        Button(shortcutLinkTitle) {
+          store.send(.showShortcutButtonTapped(commandID: AppShortcuts.CommandID.toggleAgentIsland))
+        }
+        .buttonStyle(.link)
+        .help("Open Shortcuts and show Toggle Agent Island")
       }
     }
+  }
+
+  private var shortcutLinkTitle: String {
+    if globalHotKeyRegistrationFailure == nil {
+      return "Set a shortcut for Toggle Agent Island…"
+    }
+    return "Choose another shortcut for Toggle Agent Island…"
   }
 
   private var displaySelection: Binding<AgentIslandDisplaySelection> {

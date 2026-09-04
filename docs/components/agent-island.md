@@ -125,9 +125,9 @@ Settings → Notifications → **Agent Island**:
 - **Floating Positions** resets saved horizontal positions for displays without a notch. The
   default position is centered.
 
-The section footer points to Settings → Shortcuts, where searching for **Toggle Agent Island**
-finds the optional shortcut assignment. If macOS rejects the current global registration, the
-footer instead identifies the unavailable binding and directs the user to choose another shortcut.
+The section footer provides a link that opens Settings → Shortcuts already filtered to
+**Toggle Agent Island**. If macOS rejects the current global registration, the footer also
+identifies the unavailable binding and keeps the same direct link for choosing another shortcut.
 
 With Reduce Motion enabled, icon changes fade instead of sliding and the state rings keep their
 color without rotating.

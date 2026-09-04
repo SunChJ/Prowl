@@ -214,6 +214,34 @@ struct SettingsFeatureTests {
     }
   }
 
+  @Test(.dependencies) func showShortcutNavigatesToAndTargetsEditableCommand() async {
+    var state = SettingsFeature.State()
+    state.selection = .notifications
+    let commandID = AppShortcuts.CommandID.toggleAgentIsland
+    let store = TestStore(initialState: state) {
+      SettingsFeature()
+    }
+
+    await store.send(.showShortcutButtonTapped(commandID: commandID)) {
+      $0.shortcutNavigationTargetCommandID = commandID
+    }
+    await store.receive(\.setSelection) {
+      $0.selection = .shortcuts
+    }
+    await store.send(.shortcutNavigationTargetConsumed) {
+      $0.shortcutNavigationTargetCommandID = nil
+    }
+  }
+
+  @Test(.dependencies) func showShortcutIgnoresFixedAndUnknownCommands() async {
+    let store = TestStore(initialState: SettingsFeature.State()) {
+      SettingsFeature()
+    }
+
+    await store.send(.showShortcutButtonTapped(commandID: AppShortcuts.CommandID.quitApplication))
+    await store.send(.showShortcutButtonTapped(commandID: "unknown_command"))
+  }
+
   @Test(.dependencies) func loadingSettingsDoesNotResetSelection() async {
     let rootURL = URL(fileURLWithPath: "/tmp/repo")
     let selection = SettingsSection.repository("repo-id")

@@ -51,9 +51,10 @@ Symbols: **⌘** Command · **⇧** Shift · **⌥** Option · **⌃** Control �
 | Toggle Shelf | ⌘⇧↩ | `toggle_shelf` | yes |
 
 Agent Island deliberately ships without a shortcut. Assign **Toggle Agent Island** under
-Settings → Shortcuts if a keyboard entry gesture is useful. Prowl registers the resolved shortcut
-globally only while Agent Island has entries and Prowl is in the background; while Prowl is active,
-the normal menu key equivalent handles it. If macOS cannot register the shortcut globally, the
+Settings → Shortcuts if a keyboard entry gesture is useful. The Agent Island settings footer links
+directly to the filtered **Toggle Agent Island** row. Prowl registers the resolved shortcut globally
+only while Agent Island has entries and Prowl is in the background; while Prowl is active, the
+normal menu key equivalent handles it. If macOS cannot register the shortcut globally, the
 Shortcuts row and Agent Island settings footer report the failure until the binding changes or a
 later registration succeeds. Reset returns the command to Unassigned.
 

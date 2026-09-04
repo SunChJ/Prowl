@@ -64,6 +64,7 @@ struct SettingsFeature {
     /// Notifications settings pane appears.
     var dockBadgeAuthorization: SystemNotificationClient.DockBadgeAuthorization = .available
     var selection: SettingsSection? = .general
+    var shortcutNavigationTargetCommandID: String?
     var repositorySettings: RepositorySettingsFeature.State?
     var globalCustomCommands: GlobalCustomCommandsFeature.State?
     var agentProfiles: AgentProfilesFeature.State?
@@ -191,6 +192,8 @@ struct SettingsFeature {
     case setAgentIslandSilentOpacity(Double)
     case setAgentIslandDisplayPreference(AgentIslandDisplayPreference)
     case resetIslandFloatingPositionsTapped
+    case showShortcutButtonTapped(commandID: String)
+    case shortcutNavigationTargetConsumed
     case clearShortcutButtonTapped(commandID: String)
     case clearTerminalLayoutSnapshotButtonTapped
     case installCLIButtonTapped(showAlert: Bool = true)
@@ -367,6 +370,21 @@ struct SettingsFeature {
         guard !state.agentIslandFloatingPositions.isEmpty else { return .none }
         state.agentIslandFloatingPositions = .init()
         return persist(state)
+
+      case .showShortcutButtonTapped(let commandID):
+        guard
+          KeybindingSchemaDocument.appDefaultsV1.commands.contains(where: {
+            $0.id == commandID && $0.allowUserOverride
+          })
+        else {
+          return .none
+        }
+        state.shortcutNavigationTargetCommandID = commandID
+        return .send(.setSelection(.shortcuts))
+
+      case .shortcutNavigationTargetConsumed:
+        state.shortcutNavigationTargetCommandID = nil
+        return .none
 
       case .clearShortcutButtonTapped(let commandID):
         guard

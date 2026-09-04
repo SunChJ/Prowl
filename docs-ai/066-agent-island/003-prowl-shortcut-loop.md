@@ -33,8 +33,8 @@ Island instead needs one deliberate entry gesture followed by stable local contr
 - Keep the island surface free of delayed hover tooltips. Visible labels, accessibility labels,
   and the expanded roster's persistent keyboard legend carry discovery without obscuring the
   compact surface.
-- Add a footer to the Agent Island settings section that directs users to search for
-  `Toggle Agent Island` under Shortcuts instead of suggesting a default binding.
+- Add a link to the Agent Island settings footer that opens Shortcuts with
+  `Toggle Agent Island` already filtered and highlighted instead of suggesting a default binding.
 - Reject newly recorded app shortcuts that collide with an active Custom Command. Mark legacy or
   externally introduced collisions as Unavailable in Shortcuts while retaining Custom Command
   precedence.
@@ -61,7 +61,8 @@ refreshed across binding, entry-presence, keyboard-layout, and application-activ
 Attention cells no longer expose transient number labels; expanded-roster digits are local and
 modifier-tolerant. Collapse restores the prior visible Prowl key window when applicable.
 Island-owned controls and rows no longer attach hover tooltips; accessibility labels remain.
-The Agent Island settings footer directs users to the unassigned shortcut's recorder.
+The Agent Island settings footer links directly to the unassigned shortcut's filtered,
+highlighted recorder row.
 Opacity still fades, while roster geometry now updates without inheriting that animation.
 Active Custom Command collisions can no longer fail silently: new assignments are rejected and
 pre-existing collisions are marked Unavailable. Carbon registration failures are likewise visible
