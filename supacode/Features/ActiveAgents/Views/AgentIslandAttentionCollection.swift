@@ -78,9 +78,8 @@ struct AgentIslandAttentionCollection: View {
   var body: some View {
     let layout = AgentIslandAttentionLayout.layout(entryCount: entries.count)
     LazyVGrid(columns: columns(for: layout), spacing: AgentIslandAttentionLayout.spacing) {
-      ForEach(Array(entries.prefix(layout.visibleEntryCount).enumerated()), id: \.element.id) {
-        index, entry in
-        attentionCell(entry, shortcutIndex: index)
+      ForEach(Array(entries.prefix(layout.visibleEntryCount))) { entry in
+        attentionCell(entry)
       }
     }
     .frame(height: layout.viewportHeight)
@@ -122,14 +121,13 @@ struct AgentIslandAttentionCollection: View {
     )
   }
 
-  private func attentionCell(_ entry: ActiveAgentEntry, shortcutIndex: Int) -> some View {
+  private func attentionCell(_ entry: ActiveAgentEntry) -> some View {
     let presentation = AgentIslandAttentionPresentation.presentation(
       for: entry,
       rowDisplay: rowDisplays[entry.id],
       showTabTitles: showTabTitles,
       workflowBadge: workflowBadges[entry.surfaceID]
     )
-    let shortcut = AgentIslandAttentionShortcut.binding(at: shortcutIndex)
     return Button {
       onTap(entry.id)
     } label: {
@@ -162,7 +160,6 @@ struct AgentIslandAttentionCollection: View {
         .multilineTextAlignment(.trailing)
       }
       .padding(.horizontal, 8)
-      .padding(.top, shortcut == nil ? 0 : 14)
       .frame(maxWidth: .infinity, minHeight: AgentIslandAttentionLayout.cellHeight)
       .contentShape(.rect)
     }
@@ -172,40 +169,10 @@ struct AgentIslandAttentionCollection: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(entry.displayState.foregroundStyle.opacity(0.34), lineWidth: 0.8)
     }
-    .overlay(alignment: .top) {
-      if let shortcut {
-        shortcutTag(shortcut)
-          .padding(.top, 4)
-      }
-    }
-    .help(helpText(for: entry, shortcut: shortcut))
+    .help("Open \(entry.displayName) in Prowl")
     .accessibilityLabel(
       "\(presentation.statusLabel), \(presentation.agentName), \(presentation.repositoryName), \(presentation.subtitle)"
     )
-    .accessibilityHint(accessibilityHint(for: shortcutIndex, hasShortcut: shortcut != nil))
-  }
-
-  private func helpText(for entry: ActiveAgentEntry, shortcut: Keybinding?) -> String {
-    if let shortcut {
-      return "Open \(entry.displayName) in Prowl (\(shortcut.display))"
-    }
-    return "Open \(entry.displayName) in Prowl"
-  }
-
-  private func shortcutTag(_ shortcut: Keybinding) -> some View {
-    ShortcutHintView(text: shortcut.display, color: .primary)
-      .monospaced()
-      .padding(.horizontal, 5)
-      .padding(.vertical, 2)
-      .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-      .overlay {
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
-          .stroke(.white.opacity(0.14), lineWidth: 0.5)
-      }
-  }
-
-  private func accessibilityHint(for index: Int, hasShortcut: Bool) -> String {
-    guard hasShortcut else { return "Open in Prowl" }
-    return "Open in Prowl with Command-Option-\(index + 1)"
+    .accessibilityHint("Open in Prowl")
   }
 }

@@ -170,7 +170,7 @@ enum AppShortcuts {
     let id: String
     let title: String
     let scope: Scope
-    let shortcut: AppShortcut
+    let shortcut: AppShortcut?
   }
 
   struct CustomCommandOverrideConflict: Equatable {
@@ -194,7 +194,6 @@ enum AppShortcuts {
   static let openPullRequest = AppShortcut(key: "g", modifiers: [.command, .control])
   static let toggleLeftSidebar = AppShortcut(key: "s", modifiers: [.command, .control])
   static let toggleActiveAgentsPanel = AppShortcut(key: "p", modifiers: [.command, .option])
-  static let toggleAgentIsland = AppShortcut(key: "p", modifiers: [.command, .shift])
   static let selectNextActiveAgent = AppShortcut(
     keyEquivalent: .downArrow, ghosttyKeyName: "arrow_down", modifiers: [.control, .option]
   )
@@ -360,7 +359,6 @@ enum AppShortcuts {
     .init(actionTitle: "Open Settings", shortcut: openSettings),
     .init(actionTitle: "Toggle Left Sidebar", shortcut: toggleLeftSidebar),
     .init(actionTitle: "Toggle Active Agents Panel", shortcut: toggleActiveAgentsPanel),
-    .init(actionTitle: "Toggle Agent Island", shortcut: toggleAgentIsland),
     .init(actionTitle: "Select Next Agent", shortcut: selectNextActiveAgent),
     .init(actionTitle: "Select Previous Agent", shortcut: selectPreviousActiveAgent),
     .init(actionTitle: "Jump to Latest Unread", shortcut: jumpToLatestUnread),
@@ -438,7 +436,7 @@ enum AppShortcuts {
       id: CommandID.toggleAgentIsland,
       title: "Toggle Agent Island",
       scope: .configurableAppAction,
-      shortcut: toggleAgentIsland
+      shortcut: nil
     ),
     .init(
       id: CommandID.selectNextActiveAgent,
@@ -971,7 +969,7 @@ enum AppShortcuts {
     }
 
     for (commandID, _) in ghosttyManagedActionBindings {
-      if let defaultUnbind = binding(for: commandID)?.shortcut.ghosttyUnbindArgument {
+      if let defaultUnbind = binding(for: commandID)?.shortcut?.ghosttyUnbindArgument {
         appendUnbindArgument(defaultUnbind)
       }
     }
@@ -997,7 +995,6 @@ enum AppShortcuts {
     openPullRequest,
     toggleLeftSidebar,
     toggleActiveAgentsPanel,
-    toggleAgentIsland,
     selectNextActiveAgent,
     selectPreviousActiveAgent,
     revealInSidebar,

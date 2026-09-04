@@ -24,7 +24,7 @@ stays visible across Spaces and over fullscreen applications and never becomes t
 Agent Island reveals capabilities contextually instead of presenting every control at once. A
 control, hint, or callout appears only when the current state makes it useful and immediately
 actionable: paging requires multiple pages, display switching requires multiple connected
-displays, opacity requires floating mode, and attention shortcuts require attention entries.
+displays, and opacity requires floating mode.
 Secondary capabilities stay in the expanded roster or Settings. New island affordances should
 define their exposure condition explicitly; permanent visibility requires a clear reason.
 
@@ -56,11 +56,8 @@ columns otherwise, with at most three rows. When more than six reminders exist, 
 the collection's bottom-right reports how many lower-priority reminders are folded away. The
 collection does not scroll or page. Each cell shows the agent name and state on the left and the
 repository plus the same branch/tab subtitle as Active Agents on the right; a live Workflow role
-badge takes the subtitle position, as in the sidebar. The first nine priority slots use
-`⌘⌥1`…`⌘⌥9`; each visible card shows its assigned shortcut in an inset tag centered along the top
-edge. While the roster is closed, those global shortcuts open the matching strong reminder
-directly. The mapping follows the
-displayed priority order: Blocked first, then unviewed Done, newest first within each state. Cells
+badge takes the subtitle position, as in the sidebar. The displayed priority order is Blocked
+first, then unviewed Done, newest first within each state. Cells
 cannot be dismissed from the island. A
 Blocked cell clears when the agent leaves that state, a Done cell clears once the entry is viewed,
 and a removed entry disappears with the roster.
@@ -75,13 +72,14 @@ and a removed entry disappears with the roster.
 - **Use the half-filled circle at the center** of a floating island to set its silent opacity.
   The island returns to full opacity on hover and fades to the chosen level three seconds after
   the pointer leaves. Any Blocked or unviewed Done reminder keeps the full island at 100% opacity
-  until all strong reminders clear. Opening the roster by click or `⌘⇧P` also keeps it fully
-  opaque; after the roster closes, a new three-second delay begins. Slider changes remain local
-  while dragging and persist once the adjustment ends. This control is not shown on notched displays.
-- **Press the Agent Island shortcut** (`⌘⇧P` by default) to open or close the roster like a hot
-  window. It is separate from the Active Agents panel shortcut and can be changed, cleared, or
-  reset under Settings → Shortcuts. The contextual `⌘1`…`⌘9` and `⌘⌥1`…`⌘⌥9` number chords are
-  reserved and cannot be assigned to this toggle.
+  until all strong reminders clear. Opening the roster by click or its assigned shortcut also
+  keeps it fully opaque; after the roster closes, a new three-second delay begins. Slider changes
+  remain local while dragging and persist once the adjustment ends. This control is not shown on
+  notched displays.
+- **Press the Agent Island shortcut** to open or close the roster like a hot window. It ships
+  unassigned to avoid taking an established shortcut from the frontmost application; assign it
+  under Settings → Shortcuts if desired. Prowl registers that shortcut globally only while the
+  island has entries and Prowl is in the background. In Prowl it uses the normal menu shortcut.
 - **Click a Blocked or Done cell** to bring Prowl forward and focus that agent's exact worktree,
   tab, and pane.
 - **The roster** lists every entry with the same rows, ordering, Workflow badges, and context menu
@@ -96,10 +94,11 @@ and a removed entry disappears with the roster.
   on a single-display setup.
 - **Keyboard navigation stays available while the roster is open.** Arrow Up or `k` and Arrow
   Down or `j` move the highlight without focusing a terminal; Arrow Left or `h` and Arrow Right
-  or `l` move one page; Space or Return opens the highlighted agent; and `⌘1`…`⌘9` opens the
-  corresponding agent on the current page.
+  or `l` move one page; Return opens the highlighted agent (Space is an alias); and `1`…`9` opens
+  the corresponding agent on the current page.
   These are visible-slot shortcuts, not permanent agent numbers: every page labels its visible
-  rows from `⌘1` again. The row labels use the tab bar's caption scale, and a compact legend for
+  rows from `1` again. Digits remain local even if shortcut modifiers are still held. The row
+  labels use the tab bar's caption scale, and a compact legend for
   movement, paging, and confirmation stays visible; the paging hint appears only when the roster
   has more than one page.
 - **Open Prowl** in the roster header brings the main window forward without changing the

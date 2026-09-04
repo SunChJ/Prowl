@@ -88,12 +88,15 @@ struct AppShortcutsTests {
   }
 
   @Test func defaultGlobalShortcutTableMatchesPlan() {
+    let agentIslandShortcut =
+      AppShortcuts.defaultShortcut(for: AppShortcuts.CommandID.toggleAgentIsland)?.display
+      ?? "Unassigned"
     expectNoDifference(
       [
         "openSettings=\(AppShortcuts.openSettings.display)",
         "toggleLeftSidebar=\(AppShortcuts.toggleLeftSidebar.display)",
         "toggleActiveAgentsPanel=\(AppShortcuts.toggleActiveAgentsPanel.display)",
-        "toggleAgentIsland=\(AppShortcuts.toggleAgentIsland.display)",
+        "toggleAgentIsland=\(agentIslandShortcut)",
         "runScript=\(AppShortcuts.runScript.display)",
         "stopRunScript=\(AppShortcuts.stopRunScript.display)",
         "checkForUpdates=\(AppShortcuts.checkForUpdates.display)",
@@ -122,7 +125,7 @@ struct AppShortcutsTests {
         "openSettings=⌘,",
         "toggleLeftSidebar=⌘⌃S",
         "toggleActiveAgentsPanel=⌘⌥P",
-        "toggleAgentIsland=⌘⇧P",
+        "toggleAgentIsland=Unassigned",
         "runScript=⌘R",
         "stopRunScript=⌘.",
         "checkForUpdates=⌘⇧U",
@@ -152,7 +155,9 @@ struct AppShortcutsTests {
 
   @Test func configurableSystemFixedAndLocalInteractionShortcutsAreDefinedInRegistry() {
     let idToDisplay = Dictionary(
-      AppShortcuts.bindings.map { ($0.id, $0.shortcut.display) },
+      AppShortcuts.bindings.compactMap { binding in
+        binding.shortcut.map { (binding.id, $0.display) }
+      },
       uniquingKeysWith: { first, _ in first }
     )
     let idToScope = Dictionary(
@@ -168,10 +173,7 @@ struct AppShortcutsTests {
       idToDisplay["toggle_active_agents_panel"],
       AppShortcuts.toggleActiveAgentsPanel.display
     )
-    expectNoDifference(
-      idToDisplay["toggle_agent_island"],
-      AppShortcuts.toggleAgentIsland.display
-    )
+    #expect(idToDisplay["toggle_agent_island"] == nil)
     expectNoDifference(
       idToDisplay["quit_application"],
       AppShortcuts.quitApplication.display
@@ -206,6 +208,21 @@ struct AppShortcutsTests {
     #expect(idToScope["arrange_canvas_cards"] == .localInteraction)
     #expect(idToScope["organize_canvas_cards"] == .localInteraction)
     #expect(idToScope["tile_canvas_cards"] == .localInteraction)
+  }
+
+  @Test func agentIslandShortcutIsUnassignedByDefaultAndAcceptsAnOverride() {
+    let commandID = AppShortcuts.CommandID.toggleAgentIsland
+    #expect(ResolvedKeybindingMap.appDefaults.keybinding(for: commandID) == nil)
+
+    let binding = Keybinding(key: "p", modifiers: .init(command: true, shift: true))
+    let resolved = KeybindingResolver.resolve(
+      schema: .appResolverSchema(),
+      userOverrides: KeybindingUserOverrideStore(
+        overrides: [commandID: KeybindingUserOverride(binding: binding)]
+      )
+    )
+
+    #expect(resolved.keybinding(for: commandID) == binding)
   }
 
   @Test func canvasLayoutShortcutsUseCommandOptionFamily() {

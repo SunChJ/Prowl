@@ -19,8 +19,9 @@
 | 2026-09-03 | Strong reminders capped at a non-scrolling 2×3 grid; lower-priority overflow is summarized by a bottom-right `+N` badge. | #758 |
 | 2026-09-03 | Review hardening: Command–Option digits documented as the intentional strong-reminder chord; the shortcut projection capped at nine; unchanged Carbon registrations deduplicated; silent-opacity persistence deferred until editing ends. | #758 |
 | 2026-09-03 | Follow-up review: lifecycle generations invalidate stale Observation chains across enable/disable cycles; contextual number chords are reserved from Toggle remapping; toggle changes atomically rebuild both Carbon registration groups. | #758 |
+| 2026-09-04 | Shortcut model revised after review: Toggle Agent Island ships Unassigned; transient global number shortcuts and card labels were removed; an assigned toggle registers only with entries while Prowl is in the background. The expanded roster prioritizes strong reminders, uses local digits regardless of held modifiers, and restores the prior Prowl key window on collapse. | #758 |
 
-## Outcome & current state (as of 2026-09-03)
+## Outcome & current state (as of 2026-09-04)
 
 Agent Island projects the existing Active Agents roster into one top-of-screen panel. It adds no
 agent state, acknowledgement flag, or lifecycle signal.
@@ -40,6 +41,10 @@ agent state, acknowledgement flag, or lifecycle signal.
   line) and the shared context menu. Clicking a row, a cell, or
   Hand Off / Run Workflow surfaces the main window first and then dispatches the unchanged sidebar
   action. Open Prowl only surfaces the window. Outside click or Escape collapses the roster.
+- **Keyboard loop** — Toggle Agent Island ships Unassigned. If the user assigns it, Prowl owns
+  that global chord only while entries exist and Prowl is in the background. Opening prioritizes
+  the newest Blocked reminder, then unviewed Done; Return handles the selection, Space is an alias,
+  and local `1`…`9` activation tolerates held shortcut modifiers.
 - **Placement** — notched screens merge the bar with the cutout at the physical top edge; other
   screens get a floating pill that overlays the menu-bar band at the same height. Its center grip
   supports horizontal-only movement and persists a normalized position per display. Automatic
@@ -55,7 +60,7 @@ Key files:
 - `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandWindowController.swift` — panel
   lifecycle bound to the setting, placement, observers, and global hot-key registration.
 - `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandKeyboard.swift` — expanded-roster
-  key handling plus global toggle and attention-slot hot keys.
+  key handling plus the conditional, user-assigned global toggle.
 - `supacode/Features/ActiveAgents/BusinessLogic/AgentIslandDisplayCatalog.swift` — connected
   screens keyed by display UUID.
 - `supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` — `AgentIslandScreenLayout`,
@@ -93,8 +98,9 @@ Key files:
 - The planned "one extracted list-content view" shared with the sidebar became a narrower
   extraction (presentation + context menu) plus an island-owned roster wrapper, so the sidebar
   row and panel files stay byte-identical to their pre-island state.
-- Once expanded, the nonactivating key panel handles navigation and Escape locally; global entry
-  uses Carbon registration without requiring Accessibility or Input Monitoring permission.
+- Once expanded, the nonactivating key panel handles navigation and Escape locally. An explicitly
+  assigned global entry gesture uses Carbon registration only with entries while Prowl is in the
+  background, without requiring Accessibility or Input Monitoring permission.
 
 ## Open questions
 

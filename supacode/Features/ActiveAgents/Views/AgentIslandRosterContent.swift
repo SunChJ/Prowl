@@ -53,7 +53,7 @@ struct AgentIslandRosterContent: View {
                 repositoryColor: repositoryColor(for: entry),
                 isDimmed: isDimmed(entry)
               )
-              ShortcutHintView(text: "⌘\(visibleIndex + 1)", color: .secondary, font: .caption)
+              ShortcutHintView(text: "\(visibleIndex + 1)", color: .secondary, font: .caption)
                 .monospaced()
                 .padding(.trailing, 10)
             }
@@ -121,7 +121,7 @@ struct AgentIslandRosterContent: View {
         if layout.pageCount > 1 {
           keyboardLegend(keys: ["← H", "→ L"], action: "Page")
         }
-        keyboardLegend(keys: ["Space", "↩"], action: "Open")
+        keyboardLegend(keys: ["↩", "Space"], action: "Open")
       }
       .frame(height: 24)
     }
@@ -170,6 +170,6 @@ struct AgentIslandRosterContent: View {
   }
 
   private func helpText(for entry: ActiveAgentEntry, visibleIndex: Int) -> String {
-    "Open \(entry.displayName) in Prowl (⌘\(visibleIndex + 1))"
+    "Open \(entry.displayName) in Prowl (\(visibleIndex + 1))"
   }
 }

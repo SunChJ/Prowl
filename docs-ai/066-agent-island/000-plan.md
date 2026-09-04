@@ -41,9 +41,8 @@ intrusive surface than the sidebar, so it ships opt-in and off by default.
 Agent Island uses contextual progressive disclosure. It must not present every available feature
 at once. Each control, hint, or callout appears only when the current state makes it relevant and
 immediately actionable—for example, paging only with multiple pages, display switching only with
-multiple connected displays, opacity only in floating mode, and attention shortcuts only when
-attention entries exist. If a capability has no distinct situational value, it belongs in the
-expanded roster or Settings rather than the compact surface.
+multiple connected displays, and opacity only in floating mode. If a capability has no distinct
+situational value, it belongs in the expanded roster or Settings rather than the compact surface.
 
 The product goal is not maximum feature discoverability in every state. It is a restrained surface
 whose next action feels obvious and timely, giving users the sense that Prowl anticipated their
@@ -69,10 +68,11 @@ borderless, nonactivating `NSPanel` that cannot become main, sits one level abov
 joins all Spaces and fullscreen applications, and hosts `AgentIslandView` scoped to the app store.
 The compact panel cannot become key; the expanded roster temporarily becomes key without
 activating Prowl so it can own local keyboard navigation. The controller observes the enabled
-setting and creates or tears down the panel and dedicated Agent Island hot key accordingly; while
-disabled, nothing beyond the controller object and that observation exists (the display catalog
-is resolved on first use). Outside-click and local key monitors exist only while the roster is
-expanded.
+setting and creates or tears down the panel accordingly. Its user-assigned toggle is registered
+globally only while entries exist and Prowl is in the background; in Prowl, normal menu routing
+handles the shortcut. While disabled, nothing beyond the controller object and that observation
+exists (the display catalog is resolved on first use). Outside-click and local key monitors exist
+only while the roster is expanded.
 `supacode/Features/ActiveAgents/Models/AgentIslandScreen.swift` holds the pure geometry
 (`AgentIslandScreenLayout`: cutout rectangle from the screen's auxiliary menu-bar areas, display
 resolution order, panel frame); `AgentIslandDisplayCatalog` (`BusinessLogic/`) keys screens by
@@ -140,3 +140,6 @@ until it reconnects. The picker matches by UUID only (`AgentIslandDisplaySelecti
   [002-keyboard-navigation.md](002-keyboard-navigation.md).
 - Updated 2026-09-03: established contextual exposure as a product rule: controls and hints appear
   only when their supporting state makes them relevant and actionable.
+- Updated 2026-09-04: replaced state-dependent global number grabs with one opt-in global entry
+  and a priority-anchored local handling loop — see
+  [003-prowl-shortcut-loop.md](003-prowl-shortcut-loop.md).

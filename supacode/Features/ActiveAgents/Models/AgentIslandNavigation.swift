@@ -8,15 +8,18 @@ struct AgentIslandNavigation: Equatable {
 
   mutating func start(
     entries: IdentifiedArrayOf<ActiveAgentEntry>,
+    preferredEntryID: ActiveAgentEntry.ID?,
     preferredSurfaceID: ActiveAgentEntry.ID?
   ) {
     guard !entries.isEmpty else {
       self = .init()
       return
     }
-    let preferredIndex = preferredSurfaceID.flatMap { surfaceID in
-      entries.firstIndex { $0.surfaceID == surfaceID }
-    }
+    let preferredIndex =
+      preferredEntryID.flatMap { entries.index(id: $0) }
+      ?? preferredSurfaceID.flatMap { surfaceID in
+        entries.firstIndex { $0.surfaceID == surfaceID }
+      }
     let selectedIndex = preferredIndex ?? 0
     selectedEntryID = entries[selectedIndex].id
     pageIndex = selectedIndex / Self.pageSize

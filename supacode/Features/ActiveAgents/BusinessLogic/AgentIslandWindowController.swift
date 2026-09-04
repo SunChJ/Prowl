@@ -44,6 +44,7 @@ final class AgentIslandWindowController {
   private var displayPreference: AgentIslandDisplayPreference = .automatic
   private var contentSize = CGSize(width: 420, height: 40)
   private var floatingDragPointerOffsetX: CGFloat?
+  private weak var previousKeyWindow: NSWindow?
 
   init(
     store: StoreOf<AppFeature>,
@@ -148,6 +149,7 @@ final class AgentIslandWindowController {
     globalHotKeys = nil
     registeredGlobalHotKeyConfiguration = nil
     floatingDragPointerOffsetX = nil
+    restoreKeyWindowAfterCollapse()
     panel?.orderOut(nil)
     panel = nil
   }
@@ -158,11 +160,15 @@ final class AgentIslandWindowController {
     preference: AgentIslandDisplayPreference,
     size: CGSize
   ) {
+    let wasRosterExpanded = self.isRosterExpanded
+    if !wasRosterExpanded, isRosterExpanded, NSApp.isActive {
+      previousKeyWindow = NSApp.keyWindow === panel ? mainProwlWindow : NSApp.keyWindow
+    }
     self.isVisible = isVisible
     self.isRosterExpanded = isRosterExpanded
     panel?.acceptsKeyboardInput = isRosterExpanded
-    if !isRosterExpanded, panel?.isKeyWindow == true {
-      panel?.resignKey()
+    if wasRosterExpanded, !isRosterExpanded {
+      restoreKeyWindowAfterCollapse()
     }
     displayPreference = preference
     if size.width > 0, size.height > 0 {
@@ -207,6 +213,20 @@ final class AgentIslandWindowController {
 
   private var mainProwlWindow: NSWindow? {
     NSApplication.shared.windows.first { $0.identifier?.rawValue == WindowID.main }
+  }
+
+  private func restoreKeyWindowAfterCollapse() {
+    guard panel?.isKeyWindow == true else {
+      previousKeyWindow = nil
+      return
+    }
+    if NSApp.isActive {
+      let target = previousKeyWindow?.isVisible == true ? previousKeyWindow : mainProwlWindow
+      target?.makeKey()
+    } else {
+      panel?.orderOut(nil)
+    }
+    previousKeyWindow = nil
   }
 
   private var resolvedScreen: AgentIslandScreenDescriptor? {
@@ -273,6 +293,12 @@ final class AgentIslandWindowController {
       }
       self.refreshPlacement()
     }
+    observe(NSApplication.didBecomeActiveNotification, object: NSApp) { [weak self] _ in
+      self?.refreshGlobalHotKeys()
+    }
+    observe(NSApplication.didResignActiveNotification, object: NSApp) { [weak self] _ in
+      self?.refreshGlobalHotKeys()
+    }
     keyboardLayoutObserver = DistributedNotificationCenter.default().addObserver(
       forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
       object: nil,
@@ -321,6 +347,17 @@ final class AgentIslandWindowController {
       [weak self] event in
       guard let self else { return event }
       if event.type == .keyDown, event.window === panel, isRosterExpanded {
+        if AgentIslandShortcutEventMatcher.matches(
+          keyCode: event.keyCode,
+          charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+          modifiers: event.modifierFlags,
+          binding: appStore.resolvedKeybindings.keybinding(
+            for: AppShortcuts.CommandID.toggleAgentIsland
+          )
+        ) {
+          handleToggleHotKey()
+          return nil
+        }
         if let command = AgentIslandKeyboardCommand.resolve(
           keyCode: event.keyCode,
           characters: event.charactersIgnoringModifiers,
@@ -378,8 +415,6 @@ final class AgentIslandWindowController {
     switch command {
     case .toggleRoster:
       handleToggleHotKey()
-    case .activateAttentionSlot(let index):
-      appStore.send(.repositories(.activeAgents(.islandActivateAttentionSlot(index))))
     }
   }
 
@@ -406,23 +441,16 @@ final class AgentIslandWindowController {
       toggleBinding: appStore.resolvedKeybindings.keybinding(
         for: AppShortcuts.CommandID.toggleAgentIsland
       ),
-      isRosterExpanded: appStore.repositories.activeAgents.isIslandRosterExpanded,
-      attentionEntryCount: appStore.repositories.activeAgents.islandAttentionShortcutEntries.count
+      hasEntries: !appStore.repositories.activeAgents.entries.isEmpty,
+      isAppActive: NSApp.isActive
     )
-    let changes = configuration.changes(
-      from: registeredGlobalHotKeyConfiguration,
-      force: force
-    )
-    if changes == [.toggle, .attentionSlots] {
-      globalHotKeys?.registerAll(
-        toggleBinding: configuration.toggleBinding,
-        attentionSlotCount: configuration.attentionSlotCount
+    guard
+      configuration.requiresRefresh(
+        from: registeredGlobalHotKeyConfiguration,
+        force: force
       )
-    } else if changes.contains(.toggle) {
-      globalHotKeys?.registerToggle(binding: configuration.toggleBinding)
-    } else if changes.contains(.attentionSlots) {
-      globalHotKeys?.registerAttentionSlots(count: configuration.attentionSlotCount)
-    }
+    else { return }
+    globalHotKeys?.register(binding: configuration.binding)
     registeredGlobalHotKeyConfiguration = configuration
   }
 
@@ -431,8 +459,7 @@ final class AgentIslandWindowController {
       _ = appStore.resolvedKeybindings.keybinding(
         for: AppShortcuts.CommandID.toggleAgentIsland
       )
-      _ = appStore.repositories.activeAgents.isIslandRosterExpanded
-      _ = appStore.repositories.activeAgents.islandAttentionShortcutEntries.count
+      _ = appStore.repositories.activeAgents.entries.isEmpty
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.panel != nil, self.observationGeneration == generation else { return }

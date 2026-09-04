@@ -82,92 +82,72 @@ struct AgentIslandIsolationTests {
       ) == nil)
   }
 
-  @Test func strongAttentionHotKeysUseCommandOptionForAtMostNineCollapsedSlots() {
-    #expect(AgentIslandAttentionShortcut.binding(at: 0)?.display == "⌘⌥1")
-    #expect(AgentIslandAttentionShortcut.binding(at: 8)?.display == "⌘⌥9")
-    #expect(AgentIslandAttentionShortcut.binding(at: 9) == nil)
-    #expect(
-      AgentIslandAttentionShortcut.slotCount(
-        isRosterExpanded: false,
-        attentionEntryCount: 12
-      ) == 9)
-    #expect(
-      AgentIslandAttentionShortcut.slotCount(
-        isRosterExpanded: true,
-        attentionEntryCount: 4
-      ) == 0)
-  }
-
-  @Test func globalHotKeyConfigurationOnlyRefreshesChangedRegistrationGroups() {
+  @Test func globalHotKeyConfigurationRegistersOnlyForBackgroundEntries() {
     let binding = Keybinding(
       key: "p",
       modifiers: KeybindingModifiers(command: true, shift: true)
     )
-    let initial = AgentIslandGlobalHotKeyConfiguration(
+    let registered = AgentIslandGlobalHotKeyConfiguration(
       toggleBinding: binding,
-      isRosterExpanded: false,
-      attentionEntryCount: 2
+      hasEntries: true,
+      isAppActive: false
     )
-
-    #expect(initial.changes(from: nil) == [.toggle, .attentionSlots])
-    #expect(initial.changes(from: initial).isEmpty)
-
-    let differentCount = AgentIslandGlobalHotKeyConfiguration(
+    let noEntries = AgentIslandGlobalHotKeyConfiguration(
       toggleBinding: binding,
-      isRosterExpanded: false,
-      attentionEntryCount: 3
+      hasEntries: false,
+      isAppActive: false
     )
-    #expect(differentCount.changes(from: initial) == [.attentionSlots])
-
-    let differentBinding = AgentIslandGlobalHotKeyConfiguration(
+    let appActive = AgentIslandGlobalHotKeyConfiguration(
+      toggleBinding: binding,
+      hasEntries: true,
+      isAppActive: true
+    )
+    let unassigned = AgentIslandGlobalHotKeyConfiguration(
       toggleBinding: nil,
-      isRosterExpanded: false,
-      attentionEntryCount: 2
+      hasEntries: true,
+      isAppActive: false
     )
-    #expect(differentBinding.changes(from: initial) == [.toggle, .attentionSlots])
-    #expect(initial.changes(from: initial, force: true) == [.toggle, .attentionSlots])
+
+    #expect(registered.binding == binding)
+    #expect(noEntries.binding == nil)
+    #expect(appActive.binding == nil)
+    #expect(unassigned.binding == nil)
+    #expect(registered.requiresRefresh(from: nil))
+    #expect(!registered.requiresRefresh(from: registered))
+    #expect(registered.requiresRefresh(from: noEntries))
+    #expect(registered.requiresRefresh(from: registered, force: true))
   }
 
-  @Test func toggleShortcutRejectsContextualNumberBindings() {
-    for digit in 1...AgentIslandAttentionShortcut.slotLimit {
-      #expect(
-        AgentIslandToggleShortcutPolicy.isReserved(
-          Keybinding(key: String(digit), modifiers: KeybindingModifiers(command: true))
-        )
-      )
-      #expect(
-        AgentIslandToggleShortcutPolicy.isReserved(
-          Keybinding(
-            key: "digit_\(digit)",
-            modifiers: KeybindingModifiers(command: true, option: true)
-          )
-        )
-      )
-    }
-
-    #expect(
-      !AgentIslandToggleShortcutPolicy.isReserved(
-        Keybinding(key: "p", modifiers: KeybindingModifiers(command: true, shift: true))
-      )
-    )
-    #expect(
-      !AgentIslandToggleShortcutPolicy.isReserved(
-        Keybinding(key: "1", modifiers: KeybindingModifiers(command: true, shift: true))
-      )
+  @Test func expandedRosterRecognizesTheAssignedToggleBeforeLocalNavigation() {
+    let binding = Keybinding(
+      key: "return",
+      modifiers: KeybindingModifiers(command: true, option: true)
     )
 
-    let reservedConfiguration = AgentIslandGlobalHotKeyConfiguration(
-      toggleBinding: Keybinding(
-        key: "1",
-        modifiers: KeybindingModifiers(command: true, option: true)
-      ),
-      isRosterExpanded: false,
-      attentionEntryCount: 2
-    )
-    #expect(reservedConfiguration.toggleBinding == nil)
+    #expect(
+      AgentIslandShortcutEventMatcher.matches(
+        keyCode: 36,
+        charactersIgnoringModifiers: nil,
+        modifiers: [.command, .option],
+        binding: binding
+      ))
+    #expect(
+      !AgentIslandShortcutEventMatcher.matches(
+        keyCode: 36,
+        charactersIgnoringModifiers: nil,
+        modifiers: [.command],
+        binding: binding
+      ))
+    #expect(
+      !AgentIslandShortcutEventMatcher.matches(
+        keyCode: 36,
+        charactersIgnoringModifiers: nil,
+        modifiers: [.command, .option],
+        binding: nil
+      ))
   }
 
-  @Test func expandedRosterKeyMapSupportsArrowsVimiumActivationAndCommandNumbers() {
+  @Test func expandedRosterKeyMapSupportsArrowsVimiumActivationAndLocalNumbers() {
     #expect(
       AgentIslandKeyboardCommand.resolve(keyCode: 126, characters: nil, modifiers: [])
         == .move(.previous))
@@ -203,12 +183,15 @@ struct AgentIslandIsolationTests {
     #expect(
       AgentIslandKeyboardCommand.resolve(keyCode: 53, characters: nil, modifiers: []) == .collapse)
     #expect(
-      AgentIslandKeyboardCommand.resolve(keyCode: 18, characters: "1", modifiers: .command)
+      AgentIslandKeyboardCommand.resolve(keyCode: 18, characters: "1", modifiers: [])
         == .activateVisibleEntry(0))
     #expect(
-      AgentIslandKeyboardCommand.resolve(keyCode: 25, characters: "9", modifiers: .command)
+      AgentIslandKeyboardCommand.resolve(
+        keyCode: 25,
+        characters: "9",
+        modifiers: [.command, .shift, .option, .control]
+      )
         == .activateVisibleEntry(8))
-    #expect(AgentIslandKeyboardCommand.resolve(keyCode: 18, characters: "1", modifiers: []) == nil)
   }
 
   @Test func eventMonitorsExistOnlyForAVisibleExpandedRoster() {

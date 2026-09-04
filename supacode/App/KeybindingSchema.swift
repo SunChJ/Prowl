@@ -394,7 +394,7 @@ extension KeybindingSchemaDocument {
           platform: .macOS,
           allowUserOverride: binding.scope != .systemFixedAppAction,
           conflictPolicy: binding.scope.conflictPolicy,
-          defaultBinding: binding.shortcut.keybinding
+          defaultBinding: binding.shortcut?.keybinding
         )
       }
     )

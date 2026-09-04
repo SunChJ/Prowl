@@ -529,15 +529,6 @@ struct ShortcutsSettingsView: View {
       return
     }
 
-    if commandID == AppShortcuts.CommandID.toggleAgentIsland,
-      AgentIslandToggleShortcutPolicy.isReserved(binding)
-    {
-      invalidMessageByCommandID[commandID] =
-        "Shortcut is reserved by Agent Island's contextual number controls."
-      stopRecording()
-      return
-    }
-
     let conflict = firstConflict(
       commandID: commandID,
       binding: binding,

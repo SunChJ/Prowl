@@ -325,60 +325,12 @@ struct ActiveAgentsFeatureTests {
     #expect(store.state.entries[id: blocked.id]?.displayState == .blocked)
   }
 
-  @Test func islandAttentionShortcutActivatesTheMatchingPrioritySlot() async {
+  @Test func islandExpansionAnchorsOnTheFocusedAgentWithoutAttention() async {
     var state = ActiveAgentsFeature.State()
-    let done = entry(id: UUID(0), state: .done, changedAt: Date(timeIntervalSince1970: 30))
-    let olderBlocked = entry(
-      id: UUID(1), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
-    let newerBlocked = entry(
-      id: UUID(2), state: .blocked, changedAt: Date(timeIntervalSince1970: 20))
-    state.entries = [done, olderBlocked, newerBlocked]
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    }
-
-    await store.send(.islandActivateAttentionSlot(1))
-    await store.receive(.island(.entryTapped(olderBlocked.id)))
-    await store.receive(.entryTapped(olderBlocked.id)) {
-      $0.focusedSurfaceID = olderBlocked.surfaceID
-    }
-  }
-
-  @Test func islandAttentionShortcutProjectionCapsAtNinePriorityEntries() {
-    var state = ActiveAgentsFeature.State()
-    state.entries = IdentifiedArray(
-      uniqueElements: (0..<12).map { index in
-        entry(
-          id: UUID(index),
-          state: .blocked,
-          changedAt: Date(timeIntervalSince1970: Double(index))
-        )
-      }
-    )
-
-    #expect(state.islandAttentionShortcutEntries.count == 9)
-    #expect(
-      state.islandAttentionShortcutEntries.map(\.id)
-        == (3..<12).reversed().map { UUID($0) }
-    )
-  }
-
-  @Test func islandAttentionShortcutIsInactiveWhileRosterIsExpanded() async {
-    var state = ActiveAgentsFeature.State()
-    let blocked = entry(id: UUID(0), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
-    state.entries = [blocked]
-    state.isIslandRosterExpanded = true
-    state.islandNavigation.selectedEntryID = blocked.id
-    let store = TestStore(initialState: state) {
-      ActiveAgentsFeature()
-    }
-
-    await store.send(.islandActivateAttentionSlot(0))
-  }
-
-  @Test func islandExpansionAnchorsKeyboardSelectionOnTheFocusedAgent() async {
-    var state = ActiveAgentsFeature.State()
-    state.entries = sampleEntries()
+    state.entries = [
+      entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 10)),
+      entry(id: UUID(1), state: .idle, changedAt: Date(timeIntervalSince1970: 20)),
+    ]
     state.focusedSurfaceID = UUID(1)
     let store = TestStore(initialState: state) {
       ActiveAgentsFeature()
@@ -387,6 +339,26 @@ struct ActiveAgentsFeatureTests {
     await store.send(.islandToggleRoster) {
       $0.isIslandRosterExpanded = true
       $0.islandNavigation.selectedEntryID = UUID(1)
+    }
+  }
+
+  @Test func islandExpansionPrioritizesTheNewestBlockedReminder() async {
+    var state = ActiveAgentsFeature.State()
+    let focused = entry(id: UUID(0), state: .working, changedAt: Date(timeIntervalSince1970: 40))
+    let done = entry(id: UUID(1), state: .done, changedAt: Date(timeIntervalSince1970: 30))
+    let olderBlocked = entry(
+      id: UUID(2), state: .blocked, changedAt: Date(timeIntervalSince1970: 10))
+    let newerBlocked = entry(
+      id: UUID(3), state: .blocked, changedAt: Date(timeIntervalSince1970: 20))
+    state.entries = [focused, done, olderBlocked, newerBlocked]
+    state.focusedSurfaceID = focused.surfaceID
+    let store = TestStore(initialState: state) {
+      ActiveAgentsFeature()
+    }
+
+    await store.send(.islandToggleRoster) {
+      $0.isIslandRosterExpanded = true
+      $0.islandNavigation.selectedEntryID = newerBlocked.id
     }
   }
 
@@ -533,7 +505,7 @@ struct ActiveAgentsFeatureTests {
     }
     await store.send(.islandToggleRoster) {
       $0.isIslandRosterExpanded = true
-      $0.islandNavigation.selectedEntryID = UUID(1)
+      $0.islandNavigation.selectedEntryID = UUID(2)
     }
     await store.send(.island(.runWorkflowTapped(UUID(2), workflowKey: "review"))) {
       $0.isIslandRosterExpanded = false
