@@ -123,6 +123,9 @@ Settings → Notifications → **Agent Island**:
 - **Floating Positions** resets saved horizontal positions for displays without a notch. The
   default position is centered.
 
+The section footer points to Settings → Shortcuts, where searching for **Toggle Agent Island**
+finds the optional shortcut assignment.
+
 With Reduce Motion enabled, icon changes fade instead of sliding and the state rings keep their
 color without rotating.
 

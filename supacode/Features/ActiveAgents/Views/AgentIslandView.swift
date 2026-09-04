@@ -142,6 +142,12 @@ struct AgentIslandView: View {
       }
     }
     .frame(width: rootWidth)
+    // Keep the opacity animation outside a transaction-free content subtree. Otherwise, when
+    // `isSilent` clears in the same update that opens the roster, SwiftUI also animates the
+    // roster's layout from the compact panel and its footer briefly crosses the floating bar.
+    .transaction { transaction in
+      transaction.animation = nil
+    }
     .opacity(
       AgentIslandOpacityPolicy.opacity(
         isFloating: isFloating,

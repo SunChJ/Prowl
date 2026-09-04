@@ -43,7 +43,7 @@ struct AgentIslandSettingsSection: View {
   @State private var displayCatalog = AgentIslandDisplayCatalog.shared
 
   var body: some View {
-    Section("Agent Island") {
+    Section {
       Toggle(isOn: $store.agentIslandEnabled) {
         Text("Show Agent Island")
         Text("Working stays compact. Blocked and Done appear as stronger agent notifications.")
@@ -74,6 +74,10 @@ struct AgentIslandSettingsSection: View {
         Text("Centers Agent Island on displays without a notch.")
       }
       .help("Reset Agent Island's saved floating positions")
+    } header: {
+      Text("Agent Island")
+    } footer: {
+      Text("To configure a keyboard shortcut, open Shortcuts and search for “Toggle Agent Island”.")
     }
   }
 

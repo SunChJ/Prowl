@@ -20,7 +20,8 @@
 | 2026-09-03 | Review hardening: Command–Option digits documented as the intentional strong-reminder chord; the shortcut projection capped at nine; unchanged Carbon registrations deduplicated; silent-opacity persistence deferred until editing ends. | #758 |
 | 2026-09-03 | Follow-up review: lifecycle generations invalidate stale Observation chains across enable/disable cycles; contextual number chords are reserved from Toggle remapping; toggle changes atomically rebuild both Carbon registration groups. | #758 |
 | 2026-09-04 | Shortcut model revised after review: Toggle Agent Island ships Unassigned; transient global number shortcuts and card labels were removed; an assigned toggle registers only with entries while Prowl is in the background. The expanded roster prioritizes strong reminders, uses local digits regardless of held modifiers, and restores the prior Prowl key window on collapse. | #758 |
-| 2026-09-04 | Island-owned hover tooltips were removed so the compact surface, attention cells, roster rows, paging controls, and header controls rely on visible UI and accessibility labels instead of delayed overlays. | #758 |
+| 2026-09-04 | Island-owned hover tooltips were removed so the compact surface, attention cells, roster rows, paging controls, and header controls rely on visible UI and accessibility labels instead of delayed overlays. The settings footer now points users to Shortcuts and the “Toggle Agent Island” search term. | #758 |
+| 2026-09-04 | Floating opacity animation was isolated from the content transaction, preventing an immediate roster expansion from animating its keyboard footer through the compact bar. | #758 |
 
 ## Outcome & current state (as of 2026-09-04)
 

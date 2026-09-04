@@ -33,6 +33,11 @@ Island instead needs one deliberate entry gesture followed by stable local contr
 - Keep the island surface free of delayed hover tooltips. Visible labels, accessibility labels,
   and the expanded roster's persistent keyboard legend carry discovery without obscuring the
   compact surface.
+- Add a footer to the Agent Island settings section that directs users to search for
+  `Toggle Agent Island` under Shortcuts instead of suggesting a default binding.
+- Isolate the floating island's opacity animation from its content transaction so opening the
+  roster immediately after a silent-opacity transition cannot animate the footer through the
+  compact bar.
 
 The command ID remains stable, and existing explicit user overrides continue to resolve. This
 follow-up does not add the planned Active Agents settings destination or another shortcut
@@ -50,6 +55,8 @@ refreshed across binding, entry-presence, keyboard-layout, and application-activ
 Attention cells no longer expose transient number labels; expanded-roster digits are local and
 modifier-tolerant. Collapse restores the prior visible Prowl key window when applicable.
 Island-owned controls and rows no longer attach hover tooltips; accessibility labels remain.
+The Agent Island settings footer directs users to the unassigned shortcut's recorder.
+Opacity still fades, while roster geometry now updates without inheriting that animation.
 
 Verification: `make check`, the focused Agent Island / Active Agents / shortcut suites, the full
 `make test` run (3,025 tests, zero failures), and `make build-app` all pass.
