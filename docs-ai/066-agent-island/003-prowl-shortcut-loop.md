@@ -68,5 +68,6 @@ pre-existing collisions are marked Unavailable. Carbon registration failures are
 in Shortcuts and the Agent Island settings footer until the binding is changed or registers
 successfully.
 
-Verification: `make check`, the focused Agent Island / Active Agents / shortcut suites, the full
-`make test` run (3,025 tests, zero failures), and `make build-app` all pass.
+Verification: `make check`, the focused Agent Island / Active Agents / shortcut / Custom Command
+suites, and `make build-app` pass locally. The latest CI `test` workflow is green with 3,026 app
+tests plus the CLI and script suites.

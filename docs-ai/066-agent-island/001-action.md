@@ -47,7 +47,9 @@ agent state, acknowledgement flag, or lifecycle signal.
 - **Keyboard loop** — Toggle Agent Island ships Unassigned. If the user assigns it, Prowl owns
   that global chord only while entries exist and Prowl is in the background. Opening prioritizes
   the newest Blocked reminder, then unviewed Done; Return handles the selection, Space is an alias,
-  and local `1`…`9` activation tolerates held shortcut modifiers.
+  and local `1`…`9` activation tolerates held shortcut modifiers. Active Custom Command conflicts
+  are rejected or marked Unavailable; Carbon registration failures remain visible in Settings
+  until the binding changes, registers successfully, is cleared, or the island is disabled.
 - **Placement** — notched screens merge the bar with the cutout at the physical top edge; other
   screens get a floating pill that overlays the menu-bar band at the same height. Its center grip
   supports horizontal-only movement and persists a normalized position per display. Automatic
@@ -90,6 +92,9 @@ Key files:
   `AgentIslandStateSummaryTests`, `AgentIslandIconClusterTests`) pass — 152 tests on the latest
   head. New regressions cover picker selection by UUID, the `island(Action)` forwarding rule,
   panel lifecycle following the setting, state-count ordering, and the combined roster subtitle.
+- #758 latest head: `make check`, the focused Agent Island / Active Agents / shortcut / Custom
+  Command suites, and `make build-app` pass locally. The CI `test` workflow is green with 3,026 app
+  tests plus the CLI and script suites.
 - Manual: the author verified the floating pill, roster, Open Prowl, and entry focus on an
   external display; the built-in notch geometry was captured from a 14-inch display
   (1512×982, 32pt inset, 185×32pt cutout) and is covered by fixtures only.

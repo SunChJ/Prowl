@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Implemented — see [001-action.md](001-action.md) |
 | **Anchor date** | 2026-09-01 |
-| **Primary PRs** | #753 (original implementation, contributed by @SunChJ); #756 (fork-owned continuation that carries every #753 commit) |
+| **Primary PRs** | #753 (original implementation, contributed by @SunChJ); #756 (fork-owned continuation); #758 (interaction and shortcut refinement) |
 | **Related** | [029-active-agents-panel](../029-active-agents-panel/000-plan.md), [036-window-management-hardening](../036-window-management-hardening/000-plan.md), [064-agent-completion-signals](../064-agent-completion-signals/000-plan.md), `docs/components/agent-island.md` |
 
 ## Background
@@ -50,9 +50,9 @@ need without asking them to parse unrelated controls. New Agent Island affordanc
 their exposure condition as part of their design; “always visible” requires explicit justification.
 
 `ActiveAgentsFeature` (`supacode/Features/ActiveAgents/Reducer/ActiveAgentsFeature.swift`) stays
-the single source of truth. Its state gains only two presentation fields, `isIslandEnabled` and
-`isIslandRosterExpanded`. `islandAttentionEntries` is a derived projection of `displayState`;
-nothing island-specific mutates or masks an entry.
+the single source of truth. Its island-owned state is limited to presentation/navigation plus a
+transient global-hot-key registration failure used by Settings. `islandAttentionEntries` is a
+derived projection of `displayState`; nothing island-specific mutates or masks an entry.
 
 Actions raised from the island wrap the sidebar action they stand for: `island(Action)`. The
 reducer forwards the wrapped action unchanged and collapses the roster only when it presents
